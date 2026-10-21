@@ -712,3 +712,41 @@ def test_upstream_overload_never_falls_back_to_claude(monkeypatch):  # owner 202
     except Exception:
         pass
     assert models and all(m == 'openai/sol' for m in models)
+
+
+def _approved_resume(store):
+    """A thread whose first run paused for approval and whose approval created a resume run (queued)."""
+    from pipeline.agentic.chat import skill_version
+    thread = store.create_thread(skill_version())['id']
+    first = store.enqueue(thread, {'message': 'Prepare'}, 'first')
+    assert store.claim_next()['id'] == first
+    store.finish(first, {'interactions': [{'type': 'approval', 'binding': {'digest': 'x'}}], 'checkpoint_id': 'c1'})
+    resume, _ = store.respond(store.public_run(first)['interactions'][0]['id'], {'decision': 'approve'})
+    return first, resume
+
+
+def test_retry_refuses_an_approval_resume_after_the_interaction_expired(tmp_path, monkeypatch):
+    from pipeline.agentic.api_store import APIStore, Conflict
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    with APIStore('fixture-a') as store:
+        first, resume = _approved_resume(store)
+        assert store.claim_next()['id'] == resume
+        store.recover()  # crash: the resume run is interrupted
+        with store.conn:  # the 24h interaction window passes before anyone retries
+            store.conn.execute('UPDATE api_interactions SET expires=? WHERE run_id=?', (1.0, first))
+        with pytest.raises(Conflict, match='interaction_expired'):
+            store.retry(resume)
+        assert store.raw_run(resume)['state'] == 'interrupted'
+
+
+def test_retry_of_a_fresh_approval_resume_still_works_and_clears_cancel_flag(tmp_path, monkeypatch):
+    from pipeline.agentic.api_store import APIStore
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    with APIStore('fixture-a') as store:
+        first, resume = _approved_resume(store)
+        assert store.claim_next()['id'] == resume
+        store.cancel(resume)  # cancel requested while running, then the worker dies
+        store.recover()
+        store.retry(resume)
+        row = store.raw_run(resume)
+        assert row['state'] == 'queued' and row['cancel_requested'] == 0  # an explicit retry supersedes the old cancel

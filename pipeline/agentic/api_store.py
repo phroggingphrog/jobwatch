@@ -278,10 +278,13 @@ class APIStore:
             if self.conn.execute("SELECT COUNT(*) FROM api_runs WHERE state='queued'").fetchone()[0] >= 20:
                 raise Conflict('queue_full')
             payload = json.loads(row['input_json'])
+            if 'decisions' in payload and self.conn.execute('SELECT 1 FROM api_interactions WHERE resume_run=? AND expires<=?',
+                                                            (ident, time.time())).fetchone():
+                raise Conflict('interaction_expired')  # same 24h rule as respond(): a stale approval never authorizes work
             # Lock contention occurs before graph execution. Retry that original
             # request normally; only an interrupted worker needs checkpoint recovery.
             if row['state'] == 'interrupted':
                 payload['recover'] = True
-            self.conn.execute("UPDATE api_runs SET state='queued',error=NULL,input_json=?,updated=? WHERE id=?",
+            self.conn.execute("UPDATE api_runs SET state='queued',error=NULL,cancel_requested=0,input_json=?,updated=? WHERE id=?",
                               (encoded(payload), time.time(), ident))
             self.event(ident, 'recovery_requested')
