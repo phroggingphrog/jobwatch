@@ -110,8 +110,10 @@ def _liveness(title,text):
     visible=re.sub(r"\b(?:once|after|when|until|before|if)\s+(?:the\s+|this\s+)?(?:job|position|role|vacancy|advert(?:isement)?|applications?)\s+(?:has\s+|have\s+|is\s+|are\s+)?(?:been\s+)?(?:closed|expired|filled)",' ',visible,flags=re.I)
     if _FILLED.search(visible) or re.search(r"\b(?:applications? (?:are |now |are now )?closed|(?:job|position|role|vacancy) (?:is |has |has been )?(?:closed|filled|expired))\b",visible,re.I):
         raise InterviewAdUnavailable('interview_ad_closed')
-    if _WALL.search('<title>'+title+'</title>') or any(s in visible.lower() for s in (
-            'verify you are human','access denied','security check','sign in to continue')):
+    # a challenge/login page is short: the same words inside a full ad ("a police and security check") are just ad text
+    blocked=('verify you are human','access denied','security check','sign in to continue')
+    if _WALL.search('<title>'+title+'</title>') or any(s in title.lower() for s in blocked) or (
+            len(text.strip())<1500 and any(s in visible.lower() for s in blocked)):
         raise InterviewAdUnavailable('interview_ad_unavailable')
 
 class _UncertainDeadline(InterviewAdUnavailable):

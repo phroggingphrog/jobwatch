@@ -118,6 +118,15 @@ def test_unusable_pages_never_become_preparation(patch,code):
     data=snapshot();data.update(patch)
     with pytest.raises(InterviewAdUnavailable,match='interview_ad_'+code):_snapshot_ad(URL,data,acquisition='browser')
 
+def test_a_real_ad_that_mentions_a_security_check_is_not_a_block_page():
+    text=BODY+' Successful applicants must pass a police and security check. Access denied to unvetted staff.'
+    data=snapshot();data['text']=text
+    ad=_snapshot_ad(URL,data,acquisition='browser')
+    assert 'security check' in ad.text
+    for short in ('Security check','Access denied. Please verify you are human.','Please sign in to continue.'):
+        data=snapshot();data['text']=short
+        with pytest.raises(InterviewAdUnavailable,match='interview_ad_unavailable'):_snapshot_ad(URL,data,acquisition='browser')
+
 class Request:
     method='GET';resource_type='document';url=URL
 class Route:
