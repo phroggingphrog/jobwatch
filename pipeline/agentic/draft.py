@@ -27,7 +27,7 @@ from pipeline.agentic.contracts import (AgenticScreeningAnswer,
     answers_content_hash, validate_review,
 )
 from pipeline.agentic.runtime import RoleSpec, Tool, run_role
-from pipeline.agentic.review import GATE_CRITERIA, review_proposal
+from pipeline.agentic.review import GATE_CRITERIA, capture_private_failures, review_proposal, write_private
 from pipeline.agentic.forms import validate_screening_answers
 from jobwatch.settings import DEFAULT_MODEL
 
@@ -280,10 +280,8 @@ def _proposal(result, run_key: RunKey, eval_hash: str, evaluation: AgenticEvalua
         # Line answers up with the evaluation's exact questions; a reworded or missing one is left for the owner.
         given = {" ".join(a.question.split()).casefold(): a for a in proposal.screening_answers}
         aligned = []
-        for i, question in enumerate(evaluation.screening_questions):
-            match = given.get(" ".join(question.split()).casefold())
-            if match is None and i < len(proposal.screening_answers):
-                match = proposal.screening_answers[i]
+        for question in evaluation.screening_questions:
+            match = given.get(" ".join(question.split()).casefold())  # never by position: a skipped question would cross-wire answers
             aligned.append(match.model_copy(update={"question": question}) if match is not None
                            else AgenticScreeningAnswer(question=question, answer="", source="owner_to_answer"))
         proposal = proposal.model_copy(update={"screening_answers": tuple(aligned)})
@@ -309,28 +307,30 @@ def _inventory(evidence, budget_chars: int = 60_000) -> list[dict]:
 
 
 def _save_pdf_failure(run_key, cv_bytes, letter_bytes, report) -> None:
-    """Keep the PDFs and the check's report when the final PDF check fails (<data>/agentic-failures/<posting>-pdf/)."""
+    """Keep the PDFs and the check's report when the final PDF check fails (<data>/agentic-failures/<posting>-pdf/); opt-in."""
+    if not capture_private_failures():
+        return
     try:
         import json as _json
         from jobwatch.apply.paths import data_dir
         out = data_dir() / "agentic-failures" / f"{run_key.posting_id}-pdf"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / "cv.pdf").write_bytes(cv_bytes)
-        (out / "letter.pdf").write_bytes(letter_bytes)
-        (out / "report.json").write_text(_json.dumps(report, indent=1, default=str))
+        write_private(out / "cv.pdf", cv_bytes)
+        write_private(out / "letter.pdf", letter_bytes)
+        write_private(out / "report.json", _json.dumps(report, indent=1, default=str))
     except Exception:  # noqa: BLE001 - a failed log never changes the run result
         pass
 
 
 def _save_rejection(run_key, verdict, last=None) -> None:
     """Keep the reviewer's final reasons when it does not approve (2026-10-12: Morrows was held as
-    review_not_accepted and nobody could see why). Written to <data>/review-rejections/<posting>-<run>.json."""
+    review_not_accepted and nobody could see why). Written to <data>/review-rejections/<posting>-<run>.json; opt-in
+    (it holds the letter text)."""
+    if not capture_private_failures():
+        return
     try:
         import json as _json
         from jobwatch.apply.paths import data_dir
-        out = data_dir() / "review-rejections"
-        out.mkdir(parents=True, exist_ok=True)
-        (out / f"{run_key.posting_id}-{run_key.value[:12]}.json").write_text(_json.dumps(
+        write_private(data_dir() / "review-rejections" / f"{run_key.posting_id}-{run_key.value[:12]}.json", _json.dumps(
             {"posting_id": run_key.posting_id, "run_key": run_key.value, "verdict": verdict.verdict,
              "criteria": dict(verdict.criteria or {}), "feedback": list(verdict.feedback or ()),
              "letter_seen_by_reviewer": (last or {}).get("letter"),

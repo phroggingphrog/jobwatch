@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import os
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -50,15 +51,31 @@ def _accept_review(args: BaseModel, context: Any) -> dict:
     return args.model_dump(mode="json")
 
 
+def capture_private_failures() -> bool:
+    """Raw candidate-bearing failure files (PDFs, letter text, replies) are written only on explicit opt-in (CHAT.md)."""
+    return os.environ.get("JOBWATCH_CAPTURE_PRIVATE_FAILURES") == "true"
+
+
+def write_private(path, data) -> None:
+    """Owner-only file (0600) in an owner-only directory tree; same discipline as deepagents_runtime._log_failure."""
+    from jobwatch.apply.paths import ensure_dir
+    ensure_dir(path.parent)
+    fd = os.open(path, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+    os.chmod(path, 0o600)  # an older file may exist with looser permissions
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data if isinstance(data, bytes) else data.encode("utf-8"))
+
+
 def _log_review_failure(run_key, raw) -> None:
-    """Keep the reviewer's raw reply when its verdict is refused (<data>/agentic-failures/<posting>-review-*.json)."""
+    """Keep the reviewer's raw reply when its verdict is refused (<data>/agentic-failures/<posting>-review-*.json); opt-in."""
+    if not capture_private_failures():
+        return
     try:
         import json as _json, time as _time
         from jobwatch.apply.paths import data_dir
-        out = data_dir() / "agentic-failures"
-        out.mkdir(parents=True, exist_ok=True)
         body = raw.model_dump(mode="json") if hasattr(raw, "model_dump") else raw
-        (out / f"{run_key.posting_id}-review-{int(_time.time())}.json").write_text(_json.dumps(body, indent=1, default=str))
+        write_private(data_dir() / "agentic-failures" / f"{run_key.posting_id}-review-{int(_time.time())}.json",
+                      _json.dumps(body, indent=1, default=str))
     except Exception:  # noqa: BLE001 - a failed log never changes the run result
         pass
 
