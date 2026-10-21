@@ -79,8 +79,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             from jobwatch.interview_prep import queued_posting_ids, queued_subject_ids
             from pipeline.agentic.contracts import AgenticError
             from jobwatch.candidate.contracts import CandidateError
-            pending = BackgroundTasks()
-            def schedule():
+            def schedule(pending):
                 conn = conn_()
                 try:
                     for posting_id in (*queued_posting_ids(conn, config), *queued_subject_ids(conn, config)):
@@ -89,8 +88,15 @@ def create_app(config: Config | None = None) -> FastAPI:
                 except (AgenticError, CandidateError, sqlite3.Error, OSError):
                     pass
                 finally: conn.close()
-            await asyncio.to_thread(schedule)
-            await pending()
+            for name in users.list_users():     # each person's own queue, run as that person (their DB, profile and drafts)
+                if name != users.DEFAULT_USER and not users.db_path(name).exists(): continue   # never create a DB here
+                try:
+                    with users.use(name):
+                        pending = BackgroundTasks()
+                        await asyncio.to_thread(schedule, pending)
+                        await pending()
+                except Exception:
+                    logging.getLogger(__name__).exception("interview recovery failed for one person")
         async def auto_fill_loop():
             while True:
                 await asyncio.sleep(60)

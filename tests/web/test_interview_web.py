@@ -171,6 +171,26 @@ def test_startup_recovers_durable_queue_once(prep_client,monkeypatch):
     assert len(c.writer.calls)==2
 
 
+def test_startup_recovers_a_friends_durable_queue_as_that_friend(prep_client,monkeypatch):
+    import threading
+    import jobwatch.interview_prep as service
+    from jobwatch import users
+    c=prep_client; done=threading.Event(); ran=[]
+    with users.use('friend'):
+        users.create_user_dirs('friend')
+        (users.user_dir()/'profile'/'cv.md').write_text('# Friend Candidate\n\n## Skills\n- Reconciled ledgers.\n')
+        conn=db.connect(c.config.db_path); pid=seed(conn,1,'Friend role',company='Example',arm='accounting')
+        conn.execute("INSERT INTO ad_text(posting_id,text,source,fetched_at) VALUES(?,?,'cached',?)",(pid,AD,datetime.now(UTC).isoformat())); conn.commit()
+        assert service.enqueue(conn,pid,c.config); conn.close()
+    def generate(conn,pid,config,**kw):
+        ran.append((users.current(),conn.execute('PRAGMA database_list').fetchone()[2])); done.set()
+    monkeypatch.setattr(service,'generate',generate)
+    monkeypatch.setattr(service,'is_queued',lambda *a,**kw:False)       # the fake run drains the queue
+    with TestClient(create_app(c.config),base_url='http://localhost',headers=OK):
+        assert done.wait(10), 'Startup did not recover the friend queue'
+    assert ran==[('friend',str(users.db_path('friend')))]
+
+
 def test_startup_never_retries_held_unknown_dispatch(prep_client,monkeypatch):
     import jobwatch.interview_prep as service
     c=prep_client
