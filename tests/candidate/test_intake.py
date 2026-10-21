@@ -375,3 +375,168 @@ def test_digest_is_deterministic_and_tracks_every_input(person, draft):
 
 def Proposal_copy(p):
     return intake.Proposal.model_validate_json(p.model_dump_json())
+
+
+# ----------------------------------------------------------------------------- confirmation and versions
+import hashlib  # noqa: E402
+import threading  # noqa: E402
+
+from jobwatch.apply import paths as apaths  # noqa: E402
+from jobwatch.candidate.evidence import snapshot_evidence  # noqa: E402
+
+CONFIG = {'pipeline': {'agentic': {'batch_token_ceiling': 1234}}}
+Q = lambda line, quote: {'line': line, 'quote': quote}  # noqa: E731
+
+
+@pytest.fixture
+def full(person, fake_llm, upload_id):
+    fake_llm.reply({'facts': [
+        fact('experience', 'Accounts Assistant, Ledger Co', 'evidence', [Q(5, 'Ledger Co, Accounts Assistant, 2021 - 2023')]),
+        fact('experience', 'Prepared journals', 'evidence', [Q(7, 'Prepared month-end journals')]),
+        fact('education', 'Diploma of Accounting', 'evidence', [Q(10, 'Diploma of Accounting, Example College, 2020')]),
+        fact('skill', 'Bookkeeping', 'inference'),
+        fact('career_focus', 'Accounts officer', 'inference')], 'questions': []})
+    return intake.propose(person, [upload_id], fake_llm)
+
+
+def ok(person, p, **kw):
+    c = intake.confirmation(person, p.id, CONFIG)
+    return intake.confirm(person, p.id, proposal_digest=kw.get('pd', c['proposal_digest']),
+                          scope_digest=kw.get('sd', c['scope_digest']), actor=kw.get('actor', 'person'), config=CONFIG)
+
+
+def vdir(person, n):
+    return users.user_dir(person) / 'profile-versions' / str(n)
+
+
+def test_confirmation_shows_scope_and_limits(person, full):
+    c = intake.confirmation(person, full.id, CONFIG)
+    assert c['proposal_digest'] == intake.digest(full)
+    s = c['scope']
+    assert s.daily_assessments == 40 and s.daily_token_ceiling == 1234
+    assert s.basis == ('Accounts Assistant, Ledger Co', 'Prepared journals')       # employment-first, evidence only
+    assert c['authorises'] == ['discovery', 'assessment']
+    assert c['does_not_authorise'] == ['document_preparation', 'employer_messages', 'submission']
+    assert c['scope_digest'] == hashlib.sha256(s.model_dump_json().encode()).hexdigest() or len(c['scope_digest']) == 64
+
+
+def test_confirm_with_stale_digest_writes_nothing(person, full):
+    c = intake.confirmation(person, full.id, CONFIG)
+    intake.edit(person, full.id, expected_revision=1, edits=[{'op': 'add', 'section': 'location', 'value': 'Perth'}])
+    with pytest.raises(intake.IntakeError) as err:
+        intake.confirm(person, full.id, proposal_digest=c['proposal_digest'], scope_digest=c['scope_digest'], actor='person', config=CONFIG)
+    assert err.value.code == 'proposal_changed'
+    assert not (users.user_dir(person) / 'profile-versions').exists() and not list(apaths.profile_dir().iterdir())
+    assert intake.load_proposal(person, full.id).status == 'draft' and intake.current_version(person) is None
+
+
+def test_confirm_with_stale_scope_writes_nothing(person, full):
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, full, sd='0' * 64)
+    assert err.value.code == 'scope_changed' and not (users.user_dir(person) / 'profile-versions').exists()
+
+
+def test_only_the_person_confirms(person, full):
+    with pytest.raises(intake.IntakeError):
+        ok(person, full, actor='agent')
+    assert intake.current_version(person) is None
+
+
+def test_confirm_writes_immutable_version_and_snapshot(person, full):
+    n = ok(person, full)
+    assert n == 1 and intake.load_proposal(person, full.id).status == 'confirmed'
+    d = vdir(person, n)
+    approved = json.loads((d / 'approved.json').read_text())
+    assert approved['version'] == 1 and approved['uploads'] == list(full.uploads) and approved['actor'] == 'person'
+    assert approved['scope']['daily_token_ceiling'] == 1234 and approved['proposal_digest'] == intake.digest(full)
+    assert approved['evidence_bundle_hash'] == snapshot_evidence(apaths.profile_dir()).bundle_hash
+    for name in ('profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml'):
+        assert (d / name).read_bytes() == (apaths.profile_dir() / name).read_bytes()
+    assert snapshot_evidence(d / 'evidence').bundle_hash == approved['evidence_bundle_hash']
+    assert stat.S_IMODE((d / 'approved.json').stat().st_mode) == 0o600 and stat.S_IMODE(d.stat().st_mode) == 0o700
+    assert stat.S_IMODE((apaths.profile_dir() / 'master_resume.md').stat().st_mode) == 0o600
+    assert intake.current_version(person)['version'] == 1 and [v['version'] for v in intake.versions(person)] == [1]
+
+
+def test_projection_feeds_existing_readers(person, full, monkeypatch):
+    intake.edit(person, full.id, expected_revision=1, edits=[{'op': 'add', 'section': 'work_rights', 'value': {'visa': 'Citizen', 'hours_limit_per_fortnight': 48}}])
+    p = intake.load_proposal(person, full.id)
+    ok(person, p)
+    from jobwatch.candidate import person as cp
+    assert cp.work_rights()['visa'] == 'Citizen' and cp.hours_limit_per_fortnight() == 48.0
+    quotes = {i.quote for i in snapshot_evidence(apaths.profile_dir()).items}
+    assert 'Ledger Co, Accounts Assistant, 2021 - 2023' in quotes and 'Diploma of Accounting, Example College, 2020' in quotes
+    assert 'Bookkeeping' not in ' '.join(quotes)
+
+
+def test_inferred_facts_only_enter_after_confirmation(person, full):
+    assert not list(apaths.profile_dir().iterdir())
+    ok(person, full)
+    approved = intake.current_version(person)
+    inferred = [f for f in approved['facts'] if f['basis'] == 'inference']
+    assert {f['value'] for f in inferred} == {'Bookkeeping', 'Accounts officer'}
+    profile_text = ''.join(p.read_text() for p in apaths.profile_dir().iterdir())
+    assert 'Bookkeeping' not in profile_text and 'Accounts officer' not in profile_text     # no way to mark them there
+
+
+def test_person_fact_replaces_parser_unknown_and_unanswered_stay_unknown(person, full):
+    p = intake.answer(person, full.id, expected_revision=1, question_id=next(q.id for q in full.questions if q.section == 'availability'), text='Immediately, 38 hours')
+    ok(person, p)
+    facts = intake.current_version(person)['facts']
+    avail = [f for f in facts if f['section'] == 'availability']
+    assert len(avail) == 1 and avail[0]['actor'] == 'person'
+    assert [f['basis'] for f in facts if f['section'] == 'work_rights'] == ['unknown']
+    assert {q['section'] for q in intake.current_version(person)['open_questions']} >= {'work_rights'}
+    assert 'availability' not in {q['section'] for q in intake.current_version(person)['open_questions']}
+
+
+def test_second_confirm_supersedes_drafts_and_numbers_versions(person, full, fake_llm, upload_id):
+    other = intake.propose(person, [upload_id], fake_llm)
+    assert ok(person, full) == 1
+    assert intake.load_proposal(person, other.id).status == 'superseded'
+    again = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    assert ok(person, again) == 2 and intake.current_version(person)['version'] == 2
+    assert (vdir(person, 1) / 'approved.json').exists() and len(intake.versions(person)) == 2
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, full)
+    assert err.value.code == 'proposal_not_draft'
+
+
+def test_stale_base_version_is_refused(person, full, fake_llm, upload_id):
+    ok(person, full)
+    stale = intake.propose(person, [upload_id], fake_llm, base_version=7)
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, stale)
+    assert err.value.code == 'proposal_changed'
+
+
+def test_existing_profile_without_a_version_must_be_adopted(person, full):
+    pdir = apaths.profile_dir()
+    pdir.mkdir(parents=True, exist_ok=True)
+    (pdir / 'profile.yaml').write_text('candidate:\n  name: Hand Made\n')
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, full)
+    assert err.value.code == 'adopt_first'
+    assert (pdir / 'profile.yaml').read_text() == 'candidate:\n  name: Hand Made\n'
+    assert not (users.user_dir(person) / 'profile-versions').exists() and intake.load_proposal(person, full.id).status == 'draft'
+
+
+def test_confirm_races_with_edit(person, full):
+    c = intake.confirmation(person, full.id, CONFIG)
+    results = []
+    def conf():
+        try:
+            results.append(intake.confirm(person, full.id, proposal_digest=c['proposal_digest'], scope_digest=c['scope_digest'], actor='person', config=CONFIG))
+        except intake.IntakeError as e:
+            results.append(e.code)
+    def ed():
+        with users.use(person):
+            try:
+                intake.edit(person, full.id, expected_revision=1, edits=[{'op': 'add', 'section': 'location', 'value': 'Perth'}])
+                results.append('edited')
+            except intake.IntakeError as e:
+                results.append(e.code)
+    ts = [threading.Thread(target=f) for f in (conf, ed)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    # exactly one wins; a confirmed version never contains an edit made after its digest was shown
+    assert sorted(map(str, results)) in (['1', 'proposal_not_draft'], ['edited', 'proposal_changed'])

@@ -16,7 +16,9 @@ import json
 import os
 import re
 import secrets
+import shutil
 import tempfile
+from datetime import datetime, timezone
 from contextlib import contextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -26,10 +28,13 @@ from pydantic import BaseModel, ConfigDict
 
 from .. import users
 from ..apply.evidence import norm
+from ..apply import paths as apaths
 from ..apply.paths import ensure_dir
 from ..llm import LLM
 from ..model_choice import get_model
 from ._private_io import read_regular_file
+from . import projection
+from .evidence import _ALLOWED, snapshot_evidence
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_TEXT_BYTES = 12 * 1024 * 1024          # extracted text can outgrow its PDF a little
@@ -39,7 +44,8 @@ EXTENSIONS = (".pdf", ".docx", ".txt", ".md")
 KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
-         "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found")
+         "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
+         "scope_changed", "adopt_first", "person_required")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -426,3 +432,175 @@ def digest(proposal: Proposal) -> str:
     """What the person is shown and approves: any change to facts, uploads, base_version or revision changes it."""
     body = proposal.model_dump(mode="json", include={"facts", "uploads", "base_version", "revision"})
     return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+
+
+# ----------------------------------------------------------------------------- confirmation and versions
+# Confirming approves exactly the draft the person was shown (its digest) and starts discovery and assessment inside
+# the scope shown with it; it does not authorise documents, employer messages or submission.
+AUTHORISES = ["discovery", "assessment"]
+DOES_NOT_AUTHORISE = ["document_preparation", "employer_messages", "submission"]
+DAILY_ASSESSMENTS = 40
+_SCOPE_ITEMS = 20
+
+
+class SearchScope(_Model):
+    basis: tuple[str, ...]
+    locations: tuple[str, ...]
+    daily_assessments: int
+    daily_token_ceiling: int
+
+
+def _reconciled(proposal: Proposal) -> tuple[list[ProfileFact], list[Question]]:
+    """A person's fact in a section replaces the parser's 'unknown' placeholder and closes that section's question;
+    everything else unanswered stays 'unknown' (open questions do not block confirmation)."""
+    stated = {f.section for f in proposal.facts if f.actor == "person" and f.basis is not Basis.UNKNOWN}
+    facts = [f for f in proposal.facts if not (f.basis is Basis.UNKNOWN and f.actor == "parser" and f.section in stated)]
+    return facts, [q for q in proposal.questions if q.section not in stated]
+
+
+def _values(facts, *sections: str) -> list[str]:
+    got = (projection._text(f.value)[:200] for s in sections for f in facts if f.section == s and f.basis is Basis.EVIDENCE and f.value)
+    return list(dict.fromkeys(v for v in got if v))[:_SCOPE_ITEMS]
+
+
+def scope_for(person: str, proposal: Proposal, config) -> SearchScope:
+    """What discovery may look for: confirmed career focus, else the work history (employment first), then skills."""
+    from pipeline.agentic.service import _config
+    with users.use(person):
+        ceiling = _config(config)["batch_token_ceiling"]
+    facts, _ = _reconciled(proposal)
+    basis = _values(facts, "career_focus") or list(dict.fromkeys(_values(facts, "experience") + _values(facts, "skill")))[:_SCOPE_ITEMS]
+    return SearchScope(basis=tuple(basis), locations=tuple(_values(facts, "location")),
+                       daily_assessments=DAILY_ASSESSMENTS, daily_token_ceiling=ceiling)
+
+
+def _scope_digest(scope: SearchScope) -> str:
+    return hashlib.sha256(scope.model_dump_json().encode()).hexdigest()
+
+
+def confirmation(person: str, proposal_id: str, config) -> dict:
+    """What the person is shown before confirming: the digests to send back, the scope and what it does not cover."""
+    proposal = load_proposal(person, proposal_id)
+    if proposal.status != "draft":
+        raise IntakeError("proposal_not_draft")
+    scope = scope_for(person, proposal, config)
+    return {"proposal_digest": digest(proposal), "scope": scope, "scope_digest": _scope_digest(scope),
+            "authorises": list(AUTHORISES), "does_not_authorise": list(DOES_NOT_AUTHORISE)}
+
+
+def _versions_root(person: str) -> Path:
+    return users.user_dir(person) / "profile-versions"
+
+
+def _numbers(person: str) -> list[int]:
+    try:
+        return sorted(int(p.name) for p in _versions_root(person).iterdir() if re.fullmatch(r"[1-9]\d*", p.name) and p.is_dir())
+    except FileNotFoundError:
+        return []
+
+
+def _approved(person: str, n: int) -> dict:
+    return json.loads(read_regular_file(_versions_root(person) / str(n) / "approved.json", MAX_JSON_BYTES))
+
+
+def current_version(person: str) -> dict | None:
+    """The latest approved profile (approved.json), or None when the person has not confirmed one."""
+    nums = _numbers(person)
+    return _approved(person, nums[-1]) if nums else None
+
+
+def versions(person: str) -> list[dict]:
+    """Every approved version, oldest first, without the fact list."""
+    keys = ("version", "confirmed_at", "proposal_id", "proposal_digest", "evidence_bundle_hash", "scope", "uploads")
+    return [{k: a[k] for k in keys if k in a} for a in (_approved(person, n) for n in _numbers(person))]
+
+
+def _write_profile(pdir: Path, files: dict[str, str]) -> None:
+    """Project into profile/ (the one sanctioned writer: guard_write forbids code writes there): stage every file
+    next to its target, then swap them in, so a failure part-way leaves no half-written file."""
+    missing = []
+    cur = pdir
+    while not cur.exists():
+        missing.append(cur)
+        cur = cur.parent
+    for d in reversed(missing):
+        d.mkdir(mode=0o700, exist_ok=True)
+    staged = []
+    try:
+        for name, text in files.items():
+            fd, tmp = tempfile.mkstemp(dir=pdir, prefix=".tmp-")
+            staged.append((tmp, pdir / name))
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(text.encode("utf-8"))
+            os.chmod(tmp, 0o600)
+        for tmp, dest in staged:
+            os.replace(tmp, dest)
+    finally:
+        for tmp, _ in staged:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest: str,
+            actor: Literal["person"], config) -> int:
+    """Approve the draft the person was shown. Returns the new version number.
+
+    Under the proposal's own lock (the one edit/answer use) it re-checks status, digest and scope; then writes
+    profile-versions/<n>/ (approved.json, projected files, evidence snapshot), projects into profile/ and marks
+    the proposal confirmed. Nothing is written if any check fails."""
+    if actor != "person":
+        raise IntakeError("person_required")           # model text or an agent is never approval
+    load_proposal(person, proposal_id)                 # validates the id before it names a lock file
+    with users.use(person), _locked(person, "versions.lock"), _locked(person, proposal_id + ".lock", "proposals"):
+        cur = load_proposal(person, proposal_id)
+        if cur.status != "draft":
+            raise IntakeError("proposal_not_draft")
+        if digest(cur) != proposal_digest:
+            raise IntakeError("proposal_changed")
+        scope = scope_for(person, cur, config)
+        if _scope_digest(scope) != scope_digest:
+            raise IntakeError("scope_changed")
+        nums = _numbers(person)
+        if cur.base_version is not None and cur.base_version != (nums[-1] if nums else None):
+            raise IntakeError("proposal_changed")      # built on a version that is no longer current
+        pdir = apaths.profile_dir()
+        ours = ("profile.yaml", "master_resume.md")
+        # hand-made files that are not ours would change the evidence snapshot; Task 6's adoption brings them in
+        if any(os.path.lexists(pdir / name) for name in _ALLOWED if not nums or name not in ours):
+            raise IntakeError("adopt_first")
+        n = (nums[-1] if nums else 0) + 1
+        facts, open_questions = _reconciled(cur)
+        approved = {"schema": 1, "version": n, "proposal_id": cur.id, "proposal_digest": proposal_digest, "revision": cur.revision,
+                    "base_version": cur.base_version, "actor": "person", "uploads": list(cur.uploads),
+                    "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "scope": scope.model_dump(mode="json"), "scope_digest": scope_digest,
+                    "facts": [f.model_dump(mode="json") for f in facts],
+                    "open_questions": [q.model_dump(mode="json") for q in open_questions]}
+        files = projection.project(approved)
+        root = ensure_dir(_versions_root(person))
+        stage = root / (".staging-" + secrets.token_hex(8))
+        try:
+            ensure_dir(stage)
+            for name, text in files.items():
+                _write_private(stage / name, text.encode("utf-8"))
+                if name in ours:
+                    _write_private(stage / "evidence" / name, text.encode("utf-8"))
+            bundle = snapshot_evidence(stage / "evidence")
+            approved["evidence_bundle_hash"] = bundle.bundle_hash
+            for name, raw in bundle.contents.items():
+                _write_private(stage / "evidence" / name, raw)
+            _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
+            os.rename(stage, root / str(n))
+        except BaseException:
+            shutil.rmtree(stage, ignore_errors=True)
+            raise
+        _write_profile(pdir, files)
+        save_proposal(person, cur.model_copy(update={"status": "confirmed"}))
+        for other in (p.stem for p in (_root(person) / "proposals").glob("*.json") if p.stem != cur.id and _ID.match(p.stem)):
+            with _locked(person, other + ".lock", "proposals"):          # versions.lock is outermost: no lock cycle
+                o = load_proposal(person, other)
+                if o.status == "draft":
+                    save_proposal(person, o.model_copy(update={"status": "superseded"}))
+    return n
