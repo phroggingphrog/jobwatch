@@ -260,17 +260,17 @@ def work_type_of(*values: Any) -> str | None:
     text = " ".join(str(v) for v in values if v).lower().replace("_", " ")
     if not text:
         return None
-    if "casual" in text:
+    if re.search(r"\bcasuals?\b", text):
         return "casual"
-    if re.search(r"part[ -]?time", text):
+    if re.search(r"\bpart[ -]?time\b", text):
         return "PT"
-    if re.search(r"intern", text):
+    if re.search(r"\bintern(?:ship)?s?\b", text):
         return "intern"
-    if re.search(r"contract|fixed[ -]?term|contractor", text):
+    if re.search(r"\bcontract(?:or|ing)?\b|\bfixed[ -]?term\b", text):
         return "contract"
-    if re.search(r"temp", text):
+    if re.search(r"\btemp(?:s|orary)?\b", text):
         return "temp"
-    if re.search(r"full[ -]?time|permanent|fulltime", text):
+    if re.search(r"\b(?:full[ -]?time|permanent)\b", text):
         return "FT"
     return None
 
@@ -286,12 +286,14 @@ def salary_from_text(text: str | None) -> tuple[float | None, float | None, str 
     if not nums:
         return None, None, None
     low = text.lower()
-    if re.search(r"per hour|p/h|/hr|an hour|hourly|ph\b", low):
+    if re.search(r"per hour|p/h|/hr|an hour|hourly|\bp\.?h\b", low):
         unit = "hour"
     elif re.search(r"per day|daily|p/d", low):
         unit = "day"
     elif re.search(r"per week|weekly", low):
         unit = "week"
+    elif re.search(r"per month|a month|/mth|/month|\bp/m\b|\bpcm\b", low):
+        unit = "month"
     elif max(nums) < 200:
         unit = "hour"
     else:

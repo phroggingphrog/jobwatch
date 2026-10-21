@@ -47,6 +47,23 @@ def test_work_type_and_salary():
     assert salary_from_text("$70K – $80K") == (70000, 80000, "year")
 
 
+def test_work_type_needs_word_boundaries():
+    for text in ("Internal Auditor", "Template Designer", "Attempt", "Contracts Administrator", "Casualty Clerk"):
+        assert work_type_of(text) is None, text
+    assert work_type_of("Intern") == "intern" and work_type_of("Summer Internship") == "intern"
+    assert work_type_of("Contract role") == "contract" and work_type_of("Contractor") == "contract"
+    assert work_type_of("Temp") == "temp" and work_type_of("Temporary") == "temp"
+    assert work_type_of("Permanent") == "FT" and work_type_of("fulltime") == "FT"
+
+
+def test_salary_unit_boundaries_and_month():
+    assert salary_from_text("$70,000 Joseph") == (70000, 70000, "year")      # "ph" only as its own token
+    assert salary_from_text("$70,000 graph") == (70000, 70000, "year")
+    assert salary_from_text("$38 ph") == (38, 38, "hour") and salary_from_text("$38 p.h.") == (38, 38, "hour")
+    assert salary_from_text("$6,000 per month") == (6000, 6000, "month")
+    assert salary_from_text("$6,000 a month + super") == (6000, 6000, "month")
+
+
 def test_relative_posted():
     now = datetime(2026, 10, 6, tzinfo=timezone.utc)
     assert relative_posted("Posted 3 Days Ago", now).day == 3
