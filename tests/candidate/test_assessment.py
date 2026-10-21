@@ -1,4 +1,6 @@
 """Candidate-first assessment uses real Deep Agents tools and synthetic evidence only."""
+
+from jobwatch import model_choice
 import copy
 import json
 
@@ -14,6 +16,7 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget
 
 
 class Model:
+    base_url = model_choice.SERVER_URL
     def __init__(self, choices):
         self.choices = iter(choices)
         self.seen = []
@@ -67,10 +70,10 @@ def test_candidate_assessment_runs_before_jobs_and_reference_absence_is_honest(t
 def test_assessment_identity_changes_for_evidence_profile_policy_or_model(tmp_path):
     results = []
     for idx, (skill, framing, policy, model_name) in enumerate([
-        ("Reconciled ledgers", "Target accounting", TargetPolicy(version="v1"), "claude/opus"),
-        ("Built SQL reports", "Target accounting", TargetPolicy(version="v1"), "claude/opus"),
-        ("Reconciled ledgers", "Target finance", TargetPolicy(version="v1"), "claude/opus"),
-        ("Reconciled ledgers", "Target accounting", TargetPolicy(version="v2"), "claude/opus"),
+        ("Reconciled ledgers", "Target accounting", TargetPolicy(version="v1"), "claude/haiku"),
+        ("Built SQL reports", "Target accounting", TargetPolicy(version="v1"), "claude/haiku"),
+        ("Reconciled ledgers", "Target finance", TargetPolicy(version="v1"), "claude/haiku"),
+        ("Reconciled ledgers", "Target accounting", TargetPolicy(version="v2"), "claude/haiku"),
         ("Reconciled ledgers", "Target accounting", TargetPolicy(version="v1"), "claude/sonnet"),
     ]):
         bundle, choices = case(tmp_path / str(idx), skill, framing)

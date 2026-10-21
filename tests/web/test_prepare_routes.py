@@ -34,6 +34,8 @@ class Browser:
         self.opened = False
     def close_all(self):
         self.opened = False
+    def take_submit_result(self, aid):
+        return None
     def snapshot(self, aid):
         self.frames += 1
         self.opened = False

@@ -29,6 +29,8 @@ from pydantic import BaseModel, Field
 
 from jobwatch import model_choice
 from jobwatch.llm import BASE_URL, LLM, SafeLLMError
+from pipeline.agentic import execution as invocation
+from pipeline.agentic.gateway import messages_for_gateway as _messages_for_gateway, call as gateway_call
 from pipeline.agentic.runtime import (MAX_ROLE_TURNS, JobBudget, RoleResult, RoleSpec,
                                      RuntimeErrorSafe, _json_bytes, _usage_total, validate_model_payload)
 
@@ -87,48 +89,27 @@ class _Execution:
 
 
 def _log_failure(execution, code, raw=None, exc_text=None):
-    """Save the raw model reply, the exception text and the role/turn of a failed call (owner 2026-10-19)."""
+    """Local fixed metadata; raw candidate-bearing failures require explicit opt-in."""
     try:
-        import traceback, datetime
-        from jobwatch.apply.paths import data_dir
+        import datetime
+        from jobwatch.apply.paths import data_dir, ensure_dir
+        scope = invocation.current()
         ctx = execution.context if isinstance(execution.context, dict) else {}
-        posting = (ctx.get("run_key") or {}).get("posting_id", "x") if isinstance(ctx.get("run_key"), dict) else "x"
-        out = data_dir() / "agentic-failures"
-        out.mkdir(parents=True, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        (out / f"{posting}-{execution.role.name}-{ts}.json").write_text(json.dumps(
-            {"posting_id": posting, "role": execution.role.name, "model": execution.role.model,
-             "turn": execution.calls, "error": code, "raw_reply": raw,
-             "exception": exc_text if exc_text is not None else traceback.format_exc()},
-            indent=1, default=str, ensure_ascii=False))
-    except Exception:  # noqa: BLE001 - logging never changes the result
-        pass
-
-
-def _messages_for_gateway(messages: list[BaseMessage]) -> list[dict]:
-    """Keep a valid text-only transcript for the gateway JSON protocol."""
-    output = []
-    for message in messages:
-        if isinstance(message, AIMessage) and message.tool_calls:
-            if len(message.tool_calls) != 1:
-                raise RuntimeErrorSafe("invalid_tool_call")
-            call = message.tool_calls[0]
-            content = json.dumps({"tool": call["name"], "arguments": call["args"]},
-                                 ensure_ascii=False, allow_nan=False)
-            role = "assistant"
-        elif isinstance(message, ToolMessage):
-            # The existing gateway uses JSON choices rather than native API
-            # function calls, so an API `tool` message would be an orphan.
-            content = json.dumps({"tool_result": message.name, "result": message.content},
-                                 ensure_ascii=False, allow_nan=False)
-            role = "user"
-        else:
-            role = {"human": "user", "system": "system", "ai": "assistant"}.get(message.type)
-            content = message.content
-        if role is None or type(content) is not str:
-            raise RuntimeErrorSafe("invalid_request")
-        output.append({"role": role, "content": content})
-    return output
+        key = ctx.get('run_key') or {}
+        posting = key.get('posting_id', 'x') if isinstance(key, dict) else 'x'
+        out = ensure_dir(data_dir() / 'agentic-failures')
+        ts = datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+        value = {'posting_id': posting, 'role': execution.role.name, 'model': execution.role.model,
+                 'turn': execution.calls, 'error': code,
+                 'invocation_id': scope.run_id if scope else None}
+        if os.environ.get('JOBWATCH_CAPTURE_PRIVATE_FAILURES') == 'true':
+            value.update(raw_reply=raw, exception=exc_text)
+        path = out / f'{posting}-{execution.role.name}-{ts}.json'
+        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, 'w') as handle:
+            json.dump(value, handle, ensure_ascii=False, default=str)
+    except Exception:
+        pass  # Diagnostics must not change the result.
 
 
 class GatewayChatModel(BaseChatModel):
@@ -199,9 +180,8 @@ class GatewayChatModel(BaseChatModel):
             remaining = min(600 if execution.role.reasoning else 180, budget.remaining_seconds())  # high reasoning takes longer
             if remaining <= 0:
                 raise RuntimeErrorSafe("deadline_exceeded")
-            result = execution.llm.chat_once(
-                execution.role.model, transcript, json_mode=True,
-                max_tokens=execution.max_output_tokens, timeout=remaining,
+            result = gateway_call(execution.llm, execution.role.model, transcript,
+                role=execution.role.name, max_tokens=execution.max_output_tokens, timeout=remaining,
                 deadline=time.monotonic() + remaining, reasoning_effort=execution.role.reasoning)
             budget.ensure_live()
             payload = getattr(result, "data", result)
@@ -245,6 +225,9 @@ class _RegistryBoundary(AgentMiddleware):
 
     def __init__(self, execution):
         self.execution = execution
+        from jobwatch import users
+        self.person = users.current()
+        self.invocation = invocation.current()
 
     def wrap_model_call(self, request, handler):
         expected = {tool.name for tool in self.execution.role.tools}
@@ -254,11 +237,15 @@ class _RegistryBoundary(AgentMiddleware):
         return handler(request)
 
     def wrap_tool_call(self, request, handler):
-        self.execution.budget.ensure_live()
-        self.execution.validate(request.tool_call["name"], request.tool_call["args"])
-        if self.execution.output is not None:
-            raise RuntimeErrorSafe("terminal_already_selected")
-        return handler(request)
+        from jobwatch import users
+        with users.use(self.person), invocation.use(self.invocation):
+            self.execution.budget.ensure_live()
+            self.execution.validate(request.tool_call["name"], request.tool_call["args"])
+            if self.execution.output is not None:
+                raise RuntimeErrorSafe("terminal_already_selected")
+            if self.invocation:
+                self.invocation.event('tool_started', tool=request.tool_call['name'], role=self.execution.role.name)
+            return handler(request)
 
 
 def _tool_for_graph(tool, execution):
@@ -335,8 +322,9 @@ def run_deepagents_role(role, context, budget, llm, *, max_turns=MAX_ROLE_TURNS,
         # Clear inherited tracing without reverting worker tools to the default person.
         from jobwatch import users
         person = users.current()
+        scope = invocation.current()
         def private_invoke():
-            with users.use(person):
+            with users.use(person), invocation.use(scope):
                 return _invoke(execution)
         result = Context().run(private_invoke)
     except RuntimeErrorSafe as exc:

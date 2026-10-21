@@ -1,6 +1,10 @@
 import os
 # Tests never read the machine's own install settings (~/.config/jobwatch/settings.env): same results on any computer.
 os.environ["JOBWATCH_SETTINGS"] = os.devnull
+# The runtime enforces paid combos at the configured loopback gateway. A test
+# never inherits a real gateway or uses the generic external-provider default.
+os.environ['JOBWATCH_LLM_BASE_URL'] = 'http://127.0.0.1:1/v1'
+os.environ['JOBWATCH_LLM_MODEL'] = 'openai/sol'
 os.environ.setdefault("JOBWATCH_PUBLIC_HOST", "jobs.example.com")
 import json
 from pathlib import Path
@@ -91,7 +95,8 @@ def make_ctx(http, employers=None, searches=None, feeds=None, limit=None, known=
 
 
 @pytest.fixture(autouse=True)
-def _no_env(monkeypatch):
+def _no_env(monkeypatch, tmp_path):
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'private-data'))
     for var in ("JOBWATCH_DB", "JOBWATCH_CONFIG_DIR", "JOBWATCH_EMPLOYERS"):
         monkeypatch.delenv(var, raising=False)
 

@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 from jobwatch.settings import DEFAULT_MODEL
 import json
 from types import SimpleNamespace
@@ -11,6 +13,7 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget
 
 
 class Writer:
+    base_url = model_choice.SERVER_URL
     def __init__(self, bundle, *, bad_quote=False):
         self.bundle=bundle; self.calls=[]; self.bad_quote=bad_quote
     def chat_once(self,model,messages,**kwargs):
@@ -26,6 +29,7 @@ class Writer:
 
 
 class Reviewer:
+    base_url = model_choice.SERVER_URL
     def __init__(self, *, verdicts=('approve',), bad_hash=False, missing_criterion=False):
         self.calls=[];self.verdicts=iter(verdicts);self.bad_hash=bad_hash;self.missing=missing_criterion
     def chat_once(self,model,messages,**kwargs):

@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 from datetime import timedelta
 import json
 
@@ -56,6 +58,7 @@ def test_terminal_and_not_due_state_refuse_before_any_model_call(setup):
 def test_unknown_failed_dispatch_retains_reservation_and_does_not_auto_retry(setup):
     conn,bundle,config=setup
     class Failed:
+        base_url = model_choice.SERVER_URL
         calls=0
         def chat_once(self,*a,**kw):
             self.calls+=1
@@ -74,6 +77,7 @@ def test_profile_change_during_generation_prevents_ready_publication(setup):
     from jobwatch.apply.paths import profile_dir
     conn,bundle,config=setup
     class ChangingWriter(Writer):
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*args,**kwargs):
             result=super().chat_once(*args,**kwargs)
             if len(self.calls)==2:
@@ -86,6 +90,7 @@ def test_profile_change_during_generation_prevents_ready_publication(setup):
 def test_explicit_retry_preserves_unknown_charges_and_original_ceiling(setup):
     conn,bundle,config=setup
     class Failed:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw): raise RuntimeError('private failure')
     generate(conn,1,config,bundle=bundle,writer=Failed(),reviewer=Reviewer(),now=NOW)
     old=json.loads(conn.execute("select detail_json from application_events where kind='followup_draft'").fetchone()[0])
@@ -105,6 +110,7 @@ def test_explicit_retry_preserves_unknown_charges_and_original_ceiling(setup):
 def test_explicit_retry_keeps_failure_limit_and_cannot_dispatch_forever(setup):
     conn,bundle,config=setup
     class Failed:
+        base_url = model_choice.SERVER_URL
         calls=0
         def chat_once(self,*a,**kw):
             self.calls+=1
@@ -120,6 +126,7 @@ def test_explicit_retry_keeps_failure_limit_and_cannot_dispatch_forever(setup):
 def test_expired_attempt_renews_time_but_preserves_budget(setup):
     conn,bundle,config=setup
     class Failed:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw):raise RuntimeError('private failure')
     generate(conn,1,config,bundle=bundle,writer=Failed(),reviewer=Reviewer(),now=NOW)
     row=conn.execute("select * from application_events where kind='followup_draft'").fetchone()
@@ -140,6 +147,7 @@ def test_late_worker_cannot_overwrite_explicit_takeover(setup):
     conn,bundle,config=setup
     replacement=Writer(bundle)
     class LateWriter(Writer):
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*args,**kwargs):
             result=super().chat_once(*args,**kwargs)
             row=conn.execute("select * from application_events where kind='followup_draft'").fetchone()

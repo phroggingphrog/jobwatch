@@ -169,12 +169,17 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
             try:
                 import pipeline.graph as graph          # the deterministic state pipeline, when the owner switched it on
                 from pipeline.agentic import service as agentic
-                if agentic.enabled(config):
-                    ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))}
-                elif graph.enabled(config):
+                from .execution_mode import effective_mode
+                mode = effective_mode(config)
+                if mode == 'agentic':
+                    ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier), collector_run_id=run_id)}
+                elif mode == 'pipeline':
                     ai = {"pipeline": graph.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))}
-                else:
+                elif mode == 'reader':
                     ai = reader.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))
+                else:
+                    ai = {'status': 'deferred', 'reason': 'execution_disabled'}
+                ai['execution_mode'] = mode
             except Exception as exc:  # the AI step must never fail a collection run
                 log.error("reader hook failed: %s", type(exc).__name__)
                 ai = {"error": type(exc).__name__}

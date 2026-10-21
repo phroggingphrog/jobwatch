@@ -6,6 +6,7 @@ for the jobs you choose. It never applies for you: you review and submit by hand
 
 ## Features
 
+- Native agent API: persistent conversations/runs, progress streaming, scoped human approvals and protected documents; see [backend setup](pipeline/agentic/CHAT.md).
 - Collectors for job boards, company career pages (many ATS systems), RSS and Reddit; duplicates removed; SQLite storage.
 - Web board (FastAPI + HTMX): Board, Table, Job, Applications, Inbox (mail outcomes), Sources, Insights.
 - Profile built from your CV; evidence-backed drafts with a fresh-context reviewer and a code verifier.

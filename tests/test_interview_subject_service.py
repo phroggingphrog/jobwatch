@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 import json
 import pytest
 from test_interview_inputs import conn
@@ -42,6 +44,7 @@ def test_subject_queue_durable_and_changed_notes_do_not_auto_dispatch(world):
 def test_subject_unknown_call_is_not_retried_and_budget_stays_reserved(world):
     conn,bundle,config=world;sid=subject(conn)
     class Failed:
+        base_url = model_choice.SERVER_URL
         calls=0
         def chat_once(self,*args,**kw):self.calls+=1;raise RuntimeError('synthetic error')
     failed=Failed()

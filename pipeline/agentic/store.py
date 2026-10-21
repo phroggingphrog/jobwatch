@@ -115,6 +115,11 @@ class AgenticStore:
                     status TEXT NOT NULL DEFAULT 'new', reason TEXT
                 );
                 CREATE INDEX IF NOT EXISTS agentic_runs_posting ON agentic_runs(posting_id);
+                CREATE TABLE IF NOT EXISTS agentic_activity (
+                    id INTEGER PRIMARY KEY, run_key TEXT, posting_id INTEGER,
+                    collector_run_id INTEGER, batch_id TEXT, invocation_id TEXT,
+                    event TEXT NOT NULL, at REAL NOT NULL, reason TEXT
+                );
                 CREATE TABLE IF NOT EXISTS agentic_budget_ops (
                     operation_id TEXT PRIMARY KEY, run_key TEXT NOT NULL, owner TEXT NOT NULL,
                     generation INTEGER NOT NULL, kind TEXT NOT NULL, digest TEXT NOT NULL,

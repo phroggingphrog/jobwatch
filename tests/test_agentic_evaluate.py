@@ -1,6 +1,8 @@
 """Synthetic whole-ad and evidence-isolation acceptance through actual role tools."""
 from __future__ import annotations
 
+from jobwatch import model_choice
+
 import copy
 import json
 
@@ -14,6 +16,7 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget
 
 
 class FakeModel:
+    base_url = model_choice.SERVER_URL
     def __init__(self, choices):
         self.choices = iter(choices)
         self.seen = []

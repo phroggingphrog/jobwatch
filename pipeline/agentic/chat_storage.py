@@ -51,6 +51,9 @@ class ChatSaver(BaseCheckpointSaver):
     def put(self, config, checkpoint, metadata, new_versions):
         c = config['configurable']
         kind, payload = self.serde.dumps_typed(checkpoint)
+        metadata = dict(metadata)
+        if c.get('invocation_id'):
+            metadata['invocation_id'] = c['invocation_id']
         with self.lock, self.conn:
             self.conn.execute('INSERT OR REPLACE INTO chat_checkpoints VALUES(?,?,?,?,?,?,?)',
                 (c['thread_id'], c.get('checkpoint_ns', ''), checkpoint['id'], c.get('checkpoint_id'),

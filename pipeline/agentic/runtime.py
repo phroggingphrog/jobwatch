@@ -176,6 +176,10 @@ class JobBudget:
         return remaining
 
     def ensure_live(self, now: float | None = None):
+        from pipeline.agentic.execution import current
+        invocation = current()
+        if invocation is not None:
+            invocation.check()
         now = self._clock() if now is None else now
         if self._failed_attempts >= MAX_FAILED_ATTEMPTS:
             raise RuntimeErrorSafe("failed_attempt_limit")
