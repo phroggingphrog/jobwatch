@@ -846,7 +846,10 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                             [c for c in (past[-1].content,) if type(c) is str] if past else []) + tuple(
                             d['message'] for d in (decisions or []) if d.get('type') == 'respond' and type(d.get('message')) is str)
                     execution.check()
-                    result = previous.values if recover and same_invocation and not previous.next else graph.invoke(value, graph_config)
+                    # durability='sync': each checkpoint is written before the next step. The default 'async' chains every write
+                    # on the previous one in LangGraph's thread pool, which deadlocks once a turn has more pending writes than workers.
+                    result = (previous.values if recover and same_invocation and not previous.next
+                              else graph.invoke(value, graph_config, durability='sync'))
                     if recover and same_invocation and not execution.deliverables:
                         for item in result.get('messages', []):
                             if item.type == 'tool' and item.name in ('prepare_interview','draft_followup'):
