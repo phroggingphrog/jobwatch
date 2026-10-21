@@ -418,3 +418,23 @@ def test_llm_null_usage_counts_do_not_break_cost():
 
 
 
+
+
+def test_sort_not_target_stops_at_the_run_deadline(world):
+    import time
+    config, conn, add = world
+    for i in range(45):                                 # three batches of up to 20
+        pid = add(f"Not Wanted Job {i}")
+        conn.execute("INSERT INTO ad_reviews(posting_id, content_hash, prompt_version, model, verdict, reviewed_at, model_json, "
+                     "report_json) VALUES(?, 'h', 1, 'm', 'hide', ?, '{}', '{\"wanted\": \"not_wanted\"}')", (pid, dbm.ts()))
+    conn.commit()
+    calls = []
+
+    class Slow:
+        def chat(self, model, messages, **kw):
+            calls.append(kw)
+            raise reader.LLMError("upstream slow")      # each batch burns its time and fails
+    stats = reader.sort_not_target(conn, config, llm=Slow(), deadline=time.monotonic() - 1)
+    assert calls == [] and stats.get("time_limit")      # already past the deadline: no paid call is started
+    stats = reader.sort_not_target(conn, config, llm=Slow(), deadline=time.monotonic() + 60)
+    assert calls and all(kw.get("deadline") is not None and kw["timeout"] <= 60 for kw in calls)

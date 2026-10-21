@@ -1550,7 +1550,8 @@ reason with exactly one kind, judging by the day-to-day work described (the titl
 Reply with ONE JSON object: {"results": [{"id": <number>, "kind": "<kind>"}]} with one entry per job."""
 
 
-def sort_not_target(conn, config, llm: LLM | None = None, limit: int | None = 400, printer=None) -> dict:
+def sort_not_target(conn, config, llm: LLM | None = None, limit: int | None = 400, printer=None,
+                    deadline: float | None = None) -> dict:
     """Give every stored "not wanted" reading a not_target_kind it lacks (readings made before the field existed, or a model
     that left it out). One model call per 20 jobs, from the stored reading only (no ad fetch, no new full read); then the
     hiding rules run again for those rows, so a too_senior kind moves the job to "Too senior"."""
@@ -1564,15 +1565,22 @@ def sort_not_target(conn, config, llm: LLM | None = None, limit: int | None = 40
     stats = {"candidates": len(rows), "sorted": 0, "failed_batches": 0}
     done = []
     for i in range(0, len(rows), 20):            # 20 per call: longer replies from this route often come back cut or empty
+        if deadline is not None and time.monotonic() >= deadline:     # the run's time is spent: the rest waits for next run
+            stats["time_limit"] = True
+            break
         batch = rows[i:i + 20]
         lines = "\n".join(f'{r["posting_id"]} | {_clean(r["title"], 120)} | {_clean(r["company"], 60)} | family: '
                           f'{_clean(r["archetype"], 80)} | level: {r["seniority"] or "?"} | years asked: {r["min_years"] or "none"} | '
                           f'{_clean(r["reason"], 220)}' for r in batch)
         items = None
         for _attempt in range(2):               # one retry: a bad reply is usually a one-off
+            left = deadline - time.monotonic() if deadline is not None else 180
+            if left <= 0:
+                break
             try:
                 res = llm.chat(cfg["model"], [{"role": "system", "content": SORT_SYSTEM}, {"role": "user", "content": lines}],
-                               json_mode=False, max_tokens=4000, timeout=180)   # strict JSON mode breaks on this route
+                               json_mode=False, max_tokens=4000, timeout=min(180, left),   # strict JSON mode breaks on this route
+                               deadline=deadline)
                 data = parse_json(res.text or "")
                 items = data.get("results") if isinstance(data, dict) else None
             except Exception as exc:            # noqa: BLE001 - asked again next run
@@ -1660,7 +1668,7 @@ def after_collect(conn, config, printer=None, max_seconds: float | None = None) 
                 out["review_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
             if not deadline or time.monotonic() < deadline:
                 try:
-                    out["sort_not_target"] = sort_not_target(conn, config, limit=200)
+                    out["sort_not_target"] = sort_not_target(conn, config, limit=200, deadline=deadline)
                 except Exception as exc:                       # noqa: BLE001
                     log.exception("reader: sort_not_target failed")
                     out["sort_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
