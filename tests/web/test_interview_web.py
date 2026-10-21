@@ -244,3 +244,26 @@ def test_recovery_scan_cannot_enqueue_changed_sources(prep_client,monkeypatch):
     conn=db.connect(c.config.db_path)
     assert conn.execute('SELECT count(*) FROM interview_runs').fetchone()[0]==1
     conn.close()
+
+
+def test_one_persons_active_interview_does_not_block_anothers_same_posting_id(prep_client,monkeypatch):
+    import jobwatch.interview_prep as service
+    from jobwatch import users
+    from jobwatch.web.auth_routes import set_password
+    c=prep_client; ran=[]
+    monkeypatch.setattr(service,'capture',lambda *a,**kw:None)
+    monkeypatch.setattr(service,'enqueue',lambda *a,**kw:True)
+    monkeypatch.setattr(service,'is_queued',lambda *a,**kw:False)
+    monkeypatch.setattr('jobwatch.candidate.evidence.snapshot_evidence',lambda *_:None)
+    def generate(conn,pid,config,**kw):
+        ran.append(users.current())
+        if len(ran)>1:return
+        # the owner's run is still active here: a friend asks for the same bare posting id
+        monkeypatch.setenv('JOBWATCH_SESSION_SECRET','s3cret'); set_password('friend','longenough1'); users.create_user_dirs('friend')
+        fc=db.connect(users.db_path('friend')); assert seed(fc,1,'Friend role')==pid; fc.close()
+        friend=TestClient(c.app,base_url='http://localhost',headers=OK)
+        assert friend.post('/login',data={'username':'friend','password':'longenough1'},follow_redirects=False).status_code==303
+        assert friend.post(f'/jobs/{pid}/interview-prep',follow_redirects=False).status_code==303
+    monkeypatch.setattr(service,'generate',generate)
+    assert c.post(f'/jobs/{c.pid}/interview-prep',follow_redirects=False).status_code==303
+    assert ran==['owner','friend']

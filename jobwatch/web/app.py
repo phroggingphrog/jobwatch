@@ -28,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 from pipeline import store as pstore
 
 from .. import db as dbm
+from .. import users
 from ..apply import paths as apaths
 from ..config import Config, load_config
 from ..origin_guard import OriginRejected, check_web_host, check_web_post
@@ -387,7 +388,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn,row['id'],channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and (row['id'],channel) in followup_active:
+                        if state['status'] == 'missing' and (users.current(),row['id'],channel) in followup_active:
                             state = {'status':'running','draft':None,'reason':None}
                 except (AgenticError,FollowupEventError,CandidateError): state = {'status':'unavailable','draft':None,'reason':None}
             name = '_followup_draft_status.html' if hx(request) else 'followup_draft.html'
@@ -414,10 +415,11 @@ def create_app(config: Config | None = None) -> FastAPI:
             except (AgenticError,FollowupEventError,CandidateError):
                 raise HTTPException(status_code=409,detail='Confirm the application dates, current job ad and profile before drafting.') from None
         finally:conn.close()
+        key=(users.current(),application_id,channel)      # application ids are per-person too
         with followup_lock:
-            if (application_id,channel) in followup_active:
+            if key in followup_active:
                 return RedirectResponse(f'/applications/{posting_id}/followup-draft?channel={channel}',status_code=303)
-            followup_active.add((application_id,channel))
+            followup_active.add(key)
         def work():
             c=None
             try:
@@ -429,7 +431,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 pass
             finally:
                 if c is not None: c.close()
-                with followup_lock: followup_active.discard((application_id,channel))
+                with followup_lock: followup_active.discard(key)
         background_tasks.add_task(work)
         return RedirectResponse(f'/applications/{posting_id}/followup-draft?channel={channel}',status_code=303)
 
@@ -470,7 +472,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 state = load_report(conn, posting_id, config)
                 if state['status'] == 'queued': state = {'status': 'running', 'report': None}
                 with interview_lock:
-                    if state['status'] == 'missing' and posting_id in interview_active:
+                    if state['status'] == 'missing' and (users.current(), posting_id) in interview_active:
                         state = {'status': 'running', 'report': None}
             except (AgenticError, CandidateError):
                 state = {'status': 'unavailable', 'report': None}
@@ -550,10 +552,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail='Interview preparation could not be queued. Check the current sources and try again.') from None
             finally:
                 if conn is not None: conn.close()
+        key = (users.current(), posting_id)         # ids are per-person: one person's run must not block another's
         with interview_lock:
-            if posting_id in interview_active:
+            if key in interview_active:
                 return
-            interview_active.add(posting_id)
+            interview_active.add(key)
         def work():
             c = None
             released = False
@@ -567,7 +570,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     # Check and release together so a concurrent requester cannot lose its wakeup.
                     with interview_lock:
                         if not is_queued(c, posting_id, config):
-                            interview_active.discard(posting_id)
+                            interview_active.discard(key)
                             released = True
                             break
                     attempt_retry = False
@@ -577,7 +580,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             finally:
                 if c is not None: c.close()
                 if not released:
-                    with interview_lock: interview_active.discard(posting_id)
+                    with interview_lock: interview_active.discard(key)
         background_tasks.add_task(work)
     def maybe_queue_interview(conn, posting_id, background_tasks):
         from jobwatch.interview_prep import should_prepare_after_interview
@@ -798,7 +801,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn, row['id'], channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and (row['id'], channel) in followup_active:
+                        if state['status'] == 'missing' and (users.current(), row['id'], channel) in followup_active:
                             state = {'status': 'running', 'draft': None, 'reason': None}
                 except (AgenticError, FollowupEventError, CandidateError):
                     state = {'status': 'unavailable', 'draft': None, 'reason': None}
