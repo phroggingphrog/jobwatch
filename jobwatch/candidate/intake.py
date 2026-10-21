@@ -38,7 +38,7 @@ PROMPT_CHARS = 30000                       # per upload, as onboarding.build_pro
 EXTENSIONS = (".pdf", ".docx", ".txt", ".md")
 KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
-         "proposal_not_found", "parse_failed")
+         "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -114,21 +114,36 @@ class Proposal(_Model):
 
 
 # ----------------------------------------------------------------------------- text extraction
-def extract_text(filename: str, data: bytes) -> str:
-    name = (filename or "").lower()
-    if name.endswith(".pdf"):
+def _extract(ext: str, data: bytes) -> str:
+    """Text of one document. Distinguishes a missing extractor and an unreadable file from 'no text'."""
+    if ext == ".pdf":
         try:
             from pypdf import PdfReader
         except ImportError:
-            raise ValueError("PDF reading is not installed on this server. Please upload a .txt or .docx file.")
-        return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(data)).pages)
-    if name.endswith(".docx"):
+            raise IntakeError("extractor_unavailable") from None
+        try:
+            return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(data)).pages)
+        except Exception:                   # corrupt, truncated or encrypted: pypdf raises many types
+            raise IntakeError("unreadable_document") from None
+    if ext == ".docx":
         try:
             import docx
         except ImportError:
-            raise ValueError("DOCX reading is not installed on this server. Please upload a .txt file.")
-        return "\n".join(p.text for p in docx.Document(io.BytesIO(data)).paragraphs)
+            raise IntakeError("extractor_unavailable") from None
+        try:
+            return "\n".join(p.text for p in docx.Document(io.BytesIO(data)).paragraphs)
+        except Exception:
+            raise IntakeError("unreadable_document") from None
     return data.decode("utf-8", errors="replace")
+
+
+def extract_text(filename: str, data: bytes) -> str:
+    """Legacy /welcome entry point: plain ValueError messages for the page."""
+    try:
+        return _extract(Path((filename or "").lower()).suffix, data)
+    except IntakeError as exc:
+        raise ValueError({"extractor_unavailable": "This file type cannot be read on this server. Please upload a .txt file.",
+                          }.get(exc.code, "This file could not be read. Please upload a different file.")) from None
 
 
 # ----------------------------------------------------------------------------- private storage
@@ -179,10 +194,8 @@ def save_upload(person: str, filename: str, data: bytes, kind: Literal["cv", "le
     if len(data) > MAX_UPLOAD_BYTES:
         raise IntakeError("too_large")
     sha = hashlib.sha256(data).hexdigest()
-    try:
-        text = extract_text(filename, data)
-    except Exception:                       # unreadable or scanned: kept, but propose() will refuse it
-        text = ""
+    text = _extract(ext, data)              # refused here, so the person hears the true reason at upload time;
+                                            # a document that parses but has no text is kept and refused by propose()
     root = _root(person)
     with _locked(person):
         _write_private(root / "uploads" / (sha + ext), data)

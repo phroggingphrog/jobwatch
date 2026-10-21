@@ -19,11 +19,6 @@ Prepared month-end journals
 Education
 Diploma of Accounting, Example College, 2020
 """
-# one empty page, no text objects: nothing to extract
-BLANK_PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-             b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
-
-
 class FakeLLM:
     """LLM over a fake transport; .reply() sets the next JSON answer, .bodies keeps what was sent."""
     def __init__(self):
@@ -163,11 +158,67 @@ def test_prompt_rules_and_numbered_lines(person, fake_llm, upload_id):
     assert 'L6: Reconciled supplier ledgers weekly' in user
 
 
+def _pdf_with_text(lines):
+    """A minimal valid one-page PDF whose content stream draws each line (so pypdf can extract it)."""
+    stream = "BT /F1 12 Tf 14 TL 20 180 Td " + " ".join(f"({l}) Tj T*" for l in lines) + " ET"
+    objs = ["<</Type/Catalog/Pages 2 0 R>>", "<</Type/Pages/Kids[3 0 R]/Count 1>>",
+            "<</Type/Page/Parent 2 0 R/MediaBox[0 0 400 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>",
+            f"<</Length {len(stream)}>>stream\n{stream}\nendstream", "<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>"]
+    out, offs = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        out += f"{i} 0 obj{o}endobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode() + b"".join(f"{o:010d} 00000 n \n".encode() for o in offs)
+    return out + f"trailer<</Size {len(objs) + 1}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n".encode()
+
+
+def _docx(lines):
+    import io, docx
+    d = docx.Document()
+    for l in lines:
+        d.add_paragraph(l)
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+
 def test_scanned_pdf_has_no_text(person, fake_llm):
-    upload = intake.save_upload(person, 'scan.pdf', BLANK_PDF, 'cv')
+    upload = intake.save_upload(person, 'scan.pdf', _pdf_with_text([]), 'cv')        # parses fine, holds no text
     with pytest.raises(intake.IntakeError, match='no_extractable_text'):
         intake.propose(person, [upload['upload_id']], fake_llm)
     assert fake_llm.bodies == []                      # nothing was sent to the model
+
+
+def test_text_pdf_is_extracted_and_reaches_the_model(person, fake_llm):
+    up = intake.save_upload(person, 'cv.pdf', _pdf_with_text(['Alex Example', 'Reconciled supplier ledgers weekly']), 'cv')
+    fake_llm.reply({'facts': [fact('experience', 'Ledgers', 'evidence', [{'line': 2, 'quote': 'Reconciled supplier ledgers weekly'}])]})
+    proposal = intake.propose(person, [up['upload_id']], fake_llm)
+    assert 'L2: Reconciled supplier ledgers weekly' in fake_llm.bodies[0]['messages'][1]['content']
+    assert proposal.facts[0].basis == 'evidence'
+
+
+def test_docx_is_extracted_and_reaches_the_model(person, fake_llm):
+    up = intake.save_upload(person, 'cv.docx', _docx(['Alex Example', 'Prepared month-end journals']), 'cv')
+    intake.propose(person, [up['upload_id']], fake_llm)
+    assert 'L2: Prepared month-end journals' in fake_llm.bodies[0]['messages'][1]['content']
+
+
+@pytest.mark.parametrize('name', ['cv.pdf', 'cv.docx'])
+def test_corrupt_document_is_unreadable_not_empty(person, name):
+    with pytest.raises(intake.IntakeError, match='unreadable_document'):
+        intake.save_upload(person, name, b'this is not a document', 'cv')
+    assert not (users.user_dir(person) / 'intake' / 'uploads.json').exists()      # nothing was kept
+
+
+@pytest.mark.parametrize('name,module', [('cv.pdf', 'pypdf'), ('cv.docx', 'docx')])
+def test_missing_extractor_is_reported_distinctly(person, monkeypatch, name, module):
+    import sys
+    monkeypatch.setitem(sys.modules, module, None)          # makes `import <module>` raise ImportError
+    with pytest.raises(intake.IntakeError, match='extractor_unavailable'):
+        intake.save_upload(person, name, b'%PDF-1.4 anything', 'cv')
+    with pytest.raises(ValueError):                         # the legacy page still gets a readable message
+        intake.extract_text(name, b'x')
 
 
 def test_unknown_upload_and_proposal_ids(person, fake_llm):
