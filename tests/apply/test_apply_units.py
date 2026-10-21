@@ -119,6 +119,20 @@ def test_verifier_derived_and_framing(profile):
                    "c20": "framing_outside_letter"}
 
 
+def test_verifier_rejects_trivial_spans_overclaimed_years_and_unparsable_results(profile):
+    from datetime import datetime
+    y = datetime.now().year - 2022
+    d = fake_draft(profile, with_invented=False)
+    d["cv"]["experience"][0]["bullets"][0]["key_span"] = "the"                  # a stop word is not a quote of the evidence
+    d["letter"]["paragraphs"][1][1]["derivation"]["result"] = str(y + 1)        # one year more than the dates give
+    d["letter"]["paragraphs"][1][1]["text"] = f"I have worked in my current accounts role for {y + 1} years."
+    d["letter"]["paragraphs"][1].append({**d["letter"]["paragraphs"][1][1], "id": "c30", "text": "About 1.2.3 years here.",
+                                         "derivation": {**d["letter"]["paragraphs"][1][1]["derivation"], "result": "1.2.3"}})
+    _, rep = _verify(profile, d)                                                # must not raise
+    got = {r["id"]: r["reason"] for r in rep["removed"]}
+    assert got["c1"] == "missing_key_span" and got["c11"] == "derivation_mismatch" and got["c30"] == "derivation_unverifiable"
+
+
 def test_verifier_headings_come_from_evidence_only(profile):
     d = fake_draft(profile, with_invented=False)
     d["cv"]["experience"][1]["role_ids"] = ["made.up.id"]

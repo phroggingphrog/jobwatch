@@ -154,7 +154,7 @@ class ClaimVerifier:
         allowed_nums = set(_numbers(cited_norm))
         if tier == "stated":
             span = norm(claim.get("key_span") or "")
-            if len(span) < 3:
+            if len(span) < 8 or len(span.split()) < 2:     # "the" matches almost any evidence; the prompt asks for 3-8 words
                 return "missing_key_span"
             if span not in cited_norm:
                 return "key_span_not_in_evidence"
@@ -169,11 +169,15 @@ class ClaimVerifier:
             res_nums = _numbers(result)
             if len(res_nums) != 1:
                 return "derivation_unverifiable"
-            value = int(float(next(iter(res_nums))))
+            try:
+                value = int(float(next(iter(res_nums))))
+            except ValueError:                              # "1.2.3": not a number, so not verifiable
+                return "derivation_unverifiable"
             method = str(d.get("method") or "")
             if method == "years_between":
                 calc = _years_between([self.ev[i]["text"] for i in inputs], self.now_year)
-                if calc is None or abs(calc - value) > 1:
+                # whole-year dates can overstate tenure by under a year, never understate it: claim calc or calc-1, not more
+                if calc is None or not calc - 1 <= value <= calc:
                     return "derivation_mismatch"
             elif method == "count":
                 if value != len(inputs):
