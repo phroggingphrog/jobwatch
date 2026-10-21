@@ -308,6 +308,20 @@ def test_jobspy_site_errors_captured():
     assert ctx.errors and "429" in ctx.errors[0] and "Google" in ctx.errors[0]
 
 
+def test_failed_sites_do_not_count_as_origins():
+    import logging
+
+    def blocked(**kw):
+        logging.getLogger("JobSpy:Google").error("Google response status code 429")
+        return pd.DataFrame([])
+
+    ctx = make_ctx(FakeHttp({}), searches={"jobspy": {"searches": ["x"]}})
+    jobspy_src.collect(ctx, scrape=blocked)
+    assert ctx.errors and not ctx.origins
+    ctx2 = make_ctx(FakeHttp({"seek.com.au": 404}), searches={"seek": {"keywords": ["x"]}})
+    assert seek.collect(ctx2) == [] and ctx2.errors and not ctx2.origins
+
+
 def test_techone_jobs_without_an_apply_url_get_distinct_urls():
     from jobwatch.collectors import ats_techone
     data = {"DataSet": [{"JOBID": "11", "TITLE": "Rates Officer"}, {"JOBID": "12", "TITLE": "Payroll Officer"},
