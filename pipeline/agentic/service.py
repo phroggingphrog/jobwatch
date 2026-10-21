@@ -675,13 +675,13 @@ UNREADABLE_TRIES, UNREADABLE_WAIT_H = 3, 12
 def _unreadable_backoff(conn, pid, now=None):
     """True when the last UNREADABLE_TRIES runs of this posting all failed to read the page and the newest is under
     UNREADABLE_WAIT_H old: it is left alone for now so the run time goes to ads that can be read (2026-10-18: five
-    dead PageUp links cost a run every 20 minutes). A different outcome, or the wait passing, brings it back."""
-    rows = conn.execute('SELECT reason, json_extract(checkpoint_json,\'$.job_deadline\') FROM agentic_runs '
-                        'WHERE posting_id=? ORDER BY rowid DESC LIMIT ?', (pid, UNREADABLE_TRIES)).fetchall()
+    dead PageUp links cost a run every 20 minutes). A different outcome, or the wait passing, brings it back.
+    Counted in agentic_activity: agentic_runs keeps one row per run_key, so a re-claim never adds a row there."""
+    rows = conn.execute("SELECT reason,at FROM agentic_activity WHERE posting_id=? AND event='finished' "
+                        'ORDER BY id DESC LIMIT ?', (pid, UNREADABLE_TRIES)).fetchall()
     if len(rows) < UNREADABLE_TRIES or any(r[0] not in UNREADABLE for r in rows):
         return False
-    newest = rows[0][1]
-    return newest is not None and (now or time.time()) - float(newest) < UNREADABLE_WAIT_H * 3600
+    return (now or time.time()) - float(rows[0][1]) < UNREADABLE_WAIT_H * 3600
 
 
 def _target_first(conn, config, pending):

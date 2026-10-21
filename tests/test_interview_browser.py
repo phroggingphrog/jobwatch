@@ -304,10 +304,13 @@ def test_same_host_redirect_is_handed_to_the_browser_other_hosts_are_not():
 def test_unreadable_backoff_after_three_same_failures():
     import sqlite3
     from pipeline.agentic.service import _unreadable_backoff
+    from pipeline.agentic.store import AgenticStore
     c=sqlite3.connect(':memory:')
-    c.execute('create table agentic_runs(run_key,posting_id,status,reason,checkpoint_json)')
-    def add(reason,deadline):c.execute('insert into agentic_runs values(?,?,?,?,?)',('k',1,'held',reason,'{"job_deadline":%s}'%deadline))
-    for _ in range(2):add('posting_unavailable',1000)
+    AgenticStore(c).ensure()                                # the real schema: agentic_runs.run_key is the primary key
+    # A re-claim of the same run_key updates its one agentic_runs row, so attempts are counted in the activity log.
+    c.execute("insert into agentic_runs(run_key,posting_id,status,reason) values('k',1,'held','posting_unavailable')")
+    def add(reason,at,event='finished'):c.execute('insert into agentic_activity(run_key,posting_id,event,at,reason) values(?,?,?,?,?)',('k',1,event,at,reason))
+    for _ in range(2):add('posting_unavailable',1000);add(None,1000,'started')
     assert not _unreadable_backoff(c,1,now=1500)            # only 2 failures
     add('posting_unavailable',1000)
     assert _unreadable_backoff(c,1,now=1500)                # 3 in a row, recent
