@@ -424,14 +424,16 @@ def test_unreadable_artifacts_are_skipped_and_counted(frozen, monkeypatch):
     path = Path(frozen.conn.execute("SELECT a.path FROM agentic_artifacts a JOIN agentic_runs r ON r.run_key=a.run_key "
                                     "WHERE r.posting_id=43 AND a.kind='evaluation'").fetchone()[0])
     path.write_bytes(path.read_bytes() + b' ')
+    monkeypatch.setattr(baseline, '_utcnow', lambda: '2030-01-01T00:00:00+00:00')
     b = baseline.freeze_baseline(frozen.ro, frozen.config)
     assert len(b.case_ids) == 2 and b.summary['skipped'] == {'artifact_invalid': 1}
     frozen.conn.execute("INSERT INTO agentic_runs(run_key,posting_id,status) VALUES(?,?,?)", ('a' * 64, 99, 'new'))
     frozen.conn.commit()
-    with pytest.raises(AgenticError) as err:                 # same content in the same second is the same baseline
+    with pytest.raises(AgenticError) as err:                 # same content at the same fixed second: same baseline id
         baseline.freeze_baseline(frozen.ro, frozen.config)
     assert _code(err) == 'baseline_exists'
-    monkeypatch.setattr(baseline, '_utcnow', lambda: '2030-01-01T00:00:00+00:00')
+    assert [p.name for p in (users.user_dir() / 'baselines').iterdir()] == [b.baseline_id]   # no .staging-* left
+    monkeypatch.setattr(baseline, '_utcnow', lambda: '2030-01-01T00:00:01+00:00')
     other = baseline.freeze_baseline(frozen.ro, frozen.config)
     assert other.summary['skipped'] == {'artifact_invalid': 1, 'no_evaluation': 1}
 
