@@ -4,11 +4,13 @@ A baseline freezes the live gate's inputs and decisions for a set of real postin
 be compared against it. The first sections hold the data models, the gate-version digest, the grouping that
 keeps related postings together and the review tags. The last section freezes a person's stored pipeline
 records into a hash-verified folder and loads it back. Freezing reads the database and the live profile and
-calls no model.
+calls no model. The final section holds the owner's labels, the only part of a baseline that changes after it
+is frozen; only the owner's own command writes them.
 """
 from __future__ import annotations
 
 import contextlib
+import fcntl
 import hashlib
 import importlib.util
 import json
@@ -21,15 +23,15 @@ import subprocess
 from collections.abc import Iterable, Iterator, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field, ValidationError, field_validator
 
 from jobwatch import users
 from jobwatch.apply import paths as apaths
 from jobwatch.apply.paths import ensure_dir, pin_profile_dir, safe_write_bytes
 from jobwatch.candidate import intake
-from jobwatch.candidate._private_io import read_profile_source
+from jobwatch.candidate._private_io import read_profile_source, read_regular_file
 from jobwatch.candidate.contracts import CandidateError, digest
 from jobwatch.candidate.evidence import _ALLOWED, _MAX_SOURCE_BYTES, bundle_from_contents, snapshot_evidence
 from jobwatch.candidate.policy import default_policy
@@ -774,3 +776,133 @@ def freeze_baseline(conn: sqlite3.Connection, config, *, posting_ids: list[int] 
         shutil.rmtree(staging, ignore_errors=True)
         raise
     return record
+
+
+# --------------------------------------------------------------------------- owner labels
+#
+# `baselines/<id>/labels.jsonl` is the one mutable file of a baseline: one JSON line per label, append only, the
+# newest line per case wins. It is outside `content_sha256`, so labelling never invalidates a baseline. Only the
+# owner's command-line tool calls `label_case` and `write_label`; no API, chat or tool surface imports this module.
+
+_LABELS_FILE = 'labels.jsonl'
+_LABELS_LOCK = 'labels.lock'
+_MAX_LABELS_BYTES = 16 * 1024 * 1024
+_NOTE_LIMIT = 2000
+
+
+class OwnerLabel(StrictFrozen):
+    case_id: str
+    actor: Literal['owner']
+    suitable: bool | None = None
+    relevance: int | None = Field(default=None, ge=0, le=3)
+    exclusion_violation: bool | None = None
+    note: str = Field(default='', max_length=_NOTE_LIMIT)
+    labelled_at: str
+    tags: tuple[str, ...] = ()   # owner-added, each one of TAGS
+
+    @field_validator('tags')
+    @classmethod
+    def _known_tags(cls, tags: tuple[str, ...]) -> tuple[str, ...]:
+        if any(tag not in TAGS for tag in tags):
+            raise ValueError('unknown tag')
+        return tags
+
+
+def _labels_invalid() -> AgenticError:
+    return AgenticError('labels_invalid')
+
+
+def _parse_labels(raw: bytes) -> list[OwnerLabel]:
+    """Every line, in order. A line that is not a valid owner label is an error, never skipped or repaired."""
+    if not raw:
+        return []
+    if not raw.endswith(b'\n'):
+        raise _labels_invalid()
+    labels = []
+    for line in raw[:-1].split(b'\n'):
+        try:
+            value = json.loads(line.decode('utf-8'))
+            if type(value) is not dict or value.get('actor') != 'owner':
+                raise ValueError
+            labels.append(OwnerLabel.model_validate(value))
+        except (ValueError, ValidationError):   # bad UTF-8, bad JSON and a failed model are all ValueErrors
+            raise _labels_invalid() from None
+    return labels
+
+
+def _read_labels_file(folder: Path) -> bytes:
+    try:
+        return read_regular_file(folder / _LABELS_FILE, _MAX_LABELS_BYTES)
+    except FileNotFoundError:
+        return b''
+    except (OSError, ValueError):   # a symlink, a non-regular file or an oversize file
+        raise _labels_invalid() from None
+
+
+def read_labels(baseline_id: str) -> list[OwnerLabel]:
+    """Every label of the baseline in append order. No file is no labels; nothing is imputed."""
+    return _parse_labels(_read_labels_file(_baseline_dir(baseline_id)))
+
+
+def latest_labels(labels: Iterable[OwnerLabel]) -> dict[str, OwnerLabel]:
+    """The last label per case, given labels in append order."""
+    latest: dict[str, OwnerLabel] = {}
+    for label in labels:
+        latest[label.case_id] = label
+    return latest
+
+
+@contextlib.contextmanager
+def _labels_locked(folder: Path) -> Iterator[None]:
+    """One writer at a time per baseline. The lock is released when the file is closed, on any exit."""
+    fd = os.open(folder / _LABELS_LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def write_label(baseline_id: str, label: OwnerLabel) -> None:
+    """Append one owner label. Human command-line use only: nothing the agent can reach calls this."""
+    if getattr(label, 'actor', None) != 'owner':
+        raise AgenticError('owner_required')
+    folder = _baseline_dir(baseline_id)
+    case_file = folder / 'cases' / f'{label.case_id}.json'
+    if not _CASE_ID.fullmatch(label.case_id) or case_file.is_symlink() or not case_file.is_file():
+        raise AgenticError('unknown_case')
+    line = _canonical(label.model_dump(mode='json')) + b'\n'
+    with _labels_locked(folder):
+        existing = _read_labels_file(folder)
+        _parse_labels(existing)   # never build on a file that is already corrupt
+        safe_write_bytes(folder / _LABELS_FILE, existing + line)
+
+
+def label_case(baseline_id: str, case_id: str, *, actor: Literal['owner'], suitable: bool | None = None,
+               relevance: int | None = None, exclusion_violation: bool | None = None, note: str = '',
+               tags: tuple[str, ...] = ()) -> OwnerLabel:
+    """Validate and append the owner's label for one case. Checks run in a fixed order: owner_required,
+    empty_label, invalid_tag, invalid_label, then the baseline and case checks of `write_label`."""
+    if actor != 'owner':
+        raise AgenticError('owner_required')
+    if suitable is None and relevance is None and exclusion_violation is None and not tags:
+        raise AgenticError('empty_label')   # a note alone is not a judgment
+    if type(tags) not in (tuple, list) or any(type(tag) is not str or tag not in TAGS for tag in tags):
+        raise AgenticError('invalid_tag')
+    if ((suitable is not None and type(suitable) is not bool)
+            or (exclusion_violation is not None and type(exclusion_violation) is not bool)
+            or (relevance is not None and (type(relevance) is not int or not 0 <= relevance <= 3))
+            or type(note) is not str or len(note) > _NOTE_LIMIT):
+        raise AgenticError('invalid_label')
+    label = OwnerLabel(case_id=case_id, actor='owner', suitable=suitable, relevance=relevance,
+                       exclusion_violation=exclusion_violation, note=note, labelled_at=_utcnow(),
+                       tags=tuple(dict.fromkeys(tags)))
+    write_label(baseline_id, label)
+    return label
+
+
+def effective_tags(case: FrozenCase, labels: Mapping[str, OwnerLabel]) -> tuple[str, ...]:
+    """The case's own tags plus the ones the owner added, in contract order."""
+    label = labels.get(case.case_id)
+    wanted = set(case.tags) | set(label.tags if label is not None else ())
+    return tuple(tag for tag in TAGS if tag in wanted)
