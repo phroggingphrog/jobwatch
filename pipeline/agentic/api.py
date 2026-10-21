@@ -354,7 +354,36 @@ def main(argv=None):
     parser.add_argument('--backup', metavar='PATH', help='Make a consistent private SQLite backup and exit')
     parser.add_argument('--evaluate-run', metavar='RUN_ID', help='Evaluate a local run tool trajectory and exit (dev extra)')
     parser.add_argument('--expected-tools', nargs='*', default=[])
+    parser.add_argument('--matching-comparison', metavar='PRIVATE_JSON', help='Compare saved, owner-reviewed matcher outputs offline; no models')
+    parser.add_argument('--blind-output-dir', metavar='NEW_PRIVATE_DIR', help='Export anonymized matching packet and separate arm key instead of scoring')
     args = parser.parse_args(argv)
+    if args.blind_output_dir and not args.matching_comparison:
+        parser.error('--blind-output-dir requires --matching-comparison')
+    if args.matching_comparison:
+        from pipeline.agentic.evaluation import blind_matching_packet, compare_matching_runs
+        import secrets
+        try:
+            root = users.user_dir(args.person).resolve()
+            source = Path(args.matching_comparison).expanduser().resolve()
+            source.relative_to(root)
+            if source.stat().st_size > 32 * 1024 * 1024:
+                raise ValueError
+            raw = json.loads(source.read_text())
+            if args.blind_output_dir:
+                target = Path(args.blind_output_dir).expanduser().resolve()
+                target.relative_to(root)
+                packet, key = blind_matching_packet(raw, seed=secrets.randbits(128))
+                target.mkdir(mode=0o700, parents=False, exist_ok=False)
+                for name, value in (('packet.json', packet), ('private-arm-key.json', key)):
+                    fd = os.open(target / name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(fd, 'w') as handle:
+                        json.dump(value, handle, ensure_ascii=False, allow_nan=False)
+                print('Private review packet and separate arm key created. Keep the key hidden during review.')
+            else:
+                print(json.dumps(compare_matching_runs(raw), allow_nan=False))
+        except Exception:
+            raise SystemExit('Matching comparison unavailable; check private paths, paired snapshots and complete owner labels.') from None
+        return
     if args.backup:
         import sqlite3
         source = users.user_dir(args.person) / 'career-chat' / 'state.sqlite'

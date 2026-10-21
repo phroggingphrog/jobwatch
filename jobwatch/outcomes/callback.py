@@ -1,7 +1,9 @@
 """Callback rate per arm (PLAN-apply D9): Beta-Binomial with prior Beta(1, 15).
 
 successes = applications that reached assessment/interview/offer (now or ever, so a later
-rejection still counts as a callback); trials = applications that were applied.
+rejection still counts as a callback); trials = explicitly resolved applications.
+Pending submissions are censored. A rejected unsubmitted draft is not a trial.
+This describes the resolved subset, not an unbiased forecast of eventual callbacks.
 Posterior Beta(1 + s, 15 + n - s): mean and 95% highest-density interval. The HDI uses scipy when
 installed, else 200k draws from numpy with a fixed seed (deterministic).
 """
@@ -9,7 +11,6 @@ from __future__ import annotations
 
 PRIOR_A, PRIOR_B = 1.0, 15.0
 SUCCESS = ("assessment", "interview", "offer")
-APPLIED = ("applied", "assessment", "interview", "offer", "rejected")
 SEED, DRAWS = 20261006, 200_000
 
 
@@ -44,8 +45,18 @@ def posterior(successes: int, trials: int) -> dict:
     return {"successes": successes, "n": trials, "mean": a / (a + b), "hdi": (lo, hi), "a": a, "b": b}
 
 
+def observed_outcome(status, applied_at, history):
+    """One shared classification for the outcome inventory and callback model."""
+    reached = set(history) | {status}
+    if not (applied_at or 'applied' in reached or reached & set(SUCCESS)):
+        return None
+    if reached & set(SUCCESS):
+        return 'callback'
+    return 'no_callback' if status == 'rejected' else 'pending'
+
+
 def callback_stats(conn) -> dict:
-    """{arm: posterior} plus '_all'. Only applications that were applied count."""
+    """{arm: resolved-subset posterior and censored counts} plus '_all'."""
     rows = conn.execute(
         """SELECT a.id, COALESCE(a.arm, m.arm, '?') AS arm, a.status, a.applied_at
            FROM applications a LEFT JOIN matches m ON m.id=a.match_id""").fetchall()
@@ -55,29 +66,34 @@ def callback_stats(conn) -> dict:
         reached.setdefault(r[0], set()).add(r[1])
     per: dict[str, list[int]] = {}
     for r in rows:
-        hist = reached.get(r["id"], set()) | {r["status"]}
-        if not (r["applied_at"] or hist & set(APPLIED)):
+        outcome = observed_outcome(r['status'], r['applied_at'], reached.get(r['id'], set()))
+        if outcome is None:
             continue
-        s = 1 if hist & set(SUCCESS) else 0
-        for key in (r["arm"], "_all"):
-            agg = per.setdefault(key, [0, 0])
-            agg[0] += s
-            agg[1] += 1
-    out = {arm: posterior(s, n) for arm, (s, n) in sorted(per.items())}
-    if "_all" not in out:
-        out["_all"] = posterior(0, 0)
+        for key in {r['arm'], '_all'}:
+            agg = per.setdefault(key, [0, 0, 0])
+            agg[0] += outcome == 'callback'
+            agg[1] += outcome == 'no_callback'
+            agg[2] += outcome == 'pending'
+    per.setdefault('_all', [0, 0, 0])
+    out = {}
+    for arm, (successes, failures, pending) in sorted(per.items()):
+        out[arm] = {**posterior(successes, successes + failures), 'pending': pending,
+            'applied': successes + failures + pending, 'resolved_without_callback': failures,
+            'observation_rule': 'explicit_callback_or_rejection', 'prediction_available': False}
     return out
 
 
 def render_lines(stats: dict) -> list[str]:
-    lines = ["Callback rate (Beta-Binomial, prior Beta(1,15); callback = assessment/interview/offer):"]
+    lines = ["Callbacks among resolved applications (Beta(1,15) prior; pending excluded; not a forecast):"]
     allp = stats.get("_all")
     if not allp or allp["n"] == 0:
-        lines.append(f"  no applied applications yet (prior mean {PRIOR_A / (PRIOR_A + PRIOR_B):.3f})")
+        lines.append(f"  no resolved outcomes yet; pending={allp.get('pending', 0) if allp else 0} "
+                     f"(prior mean {PRIOR_A / (PRIOR_A + PRIOR_B):.3f})")
         return lines
     for arm, p in stats.items():
         name = "all arms" if arm == "_all" else arm
         lo, hi = p["hdi"]
         lines.append(f"  {name}: {p['successes']}/{p['n']} → mean {p['mean']:.3f}, "
-                     f"95% HDI [{lo:.3f}, {hi:.3f}] (n={p['n']}{', small n' if p['n'] < 10 else ''})")
+                     f"95% HDI [{lo:.3f}, {hi:.3f}] (resolved={p['n']}, pending={p.get('pending', 0)}"
+                     f"{', small n' if p['n'] < 10 else ''})")
     return lines

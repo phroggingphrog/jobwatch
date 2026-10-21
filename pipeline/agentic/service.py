@@ -43,7 +43,7 @@ RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
 MIN_READ_SECONDS = 20   # less than this left in the batch: do not start another job (a Seek page read needs 7-15 s)
-IMPLEMENTATION_VERSION = 'deepagents-0.7.23-evidence-matching-20261021'
+IMPLEMENTATION_VERSION = 'deepagents-0.7.23-hybrid-outcomes-20261021'
 
 
 def settings(config) -> dict:
@@ -77,11 +77,18 @@ def _config(config):
               'reviewer_model': pick.get('reviewer') or raw.get('reviewer_model', DEFAULT_MODEL),
               'answer_model': pick.get('answers') or raw.get('answer_model', DEFAULT_MODEL),
               'credential_index': credential_index,
+              'embedding_model': raw.get('embedding_model'),
               'research_enabled': raw.get('research_enabled', False),
               'job_token_ceiling': int(raw.get('job_token_ceiling', 250_000)),
               'batch_token_ceiling': int(raw.get('batch_token_ceiling', 2_000_000)),
               'job_seconds': min(900, float(raw.get('job_seconds', 900))),
               'batch_seconds': min(1800, float(raw.get('batch_seconds', 1800)))}
+    if values['embedding_model'] is not None:
+        from pipeline.agentic.execution import _PAID
+        model = values['embedding_model']
+        if (type(model) is not str or not _PAID.fullmatch(model)
+                or any(word in model.lower() for word in ('free', 'stealth', 'opus', 'astra'))):
+            raise AgenticError('invalid_configuration')
     for name in ('occupation_reference_path', 'occupation_mappings_path'):
         value = raw.get(name)
         if value is not None and (type(value) is not str or not value.strip()):
@@ -435,7 +442,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             evaluation = validate_model_payload(AgenticEvaluation, saved_evaluation) if saved_evaluation is not None else evaluate_job(
                 key, ad_text, budget, llm, evidence_bundle=bundle, candidate_analysis=candidate,
                 model=cfg['evaluator_model'], research=_research(posting, budget, cfg),
-                commute_km=km_from_home(posting.get('location') or ''), model_insights=models)
+                commute_km=km_from_home(posting.get('location') or ''), model_insights=models,
+                embedding_model=cfg['embedding_model'])
             decision = decide(evaluation, ad_text=ad_text, title=posting['title'], policy=pol,
                               captured_complete=text_kind == 'full', expected_run_key=key, evidence_bundle=bundle,
                               commute_km=km_from_home(posting.get('location') or ''))

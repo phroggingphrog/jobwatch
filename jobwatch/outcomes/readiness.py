@@ -1,5 +1,5 @@
 """Observed outcome inventory; no-response cases are right-censored, not failures."""
-from .callback import posterior, SUCCESS
+from .callback import posterior, observed_outcome
 
 
 def outcome_readiness(conn):
@@ -9,13 +9,12 @@ def outcome_readiness(conn):
     applied = successes = failures = pending = 0
     for row in conn.execute('SELECT id,status,applied_at FROM applications'):
         ident, status, at = row
-        reached = history.get(ident, set()) | {status}
-        # A local rejected/archived draft is not evidence of submission.
-        if not (at or 'applied' in reached or reached & set(SUCCESS)):
+        outcome = observed_outcome(status, at, history.get(ident, set()))
+        if outcome is None:
             continue
         applied += 1
-        if reached & set(SUCCESS): successes += 1
-        elif status == 'rejected': failures += 1
+        if outcome == 'callback': successes += 1
+        elif outcome == 'no_callback': failures += 1
         else: pending += 1
     resolved = successes + failures
     return {'status': 'untrained' if not resolved else 'descriptive_only',
