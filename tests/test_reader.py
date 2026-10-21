@@ -236,6 +236,19 @@ def test_review_pending_reads_stores_and_caches(world):
     assert again["pending"] == 0 and gw.calls == []                 # the cache: no new model call
 
 
+def test_changed_candidate_settings_make_redo_read_the_ad_again(world, tmp_path):
+    config, conn, add = world
+    add("Accounts Clerk")
+    gw = FakeGateway()
+    reader.review_pending(conn, config, llm=make_llm(gw), limit=10)
+    gw.calls.clear()
+    same = reader.review_pending(conn, config, llm=make_llm(gw), limit=10, redo=True)
+    assert same["skipped_same"] == 1 and gw.calls == []
+    (tmp_path / "profile" / "interests_and_criteria.yaml").write_text("target_roles:\n  not_wanted: [shop_retail]\n")
+    changed = reader.review_pending(conn, config, llm=make_llm(gw), limit=10, redo=True)
+    assert changed["skipped_same"] == 0 and changed["reviewed"] == 1 and len(gw.calls) == 1
+
+
 def test_sponsored_ad_is_hidden_without_a_model_call(world):
     config, conn, add = world
     pid = add("Admin Assistant", source="seek", desc="short", raw={"displayType": "promoted", "isFeatured": True})

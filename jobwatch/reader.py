@@ -1241,9 +1241,10 @@ def build_messages(posting, text: str, kind: str, profile: str, max_chars: int) 
     return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]
 
 
-def content_hash(posting, text: str, model: str, profile: str = "") -> str:
+def content_hash(posting, text: str, model: str, profile: str = "", settings: str = "") -> str:
     h = hashlib.sha256()
-    for part in (str(PROMPT_VERSION), model, profile, posting["title"] or "", posting["company"] or "", text or ""):
+    for part in (str(PROMPT_VERSION), model, profile, posting["title"] or "", posting["company"] or "", text or "",
+                 settings):                     # settings_block(): not-wanted kinds, programs, work rights are in the prompt too
         h.update(part.encode("utf-8", "replace"))
         h.update(b"\x00")
     return h.hexdigest()
@@ -1431,6 +1432,7 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
             stats["stopped"] = f"{host}: {fails[host]} failed fetches in a row ({adtext.last_status()})"
         return text, kind
 
+    prompt_settings = settings_block()
     leak = privacy_leak(profile)                # checked once: nothing is sent while the profile text looks like contact data
     if leak:
         log.warning("reader: the profile text failed the privacy check; no ad will be sent to the model")
@@ -1448,7 +1450,7 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
                 text, kind = (row["description"] or "").strip(), "teaser"     # a paid ad is hidden without a model call
             else:
                 text, kind = prepare(row)
-            chash = content_hash(row, text, cfg["model"], profile)
+            chash = content_hash(row, text, cfg["model"], profile, prompt_settings)
             if row["old_hash"] == chash and row["old_ver"] == PROMPT_VERSION:
                 stats["skipped_same"] += 1
                 used += stats["fetched"] > fetched_before    # a page was requested for it: that is a spent slot
