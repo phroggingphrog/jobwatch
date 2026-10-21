@@ -255,3 +255,123 @@ def test_extract_text_is_shared_with_the_web_route():
     from jobwatch.web import onboarding_routes
     assert onboarding_routes.extract_text is intake.extract_text
     assert intake.extract_text('a.md', b'hello') == 'hello'
+
+
+# ----------------------------------------------------------------------------- corrections and answers
+@pytest.fixture
+def draft(person, fake_llm, upload_id):
+    fake_llm.reply({'facts': [fact('skill', 'Bookkeeping', 'inference')], 'questions': []})
+    return intake.propose(person, [upload_id], fake_llm)
+
+
+def test_edit_with_stale_revision_is_refused(person, draft):
+    after = intake.edit(person, draft.id, expected_revision=1, edits=[{'op': 'set', 'fact_id': 'f1', 'value': 'Payroll', 'basis': 'evidence'}])
+    assert after.revision == 2
+    with pytest.raises(intake.IntakeError) as err:
+        intake.edit(person, draft.id, expected_revision=1, edits=[{'op': 'remove', 'fact_id': 'f1'}])
+    assert err.value.code == 'proposal_changed'
+    assert intake.load_proposal(person, draft.id) == after
+
+
+def test_edit_set_remove_add(person, draft):
+    p = intake.edit(person, draft.id, expected_revision=1, edits=[
+        {'op': 'set', 'fact_id': 'f1', 'value': 'Payroll', 'basis': 'evidence'},
+        {'op': 'add', 'section': 'location', 'value': 'Perth'},
+        {'op': 'remove', 'fact_id': 'f2'}])
+    by_id = {f.id: f for f in p.facts}
+    assert by_id['f1'].value == 'Payroll' and by_id['f1'].actor == 'person' and by_id['f1'].sources == ()
+    assert by_id['f1'].basis == 'evidence' and by_id['f1'].note == 'stated by person'
+    added = [f for f in p.facts if f.section == 'location']
+    assert len(added) == 1 and added[0].actor == 'person' and added[0].id not in {'f1', 'f2'}
+    assert 'f2' not in by_id and len({f.id for f in p.facts}) == len(p.facts)
+
+
+@pytest.mark.parametrize('bad', [
+    {'op': 'set', 'fact_id': 'nope', 'value': 'x', 'basis': 'evidence'},
+    {'op': 'remove', 'fact_id': 'nope'}])
+def test_edit_unknown_fact_is_refused_and_nothing_changes(person, draft, bad):
+    with pytest.raises(intake.IntakeError) as err:
+        intake.edit(person, draft.id, expected_revision=1, edits=[{'op': 'add', 'section': 'location', 'value': 'Perth'}, bad])
+    assert err.value.code == 'fact_not_found'
+    assert intake.load_proposal(person, draft.id) == draft
+
+
+@pytest.mark.parametrize('bad', [
+    {'op': 'add', 'section': 'nonsense', 'value': 'x'}, {'op': 'add', 'section': 'location', 'value': ''},
+    {'op': 'set', 'fact_id': 'f1', 'value': 'x', 'basis': 'inference'}, {'op': 'explode'}, 'not a dict'])
+def test_invalid_edits_are_refused(person, draft, bad):
+    with pytest.raises(intake.IntakeError) as err:
+        intake.edit(person, draft.id, expected_revision=1, edits=[bad])
+    assert err.value.code == 'invalid_edit'
+    with pytest.raises(intake.IntakeError):
+        intake.edit(person, draft.id, expected_revision=1, edits=[])
+
+
+def test_answer_records_a_person_fact(person, draft):
+    qid = next(q.id for q in draft.questions if q.section == 'work_rights')
+    p = intake.answer(person, draft.id, expected_revision=1, question_id=qid, text='Citizen')
+    assert p.revision == 2 and qid not in {q.id for q in p.questions}
+    mine = [f for f in p.facts if f.section == 'work_rights']
+    assert len(mine) == 1 and mine[0].value == 'Citizen' and mine[0].actor == 'person'
+    assert mine[0].basis == 'evidence' and mine[0].sources == () and mine[0].note == 'stated by person'
+    assert len({f.id for f in p.facts}) == len(p.facts)
+    assert intake.load_proposal(person, draft.id) == p
+    with pytest.raises(intake.IntakeError) as err:
+        intake.answer(person, draft.id, expected_revision=2, question_id=qid, text='again')
+    assert err.value.code == 'question_not_found'
+    with pytest.raises(intake.IntakeError) as err:
+        intake.answer(person, draft.id, expected_revision=2, question_id='q99', text=' ')
+    assert err.value.code in ('question_not_found', 'invalid_edit')
+
+
+def test_person_facts_are_never_marked_parser(person, draft):
+    assert all(f.actor == 'parser' for f in draft.facts)
+    p = intake.edit(person, draft.id, expected_revision=1, edits=[
+        {'op': 'add', 'section': 'location', 'value': 'Perth'},
+        {'op': 'set', 'fact_id': 'f1', 'value': 'Payroll', 'basis': 'evidence'}])
+    assert {f.id: f.actor for f in p.facts if f.section in ('location', 'skill')} == {'f1': 'person', **{f.id: 'person' for f in p.facts if f.section == 'location'}}
+    assert all(f.actor == 'parser' for f in p.facts if f.section not in ('location', 'skill'))
+
+
+def test_confirmed_proposal_is_not_editable(person, draft):
+    intake.save_proposal(person, draft.model_copy(update={'status': 'confirmed'}))
+    with pytest.raises(intake.IntakeError) as err:
+        intake.edit(person, draft.id, expected_revision=1, edits=[{'op': 'remove', 'fact_id': 'f1'}])
+    assert err.value.code == 'proposal_not_draft'
+    with pytest.raises(intake.IntakeError) as err:
+        intake.answer(person, draft.id, expected_revision=1, question_id=draft.questions[0].id, text='x')
+    assert err.value.code == 'proposal_not_draft'
+    assert intake.load_proposal(person, draft.id).status == 'confirmed'
+
+
+def test_concurrent_edits_do_not_lose_updates(person, draft):
+    import threading
+    results = []
+    def go(n):
+        with users.use(person):
+            try:
+                results.append(intake.edit(person, draft.id, expected_revision=1, edits=[{'op': 'add', 'section': 'location', 'value': f'City{n}'}]))
+            except intake.IntakeError as exc:
+                results.append(exc.code)
+    threads = [threading.Thread(target=go, args=(n,)) for n in range(6)]
+    [t.start() for t in threads]; [t.join() for t in threads]
+    assert sum(isinstance(r, intake.Proposal) for r in results) == 1 and results.count('proposal_changed') == 5
+    final = intake.load_proposal(person, draft.id)
+    assert final.revision == 2 and sum(f.section == 'location' for f in final.facts) == 1
+
+
+def test_digest_is_deterministic_and_tracks_every_input(person, draft):
+    assert intake.digest(draft) == intake.digest(Proposal_copy(draft)) and len(intake.digest(draft)) == 64
+    base = intake.digest(draft)
+    fact0 = draft.facts[0]
+    changed = [
+        draft.model_copy(update={'revision': 2}), draft.model_copy(update={'base_version': 3}),
+        draft.model_copy(update={'uploads': draft.uploads + ('0' * 64,)}),
+        draft.model_copy(update={'facts': (fact0.model_copy(update={'value': 'other'}),) + draft.facts[1:]}),
+        draft.model_copy(update={'facts': draft.facts[1:]})]
+    assert len({base, *map(intake.digest, changed)}) == len(changed) + 1
+    assert intake.digest(draft.model_copy(update={'status': 'confirmed'})) == base      # status is not part of the digest
+
+
+def Proposal_copy(p):
+    return intake.Proposal.model_validate_json(p.model_dump_json())

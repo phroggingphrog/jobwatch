@@ -38,7 +38,8 @@ PROMPT_CHARS = 30000                       # per upload, as onboarding.build_pro
 EXTENSIONS = (".pdf", ".docx", ".txt", ".md")
 KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
-         "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document")
+         "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
+         "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -168,10 +169,10 @@ def _write_private(path: Path, data: bytes) -> None:
 
 
 @contextmanager
-def _locked(person: str):
-    """Serialises the uploads.json read-modify-write between concurrent requests."""
-    root = ensure_dir(_root(person))
-    fd = os.open(root / ".lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+def _locked(person: str, lock: str = ".lock", sub: str = ""):
+    """Serialises a read-modify-write between concurrent requests (uploads.json; one proposal)."""
+    root = ensure_dir(_root(person) / sub if sub else _root(person))
+    fd = os.open(root / lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield
@@ -338,3 +339,90 @@ def load_proposal(person: str, proposal_id: str) -> Proposal:
             read_regular_file(_root(person) / "proposals" / (proposal_id + ".json"), MAX_JSON_BYTES))
     except (FileNotFoundError, OSError, ValueError):
         raise IntakeError("proposal_not_found") from None
+
+
+# ----------------------------------------------------------------------------- corrections and answers
+_STATED = "stated by person"
+_MAX_EDITS = 100
+_MAX_VALUE = 4000
+
+
+def _new_id(facts) -> str:
+    return "f%d" % (1 + max((int(f.id[1:]) for f in facts if re.fullmatch(r"f\d+", f.id)), default=0))
+
+
+def _person_fact(fid: str, section: str, value, basis: Basis = Basis.EVIDENCE) -> ProfileFact:
+    # evidence from the person means "stated by the person": no document source, never actor 'parser'
+    return ProfileFact(id=fid, section=section, value=value if basis is Basis.EVIDENCE else "", basis=basis,
+                       sources=(), note=_STATED, actor="person")
+
+
+def _value(v):
+    ok = (isinstance(v, str) and v.strip() and len(v) <= _MAX_VALUE) or (isinstance(v, dict) and v and len(json.dumps(v)) <= _MAX_VALUE)
+    if not ok:
+        raise IntakeError("invalid_edit")
+    return v.strip() if isinstance(v, str) else v
+
+
+def _mutate(person: str, proposal_id: str, expected_revision: int, change) -> Proposal:
+    """load -> status/revision check -> change(proposal) -> write, all under the proposal's own lock."""
+    load_proposal(person, proposal_id)                 # validates the id before it names a lock file
+    with _locked(person, proposal_id + ".lock", "proposals"):
+        current = load_proposal(person, proposal_id)
+        if current.status != "draft":
+            raise IntakeError("proposal_not_draft")
+        if type(expected_revision) is not int or expected_revision != current.revision:
+            raise IntakeError("proposal_changed")
+        facts, questions = change(current)
+        updated = current.model_copy(update={"facts": tuple(facts), "questions": tuple(questions),
+                                             "revision": current.revision + 1})
+        save_proposal(person, updated)
+        return updated
+
+
+def edit(person: str, proposal_id: str, *, expected_revision: int, edits: list[dict]) -> Proposal:
+    """Apply the person's corrections atomically (all or none); one revision bump per call."""
+    if not isinstance(edits, list) or not edits or len(edits) > _MAX_EDITS:
+        raise IntakeError("invalid_edit")
+
+    def change(cur: Proposal):
+        facts = list(cur.facts)
+        for e in edits:
+            op = e.get("op") if isinstance(e, dict) else None
+            if op == "add":
+                if e.get("section") not in SECTIONS:
+                    raise IntakeError("invalid_edit")
+                facts.append(_person_fact(_new_id(facts), e["section"], _value(e.get("value"))))
+            elif op in ("set", "remove"):
+                i = next((i for i, f in enumerate(facts) if f.id == e.get("fact_id")), None)
+                if i is None:
+                    raise IntakeError("fact_not_found")
+                if op == "remove":
+                    del facts[i]
+                elif e.get("basis") != "evidence":      # only a statement by the person; inference is the parser's
+                    raise IntakeError("invalid_edit")
+                else:
+                    facts[i] = _person_fact(facts[i].id, facts[i].section, _value(e.get("value")))
+            else:
+                raise IntakeError("invalid_edit")
+        return facts, cur.questions
+    return _mutate(person, proposal_id, expected_revision, change)
+
+
+def answer(person: str, proposal_id: str, *, expected_revision: int, question_id: str, text: str) -> Proposal:
+    """Answer an open question: the question is removed from the open list and its section gets the
+    person's fact in place of the parser's 'unknown' placeholder (a later correction is an edit)."""
+    def change(cur: Proposal):
+        q = next((q for q in cur.questions if q.id == question_id), None)
+        if q is None:
+            raise IntakeError("question_not_found")
+        facts = [f for f in cur.facts if not (f.section == q.section and f.basis is Basis.UNKNOWN and f.actor == "parser")]
+        facts.append(_person_fact(_new_id(cur.facts), q.section, _value(text)))
+        return facts, [x for x in cur.questions if x.id != q.id]
+    return _mutate(person, proposal_id, expected_revision, change)
+
+
+def digest(proposal: Proposal) -> str:
+    """What the person is shown and approves: any change to facts, uploads, base_version or revision changes it."""
+    body = proposal.model_dump(mode="json", include={"facts", "uploads", "base_version", "revision"})
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
