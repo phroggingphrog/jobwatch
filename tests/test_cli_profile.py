@@ -30,41 +30,6 @@ def test_profile_adopt_refusal_exits_non_zero_with_the_code(tmp_path, monkeypatc
         assert intake.current_version("friend") is None
 
 
-def test_confirm_scope_prints_then_confirms(tmp_path, monkeypatch, capsys):
-    import json as _json
-    from conftest import confirm_discovery
-    from jobwatch.config import load_config
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
-    confirm_discovery(load_config(), "friend")
-    path = users.user_dir("friend") / "profile-versions" / "1" / "approved.json"
-    approved = _json.loads(path.read_text())
-    del approved["scope"], approved["scope_digest"]                  # a version approved before scopes existed
-    path.write_text(_json.dumps(approved))
-    assert cli.main(["--user", "friend", "profile", "confirm-scope"]) == 0
-    out = capsys.readouterr().out
-    digest = next(l.split(": ")[1] for l in out.splitlines() if l.startswith("scope_digest"))
-    assert "base_version: 1" in out and intake.discovery_scope("friend") is None
-    assert cli.main(["--user", "friend", "profile", "confirm-scope", "--base-version", "1", "--scope-digest", "0" * 64]) == 1
-    assert "scope_changed" in capsys.readouterr().err
-    assert cli.main(["--user", "friend", "profile", "confirm-scope", "--base-version", "1", "--scope-digest", digest]) == 0
-    assert "version 2" in capsys.readouterr().out and intake.discovery_scope("friend") is not None
-
-
-def test_confirm_scope_of_an_adopted_profile_is_refused_as_incomplete(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
-    with users.use("friend"):
-        (apaths.profile_dir() / "profile.yaml").write_text("candidate:\n  name: Synthetic\n")
-        (apaths.profile_dir() / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")
-    assert cli.main(["--user", "friend", "profile", "adopt"]) == 0
-    capsys.readouterr()
-    assert cli.main(["--user", "friend", "profile", "confirm-scope"]) == 0
-    digest = next(l.split(": ")[1] for l in capsys.readouterr().out.splitlines() if l.startswith("scope_digest"))
-    assert cli.main(["--user", "friend", "profile", "confirm-scope", "--base-version", "1", "--scope-digest", digest]) == 1
-    assert "profile_incomplete" in capsys.readouterr().err and intake.discovery_scope("friend") is None
-
-
 def _two_people(tmp_path, monkeypatch):
     from conftest import confirm_discovery
     from jobwatch.config import load_config

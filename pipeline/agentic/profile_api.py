@@ -47,11 +47,6 @@ class AnswerRequest(_Body):
     text: str = Field(max_length=4000)
 
 
-class ScopeConfirmRequest(_Body):
-    base_version: int
-    scope_digest: str = Field(max_length=128)
-
-
 class ConfirmRequest(_Body):
     proposal_digest: str = Field(max_length=128)
     scope_digest: str = Field(max_length=128)
@@ -123,18 +118,6 @@ def mount(app, require, get_config, llm_factory):
         # The scope token is the approval; actor is fixed here, never read from the body or from model text.
         n = call(principal.person, intake.confirm, proposal_id, proposal_digest=body.proposal_digest,
                  scope_digest=body.scope_digest, actor='person', config=get_config(principal.person))
-        return {'version': n}
-
-    @app.get(PREFIX + '/scope-confirmation')
-    def scope_confirmation(principal=Depends(read)):
-        # For a person with an approved version but no confirmed scope (e.g. adopted files): what discovery would cover.
-        result = call(principal.person, intake.scope_confirmation, get_config(principal.person))
-        return {**result, 'scope': result['scope'].model_dump(mode='json')}
-
-    @app.post(PREFIX + '/scope-confirm', status_code=201)
-    def scope_confirm(body: ScopeConfirmRequest, principal=Depends(approve)):
-        n = call(principal.person, intake.confirm_scope, base_version=body.base_version, scope_digest=body.scope_digest,
-                 actor='person', config=get_config(principal.person))
         return {'version': n}
 
     @app.get(PREFIX + '/')

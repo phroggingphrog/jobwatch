@@ -593,14 +593,92 @@ HTTP 200:
 }
 ```
 
-## 8. Scope confirmation for an adopted profile
+## 8. Onboarding an adopted profile
 
-A hand-made `profile/` is adopted once with `jobwatch --user <name> profile adopt` (version 1,
-no scope, so discovery stays off). This person's adopted files hold no structured facts, so the
-shown scope has an empty basis:
+A hand-made `profile/` is adopted once with `jobwatch --user <name> profile adopt`. That makes
+version 1 and protects the files from being overwritten, but it holds no confirmed facts and no
+scope, so it authorises nothing: discovery stays off. The owner turns it on by onboarding on top
+of that version, which is the same flow as above with `base_version` set to the current version.
+This section runs it for a second, invented person (`$SAM_TOKEN`, `$SAM_APPROVE_TOKEN`) whose
+`profile/` holds only a `profile.yaml` and a `master_resume.md`.
 
 ```bash
-curl -s https://jobwatch.example.invalid/api/agent/profile/scope-confirmation \
+curl -s https://jobwatch.example.invalid/api/agent/profile/ \
+  -H "Authorization: Bearer $SAM_TOKEN"
+```
+
+HTTP 200 (the adopted version: no facts, no scope):
+
+```json
+{
+  "actor": "person",
+  "adopted_files": ["master_resume.md", "profile.yaml"],
+  "adopted_from_files": true,
+  "confirmed_at": "2026-10-21T10:34:02+00:00",
+  "evidence_bundle_hash": "38a0a81e…",
+  "facts": [],
+  "file_sha256": {
+    "master_resume.md": "fca809f6…",
+    "profile.yaml": "6ff85f9e…"
+  },
+  "open_questions": [],
+  "proposal_id": null,
+  "schema": 1,
+  "uploads": [],
+  "version": 1
+}
+```
+
+The owner uploads a CV (step 1), or, in chat, offers the files already in `profile/`
+(`profile_start` with `use_existing_files`), then starts a proposal on version 1:
+
+```bash
+curl -s -X POST https://jobwatch.example.invalid/api/agent/profile/proposals \
+  -H "Authorization: Bearer $SAM_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"upload_ids": ["'"$UPLOAD"'"], "base_version": 1}'
+```
+
+HTTP 202: the pending draft, as in step 2, with `"base_version": 1`, the seven standing
+questions and `"status": "parsing"`. Answer the questions while it is read (step 3). When the
+parse ends, `GET /api/agent/profile/proposals/$PID` returns the merged draft (revision 2 here, no
+answers given), `"status": "draft"` and `"base_version": 1`:
+
+```json
+{
+  "id": "0b82bf28…",
+  "revision": 2,
+  "base_version": 1,
+  "uploads": ["56e9af35…"],
+  "facts": [
+    "... f1 to f7: the seven unknown-basis facts, as in step 2, omitted here",
+    {
+      "id": "f8",
+      "section": "experience",
+      "value": "Accounts Assistant, Ledger Co (2021-2023)",
+      "basis": "evidence",
+      "sources": [
+        {
+          "upload_sha256": "56e9af35…",
+          "line": 5,
+          "quote": "Ledger Co, Accounts Assistant, 2021 - 2023"
+        }
+      ],
+      "note": "",
+      "actor": "parser"
+    }
+  ],
+  "questions": ["... q1 to q7: the seven standing questions, still open, omitted here"],
+  "status": "draft",
+  "parse_error": ""
+}
+```
+
+Until it is confirmed the adopted version still authorises nothing. The confirmation shows the
+scope this draft would turn on (as in step 5):
+
+```bash
+curl -s https://jobwatch.example.invalid/api/agent/profile/proposals/$PID/confirmation \
   -H "Authorization: Bearer $SAM_TOKEN"
 ```
 
@@ -608,46 +686,39 @@ HTTP 200:
 
 ```json
 {
-  "base_version": 1,
+  "proposal_digest": "36e42238…",
   "scope": {
-    "basis": [],
+    "basis": ["Accounts Assistant, Ledger Co (2021-2023)"],
     "locations": [],
     "daily_assessments": 40,
     "daily_token_ceiling": 2000000
   },
-  "scope_digest": "1187ea0b…",
-  "authorises": [
-    "discovery",
-    "assessment"
-  ],
-  "does_not_authorise": [
-    "document_preparation",
-    "employer_messages",
-    "submission"
-  ]
+  "scope_digest": "f5fd5e3d…",
+  "authorises": ["discovery", "assessment"],
+  "does_not_authorise": ["document_preparation", "employer_messages", "submission"]
 }
 ```
 
-Confirming an empty basis is refused, because there would be nothing to search for:
+The owner confirms with the approve token and both digests exactly as shown:
 
 ```bash
-curl -s -X POST https://jobwatch.example.invalid/api/agent/profile/scope-confirm \
-  -H "Authorization: Bearer $SAM_TOKEN" \
+curl -s -X POST https://jobwatch.example.invalid/api/agent/profile/proposals/$PID/confirm \
+  -H "Authorization: Bearer $SAM_APPROVE_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"base_version": 1, "scope_digest": "'"$SAM_SCOPE_DIGEST"'"}'
+  -d '{"proposal_digest": "'"$PROPOSAL_DIGEST"'", "scope_digest": "'"$SCOPE_DIGEST"'"}'
 ```
 
-HTTP 409:
+HTTP 201:
 
 ```json
 {
-  "error": "profile_incomplete"
+  "version": 2
 }
 ```
 
-Add facts through a proposal built on that version (`"base_version": 1` in step 2) and confirm
-that instead. A version with a non-empty basis is confirmed the same way with
-`POST /api/agent/profile/scope-confirm` and the `base_version` and `scope_digest` shown.
+Version 2 records `"base_version": 1` and the scope shown; version 1 is unchanged. Discovery is
+on only from this point. A proposal with nothing to search for (no evidence-backed experience, skill or career
+focus) is refused when confirming with `409 {"error": "profile_incomplete"}`.
 
 ## Chat onboarding
 
@@ -663,10 +734,8 @@ draft fails with `approval_inputs_changed`. See "Guided onboarding in the chat a
 ## CLI for existing installs
 
 ```bash
-jobwatch --user <name> profile adopt                 # existing profile/ files become version 1 (no scope yet)
-jobwatch --user <name> profile confirm-scope         # prints the scope, base_version and scope_digest
-jobwatch --user <name> profile confirm-scope --base-version 1 --scope-digest <digest>
+jobwatch --user <name> profile adopt                 # existing profile/ files become version 1 (no scope; discovery stays off)
 ```
 
-Discovery for that person stays off until a version carries a confirmed scope. The API route
-`POST /api/agent/profile/scope-confirm` does the same with the approve scope.
+Discovery for that person stays off until a version carries a confirmed scope. Onboard with a
+proposal built on the current version (section 8, or the chat agent), then confirm the scope shown.

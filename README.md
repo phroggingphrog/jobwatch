@@ -92,7 +92,7 @@ Discovery runs only for a person whose current profile is confirmed, with a conf
 2. **Confirm.** Review the confirmation (facts, search scope, daily limits). Confirming needs the approve scope, or in chat your own approval of those exact digests, and writes an immutable version under `profile-versions/`.
 3. **Discover.** Collection and assessment then run within the confirmed scope and limits.
 
-Existing installs: discovery stays off until a confirmed profile exists. Run `jobwatch --user <name> profile adopt` once to turn your current `profile/` files into version 1, then either complete onboarding (a proposal built on that version) or `jobwatch --user <name> profile confirm-scope` to see the scope and confirm it with `--base-version N --scope-digest D`. A scope with nothing to search for is refused (`profile_incomplete`).
+Existing installs: discovery stays off until a confirmed profile exists. `jobwatch --user <name> profile adopt` turns your current `profile/` files into version 1, which protects them from being overwritten and keeps them in the history; it authorises no discovery. To turn discovery on, onboard on top of that version: let the chat agent guide you (it can read your existing files through `profile_start` with `use_existing_files`) or start a proposal with `base_version` set to the current version, then confirm the scope shown. A scope with nothing to search for is refused (`profile_incomplete`).
 
 Confirmation does not authorise document preparation, employer messages or submission; those keep their own approvals, and Submit stays on the owner-confirmed path. Walk-through with real requests and responses: [docs/examples/profile-intake.md](docs/examples/profile-intake.md).
 
@@ -218,8 +218,7 @@ systemctl --user enable --now jobwatch-fast.timer jobwatch-slow.timer jobwatch-o
 
 - `jobwatch-fast.timer`: every 20 min (+ up to 60 s jitter) runs `jobwatch --user all run --tier fast`.
 - `jobwatch-slow.timer`: every 2 h at :10 (+ up to 15 min jitter) runs `jobwatch --user all run --tier slow`.
-- Discovery is off for a person until their current profile is confirmed with its search scope shown (`jobwatch profile adopt`
-  alone does not turn it on, and a scope with nothing to search for is refused as `profile_incomplete`; confirm a profile built from documents, or `jobwatch --user <name> profile confirm-scope` for a version that has facts but no scope). Unconfirmed people are skipped; `--user all` splits the unit's time over those who run.
+- Discovery is off for a person until their current profile is confirmed with its search scope shown (`jobwatch profile adopt` alone does not turn it on, and a scope with nothing to search for is refused as `profile_incomplete`; onboard with a proposal built on the current version and confirm it). Unconfirmed people are skipped; `--user all` splits the unit's time over those who run.
 - `jobwatch-outcomes.timer`: 07:00, 09:00 … 21:00 Melbourne runs `jobwatch outcomes`.
 - `jobwatch-digest.timer`: Monday 08:00 Melbourne runs `jobwatch digest` (the text goes to the journal).
 

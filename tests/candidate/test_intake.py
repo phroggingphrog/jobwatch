@@ -636,6 +636,20 @@ def test_adoption_then_amendment_projects_normally(person, full, fake_llm, uploa
     assert 'Hand Made' in (vdir(person, 1) / 'profile.yaml').read_text()               # v1 is immutable
 
 
+def test_an_adopted_owner_onboards_by_a_proposal_on_the_current_version(person, fake_llm, upload_id):
+    hand_made()
+    intake.adopt_existing(person, actor='person')
+    assert intake.discovery_scope(person) is None                                      # adoption authorises nothing
+    fake_llm.reply({'facts': [fact('experience', 'Accounts Assistant, Ledger Co', 'evidence', [Q(5, 'Ledger Co, Accounts Assistant, 2021 - 2023')])],
+                    'questions': []})
+    nxt = intake.propose(person, [upload_id], fake_llm, base_version=intake.current_version(person)['version'])
+    shown = intake.confirmation(person, nxt.id, CONFIG)
+    assert shown['scope'].basis and intake.discovery_scope(person) is None             # shown, not yet on
+    assert intake.confirm(person, nxt.id, proposal_digest=shown['proposal_digest'], scope_digest=shown['scope_digest'],
+                          actor='person', config=CONFIG) == 2
+    assert intake.discovery_scope(person) == shown['scope']
+
+
 def test_adoption_with_extra_hand_made_file_still_allows_next_version(person, full, fake_llm, upload_id):
     hand_made({**HAND, 'evidence.yaml': 'items: []\n'})
     intake.adopt_existing(person, actor='person')
@@ -741,45 +755,6 @@ def test_adopted_version_is_listed_and_symlinks_are_not_adopted(person):
 
 
 # ----------------------------------------------------------------------------- turning discovery on without a new proposal
-def strip_scope(person, n):
-    """Simulate a version approved before scopes existed: same facts and files, no scope."""
-    path = vdir(person, n) / 'approved.json'
-    approved = json.loads(path.read_text())
-    del approved['scope'], approved['scope_digest']
-    path.write_text(json.dumps(approved))
-
-
-def test_scope_confirmation_turns_discovery_on_and_leaves_profile_alone(person, full):
-    ok(person, full)
-    strip_scope(person, 1)
-    assert intake.discovery_scope(person) is None
-    before = {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()}
-    shown = intake.scope_confirmation(person, CONFIG)
-    assert shown['base_version'] == 1 and shown['scope'].daily_token_ceiling == 1234 and shown['scope'].basis
-    n = intake.confirm_scope(person, base_version=1, scope_digest=shown['scope_digest'], actor='person', config=CONFIG)
-    assert n == 2 and intake.discovery_scope(person) == shown['scope']
-    assert {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()} == before          # profile/ untouched
-    one, two = (json.loads((vdir(person, i) / 'approved.json').read_text()) for i in (1, 2))
-    for key in ('facts', 'file_sha256', 'evidence_bundle_hash'):
-        assert one[key] == two[key]
-    assert two['scope_digest'] == shown['scope_digest'] and two['base_version'] == 1 and two['actor'] == 'person'
-    for name in one['file_sha256']:
-        assert (vdir(person, 2) / name).read_bytes() == (vdir(person, 1) / name).read_bytes()
-        assert stat.S_IMODE((vdir(person, 2) / name).stat().st_mode) == 0o600
-    assert intake.confirm_scope(person, base_version=2, scope_digest=shown['scope_digest'], actor='person', config=CONFIG) == 2
-
-
-def test_adopted_version_cannot_turn_discovery_on_from_an_empty_scope(person):
-    hand_made()
-    intake.adopt_existing(person, actor='person')
-    assert intake.discovery_scope(person) is None
-    shown = intake.scope_confirmation(person, CONFIG)
-    assert shown['scope'].basis == ()
-    with pytest.raises(intake.IntakeError) as err:
-        intake.confirm_scope(person, base_version=1, scope_digest=shown['scope_digest'], actor='person', config=CONFIG)
-    assert err.value.code == 'profile_incomplete' and intake.current_version(person)['version'] == 1
-
-
 def test_confirm_refuses_a_proposal_with_an_empty_basis(person, fake_llm, upload_id):
     fake_llm.reply({'facts': [fact('education', 'Diploma of Accounting', 'evidence', [Q(10, 'Diploma of Accounting, Example College, 2020')])],
                     'questions': []})
@@ -796,24 +771,6 @@ def test_stored_scope_with_empty_basis_authorises_nothing(person, full):
     approved['scope_digest'] = intake._scope_digest(intake.SearchScope.model_validate(approved['scope'], strict=False))
     path.write_text(json.dumps(approved))
     assert intake.discovery_scope(person) is None
-
-
-def test_confirm_scope_refusals(person, full):
-    def refuse(code, **kw):
-        args = {'base_version': 1, 'scope_digest': digest, 'actor': 'person', 'config': CONFIG, **kw}
-        with pytest.raises(intake.IntakeError) as err:
-            intake.confirm_scope(person, **args)
-        assert err.value.code == code
-    digest = '0' * 64
-    refuse('adopt_first')
-    ok(person, full); strip_scope(person, 1)
-    digest = intake.scope_confirmation(person, CONFIG)['scope_digest']
-    refuse('proposal_changed', base_version=3)
-    refuse('scope_changed', scope_digest='0' * 64)
-    refuse('person_required', actor='agent')
-    (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Edited\n')
-    refuse('profile_edited_by_hand')
-    assert intake.discovery_scope(person) is None and intake.current_version(person)['version'] == 1
 
 
 # ----------------------------------------------------------------------------- background parse (guided onboarding)

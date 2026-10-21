@@ -223,45 +223,27 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
         settled(c, again.json()['id'])
 
 
-def _strip_scope(person, n):
-    import json as _json
-    path = users.user_dir(person) / 'profile-versions' / str(n) / 'approved.json'
-    approved = _json.loads(path.read_text())
-    del approved['scope'], approved['scope_digest']
-    path.write_text(_json.dumps(approved))
-
-
-def test_scope_confirmation_turns_discovery_on_over_http(env):
-    c = env
-    pid = proposal(c)['id']
-    conf = c.get(f'{P}/proposals/{pid}/confirmation', headers=h()).json()
-    assert c.post(f'{P}/proposals/{pid}/confirm', json={k: conf[k] for k in ('proposal_digest', 'scope_digest')}, headers=h(APPROVE)).status_code == 201
-    _strip_scope('fixture-a', 1)                          # a version approved before scopes existed
-    assert intake.discovery_scope('fixture-a') is None
-    shown = c.get(P + '/scope-confirmation', headers=h()).json()
-    assert shown['base_version'] == 1 and shown['does_not_authorise'] and shown['scope']['basis']
-    body = {'base_version': 1, 'scope_digest': shown['scope_digest']}
-    assert c.post(P + '/scope-confirm', json=body, headers=h(RUN)).status_code == 403
-    assert c.post(P + '/scope-confirm', json={**body, 'scope_digest': '0' * 64}, headers=h(APPROVE)).json() == {'error': 'scope_changed'}
-    assert intake.discovery_scope('fixture-a') is None
-    r = c.post(P + '/scope-confirm', json=body, headers=h(APPROVE))
-    assert r.status_code == 201 and r.json() == {'version': 2}
-    assert intake.discovery_scope('fixture-a') is not None
-    assert c.get(P + '/scope-confirmation', headers=h(OTHER)).json() == {'error': 'adopt_first'}
-
-
-def test_adopted_profile_cannot_confirm_an_empty_scope_over_http(env):
+def test_an_adopted_owner_onboards_by_a_proposal_on_the_current_version_over_http(env):
     from jobwatch.apply import paths as apaths
-    with users.use('fixture-b'):
+    c = env
+    with users.use('fixture-a'):
         apaths.profile_dir().mkdir(parents=True, exist_ok=True)
         (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Synthetic\n')
         (apaths.profile_dir() / 'master_resume.md').write_text('# Synthetic\n\nAccounts Assistant, 2021\n')
-        intake.adopt_existing('fixture-b', actor='person')
-    shown = env.get(P + '/scope-confirmation', headers=h(OTHER)).json()
-    assert shown['scope']['basis'] == []
-    r = env.post(P + '/scope-confirm', json={'base_version': 1, 'scope_digest': shown['scope_digest']}, headers=h(OTHER))
-    assert r.status_code == 409 and r.json() == {'error': 'profile_incomplete'}
-    assert intake.discovery_scope('fixture-b') is None
+        intake.adopt_existing('fixture-a', actor='person')
+    assert intake.discovery_scope('fixture-a') is None and c.get(P + '/', headers=h()).json()['version'] == 1
+    up = upload(c).json()['upload_id']
+    res = c.post(P + '/proposals', json={'upload_ids': [up], 'base_version': 1}, headers=h())
+    assert res.status_code == 202 and res.json()['base_version'] == 1
+    pid = settled(c, res.json()['id'])['id']
+    conf = c.get(f'{P}/proposals/{pid}/confirmation', headers=h()).json()
+    r = c.post(f'{P}/proposals/{pid}/confirm', json={k: conf[k] for k in ('proposal_digest', 'scope_digest')}, headers=h(APPROVE))
+    assert r.status_code == 201 and r.json() == {'version': 2} and intake.discovery_scope('fixture-a') is not None
+
+
+def test_the_scope_only_routes_are_gone(env):
+    for method, path in (('get', '/scope-confirmation'), ('post', '/scope-confirm')):
+        assert getattr(env, method)(P + path, headers=h(APPROVE)).status_code in (404, 405)
 
 
 def test_proposal_returns_202_then_draft(env):
