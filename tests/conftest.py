@@ -7,6 +7,7 @@ os.environ['JOBWATCH_LLM_BASE_URL'] = 'http://127.0.0.1:1/v1'
 os.environ['JOBWATCH_LLM_MODEL'] = 'openai/sol'
 os.environ.setdefault("JOBWATCH_PUBLIC_HOST", "jobs.example.com")
 import json
+from unittest import mock
 from pathlib import Path
 
 import pytest
@@ -164,14 +165,22 @@ def confirm_discovery(config, person=None):
     """Synthetic: turn discovery on for a person through the public intake API (adopt any hand-made files, propose from a
     synthetic CV with a fake model, confirm with the scope shown). Returns the new version number."""
     from jobwatch import model_choice, users
-    from jobwatch.apply import paths as apaths
     from jobwatch.candidate import intake
     from jobwatch.llm import LLM
     person = person or users.current()
     facts = {"facts": [{"section": "experience", "value": "Accounts Assistant, Ledger Co", "basis": "evidence", "upload": 1,
                         "sources": [{"line": 5, "quote": "Ledger Co, Accounts Assistant, 2021 - 2023"}]}], "questions": []}
-    llm = LLM(transport=lambda url, headers, body, timeout: (200, {"choices": [{"message": {"content": json.dumps(facts)}}],
-              "usage": {}}), keys=["synthetic"], base_url=model_choice.SERVER_URL)
+    with mock.patch.object(model_choice, "SERVER_URL", "http://127.0.0.1:20128/v1"), \
+            mock.patch.object(intake, "get_model", lambda role, user=None: "claude/sonnet"):     # the approved paid route
+        llm = LLM(transport=lambda url, headers, body, timeout: (200, {"choices": [{"message": {"content": json.dumps(facts)}}],
+                  "usage": {}}), keys=["synthetic"], base_url=model_choice.SERVER_URL)
+        return _confirm(config, person, llm)
+
+
+def _confirm(config, person, llm):
+    from jobwatch import users
+    from jobwatch.apply import paths as apaths
+    from jobwatch.candidate import intake
     with users.use(person):
         pdir = apaths.profile_dir()
         if intake.current_version(person) is None and any(os.path.lexists(pdir / n) for n in _HAND_NAMES):

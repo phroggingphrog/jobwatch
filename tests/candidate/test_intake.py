@@ -27,6 +27,7 @@ class FakeLLM:
             self.bodies.append(body)
             return 200, {'choices': [{'message': {'content': json.dumps(self.next)}}], 'usage': {}}
         self.llm = LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL)
+        self.base_url = self.llm.base_url
 
     def reply(self, data):
         self.next = data
@@ -35,9 +36,15 @@ class FakeLLM:
         return self.llm.chat(*a, **kw)
 
 
+@pytest.fixture(autouse=True)
+def local_gateway(monkeypatch):
+    monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')      # the approved route: local gateway + paid model
+
+
 @pytest.fixture
 def person():
     users.create_user_dirs('sam')
+    model_choice.set_models({'reader': 'claude/sonnet'}, 'sam')
     with users.use('sam'):
         yield 'sam'
     intake._inflight.clear()
@@ -817,7 +824,7 @@ import time
 class BlockingLLM:
     """Holds the parse open until .release is set (never forever: waits are bounded)."""
     def __init__(self, inner, fail=None):
-        self.inner, self.fail = inner, fail
+        self.inner, self.fail, self.base_url = inner, fail, inner.base_url
         self.started, self.release = threading.Event(), threading.Event()
 
     def chat(self, *a, **kw):
@@ -1044,3 +1051,33 @@ def test_start_proposal_that_cannot_spawn_finishes_as_parse_failed(person, fake_
         intake.start_proposal(person, [upload_id], fake_llm)
     saved = intake.open_proposal(person)
     assert saved.status == 'draft' and saved.parse_error == 'parse_failed' and not intake._inflight
+
+
+# ----------------------------------------------------------------------------- paid route: every parse path checks it
+def _bodies_after(fake_llm, run):
+    before = len(fake_llm.bodies)
+    with pytest.raises(intake.IntakeError) as exc:
+        run()
+    assert len(fake_llm.bodies) == before                       # the person's text never reached a model
+    return exc.value.code
+
+
+@pytest.mark.parametrize('model', ['openrouter/free-model', 'claude/opus-4', 'gpt-4o'])
+def test_every_parse_path_refuses_a_model_that_is_not_an_approved_paid_route(person, fake_llm, upload_id, model):
+    draft = intake.propose(person, [upload_id], fake_llm)                 # allowed while the reader model is paid
+    model_choice.set_models({'reader': model}, person)
+    refused = lambda run: _bodies_after(fake_llm, run)
+    assert refused(lambda: intake.propose(person, [upload_id], fake_llm)) == 'model_not_allowed'
+    assert refused(lambda: intake.start_proposal(person, [upload_id], fake_llm)) == 'model_not_allowed'
+    assert refused(lambda: intake.add_uploads(person, draft.id, [upload_id], fake_llm)) == 'model_not_allowed'
+    assert [p.id for p in [intake.load_proposal(person, draft.id)]] == [draft.id] and not intake._inflight
+    assert intake.load_proposal(person, draft.id).revision == 1       # the refused add changed nothing
+
+
+def test_every_parse_path_refuses_a_gateway_that_is_not_the_local_one(person, upload_id):
+    other = FakeLLM()
+    other.base_url = 'https://example.invalid/v1'
+    code = lambda run: _bodies_after(other, run)
+    assert code(lambda: intake.propose(person, [upload_id], other)) == 'gateway_not_allowed'
+    assert code(lambda: intake.start_proposal(person, [upload_id], other)) == 'gateway_not_allowed'
+    assert intake.open_proposal(person) is None and not intake._inflight      # no draft, no slot held

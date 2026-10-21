@@ -20,7 +20,7 @@ STATUS = {'proposal_in_progress': 409, 'proposal_parsing': 409, 'parse_interrupt
           'no_extractable_text': 422, 'invalid_edit': 422, 'parse_failed': 422, 'unreadable_document': 422,
           'nothing_to_adopt': 422,
           'upload_not_found': 404, 'proposal_not_found': 404, 'fact_not_found': 404, 'question_not_found': 404,
-          'extractor_unavailable': 503, 'person_required': 403}
+          'extractor_unavailable': 503, 'person_required': 403, 'gateway_not_allowed': 403, 'model_not_allowed': 403}
 
 
 class _Body(BaseModel):

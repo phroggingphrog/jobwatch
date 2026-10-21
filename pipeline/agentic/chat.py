@@ -538,9 +538,9 @@ def _build(person, conn, config, llm, selected, saver, store):
         try:
             if scope and scope.parse_starts:
                 return {'status': 'refused', 'reason': 'one_parse_per_turn'}
+            intake.require_route(person, llm)                                           # candidate data goes only to paid routes (intake checks again)
             ids = list(upload_ids) + (intake.upload_profile_files(person) if use_existing_files else [])
             reader = model_choice.get_model('reader', person)
-            invocation.require_route(llm, reader)                                       # candidate data goes only to paid routes
             tokens = intake.estimate_parse_tokens(person, ids)
             if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
                 scope.reserve(reader, 'profile_parse', tokens, 4000)

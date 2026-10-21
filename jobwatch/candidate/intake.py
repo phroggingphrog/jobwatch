@@ -50,7 +50,8 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
-         "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words")
+         "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words",
+         "gateway_not_allowed", "model_not_allowed")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -315,6 +316,17 @@ def _load_docs(person: str, upload_ids: list[str]) -> tuple[list[tuple[str, list
     return docs, blocks
 
 
+def require_route(person: str, llm: LLM) -> None:
+    """Candidate text goes only to the approved paid route (local gateway, paid reader model): the check every parse path
+    shares, run before any text is read or sent. A refusal keeps the runtime's own code."""
+    from pipeline.agentic import execution              # lazy: the runtime package imports jobwatch, not the reverse
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    try:
+        execution.require_route(llm, get_model("reader", person))
+    except RuntimeErrorSafe as exc:
+        raise IntakeError(exc.code) from None
+
+
 def estimate_parse_tokens(person: str, upload_ids: list[str]) -> int:
     """Rough prompt size (tokens) of parsing these uploads, for budget reservation; validates the ids like the parse does."""
     _, blocks = _load_docs(person, upload_ids)
@@ -374,6 +386,7 @@ def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int |
             deadline: float | None = None) -> Proposal:
     """Parse the uploads into a draft Proposal (revision 1) and store it; profile/ is not touched.
     Synchronous; start_proposal is the interactive entry. Holds the person's one parse slot."""
+    require_route(person, llm)
     docs, blocks = _load_docs(person, upload_ids)
     _claim(person)
     try:
@@ -461,6 +474,7 @@ def start_proposal(person: str, upload_ids: list[str], llm: LLM, *, base_version
                    deadline: float | None = None) -> Proposal:
     """Create the draft now (status 'parsing', the questions already open) and read the documents in the background,
     so the conversation can start. Holds the person's one parse slot until the parse ends."""
+    require_route(person, llm)
     docs, blocks = _load_docs(person, upload_ids)
     deadline = time.monotonic() + PARSE_SECONDS if deadline is None else deadline
     _claim(person)
@@ -485,6 +499,7 @@ def start_proposal(person: str, upload_ids: list[str], llm: LLM, *, base_version
 
 def add_uploads(person: str, proposal_id: str, upload_ids: list[str], llm: LLM, *, deadline: float | None = None) -> Proposal:
     """Read further uploads into the same draft in the background; what the person already said is untouched."""
+    require_route(person, llm)
     if load_proposal(person, proposal_id).status == "parsing":
         raise IntakeError("proposal_parsing")                   # its own parse is the one holding the slot
     docs, blocks = _load_docs(person, upload_ids)

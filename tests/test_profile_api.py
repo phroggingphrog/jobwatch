@@ -22,8 +22,11 @@ class FakeLLM:
         def transport(url, headers, body, timeout):
             return 200, {'choices': [{'message': {'content': json.dumps(self.next)}}], 'usage': {}}
         self.llm = LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL)
+        self.base_url = self.llm.base_url
+        self.calls = []
 
     def chat(self, *a, **kw):
+        self.calls.append(a)
         return self.llm.chat(*a, **kw)
 
 
@@ -34,6 +37,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     for person in ('fixture-a', 'fixture-b'):
         users.create_user_dirs(person)
+        model_choice.set_models({'reader': 'claude/sonnet'}, person)      # the approved paid route for candidate text
     fake = FakeLLM()
     fake.next = {'facts': [{'section': 'experience', 'value': 'Accounts Assistant, Ledger Co', 'basis': 'evidence',
                             'upload': 1, 'sources': [{'line': 5, 'quote': 'Ledger Co, Accounts Assistant, 2021 - 2023'}]}],
@@ -42,6 +46,7 @@ def env(tmp_path, monkeypatch):
                    OTHER: Principal('fixture-b', frozenset({'read', 'run', 'interact', 'approve'}))}
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: fake)
     with TestClient(app) as client:
+        client.fake = fake
         yield client
 
 
@@ -184,9 +189,12 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     for person in ('fixture-a', 'fixture-b'):
         users.create_user_dirs(person)
+        model_choice.set_models({'reader': 'claude/sonnet'}, person)
     started, release, seen = threading.Event(), threading.Event(), []
 
     class Blocking:
+        base_url = model_choice.SERVER_URL
+
         def chat(self, *a, **kw):
             seen.append(kw.get('deadline'))
             started.set()
@@ -276,9 +284,12 @@ def test_confirm_while_parsing_is_409_and_uploads_add_documents(tmp_path, monkey
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     users.create_user_dirs('fixture-a')
+    model_choice.set_models({'reader': 'claude/sonnet'}, 'fixture-a')
     release = threading.Event()
 
     class Blocking:
+        base_url = model_choice.SERVER_URL
+
         def chat(self, *a, **kw):
             assert release.wait(10)
             return FakeLLM().chat(*a, **kw)
@@ -305,3 +316,25 @@ def test_confirm_while_parsing_is_409_and_uploads_add_documents(tmp_path, monkey
             assert c.post(f"{P}/proposals/{first['id']}/uploads", json={'upload_ids': ids[1:]}, headers=h(APPROVE)).status_code == 403
         finally:
             release.set()
+
+
+def test_parse_over_http_refuses_a_non_paid_reader_model_without_a_model_call(env):
+    c = env
+    first = proposal(c)
+    ids = [upload(c, kind='evidence').json()['upload_id']]
+    model_choice.set_models({'reader': 'openrouter/free-model'}, 'fixture-a')
+    calls = len(c.fake.calls)
+    r = c.post(P + '/proposals', json={'upload_ids': ids, 'base_version': None}, headers=h())
+    assert r.status_code == 403 and r.json() == {'error': 'model_not_allowed'}
+    r = c.post(f"{P}/proposals/{first['id']}/uploads", json={'upload_ids': ids}, headers=h())
+    assert r.status_code == 403 and r.json() == {'error': 'model_not_allowed'}
+    assert len(c.fake.calls) == calls                                         # the CV never reached a model
+    assert c.get(f"{P}/proposals/{first['id']}", headers=h()).json()['revision'] == first['revision']
+
+
+def test_parse_over_http_refuses_a_gateway_that_is_not_the_local_one(env):
+    c = env
+    up = upload(c).json()['upload_id']
+    c.fake.base_url = 'https://example.invalid/v1'
+    r = c.post(P + '/proposals', json={'upload_ids': [up], 'base_version': None}, headers=h())
+    assert r.status_code == 403 and r.json() == {'error': 'gateway_not_allowed'} and not c.fake.calls
