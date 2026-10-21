@@ -23,3 +23,8 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Structural proximity | A 60/40 activity-coverage/cosine measure; not a qualification or hiring probability. |
 | Preference prediction | A validated owner-choice probability within an already answered set of three eligible jobs plus none. |
 | Callback estimate | Historical Beta-Binomial callback rate and uncertainty, distinct from a forecast for a particular job. |
+| Proposal | A private, parsed draft of a person's profile facts and open questions, revised by the person; not authoritative until confirmed. |
+| Approved profile | The facts and search scope the person confirmed, stored as a profile version and projected into `profile/`. |
+| Profile version | An immutable `profile-versions/<n>/` record of one confirmation or adoption, with its evidence snapshots. |
+| Fact basis | Whether a proposed fact is `evidence`, `inference` or `unknown`; a CV gap alone never establishes unemployment. |
+| Search scope | The confirmed basis, locations, daily assessments and daily token ceiling within which discovery and assessment may run. |
