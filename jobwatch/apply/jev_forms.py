@@ -38,7 +38,8 @@ def job_answers(profile_root: Path, job: dict | None) -> dict[str, tuple[str, st
     out: dict[str, tuple[str, str]] = {}
     company = " ".join(re.sub(r"[^a-z0-9 ]", " ", str(job.get("company") or "").lower()).split())
     if company:
-        worked = any(e and (e in company or company in e)
+        padded = f" {company} "                         # whole words only: "anz" is not in "manzanita", "cole" not in "coles"
+        worked = any(e and (f" {e} " in padded or padded in f" {e} ")
                      for e in (" ".join(re.sub(r"[^a-z0-9 ]", " ", x.lower()).split()) for x in past_employers(profile_root)))
         out["background.previously_worked_for_employer"] = ("Have you worked for this employer before?", "yes" if worked else "no")
     src = str(job.get("source") or "").lower()
