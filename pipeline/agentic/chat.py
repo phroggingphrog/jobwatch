@@ -390,7 +390,8 @@ def _build(person, conn, config, llm, selected, saver, store):
             return {'status': 'deferred', 'reason': 'agentic_disabled'}
         arg = 'application_id' if name == 'draft_followup' else 'posting_id'
         binding = scope.approvals.get((name, identity)) if scope else None
-        if binding is None or binding != _approval_binding(name, {arg: identity}, config):
+        # Re-bind the args the approval hashed (the model may send extras the tool ignores), so only a changed world fails.
+        if binding is None or binding != _approval_binding(name, binding['arguments'], config):
             raise RuntimeErrorSafe('approval_inputs_changed')
         with job_connection(config, write=True) as jobs:
             jobs.row_factory = sqlite3.Row
@@ -475,9 +476,13 @@ def _chat_interactions(values, config=None) -> list[dict]:
                 events.append({'type': 'question', 'interaction_id': action.get('id') or f'question-{index}',
                                'question': args.get('question', '')})
             elif name in ('run_career_ops','assess_job','prepare_application','prepare_interview','draft_followup'):
+                try:
+                    binding = _approval_binding(name, args, config) if config is not None else None
+                except (KeyError, TypeError, ValueError):  # bad/missing id (ValueError covers AgenticError): nothing to approve
+                    events.append({'type': 'invalid_action', 'interaction_id': action.get('id') or f'action-{index}', 'operation': name})
+                    continue
                 events.append({'type': 'approval', 'interaction_id': action.get('id') or f'approval-{index}',
-                               'posting_id': args.get('posting_id'), 'operation': name,
-                               'binding': _approval_binding(name, args, config) if config is not None else None,
+                               'posting_id': args.get('posting_id'), 'operation': name, 'binding': binding,
                                'summary': action.get('description', 'Run Career Ops for this job.')})
             else:
                 events.append({'type': 'unsupported', 'interaction_id': action.get('id') or f'action-{index}'})
@@ -549,8 +554,26 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                     ident = hashlib.sha256(json.dumps([person, thread_id]).encode()).hexdigest()
                     graph_config = {'configurable': {'thread_id': ident, 'invocation_id': execution.run_id}, 'callbacks': [], 'recursion_limit': 110,
                                     'metadata': {'invocation_id': execution.run_id}}
+                    def refuse_unbindable(values):
+                        """A gated call with bad args checkpoints an interrupt no human can approve (its binding fails every
+                        time), which would brick the thread. Reject it (authorizes nothing) so the model carries on."""
+                        result = None
+                        for _ in range(3):
+                            items = _chat_interactions(values, cfg)
+                            if not any(i['type'] == 'invalid_action' for i in items):
+                                return result
+                            execution.check()
+                            result = graph.invoke(Command(resume={'decisions': [
+                                {'type': 'respond', 'message': 'No answer supplied; do not invent a fact.'} if i['type'] == 'question' else
+                                {'type': 'reject', 'message': 'Invalid arguments: no such saved posting or application. Nothing was run.'}
+                                for i in items]}), graph_config)
+                            values = [i.value for i in result.get('__interrupt__', ())]
+                        raise RuntimeErrorSafe('invalid_tool_call')
                     previous = graph.get_state(graph_config)
                     pending = [i for task in previous.tasks for i in task.interrupts]
+                    if pending and decisions is None and not recover and refuse_unbindable([i.value for i in pending]) is not None:
+                        previous = graph.get_state(graph_config)  # a stuck thread healed; carry on with the new message
+                        pending = [i for task in previous.tasks for i in task.interrupts]
                     checkpoint = previous.config.get('configurable', {}).get('checkpoint_id') if previous.config else None
                     same_invocation = (previous.metadata or {}).get('invocation_id') == execution.run_id
                     if expected_checkpoint and expected_checkpoint != checkpoint and not (recover and same_invocation):
@@ -583,6 +606,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                         if len(decisions) != len(interactions):
                             raise RuntimeErrorSafe('invalid_decisions')
                         for index, (decision, item) in enumerate(zip(decisions, interactions)):
+                            if item['type'] == 'invalid_action':
+                                raise RuntimeErrorSafe('approval_inputs_changed')
                             if item['type'] == 'approval':
                                 if decision.get('type') not in ('approve', 'reject'):
                                     raise RuntimeErrorSafe('invalid_decisions')
@@ -614,6 +639,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                     continue
                                 execution.deliverables.append({'operation': item.name, 'content': content})
                     interrupts = [i.value for i in result.get('__interrupt__', ())]
+                    if interrupts and (refused := refuse_unbindable(interrupts)) is not None:
+                        result, interrupts = refused, [i.value for i in refused.get('__interrupt__', ())]
                     saved = graph.get_state(graph_config)
                     return {'status': 'interrupted' if interrupts else 'complete', 'thread_id': thread_id,
                         'checkpoint_id': saved.config['configurable'].get('checkpoint_id'),

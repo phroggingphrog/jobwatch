@@ -661,3 +661,68 @@ def test_real_deepagents_research_checkpoints_on_file_database(world, monkeypatc
     cp = json.loads(conn.execute('SELECT checkpoint_json FROM agentic_runs').fetchone()[0])
     assert cp['research_queries'] == 1 and cp['research_pages'] == 0
     assert latest_result(conn, 46)['evaluation']['research_available'] is True
+
+
+def _chat_llm(script):
+    """Conversation-only gateway: replies come from `script`, one per supervisor call."""
+    from jobwatch import model_choice
+    replies, seen = iter(script), []
+    def transport(url, headers, body, timeout):
+        assert body['messages'][-1]['content'].startswith('Allowed tool schemas: ')
+        seen.append(body)
+        return 200, {'choices': [{'message': {'content': json.dumps(next(replies))}}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 7}}
+    return LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL), seen
+
+
+@pytest.mark.parametrize('call', [{'tool': 'assess_job', 'arguments': {}},
+                                  {'tool': 'draft_followup', 'arguments': {'application_id': 999}}])
+def test_gated_call_with_unbindable_args_does_not_brick_the_thread(world, monkeypatch, call):
+    from jobwatch import model_choice, users
+    from pipeline.agentic.chat import dispatch
+    conn, config, bundle, add = world
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([call, {'answer': 'That request was invalid; nothing was run.'}, {'answer': 'Still here.'}])
+    turn = lambda **kw: dispatch(person=users.DEFAULT_USER, thread_id='bad-args', config=config, llm=llm, **kw)
+    first = turn(message='Assess it')
+    # the unbindable approval never reaches a human; it is refused and the model continues
+    assert first['status'] == 'complete' and first['answer'] == 'That request was invalid; nothing was run.', first
+    second = turn(message='Hello again')
+    assert second['status'] == 'complete' and second['answer'] == 'Still here.', second
+
+
+def test_pending_approval_that_became_unbindable_is_refused_on_the_next_message(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    from pipeline.agentic.contracts import AgenticError
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'assess_job', 'arguments': {'posting_id': 42}}, {'answer': 'Refused, nothing was run.'},
+                           {'answer': 'No news.'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='stale-binding', config=config, llm=llm, **kw)
+    first = turn(message='Assess 42')
+    assert first['status'] == 'interrupted' and first['interactions'][0]['type'] == 'approval'
+    def broken(name, args, cfg):  # the world changed under the checkpointed interrupt
+        raise AgenticError('application_missing')
+    monkeypatch.setattr(chat, '_approval_binding', broken)
+    second = turn(message='Any news?')
+    assert second['status'] == 'complete' and second['answer'] == 'No news.', second  # the stale approval was refused, then the new message ran
+    assert 'Invalid arguments' in json.dumps(seen[1]), seen[1]
+
+
+def test_approved_auxiliary_call_with_extra_model_args_still_runs(world, monkeypatch):
+    """The approval hashes the model's full args; the execution-time check must use those same args."""
+    from jobwatch import model_choice, users, interview_prep
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    monkeypatch.setattr(interview_prep, 'generate', lambda jobs, ident, cfg, writer, reviewer: {'questions': ['synthetic']})
+    llm, seen = _chat_llm([{'tool': 'prepare_interview', 'arguments': {'posting_id': 42, 'note': 'extra'}},
+                           {'answer': 'Prepared.'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='extra-args', config=config, llm=llm, **kw)
+    first = turn(message='Prepare interview for 42')
+    assert first['status'] == 'interrupted' and first['interactions'][0]['type'] == 'approval', first
+    second = turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+                  approval_bindings=[i['binding'] for i in first['interactions']])
+    assert second['status'] == 'complete' and second['deliverables'][0]['content'] == {'questions': ['synthetic']}, second
