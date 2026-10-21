@@ -23,7 +23,15 @@ The optional `pipeline.agentic.embedding_model` setting enables dense retrieval 
 [`Embeddings` interface](https://docs.langchain.com/oss/python/integrations/embeddings/).
 The adapter uses the existing server-bound gateway, explicit selected credential,
 and shared durable job/API reservations. No retry, provider/credential fallback,
-hosted tracing, or legacy public-ad OpenRouter/Qwen route is used.
+hosted tracing, or legacy public-ad transport is used.
+
+The owner selected **Qwen** on 2026-10-21. Source configuration now selects
+`openrouter/qwen/qwen3-embedding-8b`, advertised by the existing OmniRoute model
+catalog and [listed as paid by OpenRouter](https://openrouter.ai/qwen/qwen3-embedding-8b).
+This exact model is allowed only for embedding operations, not chat. The counted
+adapter applies Qwen's query-only `Instruct: ...\nQuery:...` format, leaving evidence
+documents plain, following the [official model card](https://huggingface.co/Qwen/Qwen3-Embedding-8B).
+This changes the source release configuration, not the live service.
 
 Dense indexing covers exact overlapping spans of every canonical record and the
 frozen requirement texts. Vectors stay in memory for this job. Cosine and BM25
@@ -33,8 +41,8 @@ job-fit formula or separately validated cross-encoder. Relevance scores are not
 fit probabilities, and a shortlist is not exhaustive evidence.
 
 Configured dense retrieval fails visibly when unavailable; source tails are not
-silently dropped. An index beyond 2,048 chunks holds. No embedding model is selected
-or enabled by this change; explicit paid-route configuration remains necessary.
+silently dropped. An index beyond 2,048 chunks holds. The source release selects
+Qwen; live route inference, retrieval quality and deployment remain unverified.
 
 New evaluations require a judgment per requirement, with a rationale, reviewed
 evidence IDs and a question when a gap remains. Exact candidate quotes must resolve
@@ -150,7 +158,7 @@ eventual callback probability or qualification score. No arbitrary time cutoff
 turns silence into failure. A calibrated time-to-event model with an explicit
 observation horizon remains future work.
 
-A separately approved Jev/local comparison, route activation, blind owner labels
+A separately approved Jev/local comparison, live route activation, blind owner labels
 and job-domain benchmark remain tracked in issue #6. No legacy candidate-bearing
 Jev/vector calls were re-enabled. No application test suite or live-model experiment
 has been run. A synthetic in-memory outcome discrepancy was reproduced before

@@ -14,9 +14,16 @@ from pipeline.agentic.runtime import RuntimeErrorSafe, _usage_total
 
 _CURRENT = contextvars.ContextVar('jobwatch_execution', default=None)
 _PAID = re.compile(r'^(?:openai|claude|google)/[A-Za-z0-9._-]+$')
+QWEN_EMBEDDING_MODEL = 'openrouter/qwen/qwen3-embedding-8b'
 
 
-def require_route(llm, model):
+def embedding_model_allowed(model):
+    """Owner-approved paid Qwen exception applies only to embedding operations."""
+    return (type(model) is str and (bool(_PAID.fullmatch(model)) or model == QWEN_EMBEDDING_MODEL)
+            and not any(x in model.lower() for x in ('free', 'stealth', 'opus', 'astra')))
+
+
+def require_route(llm, model, *, embedding=False):
     base_url = getattr(llm, 'base_url', None)
     if type(base_url) is not str:
         raise RuntimeErrorSafe('gateway_not_allowed')
@@ -24,8 +31,10 @@ def require_route(llm, model):
     if (url.scheme != 'http' or url.hostname not in {'127.0.0.1', 'localhost', '::1'}
             or base_url.rstrip('/') != model_choice.SERVER_URL.rstrip('/')):
         raise RuntimeErrorSafe('gateway_not_allowed')
-    if (type(model) is not str or not _PAID.fullmatch(model)
-            or any(x in model.lower() for x in ('free', 'stealth', 'opus', 'astra'))):
+    allowed = embedding_model_allowed(model) if embedding else (
+        type(model) is str and bool(_PAID.fullmatch(model))
+        and not any(x in model.lower() for x in ('free', 'stealth', 'opus', 'astra')))
+    if not allowed:
         raise RuntimeErrorSafe('model_not_allowed')
 
 

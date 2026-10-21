@@ -116,3 +116,11 @@ separate. Preserve the inherited holistic score as a comparison baseline; change
 automatic exclusion policy only after a reviewed comparison including jobs the
 old matcher archived. Research references and typed outputs do not establish
 matching accuracy. Track implementation and remaining experiments in GitHub #6.
+
+Owner's embedding-model choice, 2026-10-21:
+
+> qwen
+
+Use Qwen3 Embedding 8B through the existing paid OmniRoute route for canonical
+candidate-evidence retrieval. Approval is specific to embeddings; the chat route
+allowlist, budgets, per-person credentials and human approval boundaries remain.

@@ -15,7 +15,7 @@ from pydantic import Field
 from jobwatch.candidate.assessment import evidence_records
 from pipeline.agentic.contracts import AgenticError, StrictFrozen
 
-MATCHING_VERSION = "requirement-evidence-v2"
+MATCHING_VERSION = "requirement-evidence-v3"
 BASELINE_COMMIT = "ce160598d49a0464e30380a057dd0a677980de3c"
 _STOP = frozenset("a an and are as at be by for from in is it of on or that the this to with you your".split())
 
@@ -59,7 +59,7 @@ class RequirementEvidenceSearch:
             if len(chunks) > 2048:
                 raise AgenticError('embedding_index_limit')
             vectors = embeddings.embed_documents([quote for _, quote in chunks])
-            queries = embeddings.embed_documents([r.text for r in self.requirements.values()])
+            queries = embeddings.embed_queries([r.text for r in self.requirements.values()])
             dimension = len(vectors[0])
             def unit(vector):
                 length = math.hypot(*vector)

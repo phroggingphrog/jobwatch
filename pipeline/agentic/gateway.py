@@ -15,11 +15,18 @@ class PaidGatewayEmbeddings(Embeddings):
     """LangChain interface with the same private route, identity and job budgets."""
 
     def __init__(self, llm, model, budget):
-        execution.require_route(llm, model)
+        execution.require_route(llm, model, embedding=True)
         self.llm, self.model, self.budget = llm, model, budget
 
     def embed_query(self, text):
-        return self.embed_documents([text])[0]
+        return self.embed_queries([text])[0]
+
+    def embed_queries(self, texts):
+        # Qwen's official retrieval format: instruct queries, leave documents plain.
+        if self.model == execution.QWEN_EMBEDDING_MODEL:
+            instruction = 'Given a job requirement, retrieve candidate career evidence demonstrating relevant skills or experience.'
+            texts = [f'Instruct: {instruction}\nQuery:{text}' for text in texts]
+        return self.embed_documents(texts)
 
     def embed_documents(self, texts):
         # Bound batches without truncating source text. No vectors leave this job.
@@ -38,7 +45,7 @@ class PaidGatewayEmbeddings(Embeddings):
     def _embed(self, texts):
         from jobwatch.llm import SafeLLMError
         from pipeline.agentic.runtime import _usage_total
-        execution.require_route(self.llm, self.model)
+        execution.require_route(self.llm, self.model, embedding=True)
         self.budget.ensure_live()
         prompt_size = _json_bytes({'model': self.model, 'input': texts})
         reservation = self.budget.reserve('evaluator', prompt_size, 1)

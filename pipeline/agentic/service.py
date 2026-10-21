@@ -43,7 +43,7 @@ RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
 MIN_READ_SECONDS = 20   # less than this left in the batch: do not start another job (a Seek page read needs 7-15 s)
-IMPLEMENTATION_VERSION = 'deepagents-0.7.23-hybrid-outcomes-20261021'
+IMPLEMENTATION_VERSION = 'deepagents-0.7.23-qwen-retrieval-20261021'
 
 
 def settings(config) -> dict:
@@ -84,10 +84,8 @@ def _config(config):
               'job_seconds': min(900, float(raw.get('job_seconds', 900))),
               'batch_seconds': min(1800, float(raw.get('batch_seconds', 1800)))}
     if values['embedding_model'] is not None:
-        from pipeline.agentic.execution import _PAID
-        model = values['embedding_model']
-        if (type(model) is not str or not _PAID.fullmatch(model)
-                or any(word in model.lower() for word in ('free', 'stealth', 'opus', 'astra'))):
+        from pipeline.agentic.execution import embedding_model_allowed
+        if not embedding_model_allowed(values['embedding_model']):
             raise AgenticError('invalid_configuration')
     for name in ('occupation_reference_path', 'occupation_mappings_path'):
         value = raw.get(name)
