@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -16,11 +18,12 @@ def draft_client(tmp_path,monkeypatch):
     data=tmp_path/'data';profile=data/'profile';profile.mkdir(parents=True)
     (profile/'cv.md').write_text('# Synthetic Example\n\n## Skills\n- Reconciled ledgers.\n')
     monkeypatch.setenv('JOBWATCH_DATA_DIR',str(data));monkeypatch.setenv('JOBWATCH_PROFILE_DIR',str(profile));monkeypatch.delenv('JOBWATCH_DB',raising=False)
-    config=Config(config_dir=DEFAULT_CONFIG_DIR,settings=_merge(DEFAULT_SETTINGS,{'db_path':str(data/'test.db'),'pipeline':{'agentic':{'enabled':True,'worker_model':'claude/sonnet','reviewer_model':'claude/opus'}}}),rules={},searches={},feeds={},employers=[])
+    config=Config(config_dir=DEFAULT_CONFIG_DIR,settings=_merge(DEFAULT_SETTINGS,{'db_path':str(data/'test.db'),'pipeline':{'agentic':{'enabled':True,'worker_model':'claude/sonnet','reviewer_model':'claude/haiku'}}}),rules={},searches={},feeds={},employers=[])
     conn=db.connect(config.db_path);pid=seed(conn,1,'Accounts role',company='Example',arm='accounting')
     conn.execute("INSERT INTO ad_text(posting_id,text,source,fetched_at) VALUES(?,?,'cached',?)",(pid,'Example seeks an accounts assistant. '+('Reconcile ledgers accurately. '*30),datetime.now(UTC).isoformat()));conn.commit();conn.close()
     bundle=snapshot_evidence(profile);writer=Writer(bundle);reviewer=Reviewer(verdicts=('approve',)*10)
     class Combo:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,model,*args,**kwargs):
             return (writer if model=='claude/sonnet' else reviewer).chat_once(model,*args,**kwargs)
     monkeypatch.setattr('jobwatch.followup_drafts.configured_llm',lambda _:Combo())
@@ -84,6 +87,7 @@ def test_owner_explicitly_retries_held_draft(draft_client,monkeypatch):
     c=draft_client;url=f'/applications/{c.pid}/followup-draft'
     original=__import__('jobwatch.followup_drafts',fromlist=['configured_llm']).configured_llm
     class Failed:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw):raise RuntimeError('private failure')
     monkeypatch.setattr('jobwatch.followup_drafts.configured_llm',lambda _:Failed())
     assert 'Retry within remaining allowance' in c.post(url).text

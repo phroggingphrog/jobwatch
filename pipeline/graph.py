@@ -235,7 +235,8 @@ def run_once(conn, db_path: str, config, *, llm: LLM | None = None, ingest_new: 
 
 def enabled(config) -> bool:
     """pipeline.enabled in jobwatch.yaml: the timer runs call this graph instead of the old reader hook."""
-    return bool(((config.settings or {}).get("pipeline") or {}).get("enabled")) if config else False
+    from jobwatch.execution_mode import effective_mode
+    return config is not None and effective_mode(config) == 'pipeline'
 
 
 def after_collect(conn, config, max_seconds: float | None = None) -> dict:

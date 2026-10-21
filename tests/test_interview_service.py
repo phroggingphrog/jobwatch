@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 import json
 
 import pytest
@@ -49,6 +51,7 @@ def test_changed_owner_inputs_hide_prior_report(world):
 def test_unknown_dispatch_is_not_automatically_retried_and_charge_survives_recovery(world):
     conn,bundle,config=world
     class Failed:
+        base_url = model_choice.SERVER_URL
         calls=0
         def chat_once(self,*a,**kw):
             self.calls+=1
@@ -70,6 +73,7 @@ def test_changed_profile_during_generation_prevents_publication(world):
     from jobwatch.apply.paths import profile_dir
     conn,bundle,config=world
     class Changed(Writer):
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw):
             result=super().chat_once(*a,**kw)
             if len(self.calls)==2:(profile_dir()/'cv.md').write_text('# Synthetic\n\n## Skills\n- Prepared reports.\n')
@@ -83,6 +87,7 @@ def test_late_worker_cannot_settle_or_publish_after_takeover(world):
     conn,bundle,config=world
     replacement=writer_for(bundle)
     class Late(Writer):
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw):
             result=super().chat_once(*a,**kw)
             row=conn.execute('select * from interview_runs').fetchone()

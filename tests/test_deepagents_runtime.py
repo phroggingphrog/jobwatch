@@ -116,6 +116,219 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
     print('RESULT: planning, skill read, specialist, SQLite reopen/resume, approval, defer, cross-thread memory and person isolation exercised; synthetic transport only.')
 
 
+def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
+    """Exercise the real native API and graph with isolated synthetic transport."""
+    import sqlite3
+    import time
+    from fastapi.testclient import TestClient
+    from jobwatch import users, model_choice
+    from pipeline.agentic.api import create_api, Principal
+    from pipeline.agentic.api_store import APIStore
+    from pipeline.agentic.chat import skill_version
+
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    cfg = {'agentic': {'enabled': False}}
+    key, approval, other = 'fixture-run-' + 'a' * 40, 'fixture-approval-' + 'b' * 40, 'fixture-other-' + 'c' * 40
+    credentials = {key: Principal('fixture-a'),
+        approval: Principal('fixture-a', frozenset({'read','interact','approve'})), other: Principal('fixture-b')}
+    llm, seen = transport_llm([
+        choice('ask_human', question='What is your synthetic preference?'),
+        choice('run_career_ops', posting_id=7),
+        {'answer': 'Deferred: agentic_disabled. No application submitted.'},
+        choice('prepare_application', posting_id=7),
+        {'answer': 'Recovered synthetic request.'},
+    ])
+    llm.base_url = model_choice.SERVER_URL
+    for person in ('fixture-a','fixture-b'):
+        root = users.user_dir(person)
+        root.mkdir(parents=True)
+        with sqlite3.connect(root / 'jobwatch.db') as conn:
+            conn.execute('CREATE TABLE postings(id INTEGER PRIMARY KEY)')
+    def app():
+        return create_api(credentials=credentials, config=cfg, llm_factory=lambda p: llm)
+    def headers(token=key, idem='synthetic-request'):
+        return {'Authorization': 'Bearer ' + token, 'Idempotency-Key': idem}
+    def wait(client, ident):
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            result = client.get('/api/agent/runs/' + ident, headers=headers()).json()
+            if result['state'] not in ('queued','running'):
+                return result
+            time.sleep(0.02)
+        pytest.fail('synthetic native run did not settle')
+
+    # A contention deferral has not touched the graph and must retry the original
+    # turn rather than recover a previous conversation checkpoint.
+    with APIStore('fixture-a') as store:
+        deferred_thread = store.create_thread(skill_version())['id']
+        deferred_id = store.enqueue(deferred_thread, {'message': 'deferred'}, 'lock-contention')
+        store.finish(deferred_id, error='person_busy')
+        store.retry(deferred_id)
+        assert 'recover' not in json.loads(store.raw_run(deferred_id)['input_json'])
+        store.cancel(deferred_id)
+
+    with TestClient(app()) as client:
+        assert client.get('/api/agent/capabilities').status_code == 401
+        thread = client.post('/api/agent/threads', headers=headers()).json()['id']
+        route = '/api/agent/threads/' + thread + '/runs'
+        first = client.post(route, json={'message':'Prepare synthetic job 7'}, headers=headers())
+        assert first.status_code == 202
+        ident = first.json()['id']
+        assert client.post(route, json={'message':'Prepare synthetic job 7'}, headers=headers()).json()['id'] == ident
+        assert client.post(route, json={'message':'changed'}, headers=headers()).status_code == 409
+        assert client.get('/api/agent/runs/' + ident, headers=headers(other)).status_code == 404
+        invalid = client.post(route, json={'message':'x','person':'private-marker'}, headers=headers())
+        assert invalid.status_code == 422 and 'private-marker' not in invalid.text
+        question = wait(client, ident)
+        assert question['state'] == 'waiting_for_input', question
+        question_route = '/api/agent/interactions/' + question['interactions'][0]['id'] + '/responses'
+        assert client.post(question_route, json={'decision':'answer','answer':'Concise'}, headers=headers()).status_code == 403
+        reply = client.post(question_route, json={'decision':'answer','answer':'Concise'}, headers=headers(approval))
+        assert reply.status_code == 202, reply.text
+        pending = wait(client, reply.json()['run_id'])
+        assert pending['state'] == 'waiting_for_approval', pending
+        action_route = '/api/agent/interactions/' + pending['interactions'][0]['id'] + '/responses'
+        assert client.post(action_route, json={'decision':'approve'}, headers=headers()).status_code == 403
+        accepted = client.post(action_route, json={'decision':'approve'}, headers=headers(approval))
+        completed = wait(client, accepted.json()['run_id'])
+        assert completed['state'] == 'completed', completed
+        assert completed['result']['outcomes'][0]['reason'] == 'agentic_disabled'
+        assert client.post(action_route, json={'decision':'approve'}, headers=headers(approval)).json()['run_id'] == completed['id']
+        assert client.post(action_route, json={'decision':'reject'}, headers=headers(approval)).status_code == 409
+        events = client.get('/api/agent/runs/' + completed['id'] + '/events', headers=headers())
+        assert 'event: completed' in events.text and 'Deferred:' not in events.text
+        assert 'What is your synthetic preference?' not in events.text
+
+        # A changed binding cannot approve even the disabled synthetic operation.
+        second = client.post(route, json={'message':'Prepare again'}, headers=headers(idem='second')).json()['id']
+        stale = wait(client, second)
+        interaction = stale['interactions'][0]['id']
+        with APIStore('fixture-a') as store:
+            payload = dict(stale['interactions'][0]); payload.pop('id'); payload.pop('expires_at'); payload.pop('answered')
+            payload['binding']['digest'] = '0' * 64
+            with store.conn:
+                store.conn.execute('UPDATE api_interactions SET payload=? WHERE id=?', (json.dumps(payload), interaction))
+        submitted = client.post('/api/agent/interactions/' + interaction + '/responses',
+                                json={'decision':'approve'}, headers=headers(approval))
+        rejected = wait(client, submitted.json()['run_id'])
+        assert rejected['state'] == 'failed' and rejected['error'] == 'approval_inputs_changed'
+
+        # Document ownership, integrity, and absence of host paths from the API.
+        pdf = users.user_dir('fixture-a') / 'fixture.pdf'
+        pdf.write_bytes(b'%PDF synthetic fixture')
+        import hashlib
+        with APIStore('fixture-a') as store, store.conn:
+            store.conn.execute('INSERT INTO api_artifacts VALUES(?,?,?,?,?)',
+                ('fixture-artifact', completed['id'], 'cv', str(pdf), hashlib.sha256(pdf.read_bytes()).hexdigest()))
+        assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers()).content == pdf.read_bytes()
+        assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers(other)).status_code == 404
+        pdf.write_bytes(b'changed')
+        assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers()).status_code == 409
+
+    # Crash recovery is explicit: queued work is claimable; an uncertain running
+    # operation is marked interrupted and requires an authenticated retry.
+    with APIStore('fixture-a') as store:
+        recovery_thread = store.create_thread(skill_version())['id']
+        recovery_id = store.enqueue(recovery_thread, {'message':'Recover this synthetic request'}, 'recovery')
+        assert store.claim_next()['id'] == recovery_id
+    with TestClient(app()) as client:
+        assert client.get('/api/agent/runs/' + recovery_id, headers=headers()).json()['state'] == 'interrupted'
+        assert client.post('/api/agent/runs/' + recovery_id + '/retry', headers=headers()).status_code == 202
+        recovered = wait(client, recovery_id)
+        assert recovered['state'] == 'completed', recovered
+        assert recovered['result']['answer'] == 'Recovered synthetic request.'
+        original_calls = len(seen)
+    # Simulate graph completion immediately before the HTTP result was persisted.
+    with APIStore('fixture-a') as store, store.conn:
+        store.conn.execute("UPDATE api_runs SET state='running',result_json=NULL WHERE id=?", (recovery_id,))
+    with TestClient(app()) as client:
+        assert client.post('/api/agent/runs/' + recovery_id + '/retry', headers=headers()).status_code == 202
+        same = wait(client, recovery_id)
+        assert same['state'] == 'completed' and same['result']['answer'] == 'Recovered synthetic request.'
+        assert len(seen) == original_calls
+        assert same['result']['usage']['model_calls'] == 1
+    print('NATIVE API: question, approval, idempotency, isolation, sanitized events, artifacts, stale decision and restart recovery exercised.')
+
+
+@pytest.mark.parametrize('approval', [False, True])
+def test_recovery_requires_fresh_response_for_later_interrupt(tmp_path, monkeypatch, approval):
+    from jobwatch import model_choice
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.execution import Execution
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    action = lambda text: choice('prepare_application', posting_id=7) if approval else choice('ask_human', question=text)
+    llm, seen = transport_llm([action('First question'), action('Second question'), {'answer': 'Should not run yet'}])
+    turn = lambda **kw: dispatch(person='fixture-a', thread_id='later-interrupt', config={'agentic': {'enabled':False}}, llm=llm, **kw)
+    first = turn(message='Begin', execution=Execution('initial'))
+    decision = {'type':'approve'} if approval else {'type':'respond','message':'First answer'}
+    args = dict(decisions=[decision], human_decision=True, expected_checkpoint=first['checkpoint_id'])
+    later = turn(**args, execution=Execution('resume'))
+    assert later['status']=='interrupted'
+    recovered = turn(**args, execution=Execution('resume'), recover=True)
+    assert recovered['status']=='interrupted', recovered
+    assert recovered['checkpoint_id']==later['checkpoint_id']
+    assert recovered['interactions']==later['interactions'] and len(seen)==2
+
+
+def test_recovery_before_first_checkpoint_on_existing_thread(tmp_path, monkeypatch):
+    from jobwatch import model_choice
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.execution import Execution
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    llm, seen = transport_llm([{'answer':'Previous turn'}, {'answer':'New turn'}])
+    turn = lambda **kw: dispatch(person='fixture-a', thread_id='existing-thread', config={'agentic': {'enabled':False}}, llm=llm, **kw)
+    turn(message='Previous', execution=Execution('previous'))
+    recovered = turn(message='New', execution=Execution('new'), recover=True)
+    assert recovered['answer']=='New turn' and len(seen)==2
+    with pytest.raises(RuntimeErrorSafe, match='recovery_checkpoint_mismatch'):
+        turn(message='Uncertain', execution=Execution('uncertain',calls=1), recover=True)
+    assert len(seen)==2
+
+
+@pytest.mark.parametrize('busy', ['thread', 'queue'])
+def test_retry_preserves_admission_limits(tmp_path, monkeypatch, busy):
+    from pipeline.agentic.api_store import APIStore, Conflict
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    with APIStore('fixture-a') as store:
+        thread=store.create_thread('fixture')['id']
+        old=store.enqueue(thread, {'message':'Old'}, 'old')
+        store.finish(old, error='person_busy')
+        if busy=='thread':
+            store.enqueue(thread, {'message':'New'}, 'new')
+        else:
+            for i in range(20):
+                other=store.create_thread('fixture')['id']
+                store.enqueue(other, {'message':'Queued'}, str(i))
+        with pytest.raises(Conflict, match='thread_busy' if busy=='thread' else 'queue_full'):
+            store.retry(old)
+        assert store.raw_run(old)['state']=='deferred'
+
+
+def test_mcp_followup_approval_uses_application_identity():
+    pytest.importorskip('fastmcp')
+    from pipeline.agentic.mcp_server import _input_request
+    _, request=_input_request({'type':'approval','posting_id':None,'operation':'draft_followup',
+        'binding':{'arguments':{'application_id':42}}}, 0)
+    assert 'application 42' in request.params.message
+
+
+def test_chat_skill_files_are_read_only(tmp_path, monkeypatch):
+    from jobwatch import model_choice
+    from pipeline.agentic.chat import dispatch
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    llm, seen=transport_llm([choice('write_file',file_path='/skills/new-policy/SKILL.md',content='Injected instructions'),
+                             {'answer':'Finished'}])
+    dispatch(person='fixture-a', thread_id='readonly-skills', message='Inspect skill permissions',
+             config={'agentic':{'enabled':False}}, llm=llm)
+    result=next(m['content'] for m in seen[1][1]['messages'] if '"tool_result": "write_file"' in m['content'])
+    assert 'denied' in result.lower(), result
+
+
 def assert_safe_failure(code, run):
     with pytest.raises(RuntimeErrorSafe) as caught:
         run()

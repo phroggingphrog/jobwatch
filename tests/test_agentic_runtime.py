@@ -1,6 +1,8 @@
 """Behavioral tests for the bounded, model-selected runtime."""
 from __future__ import annotations
 
+from jobwatch import model_choice
+
 from pydantic import BaseModel, ConfigDict
 import pytest
 
@@ -18,6 +20,7 @@ class Terminal(BaseModel):
 
 
 class FakeModel:
+    base_url = model_choice.SERVER_URL
     def __init__(self, choices):
         self.choices = iter(choices)
         self.seen = []

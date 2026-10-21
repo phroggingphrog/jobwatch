@@ -350,7 +350,7 @@ def _save_rejection(run_key, verdict, last=None) -> None:
 
 def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any,
                      llm_drafter: Any, llm_reviewer: Any, **kwargs) -> Any:
-    """Draft, allow at most two reviewer-requested revisions, then verify and package both PDFs."""
+    """Draft, allow one style rewrite, then verify factual integrity and package both PDFs."""
     if type(run_key) is not RunKey or type(evaluation) is not AgenticEvaluation \
             or evaluation.run_key != run_key:
         raise AgenticError("invalid_draft_input")

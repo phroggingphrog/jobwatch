@@ -452,7 +452,7 @@ def test_pipeline_runs_the_ai_step_last_so_a_timeout_cannot_cost_publish_and_pru
     config = _pipeline_world(tmp_path, monkeypatch, order)
     monkeypatch.setattr(reader, "after_collect", lambda conn, cfg, **kw: order.append("ai") or {"enabled": False})
     summary = pipeline.run(config, "fast")
-    assert order == ["publish", "prune", "ai"] and summary["ai"] == {"enabled": False}
+    assert order == ["publish", "prune", "ai"] and summary["ai"] == {"enabled": False, "execution_mode": "reader"}
 
 
 def test_pipeline_survives_a_crashing_ai_step(tmp_path, monkeypatch):

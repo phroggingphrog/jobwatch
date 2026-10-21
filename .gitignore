@@ -6,3 +6,16 @@ __pycache__/
 *.pre-*
 *.bak
 .taste-skill/
+# Private runtime data and credentials never belong in source control.
+.env
+.env.*
+settings.env
+*credentials*.json
+*.key
+*.db
+*.sqlite
+*.sqlite-*
+*.db-*
+agentic-failures/
+career-chat/
+drafts/

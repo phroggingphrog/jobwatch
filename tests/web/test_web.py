@@ -59,7 +59,7 @@ def test_pages_render(client):
 
 def test_root_serves_the_app_and_old_pages_redirect_into_it(client):
     r = client.get("/", follow_redirects=False)
-    assert r.status_code == 200 and "/static/app/app.js" in r.text
+    assert r.status_code == 200 and "/static/v3/" in r.text
     assert "'self'" in r.headers["content-security-policy"].split("font-src ")[1].split(";")[0]
     pid = client.ids["a"]
     for old, new in (("/classic", "/"), ("/table", "/#table"), ("/applications", "/#applications"),

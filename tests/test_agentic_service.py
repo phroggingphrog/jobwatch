@@ -139,6 +139,81 @@ def world(tmp_path, monkeypatch):
     return conn, config, bundle, add
 
 
+def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
+    """Authenticated HTTP -> real graph -> existing pipeline -> verified PDF download."""
+    import time
+    from fastapi.testclient import TestClient
+    from jobwatch import users, model_choice
+    from pipeline.agentic.api import create_api, Principal
+    from pipeline.agentic.liveness import PostingObservation
+    from jobwatch.candidate.contracts import content_hash
+    from jobwatch.models import canonical_url
+    from datetime import datetime, timezone
+
+    conn, config, bundle, add = world
+    text = add(42)
+    def observation(posting, *, deadline):
+        return PostingObservation(posting_id=posting['id'], url_hash=content_hash(canonical_url(posting['url']).encode()),
+            checked_at=datetime.now(timezone.utc).isoformat(), status='active', reason='visible_job_description',
+            title=posting['title'], text=text, ad_hash=content_hash(text.encode()), source_url=posting['url'])
+    monkeypatch.setattr('pipeline.agentic.service.observe_posting', observation)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    synthetic = SyntheticGateway(bundle)
+    conversation_calls = []
+    def transport(url, headers, body, timeout):
+        if body['messages'][-1]['content'].startswith('Allowed tool schemas: '):
+            value = {'tool':'prepare_application','arguments':{'posting_id':42}} if len(conversation_calls) % 2 == 0 else {'answer':'Check the saved operation outcome; final Submit remains human.'}
+            conversation_calls.append(value)
+            return 200, {'choices':[{'message':{'content':json.dumps(value)}}], 'usage':{'prompt_tokens':11,'completion_tokens':7}}
+        return synthetic(url, headers, body, timeout)
+    llm = LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    run_key, approve_key = 'synthetic-run-' + 'x'*40, 'synthetic-approve-' + 'y'*40
+    app = create_api(config=config, llm_factory=lambda person:llm, credentials={
+        run_key: Principal(users.DEFAULT_USER), approve_key: Principal(users.DEFAULT_USER, frozenset({'read','interact','approve'}))})
+    headers = {'Authorization':'Bearer '+run_key, 'Idempotency-Key':'prepare-42'}
+    def wait(client, ident):
+        deadline=time.monotonic()+45
+        while time.monotonic()<deadline:
+            result=client.get('/api/agent/runs/'+ident,headers=headers).json()
+            if result['state'] not in ('queued','running'):return result
+            time.sleep(.03)
+        pytest.fail('Synthetic native pipeline did not finish')
+    with TestClient(app) as client:
+        thread=client.post('/api/agent/threads',headers=headers).json()['id']
+        created=client.post('/api/agent/threads/'+thread+'/runs',headers=headers,json={'message':'Prepare job 42'}).json()
+        pending=wait(client,created['id'])
+        assert pending['state']=='waiting_for_approval',pending
+        resumed=client.post('/api/agent/interactions/'+pending['interactions'][0]['id']+'/responses',
+            headers={'Authorization':'Bearer '+approve_key},json={'decision':'approve'}).json()
+        finished=wait(client,resumed['run_id'])
+        assert finished['state']=='completed',finished
+        assert finished['result']['outcomes'][0]['status']=='ready',finished
+        assert {a['kind'] for a in finished['artifacts']}=={'cv','letter','form_map'}
+        for artifact in finished['artifacts']:
+            response=client.get(artifact['url'],headers=headers)
+            assert response.status_code==200
+            if artifact['kind']!='form_map':assert response.content.startswith(b'%PDF')
+        assert finished['result']['usage']['model_calls']>1
+        assert conn.execute("SELECT COUNT(*) FROM agentic_packages WHERE phase='complete'").fetchone()[0]==1
+        calls_before = len(synthetic.calls)
+        assert run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm,
+                               operation='evaluate') == Stage.READY
+        assert latest_result(conn, 42)['status'] == 'ready'
+        assert len(synthetic.calls) == calls_before
+        def busy(*args, _skip_reasons, **kwargs):
+            _skip_reasons.append({'posting_id': 42, 'reason': 'lease_conflict', 'next_eligible_at': 123.0})
+        monkeypatch.setattr('pipeline.agentic.service.run_agentic_job', busy)
+        again=client.post('/api/agent/threads/'+thread+'/runs', headers={**headers,'Idempotency-Key':'busy-42'},
+                          json={'message':'Prepare job 42 again'}).json()
+        pending=wait(client,again['id'])
+        resumed=client.post('/api/agent/interactions/'+pending['interactions'][0]['id']+'/responses',
+            headers={'Authorization':'Bearer '+approve_key},json={'decision':'approve'}).json()
+        deferred=wait(client,resumed['run_id'])['result']['outcomes'][0]
+        assert deferred['status']=='deferred' and deferred['reason']=='lease_conflict', deferred
+        assert deferred['next_eligible_at']==123.0
+        print('NATIVE PACKAGE: authenticated approval -> cited evaluation -> CV/letter PDFs + form map; one immutable package, no Submit.')
+
+
 def test_complete_real_pipeline_varied_jobs_pdf_ledger_and_idempotency(world):
     conn, config, bundle, add = world
     add(42); add(43, 'Synthetic Beta'); add(44, low=True); add(45, 'Synthetic Gamma')

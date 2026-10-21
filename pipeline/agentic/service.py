@@ -59,7 +59,8 @@ def agentic_settings(config) -> dict:
 
 
 def enabled(config) -> bool:
-    return agentic_settings(config).get('enabled', False) is True
+    from jobwatch.execution_mode import effective_mode
+    return effective_mode(config) == 'agentic'
 
 
 def _config(config):
@@ -283,8 +284,15 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     evidence_bundle=None, llm=None, llm_drafter=None, llm_reviewer=None,
                     batch: BatchBudget | None = None, candidate_cache: dict | None = None,
                     expected_run_key: str | None = None, _batch_registry: dict | None = None,
-                    _invocation_deadline: float | None = None) -> Stage | None:
+                    _invocation_deadline: float | None = None, operation: str = 'prepare',
+                    _skip_reasons=None, collector_run_id=None) -> Stage | None:
+    if operation not in ('evaluate', 'prepare'):
+        raise AgenticError('invalid_operation')
+    def skip(reason, next_eligible_at=None):
+        if _skip_reasons is not None:
+            _skip_reasons.append({'posting_id': posting_id, 'reason': reason, 'next_eligible_at': next_eligible_at})
     if not enabled(config):
+        skip('agentic_disabled')
         return None
     cfg, pol = _config(config), policy or default_policy()
     draft_limits = _draft_limits(config)
@@ -295,6 +303,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     verify_evidence_snapshot(bundle)
     captured = _capture(conn, posting_id)
     if captured is None:
+        skip('posting_missing')
         return None
     reference, mappings = load_inputs(bundle, cfg)
     key = _run_key(posting_id, captured, bundle, pol, cfg, (reference, mappings))
@@ -318,7 +327,20 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     # Lease outlasts the whole bounded role execution, including PDF and journaling.
     claim = store.claim(key, 'agentic-' + uuid.uuid4().hex, cfg['job_seconds'] + 180)
     if claim is None:
+        lease = conn.execute('SELECT lease_until FROM agentic_runs WHERE run_key=?', (key.value,)).fetchone()
+        skip('lease_conflict', lease[0] if lease else None)
         return None
+    from pipeline.agentic.execution import current
+    scope = current()
+    trace_id = scope.run_id if scope else invocation_id
+    def activity(event, code=None):
+        conn.execute('INSERT INTO agentic_activity(run_key,posting_id,collector_run_id,batch_id,invocation_id,event,at,reason) '
+                     'VALUES(?,?,?,?,?,?,?,?)', (key.value, posting_id, collector_run_id,
+                     batch.batch_id if batch else invocation_id, trace_id, event, time.time(), code))
+        conn.commit()
+        if scope:
+            scope.event('job_' + event, posting_id=posting_id, run_key=key.value, reason=code)
+    activity('started')
     budget = None
     stage, reason, final_status = Stage.DLQ, 'execution_failed', 'held'
     try:
@@ -414,7 +436,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             adapter.save_artifact(claim, 'evaluation', evaluation.model_dump(mode='json'))
             # Jev skills (owner 2026-10-12, career facts only): a second-opinion fit score and a requirement map
             # for the board and the writer. Failures only mean they are missing.
-            facts = jev_skills.safe_facts(profile_from_snapshot(bundle), (bundle_name(bundle) or ''))
+            # Candidate-derived facts may only use the approved paid gateway.
+            # Legacy direct Jev/vector extras have no approved candidate route.
+            facts = []
             requirement_map = []
             if saved_package is None and facts:
                 fit = jev_skills.fit_scores(ad_text, facts, config)
@@ -428,6 +452,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if decision.route != 'draft':
                 stage = Stage.ARCHIVED if decision.route == 'archive' else Stage.DLQ
                 reason, final_status = decision.reason, 'archived' if decision.route == 'archive' else 'held'
+            elif operation == 'evaluate':
+                reason = 'evaluation_complete'
             else:
                 if saved_package is None:
                     budget.ensure_live()
@@ -468,6 +494,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if stage != Stage.READY:
                 adapter.set_stage(claim, stage, reason, key.ad_hash)
             store.release(claim, status=final_status, reason=reason)
+            activity('finished', reason)
         except AgenticError:
             # A stale worker cannot overwrite the current worker's projection.
             pass
@@ -477,7 +504,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
 
 
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, expected_run_keys=None, **kwargs):
-    summary = {'processed': 0, 'ready': 0, 'archived': 0, 'held': 0, 'skipped': 0}
+    summary = {'processed': 0, 'ready': 0, 'archived': 0, 'held': 0, 'skipped': 0,
+               'deferred': [], 'skipped_reasons': {}}
     if not enabled(config):
         return summary
     store = AgenticStore(conn); store.ensure()
@@ -497,11 +525,13 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             # Out of time. A job started with ~0 s can only be recorded as "posting_unavailable" without being read,
             # and that false hold sends it to the back of the rotation; leave the rest untouched for the next run.
             summary['skipped'] += len(todo) - n
+            summary['deferred'].extend({'posting_id': p, 'reason': 'batch_deadline', 'next_eligible_at': None} for p in todo[n:])
             break
+        skips = []
         stage = run_agentic_job(pid, config, conn, batch=batch, evidence_bundle=bundle,
                                 candidate_cache=cache, _batch_registry=batches, _invocation_deadline=invocation_deadline,
                                 expected_run_key=expected_run_keys.get(pid) if expected_run_keys is not None else None,
-                                **kwargs)
+                                _skip_reasons=skips, **kwargs)
         last = conn.execute("SELECT reason FROM agentic_runs WHERE posting_id=? ORDER BY rowid DESC LIMIT 1",
                             (pid,)).fetchone()
         if stage == Stage.DLQ and expected_run_keys is None and last is not None and last[0] == 'snapshot_changed' \
@@ -514,6 +544,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
                                     _invocation_deadline=invocation_deadline, **kwargs)
         if stage is None:
             summary['skipped'] += 1
+            summary['deferred'].extend(skips or [{'posting_id': pid, 'reason': 'not_admitted', 'next_eligible_at': None}])
             continue
         summary['processed'] += 1
         summary[{Stage.READY: 'ready', Stage.ARCHIVED: 'archived', Stage.DLQ: 'held'}[stage]] += 1
@@ -532,11 +563,13 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
     summary['charged_tokens'] = sum(value.charged_tokens for value in batches.values())
     summary['spent_tokens'] = sum(value.charged_tokens - previous_charges.get(ident, 0)
                                   for ident, value in batches.items())
+    for item in summary['deferred']:
+        summary['skipped_reasons'][item['reason']] = summary['skipped_reasons'].get(item['reason'], 0) + 1
     return summary
 
 
 def _tell_owner_ready(conn, pid):
-    """A READY job goes to the Chat page and to Hermes (iMessage), so the owner hears about it."""
+    """A READY job goes to the board's chat history; notify() does not push it."""
     try:
         from jobwatch.notify import BOARD, notify
         row = conn.execute("SELECT title, company FROM postings WHERE id=?", (pid,)).fetchone()
@@ -560,7 +593,7 @@ def _alert_if_error(conn, pid):
         pass
 
 
-def after_collect(conn, config, max_seconds=None):
+def after_collect(conn, config, max_seconds=None, collector_run_id=None):
     if not enabled(config):
         return {'skipped': 'disabled'}
     started = time.monotonic()
@@ -612,7 +645,7 @@ def after_collect(conn, config, max_seconds=None):
         # it and the fast timer was killed at systemd's 15 min limit).
         if max_seconds is not None:
             max_seconds = max(60, max_seconds - (time.monotonic() - started))
-        return agentic_batch_run(ids, config, conn, max_seconds=max_seconds)
+        return agentic_batch_run(ids, config, conn, max_seconds=max_seconds, collector_run_id=collector_run_id)
 
 
 MODEL_RETRY = ('model_unavailable', 'model_invalid_response', 'model_truncated_response', 'invalid_requirements')

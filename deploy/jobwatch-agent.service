@@ -1,0 +1,17 @@
+[Unit]
+Description=Jobwatch native agent backend
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/jobwatch
+EnvironmentFile=%h/.config/jobwatch/agent.env
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch-agent --host 127.0.0.1 --port 8914
+Restart=always
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

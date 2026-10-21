@@ -32,8 +32,9 @@ openrouter_extras:
     five_years: 0.95      # ad requires 5+ years or is senior/manager level (0.9 caught retail Assistant Managers)
   embed_model: openrouter/qwen/qwen3-embedding-8b  # through OmniRoute (owner 2026-10-12); Jev stays direct
 pipeline:
-  # Deterministic state pipeline (pipeline/graph.py, owner spec 8 Oct 2026). ON since 2026-10-08 (BUI-98): every timer
-  # run calls the graph instead of the reader; the board shows its verdicts. Undo: enabled: false (the reader returns).
+  # One effective AI mode. Collection is independent. Rollback: set reader or pipeline; off disables AI work.
+  execution_mode: agentic
+  # Legacy flags below are read only when execution_mode is absent.
   enabled: true
   threshold: 3.8          # node 4: score >= 3.8 goes to drafting
   ingest_limit: 200       # node 1: new jobs admitted per run
@@ -43,7 +44,7 @@ pipeline:
   concurrency: 6
   agentic:
     # Live since a58b444 (owner-enabled).
-    # Rollback: false restores the previous pipeline.
+    # Legacy flag; use pipeline.execution_mode for dispatch and rollback.
     enabled: true
     credential_index: 1  # key 0 is not allowed for claude/ combos (BUI-350)
     job_token_ceiling: 1500000  # 2026-10-12 late: retries of one job share this budget; Morrows hit 900k after 10 writer + 2 reviewer turns. Earlier 2026-10-12: writer now also reads the owner's voice guide; 600k ran out in review round 2;  # BUI-350: 250k ran out mid-evaluation; conservative reservations for complete evidence-backed documents

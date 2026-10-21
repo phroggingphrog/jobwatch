@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 from jobwatch.settings import DEFAULT_MODEL
 import json
 from types import SimpleNamespace
@@ -42,6 +44,7 @@ def proposal(bundle=None, ad_text='Reconcile accounts using SQL.'):
 
 
 class Writer:
+    base_url = model_choice.SERVER_URL
     def __init__(self, bundle, payload=None, skip_read=False):
         self.bundle, self.payload, self.skip_read = bundle, payload or proposal(bundle), skip_read
         self.calls = []
@@ -55,6 +58,7 @@ class Writer:
 
 
 class Reviewer:
+    base_url = model_choice.SERVER_URL
     def __init__(self, verdicts=('approve',), bad_hash=False, missing=False):
         self.verdicts, self.bad_hash, self.missing = iter(verdicts), bad_hash, missing
         self.calls = []
@@ -167,6 +171,7 @@ def test_public_tools_expose_only_fixed_intents_and_preserve_snapshots(case):
             assert result_id == 'r1'
             return ResearchPage('r1', 'They asked: How do you reconcile a ledger?')
     class ResearchWriter(Writer):
+        base_url = model_choice.SERVER_URL
         def chat_once(self, model, messages, **kwargs):
             self.calls.append((model, messages))
             n = len(self.calls)

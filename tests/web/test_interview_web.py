@@ -1,3 +1,5 @@
+
+from jobwatch import model_choice
 from datetime import UTC, datetime
 
 import pytest
@@ -17,11 +19,12 @@ def prep_client(tmp_path, monkeypatch):
     data=tmp_path/'data'; profile=data/'profile'; profile.mkdir(parents=True)
     (profile/'cv.md').write_text('# Synthetic Candidate\n\n## Skills\n- Reconciled ledgers.\n')
     monkeypatch.setenv('JOBWATCH_DATA_DIR',str(data)); monkeypatch.setenv('JOBWATCH_PROFILE_DIR',str(profile)); monkeypatch.delenv('JOBWATCH_DB',raising=False)
-    config=Config(config_dir=DEFAULT_CONFIG_DIR,settings=_merge(DEFAULT_SETTINGS,{'db_path':str(data/'test.db'),'pipeline':{'agentic':{'enabled':True,'worker_model':'claude/sonnet','reviewer_model':'claude/opus','research_enabled':False}}}),rules={},searches={},feeds={},employers=[])
+    config=Config(config_dir=DEFAULT_CONFIG_DIR,settings=_merge(DEFAULT_SETTINGS,{'db_path':str(data/'test.db'),'pipeline':{'agentic':{'enabled':True,'worker_model':'claude/sonnet','reviewer_model':'claude/haiku','research_enabled':False}}}),rules={},searches={},feeds={},employers=[])
     conn=db.connect(config.db_path); pid=seed(conn,1,'Accounts role',company='Example',arm='accounting')
     conn.execute("INSERT INTO ad_text(posting_id,text,source,fetched_at) VALUES(?,?,'cached',?)",(pid,AD,datetime.now(UTC).isoformat())); conn.commit(); conn.close()
     bundle=snapshot_evidence(profile); writer=Writer(bundle,payload=proposal(bundle,AD)); reviewer=Reviewer(verdicts=('approve',)*10)
     class Combo:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,model,*args,**kwargs):
             return (writer if model=='claude/sonnet' else reviewer).chat_once(model,*args,**kwargs)
     monkeypatch.setattr('jobwatch.interview_prep.configured_llm',lambda _:Combo())
@@ -70,6 +73,7 @@ def test_held_requires_explicit_retry(prep_client,monkeypatch):
     import jobwatch.interview_prep as service
     original=service.configured_llm
     class Failed:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw): raise RuntimeError('private exception')
     monkeypatch.setattr(service,'configured_llm',lambda _:Failed())
     assert 'Preparation held for verification' in c.post(url).text
@@ -171,6 +175,7 @@ def test_startup_never_retries_held_unknown_dispatch(prep_client,monkeypatch):
     import jobwatch.interview_prep as service
     c=prep_client
     class Failed:
+        base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw): raise RuntimeError('uncertain private call')
     monkeypatch.setattr(service,'configured_llm',lambda _:Failed())
     assert 'Preparation held for verification' in c.post(f'/jobs/{c.pid}/interview-prep').text

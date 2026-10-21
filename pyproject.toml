@@ -1,7 +1,7 @@
 [project]
 name = "jobwatch"
 version = "0.1.0"
-description = "Small job watcher: collect, filter, dedupe, alert (Melbourne target arms)."
+description = "Agentic career operations with a native API, evidence-bound applications and human approval."
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "python-jobspy>=1.1.80",
@@ -16,14 +16,22 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pydantic>=2.6",
     "deepagents==0.7.23",
+    "langchain>=1.4.0,<2",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "httpx>=0.27"]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "agentevals>=0.0.9",
+]
 browser = ["playwright>=1.50,<2"]
+mcp = ["langchain[mcp]>=1.4.0,<2"]
 
 [project.scripts]
 jobwatch = "jobwatch.cli:main"
+jobwatch-mcp = "pipeline.agentic.mcp_server:main"
+jobwatch-agent = "pipeline.agentic.api:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -44,4 +52,4 @@ markers = ["real_cv_printer: run the real Chromium CV printer instead of the in-
 
 "jobwatch.preferences" = ["*.R", "*.jags"]
 
-"pipeline.agentic" = ["data/*.json", "data/*.md"]
+"pipeline.agentic" = ["data/*.json", "data/*.md", "skills/*/SKILL.md"]
