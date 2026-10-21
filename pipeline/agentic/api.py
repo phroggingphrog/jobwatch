@@ -251,7 +251,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     def capabilities(principal=Depends(read)):
         return dict(schema_version=1, execution_mode=effective_mode(get_config(principal.person)),
                     skill_version=skill_version(), protocol='native-http',
-                    human_submit=True, scopes=sorted(principal.scopes))
+                    human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes))
 
     @app.post('/api/agent/threads', status_code=201)
     def create_thread(principal=Depends(write)):

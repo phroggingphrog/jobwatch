@@ -73,6 +73,17 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .prepare_routes import register as register_preparation
     sessions = BrowserSessionManager()          # per signed-in person (users.user_dir()), not one fixed root
 
+    def for_each_person(fn):
+        """Run background work once per person, as that person (their DB, folders and browser sessions)."""
+        for name in users.list_users():
+            if name != users.DEFAULT_USER and not users.db_path(name).exists():
+                continue                            # never create a DB from a background loop
+            try:
+                with users.use(name):
+                    fn()
+            except Exception:                       # one person's failure never stops the others
+                logging.getLogger(__name__).exception("background work failed for one person")
+
     @asynccontextmanager
     async def lifespan(app):
         async def recover_interviews():
@@ -101,21 +112,32 @@ def create_app(config: Config | None = None) -> FastAPI:
             while True:
                 await asyncio.sleep(60)
                 try:
-                    await asyncio.to_thread(app.state.auto_fill_ready)
+                    await asyncio.to_thread(for_each_person, app.state.auto_fill_ready)
                 except Exception:                  # one bad tick (locked db, missing table) must not end auto-fill for good
                     logging.getLogger(__name__).exception("auto-fill tick failed")
+        async def submit_loop():
+            while True:                            # approved chat Submits and Submits seen with no prepare page open
+                await asyncio.sleep(5)
+                try:
+                    await asyncio.to_thread(for_each_person, app.state.process_submit_requests)
+                    await asyncio.to_thread(for_each_person, app.state.settle_open_sessions)
+                except Exception:
+                    logging.getLogger(__name__).exception("submit tick failed")
         recovery = asyncio.create_task(recover_interviews())
         filler = asyncio.create_task(auto_fill_loop())
+        submitter = asyncio.create_task(submit_loop())
         try:
             yield
         finally:
             filler.cancel()
+            submitter.cancel()
             try:
                 await recovery
             finally:
                 sessions.close_all()
 
     app = FastAPI(title="jobwatch", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.state.for_each_person = for_each_person
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     env = templates.env

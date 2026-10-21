@@ -29,6 +29,9 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget
 from pipeline.agentic.service import configured_llm, snapshot_inventory, _config
 
 
+SUBMIT_WAIT_SECONDS = 95       # a confirmed press is watched as long as the owner's own (browser_session submit watch)
+
+
 def package_is_current(conn, config, posting_id, package):
     """Bind UI readiness to today's exact ad, profile, policy and runtime inputs."""
     try:
@@ -76,10 +79,10 @@ def register(app, config, conn_factory, render, sessions):
             raise HTTPException(409, 'Prepare the application documents first.')
         return job, package
 
-    def settle_submit(posting_id, aid):
-        """After the owner pressed Submit: confident confirmation -> Applied (same write as the status select);
-        unsure -> a 'submit_unsure' event, which the job page turns into a one-line question."""
-        result = sessions.take_submit_result(aid) if aid else None
+    def settle_submit(posting_id, aid, result=None):
+        """After Submit was pressed (by the owner, or for their confirmation): confident confirmation -> Applied (same
+        write as the status select); unsure -> a 'submit_unsure' event, which the job page turns into a one-line question."""
+        result = result or (sessions.take_submit_result(aid) if aid else None)
         if not result:
             return
         conn = conn_factory()
@@ -278,6 +281,8 @@ def register(app, config, conn_factory, render, sessions):
         when pressed, else a fixed reason; nothing is pressed unless the live page still matches `confirm`."""
         state = preparation_context(posting_id)
         prepared = state['prepared']
+        if not state['browser']['open']:
+            return 'browser_closed'
         if state['browser']['automation_active'] or not confirm or submit_confirm.digest(prepared) != confirm:
             return 'submit_confirmation_stale'
         aid = str(state['job']['application_id'])
@@ -298,6 +303,57 @@ def register(app, config, conn_factory, render, sessions):
         return None
 
     app.state.confirmed_submit = confirmed_submit
+
+    def process_submit_requests():
+        """Chat-approved Submits (submit_confirm.submit_requests, queued by the agent API): pressed only through
+        confirmed_submit's live check, then the page is watched and the outcome recorded for submit_status."""
+        conn = conn_factory()
+        try:
+            rows = submit_confirm.pending(conn)
+        except sqlite3.Error:
+            return
+        finally:
+            conn.close()
+        for row in rows:
+            status, reason = 'refused', None
+            try:
+                job, _ = context(row['posting_id'])
+                if job['application_id'] != row['application_id']:
+                    reason = 'application_changed'
+                else:
+                    reason = confirmed_submit(row['posting_id'], row['digest'], 'agent-api')
+                    if reason is None:
+                        aid, result, until = str(row['application_id']), None, time.monotonic() + SUBMIT_WAIT_SECONDS
+                        while result is None and time.monotonic() < until:
+                            result = sessions.take_submit_result(aid)
+                            if result is None:
+                                time.sleep(0.5)
+                        if result:
+                            settle_submit(row['posting_id'], aid, result)
+                        status = 'submitted' if result == 'confident' else 'unsure'
+            except Exception:  # noqa: BLE001 - one request never stops the others; fixed reason only
+                reason = reason or 'submit_failed'
+            conn = conn_factory()
+            try:
+                submit_confirm.settle(conn, row['id'], status, reason)
+            finally:
+                conn.close()
+
+    app.state.process_submit_requests = process_submit_requests
+
+    def settle_open_sessions():
+        """Record a Submit seen in an open browser even when no prepare page is polling (the page used to be the only
+        place settle_submit ran)."""
+        for aid in getattr(sessions, 'open_applications', lambda: [])():
+            conn = conn_factory()
+            try:
+                row = conn.execute('SELECT posting_id FROM applications WHERE id=?', (int(aid),)).fetchone()
+            finally:
+                conn.close()
+            if row is not None:
+                settle_submit(row['posting_id'], aid)
+
+    app.state.settle_open_sessions = settle_open_sessions
 
     @app.post('/job/{posting_id}/prepare/submit')
     async def prepare_submit(request: Request, posting_id: int):

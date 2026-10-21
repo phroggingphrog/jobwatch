@@ -444,3 +444,19 @@ def test_confirmation_text_is_recognised(text):
 def test_confirmation_url_only_matches_a_final_confirmation_page(path, confirmed):
     from jobwatch.web.browser_session import _CONFIRM_URL
     assert bool(_CONFIRM_URL.search(path)) is confirmed
+
+
+def test_open_applications_lists_only_the_current_persons_live_browsers(tmp_path, monkeypatch, local_site):
+    from jobwatch import users
+    from jobwatch.web.browser_session import BrowserSessionManager
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    manager = BrowserSessionManager(allow_loopback=True)
+    try:
+        manager.open('owner-app', local_site)
+        with users.use('friend'):
+            users.create_user_dirs('friend')
+            manager.open('friend-app', local_site)
+            assert manager.open_applications() == ['friend-app']
+        assert manager.open_applications() == ['owner-app']
+    finally:
+        manager.close_all()

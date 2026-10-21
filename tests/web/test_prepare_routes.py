@@ -35,8 +35,10 @@ class Browser:
         self.opened = False
     def close_all(self):
         self.opened = False
+    result = None
     def take_submit_result(self, aid):
-        return None
+        result, self.result = self.result, None
+        return result
     confirms = None
     def confirm_submit(self, aid, digest, prepared):
         if self.confirms is None:
@@ -45,6 +47,7 @@ class Browser:
             from jobwatch.web.browser_session import BrowserSessionError
             raise BrowserSessionError(self.refuse)
         self.confirms.append((aid, digest))
+        self.result = getattr(self, 'after_press', None)          # the page's verdict exists only after a press
         return 'pressed'
     def snapshot(self, aid):
         self.frames += 1
@@ -375,3 +378,69 @@ def test_no_submit_button_without_a_confirmable_fill(tmp_path, monkeypatch):
     browser.opened = True
     ready_state(monkeypatch, manifest).pop('final_control')
     assert 'Submit this application' not in client.get(f'/job/{client.pid}/prepare').text
+
+
+def _queue(client, digest, *, now=None):
+    from jobwatch.apply import submit_confirm as sc
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    aid = conn.execute('SELECT id FROM applications WHERE posting_id=?', (client.pid,)).fetchone()[0]
+    request = sc.queue(conn, posting_id=client.pid, application_id=aid, confirm_digest=digest, approval='appr', now=now)
+    conn.close()
+    return aid, request['request_id']
+
+
+def _request(client, rid):
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    try:
+        return tuple(conn.execute('SELECT status, reason FROM submit_requests WHERE id=?', (rid,)).fetchone())
+    finally:
+        conn.close()
+
+
+def test_an_approved_chat_request_is_pressed_through_the_live_check_and_recorded(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened, browser.after_press = True, 'confident'
+    state = ready_state(monkeypatch, manifest)
+    aid, rid = _queue(client, sc.digest(state))
+    client.app.state.process_submit_requests()
+    assert browser.confirms == [(str(aid), sc.digest(state))] and _request(client, rid) == ('submitted', None)
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    assert conn.execute('SELECT status FROM applications WHERE id=?', (aid,)).fetchone()[0] == 'applied'
+    assert conn.execute("SELECT source FROM application_events WHERE kind='submit_confirmed'").fetchone()[0] == 'agent-api'
+
+
+def test_a_stale_or_expired_chat_request_presses_nothing(tmp_path, monkeypatch):
+    import time
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened = True
+    state = ready_state(monkeypatch, manifest)
+    _, stale = _queue(client, '0' * 64)
+    client.app.state.process_submit_requests()
+    assert browser.confirms is None and _request(client, stale) == ('refused', 'submit_confirmation_stale')
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    conn.execute("UPDATE submit_requests SET approval='old'"); conn.commit(); conn.close()
+    _, expired = _queue(client, sc.digest(state), now=time.time() - sc.CONFIRM_SECONDS - 1)
+    client.app.state.process_submit_requests()
+    assert browser.confirms is None and _request(client, expired) == ('expired', None)
+
+
+def test_background_work_runs_once_per_person_as_that_person(tmp_path, monkeypatch):
+    from jobwatch import users
+    client, browser, _ = setup(tmp_path, monkeypatch)
+    users.create_user_dirs('friend')
+    (users.user_dir('friend') / 'jobwatch.db').touch()
+    seen = []
+    client.app.state.for_each_person(lambda: seen.append(users.current()))
+    assert seen == [users.DEFAULT_USER, 'friend']
+
+
+def test_a_submit_seen_while_no_prepare_page_is_open_is_still_recorded(tmp_path, monkeypatch):
+    client, browser, _ = setup(tmp_path, monkeypatch)
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    aid = conn.execute('SELECT id FROM applications WHERE posting_id=?', (client.pid,)).fetchone()[0]
+    browser.opened, browser.result = True, 'confident'
+    browser.open_applications = lambda: [str(aid)]
+    client.app.state.settle_open_sessions()
+    assert conn.execute('SELECT status FROM applications WHERE id=?', (aid,)).fetchone()[0] == 'applied'

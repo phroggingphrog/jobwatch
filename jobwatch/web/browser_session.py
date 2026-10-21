@@ -594,6 +594,13 @@ class BrowserSessionManager:
     def status(self, application_id):
         return self._get(application_id).status()
 
+    def open_applications(self) -> list[str]:
+        """Application ids with a live browser for the current person."""
+        from jobwatch import users
+        with self.lock:
+            return [key[1] if isinstance(key, tuple) else key for key, session in self.sessions.items()
+                    if session.state == 'ready' and (self.data_root is not None or key[0] == users.current())]
+
     def take_submit_result(self, application_id):
         """'confident' | 'unsure' | None: what the page showed after the owner pressed Submit. Read once."""
         try:

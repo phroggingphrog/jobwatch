@@ -68,7 +68,8 @@ def _input_request(interaction: dict, index: int) -> tuple[str, ElicitRequest]:
                    'assess_job': 'assess job posting',
                    'prepare_application': 'prepare an application for job posting',
                    'prepare_interview': 'prepare interview material for job posting',
-                   'draft_followup': 'draft a follow-up for application'}
+                   'draft_followup': 'draft a follow-up for application',
+                   'submit_application': 'press the employer\'s final Submit for job posting'}
         if operation not in actions:
             raise RuntimeErrorSafe('invalid_chat_interaction')
         identity = ((interaction.get('binding') or {}).get('arguments', {}).get('application_id')
@@ -77,7 +78,10 @@ def _input_request(interaction: dict, index: int) -> tuple[str, ElicitRequest]:
             raise RuntimeErrorSafe('invalid_chat_interaction')
         key = f'interaction_{index}'
         req = ElicitRequest(params=ElicitRequestFormParams(
-            message=(f"Allow Jobwatch Career Ops to {actions[operation]} {identity}? "
+            message=(f"Allow Jobwatch to {actions[operation]} {identity}? This SENDS the application to the employer, "
+                     "exactly as filled and reviewed; nothing is sent if the form changed."
+                     if operation == 'submit_application' else
+                     f"Allow Jobwatch Career Ops to {actions[operation]} {identity}? "
                      "This may use paid model calls and save career-work artifacts. It will not submit an application."),
             requestedSchema={'type': 'object', 'properties': {
                 'approve': {'type': 'boolean', 'description': 'Allow this Career Ops run.'}},
