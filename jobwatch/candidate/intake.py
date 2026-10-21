@@ -543,6 +543,22 @@ def _write_profile(pdir: Path, files: dict[str, str]) -> None:
                 pass
 
 
+_PROJECTED = ("profile.yaml", "master_resume.md", "interests_and_criteria.yaml")
+_EVIDENCE = ("profile.yaml", "master_resume.md")           # the projected files the evidence snapshot reads
+
+
+def _finish(person: str, cur: Proposal, pdir: Path, files: dict[str, str]) -> None:
+    """The steps after the version exists; each is idempotent, so a retry after a crash completes them.
+    Order: projection, proposal confirmed, other drafts superseded."""
+    _write_profile(pdir, files)
+    save_proposal(person, cur.model_copy(update={"status": "confirmed"}))
+    for other in (p.stem for p in (_root(person) / "proposals").glob("*.json") if p.stem != cur.id and _ID.match(p.stem)):
+        with _locked(person, other + ".lock", "proposals"):          # versions.lock is outermost: no lock cycle
+            o = load_proposal(person, other)
+            if o.status == "draft":
+                save_proposal(person, o.model_copy(update={"status": "superseded"}))
+
+
 def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest: str,
             actor: Literal["person"], config) -> int:
     """Approve the draft the person was shown. Returns the new version number.
@@ -563,12 +579,21 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         if _scope_digest(scope) != scope_digest:
             raise IntakeError("scope_changed")
         nums = _numbers(person)
-        if cur.base_version is not None and cur.base_version != (nums[-1] if nums else None):
-            raise IntakeError("proposal_changed")      # built on a version that is no longer current
         pdir = apaths.profile_dir()
-        ours = ("profile.yaml", "master_resume.md")
-        # hand-made files that are not ours would change the evidence snapshot; Task 6's adoption brings them in
-        if any(os.path.lexists(pdir / name) for name in _ALLOWED if not nums or name not in ours):
+        if nums:
+            last = _approved(person, nums[-1])
+            if last.get("proposal_id") == cur.id and last.get("proposal_digest") == proposal_digest \
+                    and last.get("scope_digest") == scope_digest:
+                # an earlier call died after writing this version: finish the remaining steps, never mint another
+                vdir = _versions_root(person) / str(nums[-1])
+                files = {k: read_regular_file(vdir / k, MAX_JSON_BYTES).decode("utf-8") for k in _PROJECTED}
+                _finish(person, cur, pdir, files)
+                return nums[-1]
+        if cur.base_version != (nums[-1] if nums else None):
+            raise IntakeError("proposal_changed")      # built on no version or an old one: not on the current version
+        # hand-made files would change the evidence snapshot or be overwritten; Task 6's adoption brings them in
+        mine = _PROJECTED if nums else ()
+        if any(os.path.lexists(pdir / name) for name in dict.fromkeys(_ALLOWED + _PROJECTED) if name not in mine):
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
         facts, open_questions = _reconciled(cur)
@@ -585,7 +610,7 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
             ensure_dir(stage)
             for name, text in files.items():
                 _write_private(stage / name, text.encode("utf-8"))
-                if name in ours:
+                if name in _EVIDENCE:
                     _write_private(stage / "evidence" / name, text.encode("utf-8"))
             bundle = snapshot_evidence(stage / "evidence")
             approved["evidence_bundle_hash"] = bundle.bundle_hash
@@ -596,11 +621,5 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         except BaseException:
             shutil.rmtree(stage, ignore_errors=True)
             raise
-        _write_profile(pdir, files)
-        save_proposal(person, cur.model_copy(update={"status": "confirmed"}))
-        for other in (p.stem for p in (_root(person) / "proposals").glob("*.json") if p.stem != cur.id and _ID.match(p.stem)):
-            with _locked(person, other + ".lock", "proposals"):          # versions.lock is outermost: no lock cycle
-                o = load_proposal(person, other)
-                if o.status == "draft":
-                    save_proposal(person, o.model_copy(update={"status": "superseded"}))
+        _finish(person, cur, pdir, files)
     return n

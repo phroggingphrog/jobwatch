@@ -417,7 +417,7 @@ def test_confirmation_shows_scope_and_limits(person, full):
     assert s.basis == ('Accounts Assistant, Ledger Co', 'Prepared journals')       # employment-first, evidence only
     assert c['authorises'] == ['discovery', 'assessment']
     assert c['does_not_authorise'] == ['document_preparation', 'employer_messages', 'submission']
-    assert c['scope_digest'] == hashlib.sha256(s.model_dump_json().encode()).hexdigest() or len(c['scope_digest']) == 64
+    assert c['scope_digest'] == hashlib.sha256(s.model_dump_json().encode()).hexdigest()
 
 
 def test_confirm_with_stale_digest_writes_nothing(person, full):
@@ -540,3 +540,49 @@ def test_confirm_races_with_edit(person, full):
     [t.start() for t in ts]; [t.join() for t in ts]
     # exactly one wins; a confirmed version never contains an edit made after its digest was shown
     assert sorted(map(str, results)) in (['1', 'proposal_not_draft'], ['edited', 'proposal_changed'])
+
+
+def test_hand_made_interests_file_must_be_adopted(person, full):
+    pdir = apaths.profile_dir()
+    (pdir / 'interests_and_criteria.yaml').write_text('target_roles:\n  titles: [Hand]\n')
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, full)
+    assert err.value.code == 'adopt_first' and 'Hand' in (pdir / 'interests_and_criteria.yaml').read_text()
+    assert not (users.user_dir(person) / 'profile-versions').exists()
+
+
+def test_draft_without_base_is_refused_when_versions_exist(person, full, fake_llm, upload_id):
+    other = intake.propose(person, [upload_id], fake_llm)             # a second concurrent draft, no base_version
+    ok(person, full)
+    assert intake.load_proposal(person, other.id).status == 'superseded'
+    fresh = intake.propose(person, [upload_id], fake_llm)           # no base_version although v1 exists
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, fresh)
+    assert err.value.code == 'proposal_changed' and [v['version'] for v in intake.versions(person)] == [1]
+
+
+@pytest.mark.parametrize('crash', ['projection', 'proposal_save'])
+@pytest.mark.parametrize('based', [False, True])
+def test_confirm_resumes_after_a_crash(person, full, fake_llm, upload_id, monkeypatch, crash, based):
+    target = full
+    if based:
+        assert ok(person, full) == 1
+        target = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    first = 2 if based else 1
+    real = intake._write_profile if crash == 'projection' else intake.save_proposal
+    state = {'boom': True}
+    def flaky(*a, **kw):
+        if state['boom'] and (crash == 'projection' or a[1].status == 'confirmed'):
+            state['boom'] = False
+            raise OSError('simulated crash')
+        return real(*a, **kw)
+    monkeypatch.setattr(intake, '_write_profile' if crash == 'projection' else 'save_proposal', flaky)
+    with pytest.raises(OSError):
+        ok(person, target)
+    assert intake.load_proposal(person, target.id).status == 'draft' and intake.current_version(person)['version'] == first
+    assert ok(person, target) == first                                     # retry finishes; no duplicate version
+    assert [v['version'] for v in intake.versions(person)] == list(range(1, first + 1))
+    assert intake.load_proposal(person, target.id).status == 'confirmed'
+    d = vdir(person, first)
+    for name in ('profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml'):
+        assert (d / name).read_bytes() == (apaths.profile_dir() / name).read_bytes()
