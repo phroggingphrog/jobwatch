@@ -308,6 +308,15 @@ def test_jobspy_site_errors_captured():
     assert ctx.errors and "429" in ctx.errors[0] and "Google" in ctx.errors[0]
 
 
+def test_techone_jobs_without_an_apply_url_get_distinct_urls():
+    from jobwatch.collectors import ats_techone
+    data = {"DataSet": [{"JOBID": "11", "TITLE": "Rates Officer"}, {"JOBID": "12", "TITLE": "Payroll Officer"},
+                        {"JOBID": "13", "TITLE": "Records Officer", "RESOLVEDAPPLYURL": "https://t1.example/apply?t=x"}]}
+    out = ats_techone.parse_dataset(data, {"name": "Council", "careers_url": "https://council.example/careers"})
+    assert len({p.url for p in out}) == 3 and out[2].url == "https://t1.example/apply?t=x"
+    assert all(p.url.startswith("https://council.example/careers") for p in out[:2])
+
+
 def test_malformed_xml_employer_does_not_kill_the_others():
     http = FakeHttp({"/527/": "<rss><channel><item>", "/528/": fixture_text("pageup.xml")})
     ctx = make_ctx(http, [emp("pageup", name="Broken", tenant="527"), emp("pageup", name="Fine", tenant="528")])

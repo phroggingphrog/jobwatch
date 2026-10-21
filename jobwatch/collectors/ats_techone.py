@@ -23,7 +23,9 @@ def parse_dataset(data: dict, employer: dict) -> list[Posting]:
         if not job.get("JOBID") or not job.get("TITLE"):
             continue
         posted = iso(job.get("PUBLISHDATE"))
-        url = job.get("RESOLVEDAPPLYURL") or employer.get("careers_url") or ""
+        careers = employer.get("careers_url")
+        # No apply URL: one shared careers URL would collapse every job into one url_hash, so make it per job.
+        url = job.get("RESOLVEDAPPLYURL") or (f"{careers}{'&' if '?' in careers else '?'}jobid={job['JOBID']}" if careers else "")
         out.append(Posting(
             source=NAME, source_id=f"{employer.get('name')}:{job['JOBID']}", url=url, title=job["TITLE"],
             company=employer.get("name", ""), location=employer.get("location") or "", state=employer.get("state") or None,
