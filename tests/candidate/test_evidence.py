@@ -348,3 +348,9 @@ def test_year_ranges_and_dates_are_not_phone_numbers(tmp_path: Path) -> None:
     for t in ("0412", "9123"):
         assert t not in quotes, t
     assert bundle.dropped_contact_count == len(drop)
+
+
+def test_a_phone_number_with_year_like_digit_groups_is_still_contact_data():
+    from jobwatch.candidate.evidence import _contact
+    assert _contact({"text": "Phone +44 20 1999 2010 anytime"})
+    assert not _contact({"text": "Analyst, Acme Pty Ltd 2019 - 2021"}) and not _contact({"text": "2019-2021"})

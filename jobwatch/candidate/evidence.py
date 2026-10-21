@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 from yaml.events import AliasEvent, DocumentStartEvent, ScalarEvent, SequenceStartEvent, MappingStartEvent
 
+from jobwatch.textdates import only_dates
 from jobwatch.apply.evidence import PF_RULES, extract_cv, extract_profile_yaml, extract_taxonomy, norm
 from ._private_io import PathEscapeError, read_profile_source
 from .contracts import (
@@ -18,11 +19,6 @@ from .contracts import (
 _MAX_SOURCE_BYTES = 2 * 1024 * 1024
 _ALLOWED = ("master_resume.md", "cv.md", "profile.yaml", "evidence.yaml", "transferable_skills_taxonomy.yaml", "career_ops_profile.md")
 _CONTACT = re.compile(r"(?:[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|(?:https?://|www\.)\S+|(?<!\w)(?:\+?\d[\d ()-]{7,}\d)(?!\w))", re.I)
-# year ranges/lists and numeric dates are blanked before the phone test (same rules as reader._protect)
-_NOT_PHONE = tuple(re.compile(p, re.I) for p in (
-    r"(?<!\d)(?:19|20)\d{2}\s*[\-\u2010-\u2015\u2212/]\s*(?:(?:19|20)\d{2}|\d{2}|present|current|now)(?!\d)",
-    r"(?<!\d)(?:(?:19|20)\d{2}[\s,;/|\-]+)+(?:19|20)\d{2}(?!\d)",
-    r"(?<!\d)\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}(?!\d)|(?<!\d)(?:19|20)\d{2}-\d{2}-\d{2}(?!\d)"))
 
 
 def _error(code: str) -> CandidateError:
@@ -102,10 +98,8 @@ def _line_contains(text: str, quote: str, line: int) -> bool:
 
 
 def _contact(item: dict[str, Any]) -> bool:
-    text = item["text"]
-    for rx in _NOT_PHONE:
-        text = rx.sub(lambda m: "Y" * len(m.group(0)), text)
-    return bool(_CONTACT.search(text))
+    """An email, URL or phone number; a digit run that is only dates ("Acme 2019 - 2021") is not a phone."""
+    return any(not (m.group(0)[0] in "+0123456789" and only_dates(m.group(0))) for m in _CONTACT.finditer(item["text"]))
 
 
 def _extract_primary(contents: dict[str, bytes]) -> tuple[list[dict[str, Any]], str, str | None, dict[tuple[Any, ...], yaml.ScalarNode]]:

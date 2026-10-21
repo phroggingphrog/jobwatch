@@ -37,6 +37,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import adtext
+from .textdates import blank_dates, only_dates
 from . import db as dbm
 from .apply import paths as apaths
 from .llm import LLM, LLMError, parse_json
@@ -192,9 +193,6 @@ def _read(path: Path) -> str:
         return ""
 
 
-_YEAR_RANGE = re.compile(r"(?<!\d)(?:19|20)\d{2}\s*[\-‐-―−/]\s*(?:(?:19|20)\d{2}|\d{2}|present|current|now)(?!\d)", re.I)
-_YEAR_LIST = re.compile(r"(?<!\d)(?:(?:19|20)\d{2}[\s,;/|\-]+)+(?:19|20)\d{2}(?!\d)")
-_DATE_NUM = re.compile(r"(?<!\d)\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}(?!\d)|(?<!\d)(?:19|20)\d{2}-\d{2}-\d{2}(?!\d)")
 _PHONE_RUN = re.compile(r"\+?\(?\d[\d\s  -​‐-―−().\/\-]{6,}\d")
 # a bare domain: name.tld where tld is one of these common ones or ANY two letters (a country code). Tech and file names stay:
 # node.js, vue.js, notes.md, run.py (js, md, py, sh, ts, rs, rb, cs are file or tech suffixes here), asp.net, vb.net, ado.net
@@ -238,16 +236,22 @@ _DIGIT_WORDS = {"zero": "0", "oh": "0", "nought": "0", "one": "1", "two": "2", "
 _SPELLED = re.compile(r"\b(?:(double|triple)\s+)?(zero|oh|nought|one|two|three|four|five|six|seven|eight|nine)\b", re.I)
 
 
-def _protect(line: str) -> str:
-    """The line with year ranges, year lists and dates blanked out to same-length filler, so they are not read as phone digits."""
-    for rx in (_YEAR_RANGE, _YEAR_LIST, _DATE_NUM):
-        line = rx.sub(lambda m: "Y" * len(m.group(0)), line)
-    return line
+_protect = blank_dates          # year ranges, year lists and dates are not phone digits
 
 
 def _phone_spans(line: str) -> list[tuple[int, int]]:
-    """Spans of phone-like runs (8+ digits in any separator style) in the line."""
-    return [m.span() for m in _PHONE_RUN.finditer(_protect(line)) if sum(c.isdigit() for c in m.group(0)) >= 8]
+    """Spans of phone-like runs (8+ digits in any separator style) in the line, merged and in order. A run made only of
+    dates is not a phone; dates inside a longer run do not hide it ("+44 20 1999 2010")."""
+    digits = lambda m: sum(c.isdigit() for c in m.group(0)) >= 8
+    spans = [m.span() for m in _PHONE_RUN.finditer(_protect(line)) if digits(m)]
+    spans += [m.span() for m in _PHONE_RUN.finditer(line) if digits(m) and not only_dates(m.group(0))]
+    merged: list[tuple[int, int]] = []
+    for a, b in sorted(spans):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(b, merged[-1][1]))
+        else:
+            merged.append((a, b))
+    return merged
 
 
 def _spelled_phone(line: str) -> bool:
