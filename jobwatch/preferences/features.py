@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 from jobwatch.candidate.contracts import excluded_families, canonicalize_family
 
-FEATURE_VERSION = 'choice-features-v1'
+FEATURE_VERSION = 'choice-features-v2'
 MODEL_VERSION = 'conditional-logit-outside-v1'
 PRIOR_VERSION = 'archived-directions-sd05-missing-sd05-v1'
 NAMES = ('hours_part_time','hours_flexible_full_time','exp_shortfall','exp_excess',
@@ -77,21 +78,44 @@ def alternative_from_evaluation(evaluation, *, title, company, profile_hash, gat
     if gate.run_key != evaluation.run_key or gate.route != 'draft' or gate.reason != 'eligible':
         raise PreferenceError('current_eligible_evaluation_required')
     f = dict.fromkeys(NAMES)
-    # Current schema has no pay, commute ring, candidate years or visa-welcoming field.
+    sources = {}
+    # Missing pay, candidate years and explicit visa-welcoming facts stay missing.
     if evaluation.facts.hours == 'part_time_ok':
         f['hours_part_time'] = 1
     elif evaluation.facts.hours == 'full_time_only':
         f['hours_part_time'] = 0
-    f['entry_signal'] = int(evaluation.facts.seniority in ('entry','junior') or evaluation.facts.program)
+    context = evaluation.matching_diagnostics or {}
+    uncertainties = context.get('ad_uncertainties')
+    if evaluation.facts.program:
+        f['entry_signal'] = 1
+    elif isinstance(uncertainties, list) and not any('seniority unknown' in str(u).casefold() for u in uncertainties):
+        f['entry_signal'] = int(evaluation.facts.seniority in ('entry','junior'))
     if evaluation.location_fit == 'remote_accessible':
         f['ring_remote'] = 1
+        for name in ('ring_inner', 'ring_r5_10', 'ring_outer'):
+            f[name] = 0
+        sources['commute'] = 'remote_accessible_evaluation'
+    else:
+        distance = context.get('commute_km_from_home')
+        if type(distance) in (int, float) and math.isfinite(distance) and 0 <= distance <= 20_000:
+            f['ring_inner'] = int(distance < 5)
+            f['ring_r5_10'] = int(5 <= distance <= 10)
+            f['ring_outer'] = int(distance > 10)
+            sources['commute'] = 'snapshot_straight_line_km_not_travel_time'
+    quote = evaluation.facts.work_rights.quote
+    if quote:
+        f['rights_full_rights_wording'] = int(bool(re.search(r'\bfull (?:working|work) rights\b', quote, re.I)))
+        sources['rights_full_rights_wording'] = 'exact_ad_work_rights_quote_not_candidate_status'
     must_haves = {r.id for r in evaluation.requirements.requirements
                   if r.tier == 'stated' and r.importance in ('critical','high','meaningful')}
     applicable = [m for m in evaluation.matches if m.requirement_id in must_haves and m.match != 'not_applicable']
     if applicable:
         f['coverage'] = sum(m.match == 'strong' for m in applicable) / len(applicable)
         f['must_have_gaps'] = sum(m.match != 'strong' for m in applicable)
+    sources['qualification_coverage'] = 'model_evidence_judgments_not_owner_labels'
     return {'posting_id':evaluation.run_key.posting_id, 'title':title, 'company':company,
             'family':evaluation.facts.role_family, 'features':f, 'eligible':True, 'current':True,
             'ad_hash':evaluation.run_key.ad_hash, 'profile_hash':profile_hash,
-            'run_key':evaluation.run_key.value, 'evaluation_hash':digest(evaluation.model_dump(mode='json'))}
+            'run_key':evaluation.run_key.value, 'evaluation_hash':digest(evaluation.model_dump(mode='json')),
+            'feature_version': FEATURE_VERSION, 'feature_sources': sources,
+            'missing_features': [name for name, value in f.items() if value is None]}

@@ -5,9 +5,71 @@ import json
 import time
 
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.embeddings import Embeddings
 
 from pipeline.agentic import execution
 from pipeline.agentic.runtime import RuntimeErrorSafe, _json_bytes
+
+
+class PaidGatewayEmbeddings(Embeddings):
+    """LangChain interface with the same private route, identity and job budgets."""
+
+    def __init__(self, llm, model, budget):
+        execution.require_route(llm, model, embedding=True)
+        self.llm, self.model, self.budget = llm, model, budget
+
+    def embed_query(self, text):
+        return self.embed_queries([text])[0]
+
+    def embed_queries(self, texts):
+        # Qwen's official retrieval format: instruct queries, leave documents plain.
+        if self.model == execution.QWEN_EMBEDDING_MODEL:
+            instruction = 'Given a job requirement, retrieve candidate career evidence demonstrating relevant skills or experience.'
+            texts = [f'Instruct: {instruction}\nQuery:{text}' for text in texts]
+        return self.embed_documents(texts)
+
+    def embed_documents(self, texts):
+        # Bound batches without truncating source text. No vectors leave this job.
+        batches, batch, size = [], [], 0
+        for text in texts:
+            length = len(text.encode('utf-8'))
+            if batch and (len(batch) >= 32 or size + length > 48_000):
+                batches.append(batch)
+                batch, size = [], 0
+            batch.append(text)
+            size += length
+        if batch:
+            batches.append(batch)
+        return [vector for part in batches for vector in self._embed(part)]
+
+    def _embed(self, texts):
+        from jobwatch.llm import SafeLLMError
+        from pipeline.agentic.runtime import _usage_total
+        execution.require_route(self.llm, self.model, embedding=True)
+        self.budget.ensure_live()
+        prompt_size = _json_bytes({'model': self.model, 'input': texts})
+        reservation = self.budget.reserve('evaluator', prompt_size, 1)
+        scope, scope_reservation, result = execution.current(), None, None
+        try:
+            deadline = time.monotonic() + self.budget.remaining_seconds()
+            if scope:
+                scope_reservation = scope.reserve(self.model, 'evidence_embeddings', prompt_size, 1)
+                deadline = min(deadline, scope.deadline)
+            self.budget.dispatched(reservation)
+            result = self.llm.embed_once(self.model, texts, timeout=min(30, max(0, deadline - time.monotonic())), deadline=deadline)
+            return result.data
+        except SafeLLMError as exc:
+            self.budget.failed(exc.code)
+            raise RuntimeErrorSafe('embedding_' + exc.code) from None
+        finally:
+            usage = getattr(result, 'usage', None)
+            try:
+                self.budget.settle(reservation, _usage_total(usage))
+            finally:
+                if scope_reservation is not None:
+                    scope.settle(scope_reservation, usage)
+                    scope.check()
+            self.budget.ensure_live()
 
 
 def messages_for_gateway(messages):

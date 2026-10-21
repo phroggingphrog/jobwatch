@@ -58,16 +58,17 @@ def test_callback_stats_per_arm_and_digest(tmp_path, monkeypatch):
     set_status(conn, m[4], "applied", actor="owner", source="t", now=t)
     set_status(conn, m[4], "assessment", actor="owner", source="t", now=t)
     st = callback_stats(conn)
-    assert (st["payroll_clerk"]["successes"], st["payroll_clerk"]["n"]) == (1, 3)
+    assert (st["payroll_clerk"]["successes"], st["payroll_clerk"]["n"]) == (1, 1)
+    assert st['payroll_clerk']['pending'] == 2
     assert (st["call_centre"]["successes"], st["call_centre"]["n"]) == (1, 1)
-    assert (st["_all"]["successes"], st["_all"]["n"]) == (2, 4)
-    assert st["_all"]["mean"] == pytest.approx(3 / 20)
+    assert (st["_all"]["successes"], st["_all"]["n"]) == (2, 2)
+    assert st["_all"]["mean"] == pytest.approx(3 / 18)
     plain, _ = render(gather(conn))
-    assert "Callback rate (Beta-Binomial, prior Beta(1,15)" in plain
-    assert "payroll_clerk: 1/3 → mean 0.105, 95% HDI [" in plain and "(n=3, small n)" in plain
-    assert "all arms: 2/4 → mean 0.150" in plain
+    assert "Callbacks among resolved applications" in plain
+    assert "payroll_clerk: 1/1 → mean 0.118, 95% HDI [" in plain and "resolved=1, pending=2" in plain
+    assert "all arms: 2/2 → mean 0.167" in plain
 
 
 def test_render_without_applications():
     lines = render_lines({"_all": posterior(0, 0)})
-    assert "no applied applications yet (prior mean 0.062)" in lines[-1]
+    assert "no resolved outcomes yet; pending=0 (prior mean 0.062)" in lines[-1]

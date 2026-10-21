@@ -47,6 +47,7 @@ pipeline:
     # Legacy flag; use pipeline.execution_mode for dispatch and rollback.
     enabled: true
     credential_index: 1  # key 0 is not allowed for claude/ combos (BUI-350)
+    embedding_model: openrouter/qwen/qwen3-embedding-8b  # Owner 2026-10-21: Qwen for candidate evidence, via counted OmniRoute adapter
     job_token_ceiling: 1500000  # 2026-10-12 late: retries of one job share this budget; Morrows hit 900k after 10 writer + 2 reviewer turns. Earlier 2026-10-12: writer now also reads the owner's voice guide; 600k ran out in review round 2;  # BUI-350: 250k ran out mid-evaluation; conservative reservations for complete evidence-backed documents
     batch_token_ceiling: 2000000
     research_enabled: true  # existing local SearXNG; public employer/job facts only

@@ -195,6 +195,11 @@ Deployment is a separate action; publishing source does not activate the API.
 
 ## Company research and model insights
 
+The shared evaluator now separates requirement-evidence judgments from its holistic
+summary. Retrieval, status meanings, compatibility and remaining validation work
+are documented in [MATCHING.md](MATCHING.md). This source change does not establish
+matching accuracy or a deployed service.
+
 `company_researcher` replaces the earlier generic `career-researcher` specialist.
 Its `research_company(posting_id)` reads the whole saved ad and gathers bounded,
 cited public company/skills context using the saved employer and title only.

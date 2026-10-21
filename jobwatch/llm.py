@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import math
 import logging
 import os
 import re
@@ -276,6 +277,60 @@ class LLM:
                            seconds=0.0, cost_usd=None)
         self.calls.append({"model": model, "served": None, "usage": usage, "seconds": 0.0, "cost_usd": None})
         return result
+
+    def embed_once(self, model: str, texts: list[str], *, timeout: float = 30,
+                   deadline: float | None = None) -> LLMResult:
+        """One explicit-credential embedding attempt; no retry or provider fallback.
+
+        The counted gateway adapter owns route approval and durable reservations.
+        Errors never attach response bodies or candidate text.
+        """
+        if not self._keys:
+            raise SafeLLMError('auth') from None
+        if (not texts or len(texts) > 64 or any(type(t) is not str or not t or len(t) > 6000 for t in texts)
+                or sum(len(t.encode('utf-8')) for t in texts) > 64_000):
+            raise SafeLLMError('invalid_response') from None
+        remaining = min(timeout, deadline - time.monotonic()) if deadline is not None else timeout
+        if remaining <= 0:
+            raise SafeLLMError('deadline') from None
+        failed = False
+        try:
+            status, payload = self.transport(f'{self.base_url}/embeddings',
+                {'Authorization': f'Bearer {self._keys[0]}', 'Content-Type': 'application/json'},
+                {'model': model, 'input': texts, 'encoding_format': 'float'}, remaining)
+        except Exception:
+            failed = True
+        if failed:
+            raise SafeLLMError('unavailable') from None
+        if deadline is not None and time.monotonic() >= deadline:
+            raise SafeLLMError('deadline') from None
+        if status in (401, 403):
+            raise SafeLLMError('auth') from None
+        if status == 429:
+            raise SafeLLMError('rate_limited') from None
+        if status != 200 or not isinstance(payload, dict) or payload.get('error'):
+            raise SafeLLMError('unavailable') from None
+        invalid = False
+        try:
+            rows = payload['data']
+            if len(rows) != len(texts) or any(type(row['index']) is not int for row in rows):
+                raise ValueError
+            rows = sorted(rows, key=lambda row: row['index'])
+            if [row['index'] for row in rows] != list(range(len(texts))):
+                raise ValueError
+            vectors = [row['embedding'] for row in rows]
+            if (not vectors[0] or len(vectors[0]) > 16_384
+                    or any(type(v) is not list or len(v) != len(vectors[0]) for v in vectors)
+                    or any(type(x) not in (int, float) or not math.isfinite(x) for v in vectors for x in v)
+                    or any(not any(x != 0 for x in v) for v in vectors)):
+                raise ValueError
+            prompt = payload.get('usage', {}).get('prompt_tokens')
+            usage = {'prompt_tokens': prompt, 'completion_tokens': 0} if type(prompt) is int and prompt >= 0 else {}
+        except Exception:
+            invalid = True
+        if invalid:
+            raise SafeLLMError('invalid_response') from None
+        return LLMResult(model=model, served=None, text='', data=vectors, usage=usage)
 
     def chat(self, model: str, messages: list[dict], *, json_mode: bool = True,
              max_tokens: int = 8000, temperature: float | None = None,

@@ -257,7 +257,7 @@ Undo (B): `rm -rf jobwatch/outcomes tests/outcomes` and drop the two `callback` 
 ## Apply layer (A): profile, ledger, draft chain (PLAN-apply.md)
 
 ```bash
-.venv/bin/python scripts/seed_profile.py   # once: COPY archived profile -> ~/.local/share/jobwatch/profile/ (700/600) + evidence.yaml
+.venv/bin/python scripts/seed_profile.py --src /path/to/approved-profile   # COPY to private runtime profile (700/600) + evidence.yaml
 jobwatch profile-check                     # perms + evidence verbatim check (prints counts only)
 jobwatch draft <match_id> [--actor-event SRC]   # run the chain; prints metrics + file paths, never profile text
 jobwatch reindex [--dry-run]               # rebuild apply tables from the ledger

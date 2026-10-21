@@ -57,10 +57,16 @@ def build_case(tmp_path, *, skill="Reconciled ledgers", ad_skill="Reconciled led
         "dimensions": {name: {"score": score, "reason": "Bound synthetic evidence reviewed"}
                        for name in ("cv_match", "north_star", "compensation", "culture", "red_flags")},
         "report": {k: "Evidence-grounded synthetic analysis" for k in "ABCDEFG"}}
+    assessment['matches'][0]['judgment'] = {
+        'status': {'strong': 'demonstrated', 'partial': 'partial', 'missing': 'unknown', 'not_applicable': 'not_applicable'}[match],
+        'rationale': 'Synthetic canonical evidence compared with this requirement.',
+        'reviewed_evidence_ids': [item.id], 'contradiction_evidence': [],
+        'open_question': 'What primary evidence establishes the remaining requirement?' if match != 'strong' else ''}
     choices = [
         {"tool": "read_full_ad", "arguments": {}},
         {"tool": "complete_requirements", "arguments": extraction},
         {"tool": "read_candidate_evidence", "arguments": {"evidence_ids": [item.id]}},
+        {"tool": "complete_requirement_matches", "arguments": assessment},
         {"tool": "complete_job_assessment", "arguments": assessment},
     ]
     return bundle, ad, key, choices
@@ -103,7 +109,7 @@ def test_two_actual_agent_passes_keep_candidate_out_of_full_jd_context(tmp_path)
     assert result.global_score == 4.2
     assert result.requirements.requirement_hash == choices[-1]["arguments"]["requirements_hash"]
     assert result.matches[0].evidence[0].source_id == "cv.md"
-    assert len(model.seen) == 4
+    assert len(model.seen) == 5
     first_context = json.loads(model.seen[0][-1]["content"])
     assert first_context == {"ad_hash": key.ad_hash, "ad_text": ad}
     assert "Final material requirement." in first_context["ad_text"]
@@ -165,15 +171,16 @@ def test_job_ad_preferences_and_research_cannot_prove_candidate_qualifications(t
     bundle, ad, key, choices = build_case(tmp_path)
     citation = choices[-1]["arguments"]["matches"][0]["evidence"][0]
     citation.update(source_id=source, content_hash=key.ad_hash, quote="Reconciled ledgers")
-    with pytest.raises(AgenticError, match="invalid_citation"):
+    choices.insert(4, copy.deepcopy(choices[3]))  # repeat the invalid focused judgment, not the later summary
+    with pytest.raises(AgenticError, match="invalid_tool_arguments"):
         evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
 
 
 @pytest.mark.parametrize("change,error", [
-    ("requirements_hash", "requirements_changed"),
-    ("citation_hash", "invalid_citation"),
-    ("citation_quote", "invalid_citation"),
-    ("missing_coverage", "invalid_evaluation"),
+    ("requirements_hash", "invalid_tool_arguments"),
+    ("citation_hash", "invalid_tool_arguments"),
+    ("citation_quote", "invalid_tool_arguments"),
+    ("missing_coverage", "invalid_tool_arguments"),
     ("not_applicable", "invalid_tool_arguments"),
 ])
 def test_frozen_requirements_full_coverage_and_citations_fail_closed(tmp_path, change, error):
@@ -185,7 +192,8 @@ def test_frozen_requirements_full_coverage_and_citations_fail_closed(tmp_path, c
     elif change == "missing_coverage": output["matches"] = []
     elif change == "not_applicable":
         output["matches"][0].update(match="not_applicable", evidence=[])
-        choices.append(copy.deepcopy(choices[-1]))
+        output['matches'][0]['judgment']['status'] = 'not_applicable'
+    choices = choices[:4] + [copy.deepcopy(choices[3])]
     with pytest.raises(AgenticError, match=error):
         evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
 
@@ -240,7 +248,10 @@ def test_all_extracted_requirements_are_covered_with_frozen_importance(tmp_path)
     from pipeline.agentic.runtime import validate_model_payload
     expected = validate_model_payload(RequirementSet, req_payload)
     choices[-1]["arguments"]["requirements_hash"] = expected.requirement_hash
-    choices[-1]["arguments"]["matches"].append({"requirement_id": "r2", "match": "missing", "evidence": []})
+    choices[-1]["arguments"]["matches"].append({"requirement_id": "r2", "match": "missing", "evidence": [],
+        'judgment': {'status': 'unknown', 'rationale': 'SQL not demonstrated in retrieved evidence.',
+            'reviewed_evidence_ids': [bundle.items[0].id], 'contradiction_evidence': [],
+            'open_question': 'What primary evidence demonstrates SQL reporting?'}})
     result = evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
     assert result.requirements == expected
     assert result.requirements.requirements[1].importance == "preferred"
@@ -280,20 +291,20 @@ def test_report_heading_normalization_never_drops_or_fabricates_sections(tmp_pat
 
 def test_contradictory_match_gets_one_bounded_schema_correction(tmp_path):
     bundle, ad, key, choices = build_case(tmp_path,match='missing')
-    bad=copy.deepcopy(choices[-1])
+    bad=copy.deepcopy(choices[3])
     item=bundle.items[0]
     bad['arguments']['matches'][0]['evidence']=[{'source_id':item.source_file,
         'content_hash':item.source_hash,'quote':item.quote}]
-    model=FakeModel(choices[:-1]+[bad,choices[-1]])
+    model=FakeModel(choices[:3]+[bad,choices[3]]+choices[4:])
     result=evaluate_job(key,ad,budget(key),model,evidence_bundle=bundle)
     assert result.matches[0].match=='missing' and not result.matches[0].evidence
-    assert len(model.seen)==5
+    assert len(model.seen)==6
 
 
 def test_repeated_contradictory_match_cannot_expand_correction_budget(tmp_path):
     bundle, ad, key, choices = build_case(tmp_path)
     choices[-1]['arguments']['matches'][0]['match']='missing'
-    model=FakeModel(choices+[copy.deepcopy(choices[-1])])
+    model=FakeModel(choices[:4]+[copy.deepcopy(choices[3])])
     with pytest.raises(AgenticError,match='invalid_tool_arguments'):
         evaluate_job(key,ad,budget(key),model,evidence_bundle=bundle)
     assert len(model.seen)==5
@@ -301,17 +312,17 @@ def test_repeated_contradictory_match_cannot_expand_correction_budget(tmp_path):
 
 def test_essential_not_applicable_gets_existing_bounded_correction(tmp_path):
     bundle, ad, key, choices=build_case(tmp_path)
-    bad=copy.deepcopy(choices[-1]);bad['arguments']['matches'][0].update(match='not_applicable',evidence=[])
-    model=FakeModel(choices[:-1]+[bad,choices[-1]])
+    bad=copy.deepcopy(choices[3]);bad['arguments']['matches'][0].update(match='not_applicable',evidence=[])
+    model=FakeModel(choices[:3]+[bad,choices[3]]+choices[4:])
     result=evaluate_job(key,ad,budget(key),model,evidence_bundle=bundle)
     assert result.matches[0].match=='strong'
-    assert len(model.seen)==5
+    assert len(model.seen)==6
 
 
 def test_repeated_essential_not_applicable_stops_after_one_correction(tmp_path):
     bundle, ad, key, choices=build_case(tmp_path)
     choices[-1]['arguments']['matches'][0].update(match='not_applicable',evidence=[])
-    model=FakeModel(choices+[copy.deepcopy(choices[-1])])
+    model=FakeModel(choices[:4]+[copy.deepcopy(choices[3])])
     with pytest.raises(AgenticError,match='invalid_tool_arguments'):
         evaluate_job(key,ad,budget(key),model,evidence_bundle=bundle)
     assert len(model.seen)==5

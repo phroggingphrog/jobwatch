@@ -98,3 +98,29 @@ Owner clarification:
 Research, evaluation, mathematical models and writing belong to the shared backend
 pipeline. Chat is an interchangeable client, alongside the original web interface;
 it enables quick delivery without defining a separate career workflow.
+
+## Evidence matching overhaul
+
+Owner direction, followed by **continue then**:
+
+> well then we need to revamped this and check what we can imporve it on the rnd in llm wiki or any personal knowledge
+
+Match each ad requirement to approved primary evidence before judging career
+desirability. Distinguish demonstrated support, partial support, unknown facts and
+explicit contradiction. Preserve exact citations and make unresolved questions
+visible. Find differently worded and transferable evidence without treating word
+overlap, occupation similarity or model confidence as qualification proof.
+
+Keep ability, personal preferences, practical eligibility and historical outcomes
+separate. Preserve the inherited holistic score as a comparison baseline; change
+automatic exclusion policy only after a reviewed comparison including jobs the
+old matcher archived. Research references and typed outputs do not establish
+matching accuracy. Track implementation and remaining experiments in GitHub #6.
+
+Owner's embedding-model choice, 2026-10-21:
+
+> qwen
+
+Use Qwen3 Embedding 8B through the existing paid OmniRoute route for canonical
+candidate-evidence retrieval. Approval is specific to embeddings; the chat route
+allowlist, budgets, per-person credentials and human approval boundaries remain.

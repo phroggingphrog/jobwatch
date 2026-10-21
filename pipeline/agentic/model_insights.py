@@ -26,6 +26,9 @@ def preference_insights(conn, config, set_id: str = '') -> dict:
     result = {key: state[key] for key in ('status', 'n_sets', 'n_choices', 'n_train', 'n_holdout',
                                         'minimum_train', 'minimum_holdout')}
     result['meaning'] = 'Owner-choice preference within three eligible jobs plus none; not hiring probability or qualification.'
+    from jobwatch.preferences.features import NAMES, FEATURE_VERSION
+    result['feature_coverage'] = {'version': FEATURE_VERSION, 'alternatives': len(alternatives),
+        'observed_counts': {name: sum(a['features'][name] is not None for a in alternatives) for name in NAMES}}
     if not set_id:
         # Only already answered sets are offered for prediction, preserving blind owner labels.
         result['answered_set_ids'] = [s['id'] for s in store.list_sets(identity) if s['answered']][-10:]
@@ -53,7 +56,7 @@ def callback_insights(conn) -> dict:
         return {'status': 'no_data', 'reason': 'application_history_unavailable'}
     stats = callback_stats(conn)
     return {'status': 'available' if stats['_all']['n'] else 'prior_only', 'arms': stats,
-            'meaning': 'Historical callback rate with Beta(1,15) prior and 95% interval; not a forecast for an individual job.'}
+            'meaning': 'Callbacks among explicitly resolved submissions with Beta(1,15) prior and 95% interval. Pending cases are censored, unsubmitted drafts excluded. Resolved-subset selection bias remains; no individual-job or eventual-callback forecast.'}
 
 
 def pipeline_insights(conn, config, *, bundle, policy, cfg, structural) -> dict:

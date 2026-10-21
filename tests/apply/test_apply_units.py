@@ -184,6 +184,13 @@ def test_seed_script_copies_not_moves(tmp_path, monkeypatch):
     assert seed_profile.main(["--src", str(src), "--dest", str(dest)]) == 0   # idempotent
     (src / "profile.yaml").write_text((src / "profile.yaml").read_text() + "\n# changed\n")
     assert seed_profile.main(["--src", str(src), "--dest", str(dest)]) == 1   # refuses without --force
+    (dest / 'cv.md').unlink()
+    (dest / 'cv.md').write_text('Previous synthetic resume')
+    monkeypatch.setattr(seed_profile.Path, 'home', classmethod(lambda cls: tmp_path / 'private-home'))
+    assert seed_profile.main(['--src', str(src), '--dest', str(dest), '--force']) == 0
+    assert (dest / 'cv.md').is_symlink() and (dest / 'cv.md').read_bytes() == (src / 'master_resume.md').read_bytes()
+    backups = list((tmp_path / 'private-home' / 'backups' / 'jobwatch').glob('cv.md.*'))
+    assert len(backups) == 1 and backups[0].read_text() == 'Previous synthetic resume'
 
 
 # -- origin guard -------------------------------------------------------------------
