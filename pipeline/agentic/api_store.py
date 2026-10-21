@@ -271,6 +271,12 @@ class APIStore:
             row = self.raw_run(ident)
             if row['state'] not in ('interrupted', 'deferred'):
                 raise Conflict('run_not_interrupted')
+            if self.conn.execute("SELECT 1 FROM api_runs WHERE thread_id=? AND id<>? AND state IN "
+                "('queued','running','waiting_for_input','waiting_for_approval','interrupted')",
+                (row['thread_id'], ident)).fetchone():
+                raise Conflict('thread_busy')
+            if self.conn.execute("SELECT COUNT(*) FROM api_runs WHERE state='queued'").fetchone()[0] >= 20:
+                raise Conflict('queue_full')
             payload = json.loads(row['input_json'])
             # Lock contention occurs before graph execution. Retry that original
             # request normally; only an interrupted worker needs checkpoint recovery.

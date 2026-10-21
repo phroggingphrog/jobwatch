@@ -179,7 +179,16 @@ No UI/DSH changes or live-service activation are part of source verification.
 
 MCP is optional (`uv sync --extra mcp`, `jobwatch-mcp`). Its experimental adapter
 calls the same dispatcher and bound approval contract. It is not required to
-install or use the native API. The owner-selected repository is
-`phroggingphrog/jobwatch`. The connected credentials currently return 404/403;
-grant repository access before uploading this source branch. No upload or public
-API deployment has occurred.
+install or use the native API.
+
+## GitHub source workflow
+
+The private source repository is `phroggingphrog/jobwatch`. It starts from a
+filtered source baseline; older Git history, operator notes and profile snapshots
+stay local. Use a fresh clone of that repository for future branches. The legacy
+PhrogVPS checkout has a different root and must not push its historical branches.
+
+Branch from GitHub `main`, commit one meaningful change, and open a draft pull
+request. Inspect the synthetic CI result and review before merging. Keep profiles,
+answers, credentials, databases, generated documents and backups outside Git.
+Deployment is a separate action; publishing source does not activate the API.

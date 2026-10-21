@@ -383,7 +383,8 @@ def _build(person, conn, config, llm, selected, saver, store):
     return create_deep_agent(model=model, system_prompt=SYSTEM, backend=backend, store=store,
         checkpointer=saver, skills=['/skills/'], memory=['/memories/AGENTS.md'],
         permissions=permissions, middleware=[TodoListMiddleware(), boundary,
-            FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'])],
+            FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
+                                 _permissions=permissions)],
         tools=[run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup,
                find_jobs, application_status, source_health, ask_human],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in
@@ -490,16 +491,22 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                     previous = graph.get_state(graph_config)
                     pending = [i for task in previous.tasks for i in task.interrupts]
                     checkpoint = previous.config.get('configurable', {}).get('checkpoint_id') if previous.config else None
-                    if expected_checkpoint and expected_checkpoint != checkpoint and not recover:
+                    same_invocation = (previous.metadata or {}).get('invocation_id') == execution.run_id
+                    if expected_checkpoint and expected_checkpoint != checkpoint and not (recover and same_invocation):
                         raise RuntimeErrorSafe('stale_interaction')
                     interactions = _chat_interactions([i.value for i in pending], cfg)
-                    if pending and decisions is None:
+                    # A resumed invocation can have advanced to another interrupt
+                    # before the API persisted its result. Never replay the old
+                    # human response against that later question or approval.
+                    if pending and (decisions is None or (recover and same_invocation)):
                         return {'status': 'interrupted', 'thread_id': thread_id,
                                 'checkpoint_id': checkpoint,
                                 'interrupts': [i.value for i in pending],
                                 'interactions': interactions}
-                    same_invocation = (previous.metadata or {}).get('invocation_id') == execution.run_id
-                    if recover and previous.values and not same_invocation:
+                    # No persisted model dispatch means this invocation stopped
+                    # before its first graph checkpoint; its original input is
+                    # safe to append to the existing conversation.
+                    if recover and previous.values and not same_invocation and execution.calls:
                         raise RuntimeErrorSafe('recovery_checkpoint_mismatch')
                     if recover and same_invocation and approval_bindings:
                         for decision, binding in zip(decisions or [], approval_bindings):

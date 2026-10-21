@@ -63,12 +63,21 @@ def _input_request(interaction: dict, index: int) -> tuple[str, ElicitRequest]:
                            'maxLength': _MAX_QUESTION}}, 'required': ['answer']}))
         return key, req
     if kind == 'approval':
-        posting_id = interaction.get('posting_id')
-        if type(posting_id) is not int or posting_id < 1:
+        operation = interaction.get('operation', 'run_career_ops')
+        actions = {'run_career_ops': 'evaluate and prepare job posting',
+                   'assess_job': 'assess job posting',
+                   'prepare_application': 'prepare an application for job posting',
+                   'prepare_interview': 'prepare interview material for job posting',
+                   'draft_followup': 'draft a follow-up for application'}
+        if operation not in actions:
+            raise RuntimeErrorSafe('invalid_chat_interaction')
+        identity = ((interaction.get('binding') or {}).get('arguments', {}).get('application_id')
+                    if operation == 'draft_followup' else interaction.get('posting_id'))
+        if type(identity) is not int or identity < 1:
             raise RuntimeErrorSafe('invalid_chat_interaction')
         key = f'interaction_{index}'
         req = ElicitRequest(params=ElicitRequestFormParams(
-            message=(f"Allow Jobwatch Career Ops to evaluate and prepare job posting {posting_id}? "
+            message=(f"Allow Jobwatch Career Ops to {actions[operation]} {identity}? "
                      "This may use paid model calls and save career-work artifacts. It will not submit an application."),
             requestedSchema={'type': 'object', 'properties': {
                 'approve': {'type': 'boolean', 'description': 'Allow this Career Ops run.'}},

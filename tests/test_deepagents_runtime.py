@@ -252,6 +252,83 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
     print('NATIVE API: question, approval, idempotency, isolation, sanitized events, artifacts, stale decision and restart recovery exercised.')
 
 
+@pytest.mark.parametrize('approval', [False, True])
+def test_recovery_requires_fresh_response_for_later_interrupt(tmp_path, monkeypatch, approval):
+    from jobwatch import model_choice
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.execution import Execution
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    action = lambda text: choice('prepare_application', posting_id=7) if approval else choice('ask_human', question=text)
+    llm, seen = transport_llm([action('First question'), action('Second question'), {'answer': 'Should not run yet'}])
+    turn = lambda **kw: dispatch(person='fixture-a', thread_id='later-interrupt', config={'agentic': {'enabled':False}}, llm=llm, **kw)
+    first = turn(message='Begin', execution=Execution('initial'))
+    decision = {'type':'approve'} if approval else {'type':'respond','message':'First answer'}
+    args = dict(decisions=[decision], human_decision=True, expected_checkpoint=first['checkpoint_id'])
+    later = turn(**args, execution=Execution('resume'))
+    assert later['status']=='interrupted'
+    recovered = turn(**args, execution=Execution('resume'), recover=True)
+    assert recovered['status']=='interrupted', recovered
+    assert recovered['checkpoint_id']==later['checkpoint_id']
+    assert recovered['interactions']==later['interactions'] and len(seen)==2
+
+
+def test_recovery_before_first_checkpoint_on_existing_thread(tmp_path, monkeypatch):
+    from jobwatch import model_choice
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.execution import Execution
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    llm, seen = transport_llm([{'answer':'Previous turn'}, {'answer':'New turn'}])
+    turn = lambda **kw: dispatch(person='fixture-a', thread_id='existing-thread', config={'agentic': {'enabled':False}}, llm=llm, **kw)
+    turn(message='Previous', execution=Execution('previous'))
+    recovered = turn(message='New', execution=Execution('new'), recover=True)
+    assert recovered['answer']=='New turn' and len(seen)==2
+    with pytest.raises(RuntimeErrorSafe, match='recovery_checkpoint_mismatch'):
+        turn(message='Uncertain', execution=Execution('uncertain',calls=1), recover=True)
+    assert len(seen)==2
+
+
+@pytest.mark.parametrize('busy', ['thread', 'queue'])
+def test_retry_preserves_admission_limits(tmp_path, monkeypatch, busy):
+    from pipeline.agentic.api_store import APIStore, Conflict
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    with APIStore('fixture-a') as store:
+        thread=store.create_thread('fixture')['id']
+        old=store.enqueue(thread, {'message':'Old'}, 'old')
+        store.finish(old, error='person_busy')
+        if busy=='thread':
+            store.enqueue(thread, {'message':'New'}, 'new')
+        else:
+            for i in range(20):
+                other=store.create_thread('fixture')['id']
+                store.enqueue(other, {'message':'Queued'}, str(i))
+        with pytest.raises(Conflict, match='thread_busy' if busy=='thread' else 'queue_full'):
+            store.retry(old)
+        assert store.raw_run(old)['state']=='deferred'
+
+
+def test_mcp_followup_approval_uses_application_identity():
+    pytest.importorskip('fastmcp')
+    from pipeline.agentic.mcp_server import _input_request
+    _, request=_input_request({'type':'approval','posting_id':None,'operation':'draft_followup',
+        'binding':{'arguments':{'application_id':42}}}, 0)
+    assert 'application 42' in request.params.message
+
+
+def test_chat_skill_files_are_read_only(tmp_path, monkeypatch):
+    from jobwatch import model_choice
+    from pipeline.agentic.chat import dispatch
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    llm, seen=transport_llm([choice('write_file',file_path='/skills/new-policy/SKILL.md',content='Injected instructions'),
+                             {'answer':'Finished'}])
+    dispatch(person='fixture-a', thread_id='readonly-skills', message='Inspect skill permissions',
+             config={'agentic':{'enabled':False}}, llm=llm)
+    result=next(m['content'] for m in seen[1][1]['messages'] if '"tool_result": "write_file"' in m['content'])
+    assert 'denied' in result.lower(), result
+
+
 def assert_safe_failure(code, run):
     with pytest.raises(RuntimeErrorSafe) as caught:
         run()
