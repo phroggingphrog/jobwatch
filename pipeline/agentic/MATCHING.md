@@ -104,6 +104,19 @@ and disagreement examples directly. Keep owner preference prediction and matured
 callback observations as separate measures. Pending applications are not negative
 outcome labels. Do not tune exclusion thresholds from model self-grades.
 
+Freeze the comparison inputs first with `jobwatch --user <name> baseline freeze`,
+preferably before the revised decision policy is deployed. The freeze reads the stored
+evidence, evaluation and gate route of each posting, the gate version and the pinned
+profile, calls no model and writes no database row; replays of the old gate need the
+baseline's `pinned_profile`. Duplicate adverts and related employers share a `group_id`:
+split by group, never by case. Labels are the owner's, added with `baseline label` at a
+terminal; none exist until then, and the baseline lists which tag categories are missing.
+Tags are heuristics and `explicit_exclusion` covers only the family rules until Plans 2
+and 5. The freeze has never been run on a real person's data, and its read-only open of
+the WAL-mode database has not been tested against a live one, so the owner's first real
+freeze must confirm it opens. No figure in this document changed. See
+[docs/examples/frozen-baseline.md](../../docs/examples/frozen-baseline.md).
+
 ## Offline comparison tools
 
 The native CLI compares already captured outputs without dispatching paid work:
