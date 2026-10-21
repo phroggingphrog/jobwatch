@@ -25,6 +25,20 @@ def test_state_of():
     assert state_of("Sydney NSW") == "NSW" and state_of("Paris") is None
 
 
+def test_foreign_places_sharing_au_names_are_not_australian():
+    for loc in ("Victoria Island, Lagos, Nigeria", "Victoria, Seychelles", "Sydney, Nova Scotia",
+                "Newcastle upon Tyne, UK", "Perth, Scotland"):
+        assert not is_australian(None, loc) and state_of(loc) is None, loc
+    assert is_australian(None, "Sydney, Australia") and is_australian(None, "Perth WA")
+    assert is_australian(None, "Wales Street, Newcastle NSW") and is_australian(None, "Sydney, New South Wales")
+
+
+def test_state_of_prefers_explicit_state_and_needs_postcode_context():
+    assert state_of("Victoria Park WA") == "WA" and state_of("Victoria Point QLD") == "QLD"
+    assert state_of("Mumbai, MH 3000") is None and state_of("Hamilton 3200, New Zealand") is None
+    assert state_of("Dandenong 3175") == "VIC" and state_of("Melbourne CBD 3000") == "VIC"
+
+
 def test_work_type_and_salary():
     assert work_type_of("Part time") == "PT" and work_type_of("FULL_TIME") == "FT"
     assert work_type_of("Casual") == "casual" and work_type_of("12M fixed term contract") == "contract"
