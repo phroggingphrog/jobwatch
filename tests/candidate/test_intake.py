@@ -663,7 +663,8 @@ def test_amendment_does_not_change_approved_facts_until_confirmed(person, full, 
     old = next(f for f in v1['facts'] if f['section'] == 'availability')
     profile_before = {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()}
     version_before = (vdir(person, 1) / 'approved.json').read_bytes()
-    fake_llm.reply({'facts': [fact('availability', 'From March, 20 hours', 'inference'), fact('skill', 'Payroll', 'inference'),
+    fake_llm.reply({'facts': [fact('experience', 'Accounts Assistant, Ledger Co', 'evidence', [Q(5, 'Ledger Co, Accounts Assistant, 2021 - 2023')]),
+                              fact('availability', 'From March, 20 hours', 'inference'), fact('skill', 'Payroll', 'inference'),
                               fact('availability', 'Immediately', 'inference')], 'questions': []})
     amend = intake.propose(person, [upload_id], fake_llm, base_version=1)
     notes = {f.value: f.note for f in amend.facts if f.section in ('availability', 'skill') and f.basis != 'unknown'}
@@ -731,28 +732,65 @@ def test_adopted_version_is_listed_and_symlinks_are_not_adopted(person):
     assert intake.versions(person)[0]['version'] == 1 and intake.current_version(person)['adopted_from_files'] is True
 
 
-# ----------------------------------------------------------------------------- turning discovery on for an adopted person
-def test_adopted_version_authorises_no_discovery_until_scope_is_confirmed(person):
-    hand_made()
-    assert intake.discovery_scope(person) is None                          # no version
-    intake.adopt_existing(person, actor='person')
-    assert intake.discovery_scope(person) is None                          # adopted: no scope
-    before = {n: (apaths.profile_dir() / n).read_bytes() for n in HAND}
+# ----------------------------------------------------------------------------- turning discovery on without a new proposal
+def strip_scope(person, n):
+    """Simulate a version approved before scopes existed: same facts and files, no scope."""
+    path = vdir(person, n) / 'approved.json'
+    approved = json.loads(path.read_text())
+    del approved['scope'], approved['scope_digest']
+    path.write_text(json.dumps(approved))
+
+
+def test_scope_confirmation_turns_discovery_on_and_leaves_profile_alone(person, full):
+    ok(person, full)
+    strip_scope(person, 1)
+    assert intake.discovery_scope(person) is None
+    before = {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()}
     shown = intake.scope_confirmation(person, CONFIG)
-    assert shown['base_version'] == 1 and shown['scope'].daily_token_ceiling == 1234
+    assert shown['base_version'] == 1 and shown['scope'].daily_token_ceiling == 1234 and shown['scope'].basis
     n = intake.confirm_scope(person, base_version=1, scope_digest=shown['scope_digest'], actor='person', config=CONFIG)
     assert n == 2 and intake.discovery_scope(person) == shown['scope']
-    assert {k: (apaths.profile_dir() / k).read_bytes() for k in HAND} == before          # profile/ untouched
+    assert {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()} == before          # profile/ untouched
     one, two = (json.loads((vdir(person, i) / 'approved.json').read_text()) for i in (1, 2))
-    for key in ('facts', 'file_sha256', 'evidence_bundle_hash', 'adopted_files'):
+    for key in ('facts', 'file_sha256', 'evidence_bundle_hash'):
         assert one[key] == two[key]
     assert two['scope_digest'] == shown['scope_digest'] and two['base_version'] == 1 and two['actor'] == 'person'
-    for name, raw in before.items():
-        assert (vdir(person, 2) / name).read_bytes() == raw and (vdir(person, 2) / 'evidence' / name).read_bytes() == raw
+    for name in one['file_sha256']:
+        assert (vdir(person, 2) / name).read_bytes() == (vdir(person, 1) / name).read_bytes()
+        assert stat.S_IMODE((vdir(person, 2) / name).stat().st_mode) == 0o600
     assert intake.confirm_scope(person, base_version=2, scope_digest=shown['scope_digest'], actor='person', config=CONFIG) == 2
 
 
-def test_confirm_scope_refusals(person):
+def test_adopted_version_cannot_turn_discovery_on_from_an_empty_scope(person):
+    hand_made()
+    intake.adopt_existing(person, actor='person')
+    assert intake.discovery_scope(person) is None
+    shown = intake.scope_confirmation(person, CONFIG)
+    assert shown['scope'].basis == ()
+    with pytest.raises(intake.IntakeError) as err:
+        intake.confirm_scope(person, base_version=1, scope_digest=shown['scope_digest'], actor='person', config=CONFIG)
+    assert err.value.code == 'profile_incomplete' and intake.current_version(person)['version'] == 1
+
+
+def test_confirm_refuses_a_proposal_with_an_empty_basis(person, fake_llm, upload_id):
+    fake_llm.reply({'facts': [fact('education', 'Diploma of Accounting', 'evidence', [Q(10, 'Diploma of Accounting, Example College, 2020')])],
+                    'questions': []})
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, intake.propose(person, [upload_id], fake_llm))
+    assert err.value.code == 'profile_incomplete' and intake.current_version(person) is None
+
+
+def test_stored_scope_with_empty_basis_authorises_nothing(person, full):
+    ok(person, full)
+    path = vdir(person, 1) / 'approved.json'
+    approved = json.loads(path.read_text())
+    approved['scope']['basis'] = []
+    approved['scope_digest'] = intake._scope_digest(intake.SearchScope.model_validate(approved['scope'], strict=False))
+    path.write_text(json.dumps(approved))
+    assert intake.discovery_scope(person) is None
+
+
+def test_confirm_scope_refusals(person, full):
     def refuse(code, **kw):
         args = {'base_version': 1, 'scope_digest': digest, 'actor': 'person', 'config': CONFIG, **kw}
         with pytest.raises(intake.IntakeError) as err:
@@ -760,7 +798,7 @@ def test_confirm_scope_refusals(person):
         assert err.value.code == code
     digest = '0' * 64
     refuse('adopt_first')
-    hand_made(); intake.adopt_existing(person, actor='person')
+    ok(person, full); strip_scope(person, 1)
     digest = intake.scope_confirmation(person, CONFIG)['scope_digest']
     refuse('proposal_changed', base_version=3)
     refuse('scope_changed', scope_digest='0' * 64)

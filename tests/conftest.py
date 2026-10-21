@@ -155,21 +155,32 @@ def _person_profile(tmp_path_factory, monkeypatch):
     monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(d))
 
 
+_HAND_NAMES = ("master_resume.md", "cv.md", "profile.yaml", "evidence.yaml", "transferable_skills_taxonomy.yaml",
+               "career_ops_profile.md", "interests_and_criteria.yaml")
+SYNTHETIC_CV = b"Alex Example\nAccounts Assistant\n\nExperience\nLedger Co, Accounts Assistant, 2021 - 2023\n"
+
+
 def confirm_discovery(config, person=None):
-    """Synthetic: turn discovery on for a person through the public intake API (adopt hand-made files, then confirm the
-    shown scope). Writes a minimal profile.yaml only when profile/ is empty."""
-    from jobwatch import users
+    """Synthetic: turn discovery on for a person through the public intake API (adopt any hand-made files, propose from a
+    synthetic CV with a fake model, confirm with the scope shown). Returns the new version number."""
+    from jobwatch import model_choice, users
     from jobwatch.apply import paths as apaths
     from jobwatch.candidate import intake
+    from jobwatch.llm import LLM
     person = person or users.current()
+    facts = {"facts": [{"section": "experience", "value": "Accounts Assistant, Ledger Co", "basis": "evidence", "upload": 1,
+                        "sources": [{"line": 5, "quote": "Ledger Co, Accounts Assistant, 2021 - 2023"}]}], "questions": []}
+    llm = LLM(transport=lambda url, headers, body, timeout: (200, {"choices": [{"message": {"content": json.dumps(facts)}}],
+              "usage": {}}), keys=["synthetic"], base_url=model_choice.SERVER_URL)
     with users.use(person):
         pdir = apaths.profile_dir()
-        pdir.mkdir(parents=True, exist_ok=True)
-        if not any((pdir / n).exists() for n in ("cv.md", "master_resume.md")):
-            (pdir / "profile.yaml").write_text("candidate:\n  name: Synthetic\n")
-            (pdir / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")
-        if intake.current_version(person) is None:
+        if intake.current_version(person) is None and any(os.path.lexists(pdir / n) for n in _HAND_NAMES):
+            if not any(os.path.lexists(pdir / n) for n in ("cv.md", "master_resume.md")):
+                (pdir / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")      # adoption needs a CV source
             intake.adopt_existing(person, actor="person")
-        shown = intake.scope_confirmation(person, config)
-        return intake.confirm_scope(person, base_version=shown["base_version"], scope_digest=shown["scope_digest"],
-                                    actor="person", config=config)
+        cur = intake.current_version(person)
+        up = intake.save_upload(person, "cv.txt", SYNTHETIC_CV, "cv")["upload_id"]
+        prop = intake.propose(person, [up], llm, base_version=cur["version"] if cur else None)
+        shown = intake.confirmation(person, prop.id, config)
+        return intake.confirm(person, prop.id, proposal_digest=shown["proposal_digest"], scope_digest=shown["scope_digest"],
+                              actor="person", config=config)

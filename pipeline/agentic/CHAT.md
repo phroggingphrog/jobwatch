@@ -89,7 +89,7 @@ documents, contacts an employer or submits; confirmation only starts discovery w
 | `GET /api/agent/profile/`, `GET /api/agent/profile/versions` | read | Current approved version (`{"version":null}` if none); version list. |
 
 Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_first`, `proposal_not_draft`,
-`already_adopted`, `profile_edited_by_hand`. 413: `too_large`. 415: `unsupported_type`. 422:
+`already_adopted`, `profile_edited_by_hand`, `profile_incomplete`. 413: `too_large`. 415: `unsupported_type`. 422:
 `no_extractable_text`, `invalid_edit`, `parse_failed`, `unreadable_document`, `nothing_to_adopt`. 404:
 `upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
 403: `person_required`. 409 also `proposal_in_progress` (one paid parse per person at a time; 180 s deadline). Capabilities include a `profile` object with the upload limits.
@@ -99,6 +99,7 @@ confirmed scope (`approved.json` has `scope` and `scope_digest`). A version made
 it authorises nothing until `scope-confirm` (or `jobwatch --user <name> profile confirm-scope`, which prints the scope,
 `base_version` and digest, then confirms with `--base-version N --scope-digest D`). `jobwatch run` and `read` skip a person
 without one (`--user all` still runs everyone else) and `after_collect` returns `{"skipped":"no_confirmed_profile"}`.
+Confirming a scope writes a new version, so an open draft proposal built on the previous version answers `proposal_changed`. A scope with an empty basis (an adopted version has no facts) is refused with `profile_incomplete` by `confirm` and `scope-confirm`, and never authorises discovery; the manual `review`, `pipeline run|sort` and `python -m pipeline.agentic.cli` commands skip with the same reason. `--user all` splits a unit's time over the people who run.
 Each person-local day it evaluates at most `scope.daily_assessments` jobs and stops once the day's charged tokens reach
 `scope.daily_token_ceiling`; the rest stay queued for the next day (`{"deferred":"daily_budget"}`).
 

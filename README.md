@@ -207,7 +207,7 @@ systemctl --user enable --now jobwatch-fast.timer jobwatch-slow.timer jobwatch-o
 - `jobwatch-fast.timer`: every 20 min (+ up to 60 s jitter) runs `jobwatch --user all run --tier fast`.
 - `jobwatch-slow.timer`: every 2 h at :10 (+ up to 15 min jitter) runs `jobwatch --user all run --tier slow`.
 - Discovery is off for a person until their current profile is confirmed with its search scope shown (`jobwatch profile adopt`
-  alone does not turn it on; `jobwatch --user <name> profile confirm-scope` shows the scope and confirms it). Unconfirmed people are skipped.
+  alone does not turn it on, and a scope with nothing to search for is refused as `profile_incomplete`; confirm a profile built from documents, or `jobwatch --user <name> profile confirm-scope` for a version that has facts but no scope). Unconfirmed people are skipped; `--user all` splits the unit's time over those who run.
 - `jobwatch-outcomes.timer`: 07:00, 09:00 … 21:00 Melbourne runs `jobwatch outcomes`.
 - `jobwatch-digest.timer`: Monday 08:00 Melbourne runs `jobwatch digest` (the text goes to the journal).
 

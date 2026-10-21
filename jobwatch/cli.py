@@ -15,6 +15,7 @@ import sys
 from . import collectors as registry
 from . import db as dbm
 from .config import load_config
+from . import discovery_gate
 
 
 def _print_run(summary: dict) -> None:
@@ -62,21 +63,19 @@ def main(argv: list[str] | None = None) -> int:
         del argv[i:i + 2]
     names = (users.list_users() if who == "all" else [who]) if who else [None]
     rc = 0
-    for name in names:
-        with (users.use(name) if name else contextlib.nullcontext()):
-            rc = _main(argv) or rc
-    return rc
-
-
-def _discovery_on(cmd: str) -> bool:
-    """Discovery (collection and assessment) runs only for a person whose current profile was confirmed with its scope."""
-    from . import users
+    # People run one after another inside one unit: split its time over those who will actually run (a person
+    # without a confirmed scope is skipped in ~0 s), so the whole run stays inside the unit's TimeoutStartSec.
+    from . import pipeline
     from .candidate import intake
-    who = users.current()
-    if intake.discovery_scope(who) is not None:
-        return True
-    print(f"{cmd}: skipped {who}: no_confirmed_profile (confirm the profile and its scope first)")
-    return False
+    running = sum(1 for name in names if name and intake.discovery_scope(name) is not None)
+    share = pipeline.PEOPLE_SHARE.set(1.0 / max(1, running))
+    try:
+        for name in names:
+            with (users.use(name) if name else contextlib.nullcontext()):
+                rc = _main(argv) or rc
+    finally:
+        pipeline.PEOPLE_SHARE.reset(share)
+    return rc
 
 
 def _main(argv: list[str]) -> int:
@@ -139,21 +138,22 @@ def _main(argv: list[str]) -> int:
             problems += check_code()
         print("\n".join("- " + p for p in problems) if problems else "Profile and settings: all lines known and well formed.")
         return 1 if problems else 0
-    if args.cmd in ("read", "run") and not _discovery_on(args.cmd):
+    if args.cmd in ("read", "run") and not discovery_gate.allowed(args.cmd):
         return 0
     if args.cmd == "read":
         # 2026-10-19 owner: "make the reader read more ads per run". The collect runs leave the reader ~4 min, so it
         # read 2-5 ads and skipped ~17 each time; this run is the reader alone with the whole 13 min.
         from pipeline.agentic import service as agentic
-        from .pipeline import UNIT_BUDGET_S
+        from .pipeline import PEOPLE_SHARE, UNIT_BUDGET_S
         conn = dbm.connect(config.db_path)
         from . import expiry
         from .profile_check import check as _check_profile
         for problem in _check_profile():
             print("profile check:", problem)
-        swept = expiry.sweep(conn, max_seconds=180)  # stale-ad check first, at most 3 of the reader's minutes
+        part = PEOPLE_SHARE.get()                     # --user all: this person's share of the unit
+        swept = expiry.sweep(conn, max_seconds=180 * part)  # stale-ad check first, at most 3 of the reader's minutes
         print({"expiry": swept})
-        print(agentic.after_collect(conn, config, max_seconds=max(60, UNIT_BUDGET_S - 180)))
+        print(agentic.after_collect(conn, config, max_seconds=max(60, (UNIT_BUDGET_S - 180) * part)))
         return 0
     if args.cmd == "run":
         from .pipeline import run

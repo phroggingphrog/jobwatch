@@ -639,7 +639,9 @@ def _now():
 
 def _spent_today(conn, scope_day_start):
     """(jobs evaluated, tokens charged) since the person's local midnight, from the existing activity and batch records
-    (a batch counts for the day it was last active in; no second ledger)."""
+    (no second ledger). Approximations: a batch with any activity today is charged to today in full (so one straddling
+    midnight also counts for yesterday), spend with no activity row yet is not seen, and owner-requested drafts count
+    as evaluated jobs. All errs toward stopping early except the unseen in-flight spend."""
     jobs = conn.execute("SELECT COUNT(DISTINCT posting_id) FROM agentic_activity WHERE event='finished' AND at>=?",
                         (scope_day_start,)).fetchone()[0]
     tokens = conn.execute("SELECT COALESCE(SUM(charged),0) FROM agentic_batches WHERE batch_id IN "
@@ -661,6 +663,14 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
     scope = intake.discovery_scope(users.current())     # discovery runs only on a profile confirmed with its scope shown
     if scope is None:
         return {'skipped': 'no_confirmed_profile'}
+    # The scope's daily limits (jobs evaluated, tokens charged since the person's local midnight) are checked before
+    # any work, so a spent day does no ad fetching either. Deferred jobs are left untouched and stay queued.
+    cfg = _config(config)
+    AgenticStore(conn).ensure()
+    jobs, tokens = _spent_today(conn, _local_midnight(_now()))
+    room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
+    if room <= 0 or left <= 0:
+        return {'deferred': 'daily_budget'}
     started = time.monotonic()
     with adtext.review_lock(adtext.lock_path(config)) as acquired:
         if not acquired:
@@ -710,15 +720,9 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         # it and the fast timer was killed at systemd's 15 min limit).
         if max_seconds is not None:
             max_seconds = max(60, max_seconds - (time.monotonic() - started))
-        # The confirmed scope's daily limits: jobs evaluated and tokens charged since the person's local midnight.
-        # Deferred jobs are left untouched, so they stay queued and are picked up the next day.
-        store, cfg = AgenticStore(conn), _config(config)
-        jobs, tokens = _spent_today(conn, _local_midnight(_now()))
-        room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
-        if room <= 0 or left <= 0:
-            return {'deferred': 'daily_budget'}
+        store = AgenticStore(conn)
         extra = {}
-        if left < cfg['batch_token_ceiling']:        # this run's own ceiling is what is left of the day's
+        if ids[:room] and left < cfg['batch_token_ceiling']:        # this run's own ceiling is what is left of the day's
             ident = 'agentic-' + uuid.uuid4().hex
             store.create_batch(ident, left, time.time() + min(cfg['batch_seconds'], max_seconds if max_seconds is not None else cfg['batch_seconds']))
             extra['batch_id'] = ident

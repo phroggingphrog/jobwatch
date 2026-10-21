@@ -46,7 +46,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
-         "proposal_in_progress")
+         "proposal_in_progress", "profile_incomplete")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -629,6 +629,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         scope = scope_for(person, cur, config)
         if _scope_digest(scope) != scope_digest:
             raise IntakeError("scope_changed")
+        if not scope.basis:
+            raise IntakeError("profile_incomplete")        # nothing to search for: discovery cannot be turned on from this
         nums = _numbers(person)
         pdir = apaths.profile_dir()
         last = _approved(person, nums[-1]) if nums else {}
@@ -740,7 +742,7 @@ def discovery_scope(person: str) -> SearchScope | None:
         if not cur or not cur.get("scope") or not cur.get("scope_digest"):
             return None
         scope = SearchScope.model_validate(cur["scope"], strict=False)
-        return scope if _scope_digest(scope) == cur["scope_digest"] else None
+        return scope if scope.basis and _scope_digest(scope) == cur["scope_digest"] else None
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -755,7 +757,7 @@ def _current_for_scope(person: str) -> dict:
 def scope_confirmation(person: str, config) -> dict:
     """What turning discovery on for the current version would allow: the scope and the tokens to send back."""
     cur = _current_for_scope(person)
-    scope = _scope_of(person, [ProfileFact.model_validate(f) for f in cur.get("facts", [])], config)
+    scope = _scope_of(person, [ProfileFact.model_validate(f, strict=False) for f in cur.get("facts", [])], config)
     return {"base_version": cur["version"], "scope": scope, "scope_digest": _scope_digest(scope),
             "authorises": list(AUTHORISES), "does_not_authorise": list(DOES_NOT_AUTHORISE)}
 
@@ -770,9 +772,11 @@ def confirm_scope(person: str, *, base_version: int, scope_digest: str, actor: L
         if cur["version"] != base_version:
             raise IntakeError("proposal_changed")
         _refuse_hand_edits(apaths.profile_dir(), cur.get("file_sha256") or {})
-        scope = _scope_of(person, [ProfileFact.model_validate(f) for f in cur.get("facts", [])], config)
+        scope = _scope_of(person, [ProfileFact.model_validate(f, strict=False) for f in cur.get("facts", [])], config)
         if _scope_digest(scope) != scope_digest:
             raise IntakeError("scope_changed")
+        if not scope.basis:
+            raise IntakeError("profile_incomplete")        # an adopted version has no facts: set up through onboarding
         if cur.get("scope_digest") == scope_digest:
             return cur["version"]                           # already confirmed with exactly this scope
         n = cur["version"] + 1

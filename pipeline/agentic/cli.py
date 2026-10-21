@@ -34,6 +34,10 @@ def main(argv=None) -> int:
         else:
             if not enabled(config):
                 raise AgenticError('agentic_disabled')
+            from jobwatch import discovery_gate
+            if not discovery_gate.allowed('agentic'):
+                print(json.dumps({'skipped': discovery_gate.SKIPPED}))
+                return 0
             conn = db.connect(db_path)
         inventory = snapshot_inventory(conn, config, posting_ids=args.posting_ids, limit=args.limit)
         payload = {'schema_version': 1, 'postings': inventory}

@@ -1059,3 +1059,54 @@ def test_deferred_job_is_evaluated_next_day(world, monkeypatch):
     monkeypatch.setattr(service, '_now', lambda: now + 36 * 3600)
     service.after_collect(conn, config, max_seconds=600)
     assert selected == [1]                           # still queued, untouched, and now within the new day's cap
+
+
+def test_lowered_token_ceiling_reaches_the_real_batch_runner(world, monkeypatch):
+    import time
+    from jobwatch import users
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    _reset_profile(users); confirm_discovery(config)       # daily ceiling = the configured batch ceiling
+    ceiling = service._config(config)['batch_token_ceiling']
+    _seed(conn, add, 2)
+    AgenticStoreEnsure(conn)
+    conn.execute("INSERT INTO agentic_batches(batch_id,token_ceiling,charged,deadline) VALUES('b-old',?,?,?)",
+                 (ceiling, ceiling - 700, time.time())); conn.commit()
+    _finished(conn, 90, time.time())
+    seen = []
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
+    monkeypatch.setattr(service, 'run_agentic_job', lambda pid, cfg, conn, **kw: seen.append(kw['batch']._state.token_ceiling) or Stage.READY)
+    out = service.after_collect(conn, config, max_seconds=600)      # the real agentic_batch_run
+    assert out['processed'] == 2 and seen == [700, 700], out
+
+
+def test_no_empty_batch_row_when_nothing_is_selected(world, monkeypatch):
+    import time
+    from jobwatch import users
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    _reset_profile(users); confirm_discovery(config)
+    ceiling = service._config(config)['batch_token_ceiling']
+    _seed(conn, add, 0)
+    AgenticStoreEnsure(conn)
+    conn.execute("INSERT INTO agentic_batches(batch_id,token_ceiling,charged,deadline) VALUES('b-old',?,?,?)",
+                 (ceiling, ceiling - 700, time.time())); conn.commit()
+    _finished(conn, 90, time.time())
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
+    service.after_collect(conn, config, max_seconds=600)          # nothing pending
+    assert conn.execute('SELECT COUNT(*) FROM agentic_batches WHERE token_ceiling=700').fetchone()[0] == 0
+
+
+def test_a_spent_day_does_no_collection(world, monkeypatch):
+    import time
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    _reset_profile(users); monkeypatch.setattr(intake, 'DAILY_ASSESSMENTS', 1); confirm_discovery(config)
+    _finished(conn, 90, time.time())
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: pytest.fail('fetched on a spent day'))
+    assert service.after_collect(conn, config, max_seconds=600) == {'deferred': 'daily_budget'}

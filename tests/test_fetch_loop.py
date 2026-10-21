@@ -424,6 +424,7 @@ def _args(**over):
 
 def test_cli_review_and_recall_skip_while_another_run_holds_the_lock(world, monkeypatch, capsys):
     from jobwatch import review_cli
+    confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     ran = []
     monkeypatch.setattr(reader, "review_pending", lambda *a, **kw: ran.append(kw) or {"reviewed": 0})
@@ -641,6 +642,7 @@ def test_refetch_bypasses_the_24h_wait_and_the_try_cap_for_pending_ads(world, mo
 
 def test_cli_refetch_flag_reaches_review_pending(world, monkeypatch):
     from jobwatch import review_cli
+    confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     seen = []
     monkeypatch.setattr(reader, "review_pending", lambda *a, **kw: seen.append(kw) or {"reviewed": 0})
@@ -651,6 +653,7 @@ def test_cli_refetch_flag_reaches_review_pending(world, monkeypatch):
 # --------------------------------------------------- round 2: rederive takes review.lock
 def test_cli_rederive_exits_1_without_touching_rows_while_a_review_runs(world, monkeypatch, capsys):
     from jobwatch import review_cli
+    confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     pid = world.add("Clerk", desc="The whole ad is in the feed. " * 40)
     review(world)

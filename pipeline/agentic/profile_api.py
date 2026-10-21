@@ -18,7 +18,7 @@ UPLOAD_PATH = PREFIX + '/uploads'
 UPLOAD_BODY_CAP = intake.MAX_UPLOAD_BYTES + 64 * 1024     # file cap plus multipart framing; the exact file cap is intake's
 PROPOSE_SECONDS = 180      # overall deadline for the one paid parse a person may have in flight
 STATUS = {'proposal_in_progress': 409, 'proposal_changed': 409, 'scope_changed': 409, 'adopt_first': 409, 'proposal_not_draft': 409,
-          'already_adopted': 409, 'profile_edited_by_hand': 409,
+          'already_adopted': 409, 'profile_incomplete': 409, 'profile_edited_by_hand': 409,
           'too_large': 413, 'unsupported_type': 415,
           'no_extractable_text': 422, 'invalid_edit': 422, 'parse_failed': 422, 'unreadable_document': 422,
           'nothing_to_adopt': 422,

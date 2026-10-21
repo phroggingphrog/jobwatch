@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import contextvars
 import time
 from datetime import timedelta
 
@@ -136,10 +137,15 @@ SLOW_UNIT_BUDGET_S = 2100    # the slow unit may run 45 min; collection takes ~1
 MIN_AI_S = 60                # the AI step always gets at least this long
 
 
+# `--user all` runs people one after another inside one unit; each gets this share of the unit's time (1/people run).
+PEOPLE_SHARE: contextvars.ContextVar[float] = contextvars.ContextVar("jobwatch_people_share", default=1.0)
+
+
 def ai_budget(started: float, config: Config | None = None, tier: str = "fast") -> float:
     """Seconds the AI step may use: what is left of UNIT_BUDGET_S since the run started (at least MIN_AI_S), and no
     more than reader.max_seconds when the owner set one."""
-    left = max(MIN_AI_S, (SLOW_UNIT_BUDGET_S if tier == "slow" else UNIT_BUDGET_S) - (time.monotonic() - started))
+    unit = (SLOW_UNIT_BUDGET_S if tier == "slow" else UNIT_BUDGET_S) * PEOPLE_SHARE.get()
+    left = max(MIN_AI_S, unit - (time.monotonic() - started))
     own = ((config.settings.get("reader") or {}).get("max_seconds") if config else None)
     return min(left, own) if isinstance(own, (int, float)) and own > 0 else left
 
