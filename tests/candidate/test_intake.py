@@ -806,3 +806,197 @@ def test_confirm_scope_refusals(person, full):
     (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Edited\n')
     refuse('profile_edited_by_hand')
     assert intake.discovery_scope(person) is None and intake.current_version(person)['version'] == 1
+
+
+# ----------------------------------------------------------------------------- background parse (guided onboarding)
+import threading
+import time
+
+
+class BlockingLLM:
+    """Holds the parse open until .release is set (never forever: waits are bounded)."""
+    def __init__(self, inner, fail=None):
+        self.inner, self.fail = inner, fail
+        self.started, self.release = threading.Event(), threading.Event()
+
+    def chat(self, *a, **kw):
+        self.started.set()
+        assert self.release.wait(10), 'test never released the parse'
+        if self.fail:
+            raise self.fail
+        return self.inner.chat(*a, **kw)
+
+
+def settle(person, pid, timeout=10):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        got = intake.load_proposal(person, pid)
+        if got.status != 'parsing':
+            return got
+        time.sleep(0.01)
+    raise AssertionError('parse did not finish')
+
+
+@pytest.fixture
+def held(fake_llm):
+    llm = BlockingLLM(fake_llm)
+    yield llm
+    llm.release.set()                       # never leave a parse thread waiting
+    deadline = time.monotonic() + 10
+    while intake._inflight and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def test_questions_available_before_parse_finishes(person, held, upload_id):
+    p = intake.start_proposal(person, [upload_id], held)
+    assert p.status == 'parsing' and p.revision == 1 and p.parse_error == ''
+    assert held.started.wait(10)
+    sections = {q.section for q in p.questions}
+    assert set(intake.ASK_WHEN_ABSENT) | {'career_focus', 'location'} <= sections
+    assert all(f.basis == 'unknown' for f in p.facts)
+    assert intake.load_proposal(person, p.id) == p
+    held.release.set()
+    done = settle(person, p.id)
+    assert done.status == 'draft' and done.revision == 2
+
+
+def test_answer_during_parse_survives_merge(person, held, fake_llm, upload_id):
+    fake_llm.reply({'facts': [fact('career_focus', 'Data analysis', 'inference'),
+                              fact('experience', 'Accounts Assistant, Ledger Co', 'evidence',
+                                   [{'line': 5, 'quote': 'Ledger Co, Accounts Assistant, 2021 - 2023'}])],
+                    'questions': [{'section': 'preference', 'text': 'Remote or office?', 'why': 'Fit.'}]})
+    p = intake.start_proposal(person, [upload_id], held)
+    qid = next(q.id for q in p.questions if q.section == 'career_focus')
+    mid = intake.answer(person, p.id, expected_revision=1, question_id=qid, text='Bookkeeping')
+    assert mid.revision == 2 and mid.status == 'parsing'
+    held.release.set()
+    done = settle(person, p.id)
+    focus = [f for f in done.facts if f.section == 'career_focus']
+    assert [(f.value, f.actor) for f in focus] == [('Bookkeeping', 'person')]       # the parsed inference lost
+    assert any(f.section == 'experience' and f.basis == 'evidence' for f in done.facts)
+    assert done.revision == 3 and done.status == 'draft' and done.parse_error == ''
+    assert qid not in [q.id for q in done.questions]                                 # answered stays closed
+    assert 'Remote or office?' in [q.text for q in done.questions]
+    assert len({f.id for f in done.facts}) == len(done.facts) and len({q.id for q in done.questions}) == len(done.questions)
+    with pytest.raises(intake.IntakeError, match='proposal_changed'):                # a client holding revision 2 must re-read
+        intake.edit(person, p.id, expected_revision=2, edits=[{'op': 'add', 'section': 'skill', 'value': 'Excel'}])
+
+
+def test_confirm_refused_while_parsing(person, held, upload_id):
+    p = intake.start_proposal(person, [upload_id], held)
+    with pytest.raises(intake.IntakeError, match='proposal_parsing'):
+        intake.confirm(person, p.id, proposal_digest=intake.digest(p), scope_digest='x', actor='person', config={})
+    with pytest.raises(intake.IntakeError, match='proposal_parsing'):
+        intake.confirmation(person, p.id, {})
+
+
+def test_one_parse_per_person_and_slot_released(person, held, fake_llm, upload_id):
+    p = intake.start_proposal(person, [upload_id], held)
+    with pytest.raises(intake.IntakeError, match='proposal_in_progress'):
+        intake.start_proposal(person, [upload_id], held)
+    with pytest.raises(intake.IntakeError, match='proposal_in_progress'):
+        intake.propose(person, [upload_id], fake_llm)                                 # the sync entry shares the slot
+    held.release.set()
+    settle(person, p.id)
+    end = time.monotonic() + 10
+    while intake._inflight and time.monotonic() < end:
+        time.sleep(0.01)
+    assert intake.propose(person, [upload_id], fake_llm).status == 'draft'
+
+
+def test_start_proposal_unknown_upload_creates_nothing(person, held):
+    with pytest.raises(intake.IntakeError, match='upload_not_found'):
+        intake.start_proposal(person, ['0' * 16], held)
+    assert not (users.user_dir(person) / 'intake' / 'proposals').exists() and not intake._inflight
+
+
+def test_parse_failure_keeps_answers(person, fake_llm, upload_id):
+    held = BlockingLLM(fake_llm, fail=intake.IntakeError('parse_failed'))
+    p = intake.start_proposal(person, [upload_id], held)
+    qid = next(q.id for q in p.questions if q.section == 'work_rights')
+    intake.answer(person, p.id, expected_revision=1, question_id=qid, text='Citizen')
+    held.release.set()
+    done = settle(person, p.id)
+    assert done.status == 'draft' and done.parse_error == 'parse_failed'
+    assert any(f.section == 'work_rights' and f.value == 'Citizen' and f.actor == 'person' for f in done.facts)
+    assert qid not in [q.id for q in done.questions]
+    other = BlockingLLM(fake_llm, fail=RuntimeError('boom'))                          # an unexpected error is a fixed code too
+    p2 = intake.start_proposal(person, [upload_id], other)
+    other.release.set()
+    assert settle(person, p2.id).parse_error == 'parse_failed'
+
+
+def test_add_uploads_merges_incrementally(person, fake_llm, upload_id):
+    fake_llm.reply({'facts': [fact('skill', 'Excel', 'inference')], 'questions': []})
+    p = intake.start_proposal(person, [upload_id], fake_llm)
+    first = settle(person, p.id)
+    mine = intake.edit(person, p.id, expected_revision=first.revision,
+                       edits=[{'op': 'add', 'section': 'availability', 'value': 'From March'}])
+    letter = intake.save_upload(person, 'letter.txt', b'Dear team\nI led the audit at Ledger Co\n', 'letter')
+    fake_llm.reply({'facts': [fact('skill', 'Excel', 'inference'), fact('experience', 'Audit lead', 'evidence',
+                                                                      [{'line': 2, 'quote': 'I led the audit at Ledger Co'}]),
+                              fact('availability', 'Immediately', 'inference')], 'questions': []})
+    added = intake.add_uploads(person, p.id, [letter['upload_id']], fake_llm)
+    assert added.status == 'parsing' and added.revision == mine.revision + 1
+    done = settle(person, p.id)
+    assert done.status == 'draft' and done.revision == added.revision + 1
+    assert [f.value for f in done.facts if f.section == 'availability' and f.basis != 'unknown'] == ['From March']   # person's untouched
+    assert [f.value for f in done.facts if f.section == 'skill'] == ['Excel']                                      # no duplicate
+    audit = next(f for f in done.facts if f.section == 'experience')
+    assert audit.sources[0].upload_sha256 == letter['sha256'] and len(done.uploads) == 2
+    assert [f for f in done.facts if f.actor == 'person'] == [f for f in mine.facts if f.actor == 'person']
+
+
+def test_add_uploads_needs_a_draft_and_no_parse_in_flight(person, held, fake_llm, upload_id):
+    p = intake.start_proposal(person, [upload_id], held)
+    with pytest.raises(intake.IntakeError, match='proposal_parsing'):
+        intake.add_uploads(person, p.id, [upload_id], fake_llm)
+    held.release.set()
+    settle(person, p.id)
+    with pytest.raises(intake.IntakeError, match='upload_not_found'):
+        intake.add_uploads(person, p.id, ['0' * 16], fake_llm)
+    with pytest.raises(intake.IntakeError, match='proposal_not_found'):
+        intake.add_uploads(person, '0' * 16, [upload_id], fake_llm)
+
+
+def test_parse_runs_as_the_person_and_slot_is_per_person(person, held, fake_llm, upload_id):
+    users.create_user_dirs('kim')
+    kim_up = intake.save_upload('kim', 'cv.txt', SYNTHETIC_CV.encode(), 'cv')['upload_id']
+    p = intake.start_proposal(person, [upload_id], held)
+    q = intake.start_proposal('kim', [kim_up], fake_llm)                              # another person is not blocked
+    assert settle('kim', q.id).status == 'draft'
+    held.release.set()
+    assert settle(person, p.id).status == 'draft'
+    assert not (users.user_dir('kim') / 'intake' / 'proposals' / (p.id + '.json')).exists()
+
+
+def _profile(person, **files):
+    pdir = users.user_dir(person) / 'profile'
+    pdir.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (pdir / name.replace('_dot_', '.')).write_text(text)
+    return pdir
+
+
+def test_upload_profile_files_offers_the_persons_own_files(person, fake_llm):
+    _profile(person, **{'master_resume_dot_md': SYNTHETIC_CV, 'profile_dot_yaml': 'name: x\n',
+                        'notes_dot_md': 'not an allowed name'})
+    ids = intake.upload_profile_files(person)
+    assert len(ids) == 1                                                              # yaml is not an upload type; notes not allowed
+    p = intake.start_proposal(person, ids, fake_llm)
+    assert settle(person, p.id).uploads
+
+
+def test_upload_profile_files_refuses_symlinks(person):
+    pdir = _profile(person, **{'cv_dot_md': 'x'})
+    (pdir / 'cv.md').unlink()
+    outside = pdir.parent / 'secret.md'
+    outside.write_text('private')
+    (pdir / 'cv.md').symlink_to(outside)
+    with pytest.raises(intake.IntakeError, match='unreadable_document'):
+        intake.upload_profile_files(person)
+    assert not (users.user_dir(person) / 'intake' / 'uploads.json').exists()
+
+
+def test_upload_profile_files_with_nothing_to_offer(person):
+    assert intake.upload_profile_files(person) == []

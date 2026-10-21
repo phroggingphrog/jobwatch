@@ -78,8 +78,9 @@ documents, contacts an employer or submits; confirmation only starts discovery w
 | Method and path | Scope | Result |
 |---|---|---|
 | `POST /api/agent/profile/uploads` | run | Multipart `file` + form `kind` (`cv`, `letter`, `evidence`; `.pdf .docx .txt .md`, 10 MiB). 201 `{upload_id,sha256,kind,bytes}`. Only route exempt from the 64 KiB cap (all POST, PUT, PATCH and DELETE bodies are capped); needs run scope before the body is read; counted while streaming. |
-| `POST /api/agent/profile/proposals` | run | `{upload_ids,base_version}` -> 201 proposal (facts with basis and sources, open questions). |
-| `GET /api/agent/profile/proposals/{id}` | read | The proposal. |
+| `POST /api/agent/profile/proposals` | run | `{upload_ids,base_version}` -> 202 pending proposal: `status` `parsing`, revision 1, the open questions (employment, availability, work rights, constraints, exclusions, career focus, location) already listed. The documents are read in the background (one parse per person, 180 s). |
+| `POST /api/agent/profile/proposals/{id}/uploads` | run | `{upload_ids}` -> 202. Reads further documents into the same draft in the background; what the person already said is untouched. `proposal_parsing` while a parse is running. |
+| `GET /api/agent/profile/proposals/{id}` | read | The proposal: `status` (`parsing`, `draft`, `confirmed`, `superseded`), `parse_error` (an error code if the background parse failed; the draft and its answers stay usable), facts with basis and sources, open questions. |
 | `PATCH /api/agent/profile/proposals/{id}` | interact | `{expected_revision,edits}` (`add`, `set`, `remove`). |
 | `POST /api/agent/profile/proposals/{id}/answers` | interact | `{expected_revision,question_id,text}`. |
 | `GET /api/agent/profile/proposals/{id}/confirmation` | read | `proposal_digest`, `scope`, `scope_digest`, what it does and does not authorise. |
@@ -92,7 +93,23 @@ Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_f
 `already_adopted`, `profile_edited_by_hand`, `profile_incomplete`. 413: `too_large`. 415: `unsupported_type`. 422:
 `no_extractable_text`, `invalid_edit`, `parse_failed`, `unreadable_document`, `nothing_to_adopt`. 404:
 `upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
-403: `person_required`. 409 also `proposal_in_progress` (one paid parse per person at a time; 180 s deadline). Capabilities include a `profile` object with the upload limits.
+403: `person_required`. 409 also `proposal_in_progress` (one paid parse per person at a time, shared by the API and the chat tools; 180 s deadline) and `proposal_parsing` (confirm or add uploads while the documents are still being read). Capabilities include a `profile` object with the upload limits.
+
+### Guided onboarding in the chat agent
+
+The chat agent guides a new person through the same draft instead of waiting for a finished parse. Answers given
+while the documents are read are kept: when the parse ends it merges into the draft under the proposal lock, a fact the
+person stated wins over a parsed fact in a one-answer section (employment status, availability, work rights, career
+focus), questions already answered stay closed, and the revision increments (a client holding the old revision gets
+`proposal_changed` and re-reads). A failed parse sets `parse_error` and the conversation continues with the answers.
+Tools (identity is bound by the server, never an argument): `profile_start(upload_ids, use_existing_files)` (the
+person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_answer`,
+`profile_correct` (both record only the person's own words from their latest message; the prompt forbids inventing
+or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
+when there is nothing to search for) and `profile_confirm`. `profile_confirm` is a gated tool: the human approval is
+bound to the exact `proposal_digest` and `scope_digest` (a changed draft or scope fails `approval_inputs_changed`),
+and model text is never approval. It starts discovery within the scope shown; it authorises no documents, employer
+messages or submission. The legacy `/welcome` onboarding is unchanged.
 
 Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
 confirmed scope (`approved.json` has `scope` and `scope_digest`). A version made by `jobwatch profile adopt` has none, so

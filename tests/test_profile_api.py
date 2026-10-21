@@ -1,5 +1,6 @@
 """Native profile intake API: synthetic documents, tmp_path people, fake LLM transport."""
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -56,8 +57,18 @@ def proposal(client):
     up = upload(client)
     assert up.status_code == 201, up.text
     res = client.post(P + '/proposals', json={'upload_ids': [up.json()['upload_id']], 'base_version': None}, headers=h())
-    assert res.status_code == 201, res.text
-    return res.json()
+    assert res.status_code == 202 and res.json()['status'] == 'parsing', res.text
+    return settled(client, res.json()['id'])
+
+
+def settled(client, pid, token=RUN, timeout=10):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        got = client.get(f'{P}/proposals/{pid}', headers=h(token)).json()
+        if got['status'] != 'parsing':
+            return got
+        time.sleep(0.01)
+    raise AssertionError('parse did not finish')
 
 
 def test_full_profile_flow_over_http(env):
@@ -65,13 +76,15 @@ def test_full_profile_flow_over_http(env):
     prop = proposal(c)
     pid = prop['id']
     got = c.get(f'{P}/proposals/{pid}', headers=h()).json()
-    assert got['facts'][0]['basis'] == 'evidence' and got['facts'][0]['sources'][0]['line'] == 5
-    r = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': 1, 'edits': [
+    exp = next(f for f in got['facts'] if f['section'] == 'experience')
+    assert exp['basis'] == 'evidence' and exp['sources'][0]['line'] == 5 and got['status'] == 'draft' and got['parse_error'] == ''
+    rev = got['revision']
+    r = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': rev, 'edits': [
         {'op': 'add', 'section': 'location', 'value': 'Perth'}]}, headers=h(APPROVE))
-    assert r.status_code == 200 and r.json()['revision'] == 2
-    qid = r.json()['questions'][0]['id']
-    r = c.post(f'{P}/proposals/{pid}/answers', json={'expected_revision': 2, 'question_id': qid, 'text': 'Citizen'}, headers=h(APPROVE))
-    assert r.status_code == 200 and r.json()['revision'] == 3 and qid not in [q['id'] for q in r.json()['questions']]
+    assert r.status_code == 200 and r.json()['revision'] == rev + 1
+    qid = next(q['id'] for q in r.json()['questions'] if q['section'] == 'work_rights')
+    r = c.post(f'{P}/proposals/{pid}/answers', json={'expected_revision': rev + 1, 'question_id': qid, 'text': 'Citizen'}, headers=h(APPROVE))
+    assert r.status_code == 200 and r.json()['revision'] == rev + 2 and qid not in [q['id'] for q in r.json()['questions']]
     conf = c.get(f'{P}/proposals/{pid}/confirmation', headers=h()).json()
     assert conf['does_not_authorise'] and conf['scope']['locations'] == ['Perth']
     assert c.get(P + '/', headers=h()).json()['version'] is None
@@ -156,11 +169,12 @@ def test_capabilities_lists_profile(env):
 def test_json_cap_applies_to_patch_too(env):
     c = env
     pid = proposal(c)['id']
+    rev = c.get(f'{P}/proposals/{pid}', headers=h()).json()['revision']
     pad = {'op': 'add', 'section': 'skill', 'value': 'x' * 70000}
-    r = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': 1, 'edits': [pad]}, headers=h(APPROVE))
+    r = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': rev, 'edits': [pad]}, headers=h(APPROVE))
     assert r.status_code == 413 and r.json() == {'error': 'request_too_large'}
-    ok = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': 1, 'edits': [{**pad, 'value': 'Bookkeeping'}]}, headers=h(APPROVE))
-    assert ok.status_code == 200 and ok.json()['revision'] == 2
+    ok = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': rev, 'edits': [{**pad, 'value': 'Bookkeeping'}]}, headers=h(APPROVE))
+    assert ok.status_code == 200 and ok.json()['revision'] == rev + 1
 
 
 def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
@@ -182,19 +196,23 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: Blocking())
     with TestClient(app) as c:
         ids = {t: upload(c, token=t).json()['upload_id'] for t in (RUN, OTHER)}
-        first = {}
-        def go():
-            first['r'] = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
-        t = threading.Thread(target=go)
-        t.start()
+        first = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
+        assert first.status_code == 202 and first.json()['status'] == 'parsing'      # returns at once; the parse is held open
         assert started.wait(10)
         r = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
         assert r.status_code == 409 and r.json() == {'error': 'proposal_in_progress'}
+        mid = c.get(f"{P}/proposals/{first.json()['id']}", headers=h()).json()
+        assert mid['status'] == 'parsing' and {q['section'] for q in mid['questions']} >= {'career_focus', 'location', 'work_rights'}
         release.set()
-        t.join(10)
-        assert first['r'].status_code == 201 and seen[0] is not None           # deadline passed to the LLM
-        again = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
-        assert again.status_code == 201                                       # slot released in finally
+        assert settled(c, first.json()['id'])['status'] == 'draft' and seen[0] is not None   # deadline passed to the LLM
+        deadline = time.monotonic() + 10
+        while True:                                                                  # slot released in the worker's finally
+            again = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
+            if again.status_code == 202 or time.monotonic() > deadline:
+                break
+            time.sleep(0.01)
+        assert again.status_code == 202
+        settled(c, again.json()['id'])
 
 
 def _strip_scope(person, n):
@@ -236,3 +254,54 @@ def test_adopted_profile_cannot_confirm_an_empty_scope_over_http(env):
     r = env.post(P + '/scope-confirm', json={'base_version': 1, 'scope_digest': shown['scope_digest']}, headers=h(OTHER))
     assert r.status_code == 409 and r.json() == {'error': 'profile_incomplete'}
     assert intake.discovery_scope('fixture-b') is None
+
+
+def test_proposal_returns_202_then_draft(env):
+    c = env
+    up = upload(c).json()['upload_id']
+    res = c.post(P + '/proposals', json={'upload_ids': [up], 'base_version': None}, headers=h())
+    assert res.status_code == 202
+    first = res.json()
+    assert first['status'] == 'parsing' and first['parse_error'] == '' and first['questions']
+    done = settled(c, first['id'])
+    assert done['status'] == 'draft' and done['revision'] > first['revision']
+    stale = c.post(f"{P}/proposals/{first['id']}/answers", headers=h(APPROVE),
+                   json={'expected_revision': first['revision'], 'question_id': 'q1', 'text': 'x'})
+    assert stale.status_code == 409 and stale.json() == {'error': 'proposal_changed'}      # an old revision re-reads
+
+
+def test_confirm_while_parsing_is_409_and_uploads_add_documents(tmp_path, monkeypatch):
+    import threading
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    users.create_user_dirs('fixture-a')
+    release = threading.Event()
+
+    class Blocking:
+        def chat(self, *a, **kw):
+            assert release.wait(10)
+            return FakeLLM().chat(*a, **kw)
+    credentials = {RUN: Principal('fixture-a'), APPROVE: Principal('fixture-a', frozenset({'read', 'interact', 'approve'}))}
+    app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: Blocking())
+    with TestClient(app) as c:
+        try:
+            ids = [upload(c).json()['upload_id'], upload(c, data=b'Dear team\nI led the audit\n', name='l.txt', kind='letter').json()['upload_id']]
+            first = c.post(P + '/proposals', json={'upload_ids': ids[:1], 'base_version': None}, headers=h()).json()
+            r = c.post(f"{P}/proposals/{first['id']}/confirm", json={'proposal_digest': 'x', 'scope_digest': 'y'}, headers=h(APPROVE))
+            assert r.status_code == 409 and r.json() == {'error': 'proposal_parsing'}
+            r = c.post(f"{P}/proposals/{first['id']}/uploads", json={'upload_ids': ids[1:]}, headers=h())
+            assert r.status_code == 409 and r.json() == {'error': 'proposal_parsing'}
+            release.set()
+            done = settled(c, first['id'])
+            deadline = time.monotonic() + 10
+            while True:
+                r = c.post(f"{P}/proposals/{first['id']}/uploads", json={'upload_ids': ids[1:]}, headers=h())
+                if r.status_code != 409 or time.monotonic() > deadline:
+                    break
+                time.sleep(0.01)
+            assert r.status_code == 202 and r.json()['status'] == 'parsing' and r.json()['revision'] == done['revision'] + 1
+            assert len(settled(c, first['id'])['uploads']) == 2
+            assert c.post(f"{P}/proposals/{first['id']}/uploads", json={'upload_ids': ids[1:]}, headers=h(APPROVE)).status_code == 403
+        finally:
+            release.set()

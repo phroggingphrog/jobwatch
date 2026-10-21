@@ -66,10 +66,18 @@ Interview preparation and follow-up drafting require approval.
 Do not infer success from a plan or your own reasoning.
 Report posting id, run key, status and defer reason from tools. Missing facts mean ask,
 not invent. Memory notes are advisory, never profile facts or eligibility overrides.
-You cannot edit profiles, contact anyone, change settings, or execute code. Final Submit
+You cannot edit profile files, contact anyone, change settings, or execute code; the profile tools only record what the
+person says. Final Submit
 happens only by the owner's own click or through submit_application, which needs the owner's
 approval of that exact reviewed form and only queues the press; check it with submit_status.
 Never call submit_application unless the owner asked to submit that job.
+Onboarding: to set up a profile, guide the person. Ask for their CV and other documents (or offer their existing profile files
+with use_existing_files) and call profile_start; the documents are read in the background, so ask the open questions one or two
+at a time meanwhile and use profile_status to see the draft and parse state. profile_answer and profile_correct record ONLY the
+person's own words from their latest message, copied faithfully: never invent, infer or paraphrase a fact into an answer, never
+answer for them, and ask again if they have not said it. Show profile_confirmation before profile_confirm. profile_confirm needs
+the person's own approval of that exact draft and scope; it starts discovery within the scope shown and does not authorise
+documents, employer messages or submission. If profile_incomplete is reported, ask for their career focus and experience.
 To answer, return {\"answer\":\"text\"}; to use a tool return
 {\"tool\":\"name\",\"arguments\":{...}}. One tool per response.
 """
@@ -106,13 +114,34 @@ def job_connection(config, *, write=False):
         connection.close()
 
 
-GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview', 'draft_followup', 'submit_application')
+GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview', 'draft_followup', 'submit_application',
+         'profile_confirm')
+
+
+def _identity(args):
+    """What an approval is keyed by: the posting, the application or the profile draft the call names."""
+    return args.get('posting_id', args.get('application_id', args.get('proposal_id')))
 
 
 def _approval_binding(name, args, config):
     """Bind an approval to actual evidence/config, not an LLM description."""
     from pipeline.agentic.service import enabled, snapshot_inventory
     value = {'tool': name, 'arguments': args, 'skills': skill_version(), 'enabled': enabled(config)}
+    if name == 'profile_confirm':
+        # Bound to the exact draft and scope the person is shown (jobwatch.candidate.intake), nothing the model wrote.
+        from jobwatch.candidate import intake
+        if type(args.get('proposal_id')) is not str:
+            raise AgenticError('profile_not_ready')
+        try:
+            shown = intake.confirmation(users.current(), args['proposal_id'], config)
+        except intake.IntakeError:
+            raise AgenticError('profile_not_ready') from None
+        if not shown['scope'].basis:
+            raise AgenticError('profile_not_ready')                # nothing to search for: no approval is offered
+        value.update(snapshot=shown['proposal_digest'] + ':' + shown['scope_digest'])
+        return {'digest': hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(), 'run_key': value['snapshot'],
+                'operation': name, 'arguments': args, 'proposal_digest': shown['proposal_digest'],
+                'scope_digest': shown['scope_digest']}
     if name == 'submit_application':
         # Bound to the exact reviewed browser fill (jobwatch.apply.submit_confirm), not to evidence or a run key.
         from jobwatch.apply import prepare, submit_confirm
@@ -460,6 +489,107 @@ def _build(person, conn, config, llm, selected, saver, store):
                 return {'posting_id': posting_id, 'status': 'none'}
             return {'posting_id': posting_id, **(submit_confirm.outcome(jobs, posting_id) or {'status': 'none'})}
 
+    def _refused(exc):
+        return {'status': 'refused', 'reason': exc.code}
+
+    def _draft(p):
+        """The draft as the person's conversation needs it: facts with basis and source quotes, open questions, parse state."""
+        return {'proposal_id': p.id, 'revision': p.revision, 'status': p.status, 'parsing': p.status == 'parsing',
+                'parse_error': p.parse_error or None,
+                'facts': [{'id': f.id, 'section': f.section, 'value': f.value, 'basis': str(f.basis), 'actor': f.actor,
+                           'note': f.note, 'sources': [{'line': r.line, 'quote': r.quote} for r in f.sources]} for f in p.facts],
+                'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
+
+    def _open():
+        from jobwatch.candidate import intake
+        p = intake.open_proposal(person)
+        if p is None:
+            raise intake.IntakeError('proposal_not_found')
+        return p
+
+    @tool
+    def profile_start(upload_ids: list[str], use_existing_files: bool = False) -> dict:
+        """Start drafting the person's profile from their uploaded documents (upload ids) and, if use_existing_files, from their
+        existing profile files. Returns at once: the documents are read in the background and the open questions are ready now."""
+        from jobwatch.candidate import intake
+        if type(upload_ids) is not list or any(type(i) is not str for i in upload_ids):
+            raise RuntimeErrorSafe('invalid_request')
+        try:
+            ids = list(upload_ids) + (intake.upload_profile_files(person) if use_existing_files else [])
+            invocation.require_route(llm, model_choice.get_model('reader', person))      # candidate data goes only to paid routes
+            current = intake.current_version(person)
+            return _draft(intake.start_proposal(person, ids, llm, base_version=current['version'] if current else None))
+        except intake.IntakeError as exc:
+            return _refused(exc)
+
+    @tool
+    def profile_status() -> dict:
+        """Show the person's draft profile: facts with basis and source quotes, open questions and whether the documents are still being read."""
+        from jobwatch.candidate import intake
+        try:
+            return _draft(_open())
+        except intake.IntakeError:
+            current = intake.current_version(person)
+            return {'status': 'no_draft', 'approved_version': current['version'] if current else None}
+
+    @tool
+    def profile_answer(question_id: str, text: str) -> dict:
+        """Record the person's answer to an open question. text must be the person's own words from their latest message, copied
+        faithfully; never invent, infer or paraphrase a fact, and never answer for them."""
+        from jobwatch.candidate import intake
+        try:
+            p = _open()
+            return _draft(intake.answer(person, p.id, expected_revision=p.revision, question_id=question_id, text=text))
+        except intake.IntakeError as exc:
+            return _refused(exc)
+
+    @tool
+    def profile_correct(edits: list[dict]) -> dict:
+        """Record corrections the person asked for: {op:'add',section,value} | {op:'set',fact_id,basis:'evidence',value} |
+        {op:'remove',fact_id}. Values must be what the person said in their latest message; never invent or infer a fact."""
+        from jobwatch.candidate import intake
+        try:
+            p = _open()
+            return _draft(intake.edit(person, p.id, expected_revision=p.revision, edits=edits))
+        except intake.IntakeError as exc:
+            return _refused(exc)
+
+    @tool
+    def profile_confirmation() -> dict:
+        """Show what confirming would start: the search scope, daily limits and what it does not authorise. Show this to the person first."""
+        from jobwatch.candidate import intake
+        try:
+            p = _open()
+            shown = intake.confirmation(person, p.id, config)
+        except intake.IntakeError as exc:
+            return _refused(exc)
+        scope = shown['scope']
+        if not scope.basis:
+            return {'status': 'profile_incomplete', 'proposal_id': p.id,
+                    'message': 'Nothing to search for yet: ask the person for their career focus and experience.'}
+        return {'status': 'ready', 'proposal_id': p.id, 'scope': scope.model_dump(mode='json'),
+                'daily_limits': {'assessments': scope.daily_assessments, 'token_ceiling': scope.daily_token_ceiling},
+                'proposal_digest': shown['proposal_digest'], 'scope_digest': shown['scope_digest'],
+                'authorises': shown['authorises'], 'does_not_authorise': shown['does_not_authorise']}
+
+    @tool
+    def profile_confirm(proposal_id: str) -> dict:
+        """Confirm the shown draft profile and start discovery within the shown scope, after the person approves that exact
+        draft and scope. Does not authorise documents, employer messages or submission."""
+        from jobwatch.candidate import intake
+        binding = scope.approvals.get(('profile_confirm', proposal_id)) if scope else None
+        if binding is None or binding != _approval_binding('profile_confirm', binding['arguments'], config):
+            raise RuntimeErrorSafe('approval_inputs_changed')
+        try:
+            version = intake.confirm(person, proposal_id, proposal_digest=binding['proposal_digest'],
+                                     scope_digest=binding['scope_digest'], actor='person', config=config)
+        except intake.IntakeError as exc:
+            return _refused(exc)
+        if scope:
+            scope.outcomes.append({'status': 'profile_confirmed', 'version': version})
+        return {'status': 'confirmed', 'version': version, 'authorises': intake.AUTHORISES,
+                'does_not_authorise': intake.DOES_NOT_AUTHORISE}
+
     @tool
     def ask_human(question: str) -> str:
         """Ask for a missing personal fact. Human response arrives through an interrupt; no profile write."""
@@ -473,7 +603,8 @@ def _build(person, conn, config, llm, selected, saver, store):
             FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
                                  _permissions=permissions)],
         tools=[run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup, submit_application,
-               submit_status, find_jobs, application_status, source_health, ask_human],
+               submit_status, find_jobs, application_status, source_health, ask_human,
+               profile_start, profile_status, profile_answer, profile_correct, profile_confirmation, profile_confirm],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
                       'ask_human': {'allowed_decisions': ['respond']}},
         subagents=[{'name': 'career-reader', 'description': 'Inspect full saved job ads and existing run/defer outcomes.',
@@ -610,7 +741,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                             execution.check()
                             result = graph.invoke(Command(resume={'decisions': [
                                 {'type': 'respond', 'message': 'No answer supplied; do not invent a fact.'} if i['type'] == 'question' else
-                                {'type': 'reject', 'message': 'Invalid arguments: no such saved posting or application. Nothing was run.'}
+                                {'type': 'reject', 'message': 'Invalid arguments: no such saved posting, application or ready profile draft. Nothing was run.'}
                                 for i in items]}), graph_config)
                             values = [i.value for i in result.get('__interrupt__', ())]
                         raise RuntimeErrorSafe('invalid_tool_call')
@@ -643,7 +774,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                 name, args = binding['operation'], binding['arguments']
                                 if binding != _approval_binding(name, args, cfg):
                                     raise RuntimeErrorSafe('approval_inputs_changed')
-                                identity = args.get('posting_id', args.get('application_id'))
+                                identity = _identity(args)
                                 execution.approvals[(name, identity)] = binding
                     if decisions is not None and not pending and not (recover and same_invocation):
                         raise RuntimeErrorSafe('no_pending_approval')
@@ -662,7 +793,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                 if decision['type'] == 'approve':
                                     args = next(a['args'] for value in [i.value for i in pending]
                                                 for a in value['action_requests'] if a['name'] == item['operation'])
-                                    identity = args.get('posting_id', args.get('application_id'))
+                                    identity = _identity(args)
                                     execution.approvals[(item['operation'], identity)] = item['binding']
                             elif decision.get('type') != 'respond' or type(decision.get('message')) is not str:
                                 raise RuntimeErrorSafe('invalid_decisions')

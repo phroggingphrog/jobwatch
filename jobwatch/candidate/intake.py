@@ -18,6 +18,10 @@ import re
 import secrets
 import shutil
 import tempfile
+import threading
+import time
+import contextvars
+import functools
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from enum import StrEnum
@@ -46,7 +50,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
-         "proposal_in_progress", "profile_incomplete")
+         "proposal_in_progress", "profile_incomplete", "proposal_parsing")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -62,7 +66,13 @@ _ASK_TEXT = {
                    "Hard limits decide whether a role is worth showing."),
     "exclusion": ("Are there employers, industries or kinds of work you never want to see?",
                   "Exclusions remove roles before they are assessed."),
+    "career_focus": ("What kind of work do you want to be found for?",
+                     "Your career focus decides what discovery looks for."),
+    "location": ("Where would you like to work (cities, regions, remote)?",
+                 "Location limits which openings are shown."),
 }
+ONBOARDING_ASK = ASK_WHEN_ABSENT + ("career_focus", "location")   # asked at once, while the documents are still being read
+PARSE_SECONDS = 180                        # overall deadline for the one paid parse a person may have in flight
 # What an employment_status quote must contain to count as stating the status.
 _STATUS_WORDS = re.compile(r"\b(currently|unemployed|employed|self-employed|freelanc\w*|studying|student|seeking|"
                            r"looking for|between roles|notice period|present)\b", re.I)
@@ -118,7 +128,8 @@ class Proposal(_Model):
     uploads: tuple[str, ...]               # sha256 of each upload, in the order the parser saw them
     facts: tuple[ProfileFact, ...]
     questions: tuple[Question, ...]
-    status: Literal["draft", "confirmed", "superseded"]
+    status: Literal["parsing", "draft", "confirmed", "superseded"]
+    parse_error: str = ""                  # IntakeError code when the background parse failed; the draft stays usable
 
 
 # ----------------------------------------------------------------------------- text extraction
@@ -283,9 +294,8 @@ def _check(raw, docs, n: int) -> ProfileFact | None:
     return ProfileFact(id=f"f{n}", section=section, value=value, basis=basis, sources=sources, note=note)
 
 
-def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int | None = None,
-            deadline: float | None = None) -> Proposal:
-    """Parse the uploads into a draft Proposal (revision 1) and store it; profile/ is not touched."""
+def _load_docs(person: str, upload_ids: list[str]) -> tuple[list[tuple[str, list[str]]], list[str]]:
+    """Validate the ids and read each upload's stored text: (sha, lines) per upload and the prompt blocks."""
     root = _root(person)
     index = _read_json(root / "uploads.json", {})
     metas = []
@@ -302,6 +312,11 @@ def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int |
         blocks.append(f"=== Upload {len(docs)} ({meta['kind']}) ===\n{_numbered(text)}")
     if not docs:
         raise IntakeError("no_extractable_text")
+    return docs, blocks
+
+
+def _model_parse(person: str, docs, blocks, llm: LLM, deadline: float | None) -> tuple[list[ProfileFact], list[Question]]:
+    """The one paid call: checked facts (ids f1..) and the model's questions (ids q1..), nothing added by us."""
     res = llm.chat(get_model("reader", person), [
         {"role": "system", "content": PROMPT % {"sections": ", ".join(SECTIONS)}},
         {"role": "user", "content": "\n\n".join(blocks)}], json_mode=True, deadline=deadline)
@@ -317,7 +332,12 @@ def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int |
         if isinstance(raw, dict) and raw.get("section") in SECTIONS and str(raw.get("text") or "").strip():
             questions.append(Question(id=f"q{len(questions) + 1}", section=raw["section"],
                                       text=str(raw["text"]).strip(), why=str(raw.get("why") or "").strip()))
-    for section in ASK_WHEN_ABSENT:
+    return facts, questions
+
+
+def _add_unknowns(facts: list[ProfileFact], questions: list[Question], sections) -> None:
+    """Each section the documents leave unanswered becomes an unknown + a question (in place)."""
+    for section in sections:
         if not any(f.section == section and f.basis is not Basis.UNKNOWN for f in facts):
             if not any(f.section == section for f in facts):
                 facts.append(ProfileFact(id=f"f{len(facts) + 1}", section=section, value="", basis=Basis.UNKNOWN,
@@ -325,12 +345,198 @@ def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int |
             if not any(q.section == section for q in questions):
                 text, why = _ASK_TEXT[section]
                 questions.append(Question(id=f"q{len(questions) + 1}", section=section, text=text, why=why))
+
+
+# One parse per person at a time, across the chat tools, the API and the sync entry (in-process, like the API's old set).
+_inflight: set[str] = set()
+_inflight_lock = threading.Lock()
+
+
+def _claim(person: str) -> None:
+    with _inflight_lock:
+        if person in _inflight:
+            raise IntakeError("proposal_in_progress")
+        _inflight.add(person)
+
+
+def _release(person: str) -> None:
+    with _inflight_lock:
+        _inflight.discard(person)
+
+
+def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int | None = None,
+            deadline: float | None = None) -> Proposal:
+    """Parse the uploads into a draft Proposal (revision 1) and store it; profile/ is not touched.
+    Synchronous; start_proposal is the interactive entry. Holds the person's one parse slot."""
+    docs, blocks = _load_docs(person, upload_ids)
+    _claim(person)
+    try:
+        facts, questions = _model_parse(person, docs, blocks, llm, deadline)
+    finally:
+        _release(person)
+    _add_unknowns(facts, questions, ASK_WHEN_ABSENT)
     facts = _mark_replacements(person, base_version, facts)
     proposal = Proposal(id=secrets.token_hex(8), revision=1, base_version=base_version,
                         uploads=tuple(sha for sha, _ in docs), facts=tuple(facts), questions=tuple(questions),
                         status="draft")
     save_proposal(person, proposal)
     return proposal
+
+
+# ----------------------------------------------------------------------------- guided onboarding: parse in the background
+_ONE_ANSWER = ("employment_status", "availability", "work_rights", "career_focus")   # a person's answer replaces a parsed one
+
+
+def _merge(cur: Proposal, parsed: list[ProfileFact], asked: list[Question], shas) -> Proposal:
+    """Fold a finished parse into the draft. The person's own words win: in a one-answer section a parsed fact is
+    dropped, a parser 'unknown' placeholder and its question go once anything real covers the section, and answered
+    questions stay closed. Existing facts are never rewritten; ids are re-issued so none collide."""
+    stated = {f.section for f in cur.facts if f.actor == "person" and f.basis is not Basis.UNKNOWN}
+    same = {(f.section, json.dumps(f.value, sort_keys=True)) for f in cur.facts if f.basis is not Basis.UNKNOWN}
+    keep = [f for f in parsed if f.basis is Basis.UNKNOWN or not (
+        (f.section in stated and f.section in _ONE_ANSWER) or (f.section, json.dumps(f.value, sort_keys=True)) in same)]
+    covered = stated | {f.section for f in keep if f.basis is not Basis.UNKNOWN}
+    facts = [f for f in cur.facts if not (f.actor == "parser" and f.basis is Basis.UNKNOWN and f.section in covered)]
+    for f in keep:
+        if f.basis is Basis.UNKNOWN and (f.section in covered or any(x.section == f.section for x in facts)):
+            continue
+        facts.append(f.model_copy(update={"id": _new_id(facts)}))
+    questions = [q for q in cur.questions if q.section not in covered]
+    top = max((int(q.id[1:]) for q in (*cur.questions, *asked) if re.fullmatch(r"q\d+", q.id)), default=0)
+    for q in asked:
+        if q.section not in covered and not any(x.section == q.section for x in questions):
+            top += 1
+            questions.append(q.model_copy(update={"id": f"q{top}"}))
+    return cur.model_copy(update={"facts": tuple(facts), "questions": tuple(questions), "status": "draft",
+                                  "parse_error": "", "revision": cur.revision + 1,
+                                  "uploads": tuple(dict.fromkeys((*cur.uploads, *shas)))})
+
+
+def _finish_parse(person: str, proposal_id: str, base_version, shas, result, error: str) -> None:
+    with _locked(person, proposal_id + ".lock", "proposals"):
+        cur = load_proposal(person, proposal_id)
+        if cur.status != "parsing":
+            return                                              # superseded or confirmed meanwhile: nothing to merge into
+        if error:
+            done = cur.model_copy(update={"status": "draft", "parse_error": error, "revision": cur.revision + 1})
+        else:
+            facts, asked = result
+            done = _merge(cur, _mark_replacements(person, base_version, facts), asked, shas)
+        save_proposal(person, done)
+
+
+def _parse_worker(person: str, proposal_id: str, base_version, docs, blocks, llm, deadline) -> None:
+    try:
+        with users.use(person):
+            shas = [sha for sha, _ in docs]
+            try:
+                result, error = _model_parse(person, docs, blocks, llm, deadline), ""
+            except IntakeError as exc:
+                result, error = None, exc.code
+            except Exception:                                   # a gateway or parser failure: a fixed code, no private text
+                result, error = None, "parse_failed"
+            try:
+                _finish_parse(person, proposal_id, base_version, shas, result, error)
+            except Exception:
+                _finish_parse(person, proposal_id, base_version, shas, None, "parse_failed")
+    except Exception:
+        pass                                                    # a daemon thread has nowhere to raise to; the slot is freed below
+    finally:
+        _release(person)
+
+
+def _spawn(person, proposal_id, base_version, docs, blocks, llm, deadline) -> None:
+    ctx = contextvars.copy_context()        # same fix as web/actions drafts: the thread must run as this person
+    threading.Thread(target=functools.partial(ctx.run, _parse_worker, person, proposal_id, base_version, docs, blocks,
+                                              llm, deadline), name=f"profile-parse-{proposal_id}", daemon=True).start()
+
+
+def start_proposal(person: str, upload_ids: list[str], llm: LLM, *, base_version: int | None = None,
+                   deadline: float | None = None) -> Proposal:
+    """Create the draft now (status 'parsing', the questions already open) and read the documents in the background,
+    so the conversation can start. Holds the person's one parse slot until the parse ends."""
+    docs, blocks = _load_docs(person, upload_ids)
+    deadline = time.monotonic() + PARSE_SECONDS if deadline is None else deadline
+    _claim(person)
+    try:
+        facts: list[ProfileFact] = []
+        questions: list[Question] = []
+        _add_unknowns(facts, questions, ONBOARDING_ASK)
+        proposal = Proposal(id=secrets.token_hex(8), revision=1, base_version=base_version,
+                            uploads=tuple(dict.fromkeys(sha for sha, _ in docs)), facts=tuple(facts),
+                            questions=tuple(questions), status="parsing")
+        save_proposal(person, proposal)
+        _spawn(person, proposal.id, base_version, docs, blocks, llm, deadline)
+    except BaseException:
+        _release(person)
+        raise
+    return proposal
+
+
+def add_uploads(person: str, proposal_id: str, upload_ids: list[str], llm: LLM, *, deadline: float | None = None) -> Proposal:
+    """Read further uploads into the same draft in the background; what the person already said is untouched."""
+    if load_proposal(person, proposal_id).status == "parsing":
+        raise IntakeError("proposal_parsing")                   # its own parse is the one holding the slot
+    docs, blocks = _load_docs(person, upload_ids)
+    deadline = time.monotonic() + PARSE_SECONDS if deadline is None else deadline
+    _claim(person)
+    try:
+        with _locked(person, proposal_id + ".lock", "proposals"):
+            cur = load_proposal(person, proposal_id)
+            if cur.status == "parsing":
+                raise IntakeError("proposal_parsing")
+            if cur.status != "draft":
+                raise IntakeError("proposal_not_draft")
+            updated = cur.model_copy(update={"status": "parsing", "parse_error": "", "revision": cur.revision + 1,
+                                             "uploads": tuple(dict.fromkeys((*cur.uploads, *(sha for sha, _ in docs))))})
+            save_proposal(person, updated)
+        try:
+            _spawn(person, proposal_id, cur.base_version, docs, blocks, llm, deadline)
+        except BaseException:
+            _finish_parse(person, proposal_id, cur.base_version, [], None, "parse_failed")
+            raise
+    except BaseException:
+        _release(person)
+        raise
+    return updated
+
+
+def open_proposal(person: str) -> Proposal | None:
+    """The person's newest unfinished proposal (parsing or draft), or None."""
+    folder = _root(person) / "proposals"
+    best = None
+    for path in folder.glob("*.json") if folder.is_dir() else ():
+        if not _ID.match(path.stem):
+            continue
+        try:
+            p = load_proposal(person, path.stem)
+            mtime = path.stat().st_mtime_ns
+        except (IntakeError, OSError):
+            continue
+        if p.status in ("parsing", "draft") and (best is None or mtime > best[0]):
+            best = (mtime, p)
+    return best[1] if best else None
+
+
+def upload_profile_files(person: str) -> list[str]:
+    """Offer the person's own profile/ text files (allowed names, upload types only) as uploads, so the agent drafts
+    from them and asks the gaps. A symlinked or oversized file is refused before anything is saved."""
+    from ._private_io import read_profile_source
+    found: dict[str, bytes] = {}
+    with users.use(person):
+        pdir = apaths.profile_dir()
+        for name in _ALLOWED:
+            if Path(name).suffix not in EXTENSIONS:
+                continue
+            try:
+                canonical, raw = read_profile_source(pdir, name, MAX_UPLOAD_BYTES)
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError):
+                raise IntakeError("unreadable_document") from None   # symlinks are never followed
+            found.setdefault(canonical, raw)
+    return [save_upload(person, name, raw, "evidence" if name == "career_ops_profile.md" else "cv")["upload_id"]
+            for name, raw in found.items()]
 
 
 _SINGLE = ("employment_status", "availability", "work_rights")       # one answer per person: a new value replaces it
@@ -410,7 +616,7 @@ def _mutate(person: str, proposal_id: str, expected_revision: int, change) -> Pr
     load_proposal(person, proposal_id)                 # validates the id before it names a lock file
     with _locked(person, proposal_id + ".lock", "proposals"):
         current = load_proposal(person, proposal_id)
-        if current.status != "draft":
+        if current.status not in ("draft", "parsing"):          # the person may answer while the documents are still read
             raise IntakeError("proposal_not_draft")
         if type(expected_revision) is not int or expected_revision != current.revision:
             raise IntakeError("proposal_changed")
@@ -519,6 +725,8 @@ def _scope_digest(scope: SearchScope) -> str:
 def confirmation(person: str, proposal_id: str, config) -> dict:
     """What the person is shown before confirming: the digests to send back, the scope and what it does not cover."""
     proposal = load_proposal(person, proposal_id)
+    if proposal.status == "parsing":
+        raise IntakeError("proposal_parsing")
     if proposal.status != "draft":
         raise IntakeError("proposal_not_draft")
     scope = scope_for(person, proposal, config)
@@ -622,6 +830,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
     load_proposal(person, proposal_id)                 # validates the id before it names a lock file
     with users.use(person), _locked(person, "versions.lock"), _locked(person, proposal_id + ".lock", "proposals"):
         cur = load_proposal(person, proposal_id)
+        if cur.status == "parsing":
+            raise IntakeError("proposal_parsing")
         if cur.status != "draft":
             raise IntakeError("proposal_not_draft")
         if digest(cur) != proposal_digest:
