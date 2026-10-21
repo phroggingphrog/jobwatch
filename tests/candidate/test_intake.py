@@ -674,3 +674,58 @@ def test_amendment_does_not_change_approved_facts_until_confirmed(person, full, 
     assert {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()} == profile_before
     assert ok(person, amend) == 2
     assert intake.current_version(person)['version'] == 2 and (vdir(person, 1) / 'approved.json').read_bytes() == version_before
+
+
+def test_hand_edit_after_adoption_is_refused_not_overwritten(person, full, fake_llm, upload_id):
+    hand_made()
+    intake.adopt_existing(person, actor='person')
+    (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Edited Later\n')
+    nxt = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, nxt)
+    assert err.value.code == 'profile_edited_by_hand'
+    assert (apaths.profile_dir() / 'profile.yaml').read_text() == 'candidate:\n  name: Edited Later\n'
+    assert [v['version'] for v in intake.versions(person)] == [1] and intake.load_proposal(person, nxt.id).status == 'draft'
+
+
+def test_hand_edit_after_a_confirmed_version_is_refused(person, full, fake_llm, upload_id):
+    ok(person, full)
+    (apaths.profile_dir() / 'master_resume.md').write_text('hand edit\n')
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1))
+    assert err.value.code == 'profile_edited_by_hand' and (apaths.profile_dir() / 'master_resume.md').read_text() == 'hand edit\n'
+
+
+def test_adopted_extras_are_carried_into_the_next_evidence_snapshot(person, full, fake_llm, upload_id):
+    hand_made({**HAND, 'evidence.yaml': 'items: []\n'})
+    intake.adopt_existing(person, actor='person')
+    assert ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1)) == 2
+    d = vdir(person, 2)
+    assert (d / 'evidence' / 'evidence.yaml').read_text() == 'items: []\n' and (d / 'evidence.yaml').exists()
+    approved = json.loads((d / 'approved.json').read_text())
+    assert approved['evidence_bundle_hash'] == snapshot_evidence(apaths.profile_dir()).bundle_hash == snapshot_evidence(d / 'evidence').bundle_hash
+    assert set(approved['file_sha256']) == {'profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml', 'evidence.yaml'}
+    assert (apaths.profile_dir() / 'evidence.yaml').read_text() == 'items: []\n'
+
+
+def test_new_hand_made_file_after_adoption_still_needs_adoption(person, full, fake_llm, upload_id):
+    hand_made()
+    intake.adopt_existing(person, actor='person')
+    (apaths.profile_dir() / 'evidence.yaml').write_text('items: []\n')            # not in adopted_files
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1))
+    assert err.value.code == 'adopt_first' and [v['version'] for v in intake.versions(person)] == [1]
+
+
+def test_adopted_version_is_listed_and_symlinks_are_not_adopted(person):
+    pdir = apaths.profile_dir()
+    pdir.mkdir(parents=True, exist_ok=True)
+    (users.user_dir(person) / 'elsewhere.yaml').write_text('x: 1\n')
+    (pdir / 'profile.yaml').symlink_to(users.user_dir(person) / 'elsewhere.yaml')
+    with pytest.raises(intake.IntakeError) as err:
+        intake.adopt_existing(person, actor='person')
+    assert err.value.code == 'unreadable_document' and intake.current_version(person) is None
+    (pdir / 'profile.yaml').unlink()
+    hand_made()
+    intake.adopt_existing(person, actor='person')
+    assert intake.versions(person)[0]['version'] == 1 and intake.current_version(person)['adopted_from_files'] is True

@@ -18,5 +18,8 @@ def handle(args):
     except (intake.IntakeError, CandidateError) as exc:
         print(getattr(exc, "code", None) or str(exc), file=sys.stderr)
         return 1
+    except (ValueError, OSError):
+        print("profile_operation_unavailable", file=sys.stderr)
+        return 1
     print(f"adopted profile as version {n}")
     return 0

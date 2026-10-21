@@ -45,7 +45,7 @@ KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
-         "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt")
+         "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -625,7 +625,17 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         if cur.base_version != (nums[-1] if nums else None):
             raise IntakeError("proposal_changed")      # built on no version or an old one: not on the current version
         # hand-made files would change the evidence snapshot or be overwritten; adopt_existing brings them in
-        mine = (_PROJECTED + tuple(last.get("adopted_files", ()))) if nums else ()
+        recorded = last.get("file_sha256") or {}              # what the last version left in profile/, by hash
+        mine = (_PROJECTED + tuple(recorded)) if nums else ()
+        for name, sha in recorded.items():
+            try:
+                live = hashlib.sha256(read_regular_file(pdir / name, MAX_JSON_BYTES)).hexdigest()
+            except FileNotFoundError:
+                continue                                       # removed: nothing of the person's to overwrite
+            except (OSError, ValueError):
+                raise IntakeError("profile_edited_by_hand") from None
+            if live != sha:
+                raise IntakeError("profile_edited_by_hand")    # an unapproved hand edit: never silently overwritten
         if any(os.path.lexists(pdir / name) for name in dict.fromkeys(_ALLOWED + _PROJECTED) if name not in mine):
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
@@ -645,8 +655,17 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                 _write_private(stage / name, text.encode("utf-8"))
                 if name in _EVIDENCE:
                     _write_private(stage / "evidence" / name, text.encode("utf-8"))
+            carried = {}                                       # unchanged files the projection does not write (adopted extras)
+            for name in recorded:
+                if name not in files and name in _ALLOWED + _PROJECTED and os.path.lexists(pdir / name):
+                    carried[name] = read_regular_file(_versions_root(person) / str(nums[-1]) / name, MAX_JSON_BYTES)
+                    _write_private(stage / name, carried[name])
+                    if name in _ALLOWED:
+                        _write_private(stage / "evidence" / name, carried[name])
             bundle = snapshot_evidence(stage / "evidence")
             approved["evidence_bundle_hash"] = bundle.bundle_hash
+            approved["file_sha256"] = {k: hashlib.sha256(v).hexdigest() for k, v in sorted(
+                {**{k: t.encode("utf-8") for k, t in files.items()}, **carried}.items())}
             for name, raw in bundle.contents.items():
                 _write_private(stage / "evidence" / name, raw)
             _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
@@ -662,7 +681,8 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
     """Make the person's hand-made profile/ files version 1 without rewriting them (no projection).
 
     The files are copied into profile-versions/1/ (and its evidence snapshot) as they are; approved.json records
-    adopted_from_files. Refused once any version exists, or when there is nothing to adopt."""
+    adopted_from_files and file_sha256 (a later confirm refuses if a file changed since). The version holds no facts, so
+    an amendment against it carries no 'replaces' notes. Refused once any version exists, or when there is nothing to adopt."""
     if actor != "person":
         raise IntakeError("person_required")
     with users.use(person), _locked(person, "versions.lock"):
