@@ -67,14 +67,20 @@ def _months(text: str) -> set[str]:
 
 
 def _caps(text: str) -> set[str]:
-    """Capitalised tokens that are not sentence/bullet initial."""
+    """Capitalised tokens that are not sentence/bullet initial. An initial word still counts when it opens a run of
+    capitalised words and is not verb-shaped ("Zorbex Industries led..." is a name; "Managed Xero..." is a verb)."""
     found = set()
     for sent in re.split(r"(?:[.!?:;]\s+|\n|^)", text):
         words = sent.strip().split()
         for idx, w in enumerate(words):
             w2 = w.strip("()[],\"'*")
-            if idx == 0 or not w2:
+            if not w2:
                 continue
+            if idx == 0:
+                nxt = words[1].strip("()[],\"'*:") if len(words) > 1 else ""
+                if not (CAP.fullmatch(nxt) and nxt.lower() not in COMMON_CAPS
+                        and not re.search(r"(?:ed|ing|s)$", w2.lower())):
+                    continue
             for m in CAP.findall(w2):
                 if m.lower() not in COMMON_CAPS:
                     found.add(m)

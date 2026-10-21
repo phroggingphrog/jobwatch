@@ -95,6 +95,8 @@ def test_verifier_removes_invented_metric(profile):
      "key_span_not_in_claim"),
     (lambda c, p: c.update(text="Processed 120 supplier invoices per week in Xero at Globex Corp.",
                            key_span="120 supplier invoices per week"), "unsupported_name"),
+    (lambda c, p: c.update(text="Zorbex Industries: processed 120 supplier invoices per week in Xero.",
+                           key_span="120 supplier invoices per week"), "unsupported_name"),   # an invented name opening the line
     (lambda c, p: c.update(text="Processed 120 supplier invoices per week in Xero (found via Seek)."),
      "third_party_branding"),
     (lambda c, p: c.update(text="Processed 120 supplier invoices per week in Xero each June."),
@@ -317,3 +319,11 @@ def test_repeated_fact_in_new_words_flagged_and_dropped():
     assert [[c["id"] for c in p] for p in draft["letter"]["paragraphs"]] == [["c1", "c2"], ["c4"]]
     draft["letter"]["paragraphs"].append([{"id": "c5", "tier": "framing", "text": "Happy to talk about the role."}])
     assert not any(e["reason"].startswith("no closing") for e in stock_edits(draft))
+
+
+def test_caps_checks_a_line_opening_proper_noun_but_not_a_leading_verb():
+    from jobwatch.apply.verify import _caps
+    assert "Zorbex" in _caps("Zorbex Industries led the team.")
+    assert _caps("Managed Xero accounts for the team.") == {"Xero"}          # a leading verb is not a name
+    assert _caps("Processing Payroll Reports weekly.") == {"Payroll", "Reports"}
+    assert _caps("Led the team.") == set()
