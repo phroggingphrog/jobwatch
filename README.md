@@ -4,6 +4,10 @@ A self-hosted job-application assistant. It collects job postings from many sour
 are looking for, has an AI model read each ad against your own profile, and drafts a tailored CV and cover letter
 for the jobs you choose. It never applies for you: you review and submit by hand.
 
+The current delivery focus is the native agent API and backend. Read
+[INTENT.md](INTENT.md) for the agreed goal and [AGENTS.md](AGENTS.md) for contributor
+and agent guidance.
+
 ## Features
 
 - Native agent API: persistent conversations/runs, progress streaming, scoped human approvals and protected documents; see [backend setup](pipeline/agentic/CHAT.md).

@@ -1,0 +1,9 @@
+{
+  "mode": "auto",
+  "models": {
+    "codex": "default",
+    "claude": "default",
+    "gemini": "default"
+  },
+  "effort": "high"
+}
