@@ -2,7 +2,8 @@
 
 Every posting has expires_at (its closing date, else 30 days after posting). When that passes, the job is
 re-checked live with the same reader the AI pipeline uses: gone -> closed_at is set and the board hides it;
-still open -> expires_at moves to its closing date, or 7 days on; unreadable -> tried again tomorrow.
+still open -> expires_at moves to its closing date, or 7 days on, and a closed_at set earlier is cleared
+(so is it when a collector lists the job again, dedupe.ingest); unreadable -> tried again tomorrow.
 """
 from __future__ import annotations
 
@@ -40,7 +41,7 @@ def record(conn, posting_id: int, observation, now: datetime | None = None) -> N
                     until = closes
             except ValueError:
                 pass
-        conn.execute("UPDATE postings SET expires_at=? WHERE id=?", (_iso(until), posting_id))
+        conn.execute("UPDATE postings SET expires_at=?, closed_at=NULL WHERE id=?", (_iso(until), posting_id))
     else:  # could not read it this time
         conn.execute("UPDATE postings SET expires_at=? WHERE id=?", (_iso(now + timedelta(days=1)), posting_id))
     conn.commit()
