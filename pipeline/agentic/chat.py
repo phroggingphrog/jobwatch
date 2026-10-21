@@ -38,8 +38,10 @@ from pydantic import Field, TypeAdapter
 
 from jobwatch import users, model_choice
 from jobwatch.apply.paths import ensure_dir
+from jobwatch.candidate.contracts import CandidateError
 from jobwatch.llm import LLM, load_keys
 from pipeline.agentic.deepagents_runtime import _messages_for_gateway
+from pipeline.agentic.contracts import AgenticError
 from pipeline.agentic.runtime import RuntimeErrorSafe
 from pipeline.agentic.chat_storage import ChatSaver, ChatStore
 from pipeline.agentic import execution as invocation
@@ -478,7 +480,9 @@ def _chat_interactions(values, config=None) -> list[dict]:
             elif name in ('run_career_ops','assess_job','prepare_application','prepare_interview','draft_followup'):
                 try:
                     binding = _approval_binding(name, args, config) if config is not None else None
-                except (KeyError, TypeError, ValueError):  # bad/missing id (ValueError covers AgenticError): nothing to approve
+                except CandidateError:
+                    raise  # a profile/evidence read problem is not bad args: fail the turn, keep the approval pending
+                except (KeyError, TypeError, AgenticError):  # bad/missing id: nothing to approve
                     events.append({'type': 'invalid_action', 'interaction_id': action.get('id') or f'action-{index}', 'operation': name})
                     continue
                 events.append({'type': 'approval', 'interaction_id': action.get('id') or f'approval-{index}',

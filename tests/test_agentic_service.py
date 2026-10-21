@@ -710,6 +710,64 @@ def test_pending_approval_that_became_unbindable_is_refused_on_the_next_message(
     assert 'Invalid arguments' in json.dumps(seen[1]), seen[1]
 
 
+def test_model_that_keeps_emitting_unbindable_calls_fails_the_turn_after_three_refusals(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    conn, config, bundle, add = world
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    bad = {'tool': 'assess_job', 'arguments': {}}
+    llm, seen = _chat_llm([bad] * 4 + [{'answer': 'never reached'}])
+    with pytest.raises(RuntimeErrorSafe, match='invalid_tool_call'):
+        dispatch(person=users.DEFAULT_USER, thread_id='loop', config=config, llm=llm, message='Assess it')
+    assert len(seen) == 4                                # the first call plus three refusals, then it stops paying
+
+
+def test_human_decision_on_an_approval_that_became_unbindable_is_refused(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    from pipeline.agentic.contracts import AgenticError
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'assess_job', 'arguments': {'posting_id': 42}}, {'answer': 'unexpected'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='decide-stale', config=config, llm=llm, **kw)
+    first = turn(message='Assess 42')
+    assert first['status'] == 'interrupted'
+    def gone(name, args, cfg):
+        raise AgenticError('application_missing')
+    monkeypatch.setattr(chat, '_approval_binding', gone)
+    with pytest.raises(RuntimeErrorSafe, match='approval_inputs_changed'):   # approving it now would run unbound work
+        turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+             approval_bindings=[i['binding'] for i in first['interactions']])
+    assert len(seen) == 1
+
+
+def test_transient_profile_error_does_not_refuse_a_valid_pending_approval(world, monkeypatch):
+    """A profile/evidence read failure is not 'invalid arguments': the approval stays pending for the human."""
+    from jobwatch import model_choice, users
+    from jobwatch.candidate.contracts import CandidateError
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'assess_job', 'arguments': {'posting_id': 42}}, {'answer': 'unexpected'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='transient', config=config, llm=llm, **kw)
+    first = turn(message='Assess 42')
+    assert first['status'] == 'interrupted' and first['interactions'][0]['type'] == 'approval'
+    real = chat._approval_binding
+    def mid_edit(name, args, cfg):
+        raise CandidateError('source_changed')
+    monkeypatch.setattr(chat, '_approval_binding', mid_edit)
+    with pytest.raises(Exception):
+        turn(message='Any news?')
+    assert len(seen) == 1                                # nothing was auto-rejected back to the model
+    monkeypatch.setattr(chat, '_approval_binding', real)
+    again = turn(message='Any news?')
+    assert again['status'] == 'interrupted' and again['interactions'][0]['type'] == 'approval', again
+
+
 def test_approved_auxiliary_call_with_extra_model_args_still_runs(world, monkeypatch):
     """The approval hashes the model's full args; the execution-time check must use those same args."""
     from jobwatch import model_choice, users, interview_prep
