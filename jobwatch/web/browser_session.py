@@ -24,6 +24,8 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
+from jobwatch.apply.submit_confirm import FINAL_LABEL
+
 
 _CONFIRM_TEXT = re.compile(r"thank you for (applying|your application|submitting)|thanks for applying|"
     r"application (has been |was )?(submitted|received|sent)|(successfully|we've|we have) (submitted|received) your application|"
@@ -237,7 +239,7 @@ class _Session:
             # Verification/login buttons can also say Submit. They must never
             # authorize transmission of the employer's application form.
             if (page is self.application_page and not self.owner_checkpoint and not verification and
-                    re.fullmatch(r'(submit|apply|send)( (application|now|my application))?', label)):
+                    FINAL_LABEL.fullmatch(label)):
                 self._release_review(page)
                 self._arm_submit_watch(page)
                 return callback(page)
@@ -277,6 +279,24 @@ class _Session:
         self.submit_result = None
         self.submit_watch = {'url': page.url, 'text_before': bool(_CONFIRM_TEXT.search(text)),
                              'unsure_at': now + 6, 'until': now + 90, 'next': now + 1}
+
+    def _confirmed_submit(self, page, expected, prepared):
+        """Owner-confirmed Submit: press the recognised final control once, only while the live page, session and
+        owner revision still give the digest the owner confirmed (jobwatch.apply.submit_confirm)."""
+        from jobwatch.apply import submit_confirm
+        if page is not self.application_page or not self.review_protected or self.owner_checkpoint:
+            raise BrowserSessionError('submit_not_confirmable')
+        try:
+            live = submit_confirm.live_digest(prepared, page, session_id=self.target_id, owner_revision=self.owner_revision)
+            control = submit_confirm.final_control(page, prepared['final_control']) if live == expected else None
+        except (submit_confirm.SubmitRefused, KeyError, TypeError):
+            control = None
+        if control is None:
+            raise BrowserSessionError('submit_confirmation_stale')
+        self._release_review(page)
+        self._arm_submit_watch(page)
+        control.click()
+        return 'pressed'
 
     def _check_submit(self):
         watch = self.submit_watch
@@ -460,6 +480,12 @@ class _Session:
                             with self.lock:
                                 self.automation_active = False
                         future.set_result(result)
+                    except BrowserSessionError as exc:
+                        if kind != 'confirm':
+                            with self.lock:
+                                self.last_error = str(exc)
+                        future.set_exception(BrowserSessionError(str(exc)) if kind == 'confirm'
+                                             else BrowserSessionError('browser_action_failed'))
                     except Exception as exc:
                         with self.lock:
                             self.last_error = str(exc) if isinstance(exc, BrowserSessionError) else 'browser_action_failed'
@@ -580,6 +606,11 @@ class BrowserSessionManager:
 
     def prepare(self, application_id, callback) -> Future:
         return self._get(application_id).submit('prepare', callback)
+
+    def confirm_submit(self, application_id, expected_digest: str, prepared: dict, *, timeout=30) -> str:
+        """Press final Submit for the exact fill the owner confirmed; BrowserSessionError with a fixed reason otherwise."""
+        session = self._get(application_id)
+        return session.submit('confirm', lambda page: session._confirmed_submit(page, expected_digest, prepared)).result(timeout=timeout)
 
     def with_page(self, application_id, callback, *, timeout=120):
         return self._get(application_id).submit('inspect', callback).result(timeout=timeout)
