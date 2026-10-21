@@ -106,8 +106,8 @@ outcome labels. Do not tune exclusion thresholds from model self-grades.
 
 Freeze the comparison inputs first with `jobwatch --user <name> baseline freeze`,
 preferably before the revised decision policy is deployed. The freeze reads the stored
-evidence, evaluation and gate route of each posting, the gate version and the pinned
-profile, calls no model and writes no database row; replays of the old gate need the
+evidence and evaluation of each posting, recomputes the gate route under the pinned
+profile and records the gate version, calls no model and writes no database row; replays of the old gate need the
 baseline's `pinned_profile`. Duplicate adverts and related employers share a `group_id`:
 split by group, never by case. Labels are the owner's, added with `baseline label` at a
 terminal; none exist until then, and the baseline lists which tag categories are missing.
