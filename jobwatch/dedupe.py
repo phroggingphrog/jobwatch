@@ -51,9 +51,11 @@ def ingest(conn: sqlite3.Connection, posting: Posting, run_id: int | None = None
                            (posting.source, posting.source_id)).fetchone()
     if row is None and key.split("|")[0] and key.split("|")[1]:
         cutoff = ts(now_utc() - timedelta(days=KEY_WINDOW_DAYS))
+        # A source that already has a different id on that posting is listing a distinct requisition.
         row = conn.execute(
-            "SELECT id FROM postings WHERE dedupe_key=? AND first_seen_at>=? ORDER BY id LIMIT 1",
-            (key, cutoff)).fetchone()
+            "SELECT id FROM postings WHERE dedupe_key=? AND first_seen_at>=? AND NOT EXISTS ("
+            "SELECT 1 FROM sightings s WHERE s.posting_id=postings.id AND s.source=?) ORDER BY id LIMIT 1",
+            (key, cutoff, posting.source)).fetchone()
 
     if row is not None:
         posting_id, is_new = row["id"], False
