@@ -24,7 +24,7 @@ from .filters import Rules
 from .llm import LLM, LLMError
 from .models import Posting, now_utc
 
-from .reader import _PROFILE_FALLBACK, _defang, load_interest, person_prefs, settings, strip_contact
+from .reader import _PROFILE_FALLBACK, _defang, _yes, load_interest, person_prefs, settings, strip_contact
 
 log = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def triage_batch(llm: LLM, model: str, profile: str, rows: list) -> dict[int, bo
         except (KeyError, TypeError, ValueError):
             continue
         if i in ok:
-            out[i] = bool(it.get("relevant"))
+            out[i] = _yes(it.get("relevant"))
     return out
 
 

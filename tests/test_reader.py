@@ -327,6 +327,15 @@ def test_recall_adds_plausible_titles_and_remembers_the_rest(world):
     assert nope  # asked once, remembered
 
 
+def test_recall_triage_parses_relevant_strictly():
+    rows = [{"id": i, "title": "T", "company": "C", "location": "L", "description": ""} for i in range(1, 7)]
+    vals = {1: True, 2: "false", 3: "no", 4: "yes", 5: None, 6: "True"}
+    reply = {"model": "m", "choices": [{"message": {"content": json.dumps(
+        {"results": [{"id": i, "relevant": v} for i, v in vals.items()]})}}]}
+    out = recall.triage_batch(LLM(transport=lambda *a: (200, reply), keys=["k"]), "m", "profile", rows)
+    assert out == {1: True, 2: False, 3: False, 4: True, 5: False, 6: True}
+
+
 def test_recall_rejects_are_remembered_and_a_failed_batch_is_retried(world):
     config, conn, add = world
     pid = add("Wizard Apprentice", match=False)
