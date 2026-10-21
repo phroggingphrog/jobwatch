@@ -59,10 +59,9 @@ def ingest(conn: sqlite3.Connection, posting: Posting, run_id: int | None = None
 
     if row is not None:
         posting_id, is_new = row["id"], False
-        # Listed again = live again: reopen a closed posting, and let the expiry sweep re-check it tomorrow, not at once.
-        recheck = (now_utc() + timedelta(days=1)).isoformat(timespec="seconds")
-        conn.execute("UPDATE postings SET last_seen_at=?, closed_at=NULL, expires_at=CASE WHEN closed_at IS NOT NULL "
-                     "AND expires_at<? THEN ? ELSE expires_at END WHERE id=?", (now, recheck, recheck, posting_id))
+        # A closed posting stays closed when an aggregator lists it again: the sighting only makes it due for a live
+        # re-check (expiry.sweep), and only a check that finds it open reopens it.
+        conn.execute("UPDATE postings SET last_seen_at=? WHERE id=?", (now, posting_id))
     else:
         cur = conn.execute(
             """INSERT INTO postings(source, source_id, url, url_hash, dedupe_key, title, company,
