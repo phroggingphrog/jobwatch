@@ -2,13 +2,20 @@
 from __future__ import annotations
 
 import hashlib
+import sqlite3
+import types
 
+import pytest
+
+from jobwatch.llm import LLM
 from pipeline.agentic import baseline
 from pipeline.agentic.contracts import (
     AgenticEvaluation, AgenticGateDecision, Dimension, EvidenceJudgment, Requirement, RequirementMatch,
     RequirementSet, RunKey, SourceCitation,
 )
+from pipeline.agentic.service import agentic_batch_run
 from pipeline.schemas import JobFacts
+from tests.test_agentic_service import SyntheticGateway, world  # noqa: F401  (world is a fixture)
 
 AD = (
     "Graduate accounting analyst role based in Melbourne. Hybrid attendance with two days "
@@ -85,3 +92,27 @@ def synthetic_case(case_id: str = "c-1", *, posting_id: int = 1, title: str = "J
         decision=decision.model_dump(mode="json"), commute_km=None,
         usage={"charged_tokens": 100, "actual_tokens": None, "latency_seconds": 1.0},
         stored=dict(stored or {}))
+
+
+@pytest.fixture
+def frozen(world, monkeypatch):
+    """Three evaluated synthetic postings (42 and 43 share an employer, 44 is a low fit) behind a read-only
+    connection. After the batch, every model call fails the test."""
+    conn, config, bundle, add = world
+    add(42)
+    add(43, 'Synthetic Alpha Pty Ltd')
+    add(44, 'Synthetic Beta', low=True)
+    gateway = SyntheticGateway(bundle)
+    agentic_batch_run([42, 43, 44], config, conn, evidence_bundle=bundle,
+                      llm=LLM(transport=gateway, keys=['synthetic']), operation='evaluate')
+    conn.commit()
+    ro = sqlite3.connect(f'file:{config.db_path}?mode=ro', uri=True)
+    ro.row_factory = sqlite3.Row
+
+    def refuse(*args, **kwargs):
+        raise AssertionError('the freeze must not call a model')
+
+    for name in ('chat_once', 'chat', 'embed_once'):
+        monkeypatch.setattr(LLM, name, refuse)
+    yield types.SimpleNamespace(conn=conn, ro=ro, config=config, bundle=bundle, gateway=gateway, add=add)
+    ro.close()
