@@ -70,3 +70,31 @@ Keywords may help discover postings; they do not decide personal fit.
 Operational contracts and setup are in [the backend guide](pipeline/agentic/CHAT.md).
 Domain terms live in [GLOSSARY.md](GLOSSARY.md); architecture decisions live in
 [docs/adr/](docs/adr/).
+
+## Company research and existing model integration
+
+Owner follow-up on 2026-10-21:
+
+> there shuold be an ability for company_researcher that research the desired skills company based on the job ads
+
+> so when the writer writing a cover letter it can write more naturally why the candidate want its job, and why did the market evaluator and all of the math model missing here
+
+Clarification: **Existing models and their agent integration**.
+
+Company research should connect the complete job ad's desired skills and duties
+with cited public employer context. The writer uses this context alongside
+approved career interests for specific, natural motivation. Existing structural,
+preference and outcome models remain available as distinct, explainable measures;
+none can replace eligibility or invent candidate facts or motivations.
+
+Owner clarification:
+
+> not only the cfhat agent i mean for the overall pipeline of this jobwatch
+
+> we dont need to revamp the chat, the chat is just a front end for the agent so the user can use it
+
+> chat is just intercfhangeable like the original web front end it just so itd be able to deploy quickly
+
+Research, evaluation, mathematical models and writing belong to the shared backend
+pipeline. Chat is an interchangeable client, alongside the original web interface;
+it enables quick delivery without defining a separate career workflow.

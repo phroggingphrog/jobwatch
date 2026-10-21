@@ -101,7 +101,7 @@ Automatic evidence summarization remains disabled.
 
 ## Agent capabilities
 
-Deep Agents provides planning, scoped virtual files, named reader/researcher/reviewer
+Deep Agents provides planning, scoped virtual files, named reader/company-research/model-insights/reviewer
 specialists, per-person advisory memory, skills and human interrupts. Existing
 bounded evaluator/writer/reviewer role graphs own canonical assessment and package
 work. Their model transport, route checks and invocation budgets are shared with
@@ -192,3 +192,52 @@ Branch from GitHub `main`, commit one meaningful change, and open a draft pull
 request. Inspect the synthetic CI result and review before merging. Keep profiles,
 answers, credentials, databases, generated documents and backups outside Git.
 Deployment is a separate action; publishing source does not activate the API.
+
+## Company research and model insights
+
+`company_researcher` replaces the earlier generic `career-researcher` specialist.
+Its `research_company(posting_id)` reads the whole saved ad and gathers bounded,
+cited public company/skills context using the saved employer and title only.
+Explicit ad requirements, preferred skills, public company facts and inferences
+remain distinct. Public pages do not create new eligibility requirements.
+The shared core job service runs a dedicated bounded `company_researcher` role
+before the writer, using the existing researcher budget and approved worker model.
+Its structured desired-skills/duties/company-facts brief is checked against exact ad
+and public-source quotes, saved as an immutable `company_research` artifact, and
+passed to the writer and factual reviewer. It runs for automatic collected-job
+preparation and API-requested preparation alike. The writer also receives the
+approved career profile as interest framing, never as qualification evidence.
+If research fails or is disabled, the writer uses actual ad duties and reports
+ad-only context; it must not invent company details or personal motivation.
+
+The core pipeline saves a `model_insights` snapshot before job evaluation and
+passes it to the evaluator and writer. Structural fit, preference readiness and
+historical callbacks stay separate advisory measures. Saved snapshots are reused
+on recovery rather than rewritten when later history changes.
+
+The optional conversation supervisor exposes the same existing calculations through
+its `market_evaluator` specialist and `candidate_paths`,
+`preference_insights` and `callback_insights`, alongside saved application status:
+
+- Occupational fits use 60% activity coverage + 40% cosine similarity; structural
+  proximity is not qualification or hiring probability.
+- The local R/JAGS conditional-logit preference model predicts owner choice among
+  three eligible jobs plus none. At least 20 training and 5 held-out choices,
+  convergence/precision checks and held-out improvement are required. Only already
+  answered, current comparisons can be predicted. Readiness states remain explicit.
+- Historical callbacks use a Beta(1,15) prior with uncertainty. Prior-only and
+  observed rates are distinguished; no individual-job hiring forecast is implied.
+- The older pipeline's 40/30/30 skills/experience/domain rubric is confined to
+  `pipeline` mode. The agentic holistic assessment is a separate measure.
+
+The model tools are read-only; fitting and owner-choice collection keep their
+existing CLI/web entry points. No live labour-market or salary research is added.
+Load `company-research` or `model-insights` as appropriate. Changed skill hashes
+require a new thread (or the matching old release); the implementation version also
+changes to prevent reusing an old cached letter as evidence of the new writer.
+Old artifacts and owner-choice history are preserved. Since preference contexts
+include implementation provenance, old fits may no longer be current; historical
+choice counts remain visible. No retraining or owner-choice migration occurs.
+
+Chat, the existing web interface and future clients are interchangeable front ends.
+This change belongs to the shared backend pipeline; it adds no chat or website UI.

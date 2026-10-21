@@ -20,7 +20,7 @@ from pipeline.agentic.liveness import latest_observation, observation_metadata, 
 
 
 KINDS = frozenset({'snapshot', 'structural_inputs', 'candidate', 'evaluation', 'proposal', 'review', 'answers',
-                   'manifest', 'verify', 'cv', 'letter', 'cv_markdown', 'letter_markdown', 'form_map', 'package_bundle'})
+                   'manifest', 'verify', 'cv', 'letter', 'cv_markdown', 'letter_markdown', 'form_map', 'package_bundle', 'company_research', 'model_insights'})
 
 
 def _now() -> str:

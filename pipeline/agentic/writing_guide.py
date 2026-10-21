@@ -52,7 +52,7 @@ def writing_guide(cl_template: str, title: str, archetype: str, cv_template_id: 
     # The writer reasons out the structure for each job; real human letters from the person's own folder
     # give the feel ("IT SHOULD NOT READ LIKE A ROBOT ... THATS WHY I GAVE MY FRIENDS ... AND THE CONSULTATION").
     guide["letter_approach"] = (
-        "1. Read employer_research (already gathered; search more with research_employer if it is thin). Use two or three real details about the company and say warmly why they make the candidate want to work there: eager, admiring, a little flattering, never flat. "
+        "1. Read company_research.sources, the full_ad and career_interests. Choose one or two verified details about this company or the role's actual work, and connect them to the person's expressed interests and supported experience in warm, plain language. Do not turn company values into invented personal beliefs or fabricate a personal connection. If research is unavailable, use specific duties in the ad. "
         "2. Write like the human_examples: who the candidate is, what draws them to this work, two or three true "
         "things they have done, told as a short story in plain words. Not mechanical or technical (owner 2026-10-20): "
         "no lists of courses, tools, software or skills, at most one named in passing; no jargon from the ad; "

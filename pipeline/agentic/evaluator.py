@@ -123,7 +123,7 @@ class JobAssessment(StrictFrozen):
 
 
 class ResearchQuery(StrictFrozen):
-    intent: Literal["employer_identity", "role_context", "compensation"]
+    intent: Literal["employer_identity", "role_context", "desired_skills", "compensation"]
 
 
 class ResearchFetch(StrictFrozen):
@@ -156,7 +156,8 @@ def _snapshot_analysis(candidate_analysis: Any, bundle, run_key: RunKey) -> dict
 def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
                  evidence_bundle: Any = None, candidate_analysis: Any = None,
                  career_profile: str = "", model: str = DEFAULT_MODEL,
-                 research: ResearchCapability | None = None, commute_km: int | None = None) -> AgenticEvaluation:
+                 research: ResearchCapability | None = None, commute_km: int | None = None,
+                 model_insights: dict | None = None) -> AgenticEvaluation:
     """Read the complete JD without candidate context, then match verified evidence.
 
     All caller inputs are snapshotted. Model output cannot modify extracted facts,
@@ -287,6 +288,8 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
         "evidence_hash": bundle.bundle_hash,
         "evidence_inventory": [{"id": item.id, "kind": item.kind} for item in bundle.items],
         "candidate_analysis_available": analysis is not None,
+        "model_insights": model_insights or {},
+        "model_boundary": "Structural similarity, owner choice and historical callbacks are distinct advisory measures, never qualification proof or eligibility overrides.",
         **({"commute_km_from_home": commute_km} if commute_km is not None else {}),
         "research_available": research is not None,
     }
