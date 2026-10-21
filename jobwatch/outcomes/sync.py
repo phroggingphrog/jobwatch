@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from .. import db as dbm
@@ -85,7 +85,7 @@ def _parse_dt(value):
         dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
-    return dt if dt.tzinfo else None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)      # naive = UTC (None would crash min() and the slack maths)
 
 
 def company_terms(company: str | None, url: str | None) -> dict:
