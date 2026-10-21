@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import logging
 import math
 import os
 import re
@@ -92,7 +93,10 @@ def create_app(config: Config | None = None) -> FastAPI:
         async def auto_fill_loop():
             while True:
                 await asyncio.sleep(60)
-                await asyncio.to_thread(app.state.auto_fill_ready)
+                try:
+                    await asyncio.to_thread(app.state.auto_fill_ready)
+                except Exception:                  # one bad tick (locked db, missing table) must not end auto-fill for good
+                    logging.getLogger(__name__).exception("auto-fill tick failed")
         recovery = asyncio.create_task(recover_interviews())
         filler = asyncio.create_task(auto_fill_loop())
         try:

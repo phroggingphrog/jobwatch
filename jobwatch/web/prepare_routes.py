@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import hashlib
 import json
+import sqlite3
 import time
 import uuid
 from pathlib import Path
@@ -179,6 +180,8 @@ def register(app, config, conn_factory, render, sessions):
         conn = conn_factory()
         try:
             ids = [r[0] for r in conn.execute("SELECT DISTINCT posting_id FROM agentic_runs WHERE status='ready'")]
+        except sqlite3.OperationalError:            # no agentic_runs table yet (nothing drafted): nothing is ready
+            return
         finally:
             conn.close()
         for pid in ids:

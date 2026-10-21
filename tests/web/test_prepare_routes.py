@@ -1,6 +1,7 @@
 """Protected owner browser controls and reviewed application handoff."""
 import hashlib
 import json
+import sqlite3
 from concurrent.futures import Future
 from types import SimpleNamespace
 
@@ -65,6 +66,27 @@ def pending_state(monkeypatch, manifest, questions=None):
     monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
     monkeypatch.setattr(prepare_routes, 'prepare_application', lambda *a, **kwargs: None)
     return state
+
+
+def test_auto_fill_without_agentic_runs_table_is_nothing_ready_and_the_loop_survives_a_bad_tick(tmp_path, monkeypatch):
+    import asyncio
+    import time
+    client, browser, _ = setup(tmp_path, monkeypatch)
+    client.app.state.auto_fill_ready()                      # no agentic_runs table yet: nothing ready, no exception
+    real_sleep, ticks = asyncio.sleep, []
+    async def fast(delay, *a):
+        return await real_sleep(0.01 if delay == 60 else delay, *a)
+    def flaky():
+        ticks.append(1)
+        if len(ticks) == 1:
+            raise sqlite3.OperationalError('no such table: agentic_runs')
+    monkeypatch.setattr(asyncio, 'sleep', fast)
+    client.app.state.auto_fill_ready = flaky
+    with client:                                            # runs the lifespan, so the auto-fill loop
+        deadline = time.monotonic() + 5
+        while len(ticks) < 3 and time.monotonic() < deadline:
+            time.sleep(0.02)
+    assert len(ticks) >= 3
 
 
 def complete_queued_intake(browser):
