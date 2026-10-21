@@ -202,3 +202,14 @@ def test_a_status_changed_during_the_chain_is_not_overwritten(conn, profile):
             return super().chat(*a, **k)
     app_id = start_draft(conn, 1, "cli", llm=Skipper(profile), profile=profile)
     assert conn.execute("SELECT status FROM applications WHERE id=?", (app_id,)).fetchone()[0] == "skipped"
+
+
+def test_a_draft_already_running_for_a_submitted_application_is_refused(conn, profile):
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    conn.execute("UPDATE postings SET last_seen_at=?", (now,))
+    app = ledger.upsert(conn, "applications", "applications",
+                        {"posting_id": 1, "match_id": 1, "status": "applied", "created_at": now, "updated_at": now})
+    conn.execute("INSERT INTO drafts(application_id, version, status, created_at) VALUES(?, 1, 'drafting', ?)", (app["id"], now))
+    conn.commit()
+    with pytest.raises(DraftRefused, match="already drafting"):     # the status stays 'applied', the draft row says busy
+        start_draft(conn, 1, "cli", llm=FakeLLM(profile), profile=profile)
