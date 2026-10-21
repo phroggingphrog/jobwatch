@@ -135,6 +135,35 @@ def test_employment_evidence_needs_a_quote_that_states_it(person, fake_llm):
     assert status.basis == 'unknown'
 
 
+STATUS_CV = b'Alex\nCurrently employed at Ledger Co\nLedger Co, Accounts Assistant, 2021 - Present\nBetween roles since June\nStudying full-time at Example College\nSeeking work as a bookkeeper\nNot currently employed\nSkills: ledgers\n'
+
+
+def _status(person, fake_llm, line, value, basis='evidence'):
+    uid = intake.save_upload(person, 'status.txt', STATUS_CV, 'cv')['upload_id']
+    quote = STATUS_CV.decode().splitlines()[line - 1]
+    fake_llm.reply({'facts': [fact('employment_status', value, basis, [{'line': line, 'quote': quote}])]})
+    return next(f for f in intake.propose(person, [uid], fake_llm).facts if f.section == 'employment_status')
+
+
+@pytest.mark.parametrize('line,value', [(2, 'employed'), (4, 'between roles'), (5, 'studying full-time'), (6, 'seeking work'),
+                                         (7, 'unemployed')])
+def test_employment_status_is_evidence_only_when_the_quote_states_it_and_the_value_agrees(person, fake_llm, line, value):
+    status = _status(person, fake_llm, line, value)
+    assert status.basis == 'evidence' and status.value == value and status.sources
+
+
+@pytest.mark.parametrize('value', ['employed', 'currently employed', 'working at Ledger Co'])
+def test_a_date_range_ending_present_does_not_state_employment(person, fake_llm, value):
+    for basis in ('evidence', 'inference'):
+        status = _status(person, fake_llm, 3, value, basis)           # 'Ledger Co, Accounts Assistant, 2021 - Present'
+        assert status.basis == 'unknown' and status.value == '' and status.sources == ()
+
+
+@pytest.mark.parametrize('line,value', [(2, 'unemployed'), (2, 'studying'), (7, 'employed'), (5, 'seeking work'), (8, 'employed')])
+def test_an_employment_status_that_disagrees_with_its_quote_is_not_evidence(person, fake_llm, line, value):
+    assert _status(person, fake_llm, line, value).basis == 'unknown'
+
+
 def test_missing_decision_sections_become_unknown_with_a_question(person, fake_llm, upload_id):
     proposal = intake.propose(person, [upload_id], fake_llm)
     for section in ('availability', 'work_rights', 'constraint', 'exclusion', 'employment_status'):

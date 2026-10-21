@@ -74,9 +74,34 @@ _ASK_TEXT = {
 }
 ONBOARDING_ASK = ASK_WHEN_ABSENT + ("career_focus", "location")   # asked at once, while the documents are still being read
 PARSE_SECONDS = 180                        # overall deadline for the one paid parse a person may have in flight
-# What an employment_status quote must contain to count as stating the status.
-_STATUS_WORDS = re.compile(r"\b(currently|unemployed|employed|self-employed|freelanc\w*|studying|student|seeking|"
-                           r"looking for|between roles|notice period|present)\b", re.I)
+# An employment_status counts as evidence only if its quote says the status outright and the value says the same thing.
+# A date range ending "Present" or "current" in a role line is not such a statement. Not-employed is tested first so that
+# "not currently employed" and "unemployed" are never read as employed.
+_STATUS_QUOTE = {
+    "unemployed": re.compile(r"\b(unemployed|not\s+(?:currently\s+|presently\s+)?(?:employed|working)|between\s+(?:roles|jobs)|"
+                             r"(?:currently\s+)?(?:seeking|looking\s+for)\s+(?:work|employment|a\s+(?:new\s+)?(?:job|role|position)|new\s+(?:role|opportunit\w+)))\b", re.I),
+    "employed": re.compile(r"\b((?:currently|presently)\s+(?:employed|working|freelanc\w+)|(?:am|is)\s+(?:employed|working|self-employed)|"
+                           r"self-employed|employed\s+(?:at|by|as|full[- ]time|part[- ]time))\b", re.I),
+    "studying": re.compile(r"\b((?:currently\s+)?(?:studying|enrolled)|(?:full|part)[- ]time\s+student)\b", re.I),
+}
+_STATUS_VALUE = {
+    "unemployed": re.compile(r"\b(unemployed|not\s+(?:currently\s+)?(?:employed|working)|between\s+(?:roles|jobs)|seeking|looking\s+for)\b", re.I),
+    "employed": re.compile(r"\b(employed|working|self-employed|freelanc\w+)\b", re.I),
+    "studying": re.compile(r"\b(studying|student|enrolled|study)\b", re.I),
+}
+
+
+def _kinds(text: str, patterns: dict) -> set[str]:
+    if patterns["unemployed"].search(text):
+        return {"unemployed"} | ({"studying"} if patterns["studying"].search(text) else set())
+    return {k for k, rx in patterns.items() if rx.search(text)}
+
+
+def _states_status(value, quote: str) -> bool:
+    said, meant = _kinds(quote, _STATUS_QUOTE), _kinds(" ".join(map(str, value.values())) if isinstance(value, dict) else str(value), _STATUS_VALUE)
+    return bool(meant) and meant <= said
+
+
 _ID = re.compile(r"^[0-9a-f]{16}$")
 
 
@@ -284,8 +309,10 @@ def _check(raw, docs, n: int) -> ProfileFact | None:
     note = str(raw.get("note") or "").strip()[:500]
     if not value and basis is not Basis.UNKNOWN:
         return None
-    if section == "employment_status" and not (basis is Basis.EVIDENCE and any(_STATUS_WORDS.search(s.quote) for s in sources)):
-        basis, value, sources = Basis.UNKNOWN, "", ()      # never inferred, and a gap is not a status
+    if section == "employment_status":
+        sources = tuple(r for r in sources if _states_status(value, r.quote))
+    if section == "employment_status" and not (basis is Basis.EVIDENCE and sources):
+        basis, value, sources = Basis.UNKNOWN, "", ()      # never inferred, and a gap or a "- Present" date is not a status
         note = "The documents do not state this."
     elif basis is Basis.EVIDENCE and not sources:
         basis = Basis.INFERENCE                           # the quote was not found: it is a guess, say so
