@@ -586,3 +586,91 @@ def test_confirm_resumes_after_a_crash(person, full, fake_llm, upload_id, monkey
     d = vdir(person, first)
     for name in ('profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml'):
         assert (d / name).read_bytes() == (apaths.profile_dir() / name).read_bytes()
+
+
+# ----------------------------------------------------------------------------- amendments and owner adoption
+HAND = {'profile.yaml': 'candidate:\n  name: Hand Made\n',
+        'master_resume.md': '# Hand Made\n\nLedger Co, Accounts Assistant, 2021 - 2023\n'}
+
+
+def hand_made(files=HAND):
+    pdir = apaths.profile_dir()
+    pdir.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (pdir / name).write_text(text)
+    return {n: (pdir / n).read_bytes() for n in files}
+
+
+def test_owner_profile_is_not_overwritten_without_adoption(person, full):
+    before = hand_made()
+    with pytest.raises(intake.IntakeError) as err:
+        ok(person, full)
+    assert err.value.code == 'adopt_first'
+    assert intake.adopt_existing(person, actor='person') == 1
+    assert {n: (apaths.profile_dir() / n).read_bytes() for n in before} == before      # adoption rewrites nothing
+    d = vdir(person, 1)
+    approved = json.loads((d / 'approved.json').read_text())
+    assert approved['adopted_from_files'] is True and approved['actor'] == 'person' and approved['version'] == 1
+    assert approved['evidence_bundle_hash'] == snapshot_evidence(apaths.profile_dir()).bundle_hash
+    for name, raw in before.items():
+        assert (d / name).read_bytes() == raw and (d / 'evidence' / name).read_bytes() == raw
+    assert stat.S_IMODE((d / 'approved.json').stat().st_mode) == 0o600 and stat.S_IMODE(d.stat().st_mode) == 0o700
+    assert intake.current_version(person)['version'] == 1
+    assert intake.load_proposal(person, full.id).status == 'draft'
+
+
+def test_adoption_then_amendment_projects_normally(person, full, fake_llm, upload_id):
+    hand_made()
+    intake.adopt_existing(person, actor='person')
+    nxt = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    assert ok(person, nxt) == 2
+    assert 'Hand Made' not in (apaths.profile_dir() / 'profile.yaml').read_text()
+    assert 'Hand Made' in (vdir(person, 1) / 'profile.yaml').read_text()               # v1 is immutable
+
+
+def test_adoption_with_extra_hand_made_file_still_allows_next_version(person, full, fake_llm, upload_id):
+    hand_made({**HAND, 'evidence.yaml': 'items: []\n'})
+    intake.adopt_existing(person, actor='person')
+    nxt = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    assert ok(person, nxt) == 2
+
+
+def test_adoption_refusals(person):
+    with pytest.raises(intake.IntakeError) as err:
+        intake.adopt_existing(person, actor='person')
+    assert err.value.code == 'nothing_to_adopt' and not (users.user_dir(person) / 'profile-versions').exists()
+    hand_made()
+    with pytest.raises(intake.IntakeError) as err:
+        intake.adopt_existing(person, actor='agent')
+    assert err.value.code == 'person_required' and intake.current_version(person) is None
+    assert intake.adopt_existing(person, actor='person') == 1
+    with pytest.raises(intake.IntakeError) as err:
+        intake.adopt_existing(person, actor='person')
+    assert err.value.code == 'already_adopted' and [v['version'] for v in intake.versions(person)] == [1]
+
+
+def test_adoption_is_refused_once_any_version_exists(person, full):
+    ok(person, full)
+    with pytest.raises(intake.IntakeError) as err:
+        intake.adopt_existing(person, actor='person')
+    assert err.value.code == 'already_adopted'
+
+
+def test_amendment_does_not_change_approved_facts_until_confirmed(person, full, fake_llm, upload_id):
+    intake.answer(person, full.id, expected_revision=1, question_id=next(q.id for q in full.questions if q.section == 'availability'), text='Immediately')
+    ok(person, intake.load_proposal(person, full.id))
+    v1 = intake.current_version(person)
+    old = next(f for f in v1['facts'] if f['section'] == 'availability')
+    profile_before = {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()}
+    version_before = (vdir(person, 1) / 'approved.json').read_bytes()
+    fake_llm.reply({'facts': [fact('availability', 'From March, 20 hours', 'inference'), fact('skill', 'Payroll', 'inference'),
+                              fact('availability', 'Immediately', 'inference')], 'questions': []})
+    amend = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    notes = {f.value: f.note for f in amend.facts if f.section in ('availability', 'skill') and f.basis != 'unknown'}
+    assert notes['From March, 20 hours'] == f'replaces {old["id"]}'
+    assert notes['Payroll'] == '' and notes['Immediately'] == ''                       # new, or unchanged: no replacement
+    assert amend.status == 'draft' and amend.base_version == 1
+    assert intake.current_version(person) == v1 and (vdir(person, 1) / 'approved.json').read_bytes() == version_before
+    assert {p.name: p.read_bytes() for p in apaths.profile_dir().iterdir()} == profile_before
+    assert ok(person, amend) == 2
+    assert intake.current_version(person)['version'] == 2 and (vdir(person, 1) / 'approved.json').read_bytes() == version_before

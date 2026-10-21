@@ -45,7 +45,7 @@ KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
-         "scope_changed", "adopt_first", "person_required")
+         "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -323,11 +323,44 @@ def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int |
             if not any(q.section == section for q in questions):
                 text, why = _ASK_TEXT[section]
                 questions.append(Question(id=f"q{len(questions) + 1}", section=section, text=text, why=why))
+    facts = _mark_replacements(person, base_version, facts)
     proposal = Proposal(id=secrets.token_hex(8), revision=1, base_version=base_version,
                         uploads=tuple(sha for sha, _ in docs), facts=tuple(facts), questions=tuple(questions),
                         status="draft")
     save_proposal(person, proposal)
     return proposal
+
+
+_SINGLE = ("employment_status", "availability", "work_rights")       # one answer per person: a new value replaces it
+_KEY_FIELDS = ("id", "key", "name", "title", "employer", "institution")
+
+
+def _fact_key(section: str, value) -> str | None:
+    """What makes two facts the same fact: the section for single-answer sections, else a named field of a dict value.
+    A plain string in a list-like section (skill, experience) is a different fact, not a replacement."""
+    if isinstance(value, dict):
+        named = next((str(value[k]).strip().lower() for k in _KEY_FIELDS if value.get(k)), None)
+        return f"{section}:{named}" if named else (section if section in _SINGLE else None)
+    return section if section in _SINGLE else None
+
+
+def _mark_replacements(person: str, base_version: int | None, facts: list[ProfileFact]) -> list[ProfileFact]:
+    """Amendments only propose: a fact that would change an approved fact of version `base_version` says so in its note.
+    Nothing in that version or in profile/ changes until confirm."""
+    if base_version is None or base_version not in _numbers(person):
+        return facts
+    approved = {}
+    for f in _approved(person, base_version).get("facts", ()):
+        key = _fact_key(f.get("section"), f.get("value"))
+        if key and f.get("basis") != Basis.UNKNOWN and f.get("value"):
+            approved.setdefault(key, f)
+    out = []
+    for f in facts:
+        old = approved.get(_fact_key(f.section, f.value)) if f.basis is not Basis.UNKNOWN else None
+        if old and old["value"] != f.value:
+            f = f.model_copy(update={"note": f"replaces {old['id']}" + (f"; {f.note}" if f.note else "")})
+        out.append(f)
+    return out
 
 
 def save_proposal(person: str, proposal: Proposal) -> None:
@@ -580,8 +613,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
             raise IntakeError("scope_changed")
         nums = _numbers(person)
         pdir = apaths.profile_dir()
+        last = _approved(person, nums[-1]) if nums else {}
         if nums:
-            last = _approved(person, nums[-1])
             if last.get("proposal_id") == cur.id and last.get("proposal_digest") == proposal_digest \
                     and last.get("scope_digest") == scope_digest:
                 # an earlier call died after writing this version: finish the remaining steps, never mint another
@@ -591,8 +624,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                 return nums[-1]
         if cur.base_version != (nums[-1] if nums else None):
             raise IntakeError("proposal_changed")      # built on no version or an old one: not on the current version
-        # hand-made files would change the evidence snapshot or be overwritten; Task 6's adoption brings them in
-        mine = _PROJECTED if nums else ()
+        # hand-made files would change the evidence snapshot or be overwritten; adopt_existing brings them in
+        mine = (_PROJECTED + tuple(last.get("adopted_files", ()))) if nums else ()
         if any(os.path.lexists(pdir / name) for name in dict.fromkeys(_ALLOWED + _PROJECTED) if name not in mine):
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
@@ -623,3 +656,47 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
             raise
         _finish(person, cur, pdir, files)
     return n
+
+
+def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
+    """Make the person's hand-made profile/ files version 1 without rewriting them (no projection).
+
+    The files are copied into profile-versions/1/ (and its evidence snapshot) as they are; approved.json records
+    adopted_from_files. Refused once any version exists, or when there is nothing to adopt."""
+    if actor != "person":
+        raise IntakeError("person_required")
+    with users.use(person), _locked(person, "versions.lock"):
+        if _numbers(person):
+            raise IntakeError("already_adopted")
+        pdir = apaths.profile_dir()
+        found = {}
+        for name in dict.fromkeys(_ALLOWED + _PROJECTED):
+            if os.path.lexists(pdir / name):
+                try:
+                    found[name] = read_regular_file(pdir / name, MAX_JSON_BYTES)
+                except (OSError, ValueError):
+                    raise IntakeError("unreadable_document") from None   # a symlink or oversized file is not adopted
+        if not found:
+            raise IntakeError("nothing_to_adopt")
+        approved = {"schema": 1, "version": 1, "proposal_id": None, "actor": "person", "adopted_from_files": True,
+                    "adopted_files": sorted(found), "file_sha256": {k: hashlib.sha256(v).hexdigest() for k, v in sorted(found.items())},
+                    "uploads": [], "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "facts": [], "open_questions": []}
+        root = ensure_dir(_versions_root(person))
+        stage = root / (".staging-" + secrets.token_hex(8))
+        try:
+            ensure_dir(stage)
+            for name, raw in found.items():
+                _write_private(stage / name, raw)
+                if name in _ALLOWED:
+                    _write_private(stage / "evidence" / name, raw)
+            bundle = snapshot_evidence(stage / "evidence")
+            approved["evidence_bundle_hash"] = bundle.bundle_hash
+            for name, raw in bundle.contents.items():
+                _write_private(stage / "evidence" / name, raw)
+            _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
+            os.rename(stage, root / "1")
+        except BaseException:
+            shutil.rmtree(stage, ignore_errors=True)
+            raise
+    return 1

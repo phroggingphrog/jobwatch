@@ -41,7 +41,7 @@ def _extensions():
     import importlib
     mods = []
     for name in ("jobwatch.apply.cli_ext", "jobwatch.outcomes.cli_ext",
-                 "jobwatch.web.cli_ext", "jobwatch.review_cli", "pipeline.cli", "jobwatch.preference_cli"):
+                 "jobwatch.web.cli_ext", "jobwatch.review_cli", "pipeline.cli", "jobwatch.preference_cli", "jobwatch.profile_cli"):
         try:
             mods.append(importlib.import_module(name))
         except ModuleNotFoundError as exc:
