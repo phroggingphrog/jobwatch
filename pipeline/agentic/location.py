@@ -155,9 +155,21 @@ def _km(a, b) -> float:
     return 6371.0 * 2 * math.asin(math.sqrt(h))
 
 
-@functools.lru_cache(maxsize=1)
-def _profile_home() -> str:
+@functools.lru_cache(maxsize=32)
+def _home_for(person: str, profile: str, mtime_ns: int) -> str:
     return home_place('')
+
+
+def _profile_home() -> str:
+    """Home suburb of the current person; cached per person + profile file version (a process serves many people)."""
+    from jobwatch import users
+    from jobwatch.apply.paths import profile_dir
+    try:
+        path = profile_dir() / 'profile.yaml'
+        mtime = path.stat().st_mtime_ns
+    except Exception:  # noqa: BLE001 - no profile: home_place gives ''
+        path, mtime = '', 0
+    return _home_for(users.current(), str(path), mtime)
 
 
 def home_place(profile_location: str | None = None) -> str:

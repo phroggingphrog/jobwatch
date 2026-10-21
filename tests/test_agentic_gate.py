@@ -505,3 +505,18 @@ def test_logistics_requirements_never_hold_a_job(rid, text, exempt, expected):
     from types import SimpleNamespace
     from pipeline.agentic.gate import _logistics
     assert _logistics(SimpleNamespace(id=rid, text=text, jd_signal=None), exempt) is expected
+
+
+def test_commute_home_follows_the_current_person_not_the_first_one_cached(tmp_path, monkeypatch):
+    from jobwatch import users
+    from pipeline.agentic.location import km_from_home
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path)); monkeypatch.delenv('JOBWATCH_PROFILE_DIR', raising=False)
+    for who, where in (('owner', 'Brunswick, VIC'), ('bob', 'Geelong, VIC')):
+        with users.use(who):
+            d = users.user_dir() / 'profile'; d.mkdir(parents=True)
+            (d / 'profile.yaml').write_text(f'candidate:\n  location: "{where}"\n', encoding='utf-8')
+    with users.use('owner'):
+        near = km_from_home('Glen Iris, Melbourne VIC')
+    with users.use('bob'):
+        far = km_from_home('Glen Iris, Melbourne VIC')
+    assert near == 13 and far is not None and far > 50  # a second person must not inherit the first person's home
