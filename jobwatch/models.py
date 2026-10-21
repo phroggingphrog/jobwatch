@@ -208,7 +208,7 @@ _AU_TEXT = re.compile(rf"\b(Australia|Australian|{AU_CITIES}|{AU_STATE_NAMES})\b
 # A state code counts when it follows a comma/space and/or precedes a postcode.
 _AU_STATE_CODE = re.compile(r"(?:,\s*|\s)(VIC|NSW|QLD|WA|SA|TAS|ACT|NT)\b(?:\s+\d{4})?|\b(VIC|NSW|QLD|TAS)\b")
 _NOT_AU = re.compile(r"\b(Florida|FL|British Columbia|BC|Canada|USA|United States|U\.S\.)\b|"
-                     r"\b(?i:Nigeria|Lagos|Seychelles|Nova Scotia|Scotland|England|Newcastle[ -]upon[ -]Tyne)\b")
+                     r"\b(?i:Nigeria|Lagos|Seychelles|Nova Scotia|Scotland(?! Island)|(?<!New )England|Newcastle[ -]upon[ -]Tyne)\b")
 COUNTRY_AU = {"au", "aus", "australia"}
 
 _STATE_PATTERNS = [
@@ -292,7 +292,7 @@ def salary_from_text(text: str | None) -> tuple[float | None, float | None, str 
         unit = "day"
     elif re.search(r"per week|weekly", low):
         unit = "week"
-    elif re.search(r"per month|a month|/mth|/month|\bp/m\b|\bpcm\b", low):
+    elif re.search(r"per month|\d[\d,.]*k?\s*a month|/mth|/month|\bp/m\b|\bpcm\b", low):   # "a month" only after an amount
         unit = "month"
     elif max(nums) < 200:
         unit = "hour"

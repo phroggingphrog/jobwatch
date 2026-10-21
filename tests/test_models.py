@@ -80,3 +80,15 @@ def test_posting_defaults_and_truncation():
 
 def test_html_to_text_double_escaped():
     assert html_to_text("&lt;p&gt;Hello&lt;/p&gt;&lt;p&gt;World &amp;amp; co&lt;/p&gt;") == "Hello\nWorld & co"
+
+
+def test_a_month_elsewhere_in_the_ad_is_not_a_monthly_salary():
+    assert salary_from_text("$85,000 + super. Team lunch once a month.")[2] == "year"
+    assert salary_from_text("$6,500 a month")[2] == "month"
+    assert salary_from_text("$6,500 per month")[2] == "month"
+
+
+def test_nsw_places_named_after_britain_stay_australian():
+    assert is_australian(None, "Armidale, New England NSW") and state_of("Armidale, New England NSW") == "NSW"
+    assert is_australian(None, "Scotland Island NSW")
+    assert not is_australian(None, "Manchester, England") and not is_australian(None, "Edinburgh, Scotland")

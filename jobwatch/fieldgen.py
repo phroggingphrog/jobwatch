@@ -15,6 +15,10 @@ _SENIOR = ['\\bsenior\\b', '\\bsnr\\b', '\\bsr\\.?\\b', '\\blead\\b', '\\bhead o
            '\\bdirector\\b', '\\bchief\\b', '\\bexecutive\\b', '\\bvp\\b', '\\bcfo\\b', '\\bceo\\b']
 _ENTRY = ['\\bgraduate\\b', '\\bjunior\\b', '\\btrainee\\b', '\\bentry[- ]level\\b', '\\bintern(ship)?\\b',
           '\\bcadet(ship)?\\b']
+# "National" as a location word ("National", "Australia - National"), not a title word ("National Payroll Officer").
+# filters.location_rule joins location and title with " | ", which this needs to see where the location ends.
+# config/rules.yaml carries the same pattern.
+NATIONAL = r"(?:^|[-/,|(]\s*)national(?=\s*(?:$|[-/,|)]))"
 
 
 def _slug(s: str) -> str:
@@ -55,7 +59,7 @@ def generate_config(profile: dict, user: str) -> Path:
         "location": {
             "vic_patterns": [rf"\b{re.escape(city.lower())}\b"] if city else [],
             "remote_patterns": ["\\bremote\\b", "work from home", "\\bwfh\\b", "anywhere in australia",
-                                "australia[- ]wide", "\\bnational\\b"],
+                                "australia[- ]wide", NATIONAL],
             "allow_unknown_from_vic_employer": False, "other_state_patterns": [],
         },
         "seniority": {

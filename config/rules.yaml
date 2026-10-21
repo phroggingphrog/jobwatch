@@ -169,7 +169,7 @@ location:
   # "Remote" counts when the posting is in Australia (collectors already AU-gated) and no
   # overseas country is named.
   remote_patterns: ['\bremote\b', 'work from home', '\bwfh\b', 'anywhere in australia',
-                    'australia[- ]wide', '^national\b']   # ^national: a location that is just "National", not a title word
+                    'australia[- ]wide', '(?:^|[-/,|(]\s*)national(?=\s*(?:$|[-/,|)]))']   # same as fieldgen.NATIONAL
   # Unknown location from an employer whose registry entry says state: VIC -> include.
   allow_unknown_from_vic_employer: true
   # Suburb-only locations ("Caroline Springs"): match against Victorian localities whose names are

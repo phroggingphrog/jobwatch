@@ -101,6 +101,7 @@ def test_it_administrators_still_excluded(rules, title):
 
 def test_national_in_a_title_is_not_remote(rules):
     assert rules.evaluate(P("National Payroll Officer", "Sydney NSW")).reason == "location"
+    assert rules.evaluate(P("Payroll Officer - National Accounts", "Sydney NSW")).reason == "location"
     assert rules.evaluate(P("Payroll Officer", "National")).rules["location"] == "remote_au"
 
 
@@ -162,3 +163,8 @@ def test_t9_false_positives_not_matched(rules, title):
 def test_t9_true_positives_still_match(rules, title, arm):
     d = rules.evaluate(P(title))
     assert d.matched and d.arm == arm
+
+
+@pytest.mark.parametrize("location", ["Australia - National", "Sydney / National", "National"])
+def test_national_as_a_location_is_remote(rules, location):
+    assert rules.evaluate(P("Payroll Officer", location)).rules["location"] == "remote_au"

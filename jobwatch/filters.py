@@ -125,7 +125,7 @@ class Rules:
                 and not any(x.search(text) for x in self.other_state)
                 and self.vic_locality.search(fold(text))):
             return "vic_locality"
-        remote_text = f"{text} {p.title}"
+        remote_text = f"{text} | {p.title}"          # " | " marks where the location ends (see fieldgen.NATIONAL)
         if p.remote or any(x.search(remote_text) for x in self.remote):
             return "remote_au"
         unknown = not text.strip() or fold(text).strip() in ("australia", "au", "multiple locations")
