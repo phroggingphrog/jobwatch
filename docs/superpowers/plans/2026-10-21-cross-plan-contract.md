@@ -34,6 +34,57 @@ Spec: [agreed backend brief](../specs/2026-10-21-agreed-backend-brief.md). Order
    `actor: Literal['person']` set server-side and is reachable only from an `approve`/`interact` scope, a human
    web action, or a gated chat interrupt. Model output never fills these.
 
+## Reconciled decisions (2026-10-21, after the six plans were drafted)
+
+These override the interface list below where they differ. Each plan has been edited to match.
+
+1. **Pinned profile version.** `policy_for(person, *, approved: dict | None = None) -> DecisionPolicy | None`;
+   `approved` is an `approved.json` payload (a baseline's frozen copy), defaulting to the current version.
+   Plan 6a freezes `approved.json` and, when the policy path is active, the `DecisionPolicy` JSON.
+2. **One live gate call.** Plan 2 creates `pipeline.agentic.service.gate_current(evaluation, *, posting, ad_text,
+   decision_policy, ...) -> AgenticGateDecision`; every gate caller (live run, shortlist, preference pool, rules,
+   replay) goes through it. `decide()` takes the new policy as keyword `decision_policy` (the existing `policy`
+   parameter is the run-key `TargetPolicy`) and a `company` keyword.
+3. **Flag for the profile policy.** `pipeline.agentic.decision_policy: legacy | profile`, default `legacy`. The
+   owner-specific checks move into `_legacy_person_checks` and are deleted in a follow-up after the owner switches
+   to `profile`. Exclusion rules take effect immediately only with `profile`.
+4. **Run key stays stable.** `DecisionPolicy` fields (`exclusions`, `profile_version`, `policy_hash`,
+   `open_questions`) never enter `RunKey.config_hash`. Plan 2 tests it; Plan 5 keeps a regression test.
+5. **Gate version.** `GATE_VERSION` hashes `gate.py`, `location.py`, `jobwatch/candidate/person.py`, the work-rights
+   regex module, `jobwatch/candidate/contracts.py`, `jobwatch/candidate/policy.py` (when present) and the location
+   data JSON files; each file's hash is also listed in `Baseline.gate_dependencies`. Routes are not stored live
+   today, so the version is recorded once per baseline, where all routes are recomputed together.
+6. **Exclusion facts to rules.** Plan 2 turns an `exclusion` fact whose value is `{"kind": <ExclusionRule kind>,
+   "value": <text>}` into an `ExclusionRule` with `source_fact_id`; a free-text exclusion stays prompt text and adds
+   the open question `exclusion:<fact_id>` asking the person which kind it is. Plan 2 also removes or parametrises
+   `MINIMUM_EXCLUDED_CODES`.
+7. **Relevance is stored.** Plan 3 writes every `RelevanceJudgment` to table `posting_relevance` and exposes
+   `discovery.latest_judgment(conn, posting_id) -> RelevanceJudgment | None`; Plans 4 and 6b read it.
+   `RelevanceJudgment` gains `method`, `ad_hash`, `plan_hash`. Plan 3 also exposes
+   `discovery.enforce_exclusions(conn, config, *, person=None)` for Plan 5.
+8. **Plan 3 flags.** `pipeline.agentic.relevance: off | shadow | on` (default `shadow`: judged and stored, nothing
+   archived), `dedupe: legacy | semantic` and `ordering: legacy | hypotheses` (defaults `legacy`).
+9. **Reference data location.** `users.base_dir()/reference/<dataset>/<version>/` (shared, public, outside Git),
+   with the bundled test fixtures in the repository.
+10. **Ranking modules.** `pipeline/agentic/ranking.py` is pure: `IMPORTANCE_WEIGHTS`, `Coverage`, `coverage`,
+    `label_for(coverage, relevance, policy, *, held: bool = False)`, `Scored`, `Ranked`,
+    `rank_candidates(scored) -> list[Ranked]`, `explain`. `pipeline/agentic/shortlist.py` holds
+    `build_shortlist(conn, config)` (database only; re-decides stored evaluations through `gate_current` under
+    `policy_for(person)`), `record_impressions` and `latest_entries(conn)`. `shortlist_api.py` holds the read
+    routes; Plan 5's routes live in `pipeline/agentic/feedback_api.py` on the paths below.
+11. **Re-queue starvation.** Plan 4 stops `after_collect` from re-queueing `held / evaluation_complete` jobs unless
+    their snapshot changed or liveness is stale, because the shortlist re-decides them from stored data.
+12. **Preference features.** `automation_angle` has no defined source and is retired; `status_held` is added.
+    `preference_picks.actor` stays `'owner'` (immutable schema); the feedback event log records `person`.
+13. **Labels and usage (Plan 6a owns them).** `read_labels(baseline_id) -> list[OwnerLabel]`,
+    `write_label(baseline_id, label)` (human CLI only), `FrozenCase.usage` keys `charged_tokens`, `actual_tokens`,
+    `latency_seconds`, and `evidence.bundle_from_contents(contents) -> EvidenceBundle`.
+14. **Signature additions.** `next_comparison(conn, person, config=None)`; `replay(..., llm=None, config=None,
+    stages=None)`; `SearchPlan.queries` keyed by `searches.yaml` section (`seek`, `jora`, `jobspy`).
+15. **Migrations.** Each plan takes the next free `jobwatch/db.py` `MIGRATIONS` index at execution time.
+16. **`location_fit`.** Stored evaluations say `'melbourne'` because the first model pass never sees the
+    candidate. No plan relies on it meaning "home region"; Plan 2 recomputes the region from the verified quote.
+
 ## Interfaces by plan
 
 ### Phase 2 — Plan 6a: frozen baseline (`pipeline/agentic/baseline.py`)
