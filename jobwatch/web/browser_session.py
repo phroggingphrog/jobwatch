@@ -289,13 +289,19 @@ class _Session:
         try:
             live = submit_confirm.live_digest(prepared, page, session_id=self.target_id, owner_revision=self.owner_revision)
             control = submit_confirm.final_control(page, prepared['final_control']) if live == expected else None
-        except (submit_confirm.SubmitRefused, KeyError, TypeError):
+        except Exception:  # noqa: BLE001 - anything unreadable is not the confirmed form
             control = None
         if control is None:
             raise BrowserSessionError('submit_confirmation_stale')
         self._release_review(page)
         self._arm_submit_watch(page)
-        control.click()
+        try:
+            control.click(timeout=10000)
+        except Exception:
+            # Not pressed (overlay, detached): put the review guard back so nothing else can submit this form.
+            self.submit_watch = None
+            self._protect_review(page)
+            raise BrowserSessionError('submit_press_failed') from None
         return 'pressed'
 
     def _check_submit(self):
@@ -464,7 +470,7 @@ class _Session:
                                 self.automation_active = False
                         continue
                     try:
-                        if kind == 'owner' and self.automation_active:
+                        if kind in ('owner', 'view') and self.automation_active:
                             raise BrowserSessionError('automation_in_progress')
                         if kind == 'owner':
                             self.owner_revision += 1
@@ -614,7 +620,7 @@ class BrowserSessionManager:
     def prepare(self, application_id, callback) -> Future:
         return self._get(application_id).submit('prepare', callback)
 
-    def confirm_submit(self, application_id, expected_digest: str, prepared: dict, *, timeout=30) -> str:
+    def confirm_submit(self, application_id, expected_digest: str, prepared: dict, *, timeout=60) -> str:
         """Press final Submit for the exact fill the owner confirmed; BrowserSessionError with a fixed reason otherwise."""
         session = self._get(application_id)
         return session.submit('confirm', lambda page: session._confirmed_submit(page, expected_digest, prepared)).result(timeout=timeout)
@@ -677,7 +683,10 @@ class BrowserSessionManager:
             dx, dy = action.get('dx', 0), action.get('dy', 0)
             if any(type(value) not in (int, float) or not math.isfinite(value) or abs(value) > 5000 for value in (dx, dy)):
                 raise BrowserSessionError('invalid_browser_scroll')
-            callback = lambda page: page.mouse.wheel(dx, dy)
+            # Scrolling to review changes nothing in the form, so it is not an owner revision (that would void a
+            # Submit confirmation every time the owner reads the page); field changes are caught by form_state.
+            session.submit('view', lambda page: page.mouse.wheel(dx, dy)).result(timeout=15)
+            return session.status()
         else:
             raise BrowserSessionError('invalid_browser_action')
         operation = callback

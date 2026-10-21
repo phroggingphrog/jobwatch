@@ -25,10 +25,18 @@ import time
 FINAL_LABEL = re.compile(r'(submit|apply|send)( (application|now|my application))?')
 CONFIRM_SECONDS = 15 * 60
 
-_FORM_STATE = '''() => Array.from(document.querySelectorAll('input,select,textarea')).map(e => [
-    e.tagName, e.type || '', e.name || '', e.id || '',
+# The fields an applicant fills: hidden inputs (tokens, timestamps) and captcha responses change without the owner and
+# are not reviewed content, so they are left out; contenteditable and custom widgets are not read (owner touches on
+# them still void a confirmation through the owner revision).
+_FORM_STATE = '''() => Array.from(document.querySelectorAll('input,select,textarea'))
+  .filter(e => e.type !== 'hidden' && !/^(g-recaptcha|h-captcha|cf-turnstile)-response$/.test(e.name || e.id || ''))
+  .map(e => [e.tagName, e.type || '', e.name || '', e.id || '',
     (e.type === 'checkbox' || e.type === 'radio') ? (e.checked ? '1' : '0')
-      : e.type === 'file' ? Array.from(e.files || []).map(f => f.name + ':' + f.size).join('|') : (e.value || '')])'''
+      : e.type === 'file' ? Array.from(e.files || []).map(f => f.name + ':' + f.size).join('|')
+      : e.multiple && e.tagName === 'SELECT' ? Array.from(e.selectedOptions).map(o => o.value).join('|') : (e.value || '')])'''
+# One label rule for recording and for pressing (aria-label first, then an input's value, then the visible text).
+_LABEL = (r"e=>(e.getAttribute('aria-label')||(e.tagName==='INPUT'?e.value:e.innerText)||'')"
+          r".trim().toLowerCase().replace(/\s+/g,' ')")
 
 _BOUND = ('run_id', 'package_hash', 'session_id', 'page_url_sha256', 'owner_revision', 'attached_documents',
           'final_control', 'form_state')
@@ -43,10 +51,16 @@ def form_state(page) -> str:
     rows = []
     for frame in page.frames:
         try:
-            rows.append([frame.url, frame.evaluate(_FORM_STATE)])
-        except Exception:  # noqa: BLE001 - a detached frame is part of the state too
-            rows.append([frame.url, None])
+            fields = frame.evaluate(_FORM_STATE)
+        except Exception:  # noqa: BLE001 - a frame that cannot be read holds no reviewed field
+            continue
+        if fields:                      # only frames with form fields: ads and widgets come and go with new URLs
+            rows.append([frame.url, fields])
     return hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode()).hexdigest()
+
+
+def control_label(element) -> str:
+    return element.evaluate(_LABEL)
 
 
 def digest(prepared: dict | None) -> str | None:
@@ -55,6 +69,19 @@ def digest(prepared: dict | None) -> str | None:
         return None
     bound = {k: prepared[k] for k in _BOUND}
     return hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+
+
+def record_control(page, control: dict) -> dict | None:
+    """The final control as a confirmation stores it: its frame chain and selector plus the label read with the same
+    rule final_control checks at press time. None when it does not resolve to one final-labelled element."""
+    from .prefill_workflow import PrefillRefused, _scope
+    try:
+        handles = _scope(page, {'url': control['url'], 'frame_path': control.get('frame_path') or []}
+                         ).query_selector_all(control['selector'])
+    except (PrefillRefused, KeyError):
+        return None
+    label = control_label(handles[0]) if len(handles) == 1 else ''
+    return dict(control, label=label) if FINAL_LABEL.fullmatch(label) else None
 
 
 def final_control(page, control: dict):
@@ -68,8 +95,7 @@ def final_control(page, control: dict):
     if len(handles) != 1:
         raise SubmitRefused('final_control_changed')
     element = handles[0]
-    label = element.evaluate(r"e=>(e.tagName==='INPUT'?e.value:(e.innerText||e.getAttribute('aria-label')||''))"
-                             r".trim().toLowerCase().replace(/\s+/g,' ')")
+    label = control_label(element)
     if not FINAL_LABEL.fullmatch(label) or label != control.get('label') or not element.is_visible() or not element.is_enabled():
         raise SubmitRefused('final_control_changed')
     return element
@@ -87,7 +113,7 @@ def ensure(conn: sqlite3.Connection) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS submit_requests(
         id INTEGER PRIMARY KEY, posting_id INTEGER NOT NULL, application_id INTEGER NOT NULL, digest TEXT NOT NULL,
         approval TEXT NOT NULL, requested_at REAL NOT NULL, expires_at REAL NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending', reason TEXT, updated_at REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', reason TEXT, updated_at REAL NOT NULL,  -- pending|pressed|submitted|unsure|refused|expired
         UNIQUE(approval))""")
 
 
@@ -104,12 +130,20 @@ def queue(conn: sqlite3.Connection, *, posting_id: int, application_id: int, con
     return {'status': 'queued' if row[1] == 'pending' else row[1], 'request_id': row[0]}
 
 
+PRESS_WAIT_SECONDS = 120     # a pressed request with no page verdict by then is recorded as unsure
+
+
 def pending(conn: sqlite3.Connection, now: float | None = None) -> list[sqlite3.Row]:
-    """Pending requests; the expired ones are marked expired first."""
+    """Pending requests; expired ones, and pressed ones that never got a page verdict, are closed first."""
     now = time.time() if now is None else now
-    ensure(conn)
-    conn.execute("UPDATE submit_requests SET status='expired', updated_at=? WHERE status='pending' AND expires_at<=?", (now, now))
-    conn.commit()
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone():
+        return []                       # nothing ever queued for this person: no write from a background loop
+    changed = conn.execute("UPDATE submit_requests SET status='expired', updated_at=? WHERE status='pending' AND expires_at<=?",
+                           (now, now)).rowcount
+    changed += conn.execute("UPDATE submit_requests SET status='unsure', reason='no_page_verdict', updated_at=? "
+                            "WHERE status='pressed' AND updated_at<=?", (now, now - PRESS_WAIT_SECONDS)).rowcount
+    if changed:
+        conn.commit()
     conn.row_factory = sqlite3.Row
     return conn.execute("SELECT * FROM submit_requests WHERE status='pending' ORDER BY id").fetchall()
 
@@ -117,6 +151,16 @@ def pending(conn: sqlite3.Connection, now: float | None = None) -> list[sqlite3.
 def settle(conn: sqlite3.Connection, request_id: int, status: str, reason: str | None = None) -> None:
     conn.execute("UPDATE submit_requests SET status=?, reason=?, updated_at=? WHERE id=? AND status='pending'",
                  (status, reason, time.time(), request_id))
+    conn.commit()
+
+
+def verdict(conn: sqlite3.Connection, application_id: int, result: str) -> None:
+    """The page's verdict after a press ('confident' or 'unsure') closes that application's pressed request, whoever
+    read it first (the prepare page poll or the background loop)."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone():
+        return
+    conn.execute("UPDATE submit_requests SET status=?, updated_at=? WHERE application_id=? AND status='pressed'",
+                 ('submitted' if result == 'confident' else 'unsure', time.time(), application_id))
     conn.commit()
 
 

@@ -23,7 +23,7 @@ from .jev_forms import jev_next_button, jev_prefill
 from .answers_agent import AnswerPlan, AnswerRefused, answer_application, load_answer_sources, save_owner_answer, with_career_record
 from .prefill import PrefillRefused, file_snapshot, private_bytes, require_host
 from .paths import safe_write_text
-from .submit_confirm import FINAL_LABEL, form_state
+from .submit_confirm import FINAL_LABEL, form_state, record_control
 from .prefill_workflow import (
     authorize_workflow, discover_application, fill_application, plan_from_discovery,
     prepare_next_navigation, private_write, session_id,
@@ -366,9 +366,8 @@ def prepare_application(page, *, application_id: str, package_manifest, document
                     return _finish(run_dir, 'needs_adapter', filled, completed, reason='final_review_control_unrecognized', screenshots=screenshots)
                 if 'cv' not in attached:
                     return _finish(run_dir, 'needs_adapter', filled, completed, reason='document_controls_incomplete', screenshots=screenshots)
-                control = {key: final[0][key] for key in ('selector', 'frame_path', 'url')}
-                review = {'final_control': dict(control, label=' '.join(final[0]['label'].strip().casefold().split())),
-                          'form_state': form_state(page)}
+                control = record_control(page, {key: final[0][key] for key in ('selector', 'frame_path', 'url')})
+                review = {'final_control': control, 'form_state': form_state(page)} if control else {}
                 return _finish(run_dir, 'ready_for_owner', filled, completed,
                                reason='' if 'letter' in attached else 'cover_letter_not_requested', screenshots=screenshots,
                                review=review)

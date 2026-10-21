@@ -29,7 +29,12 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget
 from pipeline.agentic.service import configured_llm, snapshot_inventory, _config
 
 
-SUBMIT_WAIT_SECONDS = 95       # a confirmed press is watched as long as the owner's own (browser_session submit watch)
+REFUSALS = ('submit_confirmation_stale', 'submit_not_confirmable', 'submit_press_failed', 'browser_closed')
+REFUSAL_TEXT = {
+    'submit_confirmation_stale': 'Nothing was submitted: the application changed after you confirmed. Review the live page and confirm again.',
+    'submit_not_confirmable': 'Nothing was submitted: this application is no longer waiting for a Submit confirmation.',
+    'submit_press_failed': 'Nothing was submitted: the Submit button could not be pressed. Check the live page.',
+    'browser_closed': 'Nothing was submitted: the application browser is closed.'}
 
 
 def package_is_current(conn, config, posting_id, package):
@@ -88,6 +93,8 @@ def register(app, config, conn_factory, render, sessions):
         conn = conn_factory()
         try:
             row = conn.execute('SELECT id,status FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
+            if row is not None:
+                submit_confirm.verdict(conn, row['id'], result)  # an approved chat request learns the outcome too
             if row is None or row['status'] in (*SUBMITTED, 'hired'):
                 return
             last = conn.execute("SELECT kind FROM application_events WHERE application_id=? ORDER BY id DESC LIMIT 1",
@@ -286,7 +293,13 @@ def register(app, config, conn_factory, render, sessions):
         if state['browser']['automation_active'] or not confirm or submit_confirm.digest(prepared) != confirm:
             return 'submit_confirmation_stale'
         aid = str(state['job']['application_id'])
-        conn = conn_factory()
+        try:
+            sessions.confirm_submit(aid, confirm, prepared)
+        except BrowserSessionError as exc:
+            return str(exc) if str(exc) in REFUSALS else 'press_unknown'
+        except Exception:                       # e.g. the wait timed out: the press may or may not have happened
+            return 'press_unknown'
+        conn = conn_factory()                   # recorded only once pressed, so a refusal leaves no 'confirmed' trace
         try:
             ledger.upsert(conn, 'applications', 'application_events', {
                 'application_id': int(aid), 'at': dbm.ts(), 'kind': 'submit_confirmed', 'from_status': state['job']['status'],
@@ -294,12 +307,6 @@ def register(app, config, conn_factory, render, sessions):
                 'detail_json': json.dumps({'confirmation': confirm[:16], 'run_id': prepared['run_id']})})
         finally:
             conn.close()
-        try:
-            sessions.confirm_submit(aid, confirm, prepared)
-        except BrowserSessionError as exc:
-            return str(exc) if str(exc) in ('submit_confirmation_stale', 'submit_not_confirmable') else 'browser_unavailable'
-        except Exception:
-            return 'browser_unavailable'
         return None
 
     app.state.confirmed_submit = confirmed_submit
@@ -318,19 +325,16 @@ def register(app, config, conn_factory, render, sessions):
             status, reason = 'refused', None
             try:
                 job, _ = context(row['posting_id'])
-                if job['application_id'] != row['application_id']:
+                if time.time() >= row['expires_at']:
+                    status = 'expired'
+                elif job['application_id'] != row['application_id']:
                     reason = 'application_changed'
                 else:
                     reason = confirmed_submit(row['posting_id'], row['digest'], 'agent-api')
                     if reason is None:
-                        aid, result, until = str(row['application_id']), None, time.monotonic() + SUBMIT_WAIT_SECONDS
-                        while result is None and time.monotonic() < until:
-                            result = sessions.take_submit_result(aid)
-                            if result is None:
-                                time.sleep(0.5)
-                        if result:
-                            settle_submit(row['posting_id'], aid, result)
-                        status = 'submitted' if result == 'confident' else 'unsure'
+                        status = 'pressed'      # the page verdict closes it (settle_submit -> submit_confirm.verdict)
+                    elif reason == 'press_unknown':
+                        status = 'unsure'
             except Exception:  # noqa: BLE001 - one request never stops the others; fixed reason only
                 reason = reason or 'submit_failed'
             conn = conn_factory()
@@ -361,8 +365,8 @@ def register(app, config, conn_factory, render, sessions):
         app_context(posting_id)
         reason = await run_in_threadpool(confirmed_submit, posting_id, str(form.get('digest') or ''), 'board')
         if reason:
-            return render(request, 'prepare.html', status=409, **preparation_context(
-                posting_id, 'Nothing was submitted: the application changed after you confirmed. Review the live page and confirm again.'))
+            return render(request, 'prepare.html', status=409, **preparation_context(posting_id, REFUSAL_TEXT.get(
+                reason, 'Jobwatch could not tell whether Submit was pressed. Check the live page before trying again.')))
         return RedirectResponse(f'/job/{posting_id}/prepare', status_code=303)
 
     @app.post('/job/{posting_id}/browser/action')

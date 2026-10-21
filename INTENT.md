@@ -136,7 +136,11 @@ Owner direction on 2026-10-21:
 > yeah its allright if it closes the owners open browwser, so basically it can submit either th eowner click the submit button OR with an explicit confirmation by user
 
 Auto-fill may close the owner's open browser for the same person. A confirmation binds to
-the reviewed fill (run, package, browser target, page URL, owner revision, attached PDFs,
-the one recognised final control and the read-back field values) and is refused if any of
-it changed, after one use, or 15 minutes after a chat approval. See
-`jobwatch/apply/submit_confirm.py`.
+the reviewed fill: run, package, browser target, page URL, owner revision, attached PDFs,
+the one recognised final control, and the values of the form's visible input, select and
+textarea fields read back from the page. Hidden inputs and captcha responses are not part
+of it, and contenteditable or custom widgets are not read; an owner click or keypress in the
+page still voids a confirmation, scrolling does not. It is refused if any bound part changed,
+after one use, or 15 minutes after a chat approval. A chat approval names the posting and
+binds to the fill, but does not show its answers: review the fill on the board before
+approving. See `jobwatch/apply/submit_confirm.py`.

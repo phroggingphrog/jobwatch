@@ -404,7 +404,10 @@ def test_an_approved_chat_request_is_pressed_through_the_live_check_and_recorded
     state = ready_state(monkeypatch, manifest)
     aid, rid = _queue(client, sc.digest(state))
     client.app.state.process_submit_requests()
-    assert browser.confirms == [(str(aid), sc.digest(state))] and _request(client, rid) == ('submitted', None)
+    assert browser.confirms == [(str(aid), sc.digest(state))] and _request(client, rid) == ('pressed', None)
+    browser.open_applications = lambda: [str(aid)]
+    client.app.state.settle_open_sessions()                          # the page's verdict closes the request
+    assert _request(client, rid) == ('submitted', None)
     conn = sqlite3.connect(client.data / 'jobwatch.db')
     assert conn.execute('SELECT status FROM applications WHERE id=?', (aid,)).fetchone()[0] == 'applied'
     assert conn.execute("SELECT source FROM application_events WHERE kind='submit_confirmed'").fetchone()[0] == 'agent-api'
@@ -444,3 +447,14 @@ def test_a_submit_seen_while_no_prepare_page_is_open_is_still_recorded(tmp_path,
     browser.open_applications = lambda: [str(aid)]
     client.app.state.settle_open_sessions()
     assert conn.execute('SELECT status FROM applications WHERE id=?', (aid,)).fetchone()[0] == 'applied'
+
+
+def test_a_refused_board_press_leaves_no_confirmed_event(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened, browser.refuse = True, 'submit_press_failed'
+    state = ready_state(monkeypatch, manifest)
+    response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': sc.digest(state)})
+    assert response.status_code == 409 and 'could not be pressed' in response.text
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    assert not conn.execute("SELECT 1 FROM application_events WHERE kind='submit_confirmed'").fetchone()

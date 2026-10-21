@@ -443,8 +443,10 @@ def _build(person, conn, config, llm, selected, saver, store):
             raise RuntimeErrorSafe('approval_inputs_changed')
         with job_connection(config, write=True) as jobs:
             row = jobs.execute('SELECT id FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
+            # One request per approving run: a retry of that run never queues it again, a fresh approval can.
+            approval = hashlib.sha256((binding['digest'] + ':' + (scope.run_id if scope else '')).encode()).hexdigest()
             queued = submit_confirm.queue(jobs, posting_id=posting_id, application_id=row['id'],
-                                          confirm_digest=binding['run_key'], approval=binding['digest'])
+                                          confirm_digest=binding['run_key'], approval=approval)
         if scope:
             scope.outcomes.append({'posting_id': posting_id, 'status': 'submit_' + queued['status']})
         return {'posting_id': posting_id, **queued}
