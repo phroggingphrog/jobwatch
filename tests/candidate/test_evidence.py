@@ -334,3 +334,17 @@ def test_source_bytes_remain_unchanged(tmp_path: Path) -> None:
     before = (path.read_bytes(), path.stat().st_mtime_ns)
     snapshot_evidence(root)
     assert (path.read_bytes(), path.stat().st_mtime_ns) == before
+
+
+def test_year_ranges_and_dates_are_not_phone_numbers(tmp_path: Path) -> None:
+    keep = ["Analyst, Acme Pty Ltd 2019 - 2021", "Reconciled ledgers 2019-2021", "Policy updated 2026-09-24",
+            "Sep 2019 - Jun 2021 at Acme", "Moved 12/03/2019 to Acme"]
+    drop = ["Call 0412 345 678 for ledgers", "Phone +61 3 9123 4567 anytime", "Ring (03) 9123-4567 today"]
+    root = write_cv(tmp_path, "# Fictional\n\n## Skills\n" + "".join(f"- {t}\n" for t in keep + drop))
+    bundle = snapshot_evidence(root)
+    quotes = " | ".join(i.quote for i in bundle.items)
+    for t in keep:
+        assert t in quotes, t
+    for t in ("0412", "9123"):
+        assert t not in quotes, t
+    assert bundle.dropped_contact_count == len(drop)
