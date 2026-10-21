@@ -19,3 +19,7 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Skill | Packaged workflow instructions loaded by the agent; it contains no private candidate facts. |
 | Memory | Per-person advisory context; it does not edit approved evidence or override domain gates. |
 | Submit | The final application action, performed only by the human. |
+| Company research | The saved ad's explicit skills/duties plus cited public employer context; inferences stay labelled and cannot introduce mandatory requirements. |
+| Structural proximity | A 60/40 activity-coverage/cosine measure; not a qualification or hiring probability. |
+| Preference prediction | A validated owner-choice probability within an already answered set of three eligible jobs plus none. |
+| Callback estimate | Historical Beta-Binomial callback rate and uncertainty, distinct from a forecast for a particular job. |

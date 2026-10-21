@@ -33,6 +33,7 @@ class PublicHTTPStatus(ResearchUnavailable):
 class ResearchIntent(str, Enum):
     EMPLOYER_IDENTITY = "employer_identity"
     ROLE_CONTEXT = "role_context"
+    DESIRED_SKILLS = "desired_skills"
     COMPENSATION = "compensation"
     INTERVIEW_PROCESS = "interview_process"
     INTERVIEW_QUESTIONS = "interview_questions"
@@ -306,6 +307,7 @@ class ResearchCapability:
             if self.search_provider is None: raise ResearchUnavailable()
             label = {ResearchIntent.EMPLOYER_IDENTITY: "employer identity",
                      ResearchIntent.ROLE_CONTEXT: "role context",
+                     ResearchIntent.DESIRED_SKILLS: "skills qualifications responsibilities careers",
                      ResearchIntent.COMPENSATION: "compensation",
                      ResearchIntent.INTERVIEW_PROCESS: "interview process recruiter hiring manager",
                      ResearchIntent.INTERVIEW_QUESTIONS: "reported interview questions"}[intent]

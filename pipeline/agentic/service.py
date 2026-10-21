@@ -43,7 +43,7 @@ RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
 MIN_READ_SECONDS = 20   # less than this left in the batch: do not start another job (a Seek page read needs 7-15 s)
-IMPLEMENTATION_VERSION = 'deepagents-0.7.23-entry-negation-20261011'
+IMPLEMENTATION_VERSION = 'deepagents-0.7.23-company-skills-20261021'
 
 
 def settings(config) -> dict:
@@ -423,13 +423,19 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if candidate.run_key != key.candidate_hash:
                 raise AgenticError('candidate_hash_mismatch')
             adapter.save_artifact(claim, 'candidate', candidate.model_dump(mode='json'))
+            from pipeline.agentic.model_insights import pipeline_insights
+            models = adapter.load_artifact(key.value, 'model_insights')
+            if models is None:
+                models = pipeline_insights(conn, config, bundle=bundle, policy=pol, cfg=cfg,
+                                           structural=expected_structural)
+                adapter.save_artifact(claim, 'model_insights', models)
             saved_evaluation = adapter.load_artifact(key.value, 'evaluation')
             if saved_package is not None and saved_evaluation is None:
                 raise AgenticError('artifact_invalid')
             evaluation = validate_model_payload(AgenticEvaluation, saved_evaluation) if saved_evaluation is not None else evaluate_job(
                 key, ad_text, budget, llm, evidence_bundle=bundle, candidate_analysis=candidate,
                 model=cfg['evaluator_model'], research=_research(posting, budget, cfg),
-                commute_km=km_from_home(posting.get('location') or ''))
+                commute_km=km_from_home(posting.get('location') or ''), model_insights=models)
             decision = decide(evaluation, ad_text=ad_text, title=posting['title'], policy=pol,
                               captured_complete=text_kind == 'full', expected_run_key=key, evidence_bundle=bundle,
                               commute_km=km_from_home(posting.get('location') or ''))
@@ -461,11 +467,18 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     if quota_reason is not None:
                         reason = quota_reason
                         return stage
+                company = adapter.load_artifact(key.value, 'company_research')
+                if saved_package is None and company is None:
+                    from pipeline.agentic.company_research import run_company_researcher
+                    company = run_company_researcher(ad_text, _research(posting, budget, cfg), budget,
+                        llm_drafter or llm, model=cfg['worker_model'], run_key=key)
+                    adapter.save_artifact(claim, 'company_research', company)
                 artifacts = _restore_package(saved_package, evaluation) if saved_package is not None else draft_and_review(
                     key, evaluation, budget, llm_drafter=llm_drafter or llm, llm_reviewer=llm_reviewer or llm,
                     return_bundle=True, evidence_bundle=bundle, posting=posting, ad_text=ad_text,
                     worker_model=cfg['worker_model'], reviewer_model=cfg['reviewer_model'],
                     requirement_map=requirement_map, jev_facts=facts, jev_config=config,
+                    company_research=company, model_insights=models,
                     research=_research(posting, budget, cfg))  # the writer researches the employer too (owner 2026-10-20)
                 adapter.save_artifact(claim, 'package_bundle', _package_payload(artifacts))
                 if saved_package is None:

@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from jobwatch.apply.evidence import Profile
 from jobwatch.model_choice import get_model
 from jobwatch.apply.review import SCHEMA_HELP
-from jobwatch.candidate.evidence import verify_evidence_snapshot
+from jobwatch.candidate.evidence import career_profile_text, verify_evidence_snapshot
 from pipeline.agentic.letter_rules import letter_text as third_letter_text, third_opinion
 from pipeline.agentic.writing_guide import writing_guide
 from jobwatch.apply.careerops_cv import render_cv_pdf
@@ -138,13 +138,13 @@ def _research_tools(research) -> tuple:
         try:
             return {"status": "available", "results": [asdict(i) for i in research.search(ResearchIntent(args.intent))]}
         except Exception:  # noqa: BLE001 - research limit or a dead search must never end the letter
-            return {"status": "unavailable", "note": "no more searches; use employer_research"}
+            return {"status": "unavailable", "note": "no more searches; use company_research.sources"}
 
     def read_public(args, _):
         try:
             return {"status": "available", "page": asdict(research.fetch(args.result_id))}
         except Exception:  # noqa: BLE001 - same: a limit is not a failure
-            return {"status": "unavailable", "note": "no more pages; use employer_research"}
+            return {"status": "unavailable", "note": "no more pages; use company_research.sources"}
     return (Tool("research_employer", ResearchQuery, search_public), Tool("read_public_page", ResearchFetch, read_public))
 
 
@@ -160,23 +160,6 @@ def _trim_cv(content: dict) -> bool:
         return False
     max(lists, key=lambda pair: len(pair[0]) - pair[1])[0].pop()
     return True
-
-
-def _employer_research(research) -> list[dict]:
-    """Research the employer BEFORE the writer starts, so every letter has real company detail
-    (owner 2026-10-20: "so the writer need to do research too"). Public pages only; never candidate facts."""
-    if research is None:
-        return []
-    from pipeline.agentic.research import ResearchIntent
-    found = []
-    for intent in (ResearchIntent.EMPLOYER_IDENTITY, ResearchIntent.ROLE_CONTEXT):
-        try:
-            for hit in research.search(intent)[:2]:
-                page = research.fetch(hit.result_id)
-                found.append({"title": hit.title, "url": hit.url, "text": page.text[:4000]})
-        except Exception:  # noqa: BLE001 - a failed search leaves the letter to the ad, it never stops the run
-            continue
-    return found
 
 
 def _role(profile, evaluation, ad_text, model=DEFAULT_MODEL, *, primary_sources=None, research=None) -> RoleSpec:
@@ -212,8 +195,13 @@ def _role(profile, evaluation, ad_text, model=DEFAULT_MODEL, *, primary_sources=
                                    "THE LETTER: write it the way a person writes to an employer they looked into, not as a "
                                    "match report. Show real eagerness for THIS company and THIS job (owner 2026-10-20: "
                                    "'show that eagerness or interest of the company or the job'): praise specific things "
-                                   "from employer_research (its work, clients, values, people, recent news) and say why they "
-                                   "excite the candidate; open and close with that enthusiasm. Follow writing_guide.letter_approach and sound like writing_guide.human_examples. "
+                                   "from company_research.brief, its cited sources and the full_ad. Connect actual duties and company work to "
+                                   "career_interests and supported experience, so why this job reads naturally. "
+                                   "Career interests are framing, never proof of a qualification. Distinguish explicit ad requirements "
+                                   "from public company context and inferred preferences. Do not invent personal history, "
+                                   "a lifelong passion, company facts, or a motivation the candidate has not expressed. "
+                                   "If public research is unavailable, use the actual duties in the ad without pretending to have researched the company. "
+                                   "Follow writing_guide.letter_approach and sound like writing_guide.human_examples. "
                                    "The header already names the role and employer. Each letter paragraph is ONE claim with tier "
                                    "'prose' (the whole paragraph as flowing prose); evidence_ids list the evidence it draws on, "
                                    "only so facts can be checked. Say things in your own plain words; do not copy CV wording into "
@@ -368,13 +356,21 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
     primary_sources = {k: v.decode("utf-8") for k, v in bundle.contents.items()
                        if k in ("profile.yaml", "cv.md", "master_resume.md")}
     cv_tpl, cl_tpl = pick_templates(posting, {"archetype": evaluation.archetype})  # owner's original CV/letter forms
+    company = kwargs.get("company_research")
+    if company is None:
+        # Direct low-level callers retain ad/public context; the core service owns
+        # the separate paid researcher stage and supplies its persisted brief.
+        from pipeline.agentic.company_research import company_brief
+        company = company_brief(ad_text, kwargs.get("research"))
     context = {"run_key": run_key.model_dump(mode="json"), "evaluation": evaluation.model_dump(mode="json"),
                "writing_guide": writing_guide(cl_tpl, posting.get("title") or "", evaluation.archetype, cv_tpl),
                "evaluation_hash": eval_hash,
                "evidence_inventory": _inventory(profile.evidence),
                "screening_questions": list(evaluation.screening_questions), "posting": posting,
                "full_ad": ad_text, "source_hashes": bundle.sources,
-               "employer_research": _employer_research(kwargs.get("research")),
+               "company_research": company,
+               "model_insights": kwargs.get("model_insights") or {},
+               "career_interests": career_profile_text(bundle),
                "requirement_map": list(kwargs.get("requirement_map") or []),
                "primary_source_inventory": [{"source_file": name, "source_hash": bundle.sources[name],
                                              "bytes": len(text.encode("utf-8"))}
@@ -434,7 +430,9 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
                 raise
     proposal = DraftProposal(run_key=run_key, evaluation_hash=eval_hash, evidence_hash=proposal.evidence_hash,
                              content=clean, screening_answers=proposal.screening_answers)
-    review_context = evaluation.model_dump(mode="json")
+    review_context = {**evaluation.model_dump(mode="json"),
+                      "company_research": context["company_research"],
+                      "career_interests": context["career_interests"]}
     review_args = {"runner": run_role, "evidence": profile.evidence, "posting": {**posting, "full_ad": ad_text},
                    "screening_sources": primary_sources, "source_hashes": bundle.sources,
                    "model": kwargs.get("reviewer_model") or get_model("reviewer"),
