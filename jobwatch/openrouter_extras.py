@@ -127,12 +127,13 @@ def embed(texts: list[str], config=None) -> list[list[float]] | None:
     cfg = extras_settings(config)
     if not cfg.get("enabled"):
         return None
-    from jobwatch.llm import BASE_URL, load_keys
+    from jobwatch import model_choice
+    from jobwatch.llm import load_keys
     keys = load_keys()
     if not keys:
         return None
-    try:
-        r = requests.post(f"{BASE_URL}/embeddings", timeout=cfg["timeout"] * 2,
+    try:   # gateway_url() and load_keys() both follow the person's own gateway, so the key and the URL always match
+        r = requests.post(f"{model_choice.gateway_url().rstrip('/')}/embeddings", timeout=cfg["timeout"] * 2,
                           json={"model": cfg["embed_model"], "input": [t[:MAX_AD_CHARS] for t in texts]},
                           headers={"authorization": f"Bearer {keys[min(cfg['credential_index'], len(keys) - 1)]}"})
         if r.status_code != 200:
