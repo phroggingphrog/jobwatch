@@ -291,3 +291,18 @@ def test_blocked_autosave_or_upload_never_claims_ready(site, inputs, planner, fi
     assert prepare.latest_preparation(inputs['data_root'], inputs['application_id'])['status'] != 'ready_for_owner'
     assert ('POST', endpoint) not in seen
     assert page.evaluate('window.submits') == 0
+
+
+def test_a_ready_fill_records_what_a_submit_confirmation_binds_to(site, inputs, planner):
+    from jobwatch.apply import submit_confirm as sc
+    page, base, _, _ = site
+    final_page(page, base)
+    assert prepare.prepare_application(page, **inputs).status == 'ready_for_owner'
+    prepared = prepare.latest_preparation(inputs['data_root'], inputs['application_id'])
+    control = prepared['final_control']
+    assert control['label'] == 'submit application' and control['url'] == page.url and control['frame_path'] == []
+    assert prepared['form_state'] == sc.form_state(page) and sc.digest(prepared)
+    assert sc.final_control(page, control).evaluate('e=>e.textContent') == 'Submit application'
+    page.locator('[name=full_name]').fill('Someone Else')
+    assert sc.live_digest(prepared, page, session_id=prepared['session_id'],
+                          owner_revision=prepared['owner_revision']) != sc.digest(prepared)

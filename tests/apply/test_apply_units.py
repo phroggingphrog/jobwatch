@@ -95,6 +95,8 @@ def test_verifier_removes_invented_metric(profile):
      "key_span_not_in_claim"),
     (lambda c, p: c.update(text="Processed 120 supplier invoices per week in Xero at Globex Corp.",
                            key_span="120 supplier invoices per week"), "unsupported_name"),
+    (lambda c, p: c.update(text="Zorbex Industries: processed 120 supplier invoices per week in Xero.",
+                           key_span="120 supplier invoices per week"), "unsupported_name"),   # an invented name opening the line
     (lambda c, p: c.update(text="Processed 120 supplier invoices per week in Xero (found via Seek)."),
      "third_party_branding"),
     (lambda c, p: c.update(text="Processed 120 supplier invoices per week in Xero each June."),
@@ -117,6 +119,36 @@ def test_verifier_derived_and_framing(profile):
     got = {r["id"]: r["reason"] for r in rep["removed"]}
     assert got == {"c11": "derivation_mismatch", "c9": "framing_has_numbers_or_dates",
                    "c20": "framing_outside_letter"}
+
+
+def test_verifier_rejects_trivial_spans_overclaimed_years_and_unparsable_results(profile):
+    from datetime import datetime
+    y = datetime.now().year - 2022
+    d = fake_draft(profile, with_invented=False)
+    d["cv"]["experience"][0]["bullets"][0]["key_span"] = "the"                  # a stop word is not a quote of the evidence
+    d["letter"]["paragraphs"][1][1]["derivation"]["result"] = str(y + 1)        # one year more than the dates give
+    d["letter"]["paragraphs"][1][1]["text"] = f"I have worked in my current accounts role for {y + 1} years."
+    d["letter"]["paragraphs"][1].append({**d["letter"]["paragraphs"][1][1], "id": "c30", "text": "About 1.2.3 years here.",
+                                         "derivation": {**d["letter"]["paragraphs"][1][1]["derivation"], "result": "1.2.3"}})
+    _, rep = _verify(profile, d)                                                # must not raise
+    got = {r["id"]: r["reason"] for r in rep["removed"]}
+    assert got["c1"] == "missing_key_span" and got["c11"] == "derivation_mismatch" and got["c30"] == "derivation_unverifiable"
+
+
+def test_letter_date_uses_the_persons_timezone(profile, monkeypatch):
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+    from jobwatch import place
+    from jobwatch.apply import render
+
+    class Fixed(datetime):                       # 2026-10-21 12:00 UTC: the 21st in Melbourne, the 22nd in Kiritimati
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 21, 12, 0, tzinfo=UTC).astimezone(tz)
+    monkeypatch.setattr(render, "datetime", Fixed)
+    monkeypatch.setattr(place, "person_timezone", lambda: ZoneInfo("Pacific/Kiritimati"))
+    md = render.letter_markdown(fake_draft(profile), profile, {"company": "Acme", "title": "Clerk"})
+    assert "22/10/2026" in md and "21/10/2026" not in md
 
 
 def test_verifier_headings_come_from_evidence_only(profile):
@@ -287,3 +319,11 @@ def test_repeated_fact_in_new_words_flagged_and_dropped():
     assert [[c["id"] for c in p] for p in draft["letter"]["paragraphs"]] == [["c1", "c2"], ["c4"]]
     draft["letter"]["paragraphs"].append([{"id": "c5", "tier": "framing", "text": "Happy to talk about the role."}])
     assert not any(e["reason"].startswith("no closing") for e in stock_edits(draft))
+
+
+def test_caps_checks_a_line_opening_proper_noun_but_not_a_leading_verb():
+    from jobwatch.apply.verify import _caps
+    assert "Zorbex" in _caps("Zorbex Industries led the team.")
+    assert _caps("Managed Xero accounts for the team.") == {"Xero"}          # a leading verb is not a name
+    assert _caps("Processing Payroll Reports weekly.") == {"Payroll", "Reports"}
+    assert _caps("Led the team.") == set()

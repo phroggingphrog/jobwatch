@@ -1382,3 +1382,10 @@ def test_a_leaking_profile_holds_every_ad_with_a_privacy_flag_and_sends_nothing(
     stats = reader.review_pending(conn, config, llm=make_llm(gw), limit=10)
     assert stats["reviewed"] == 2 and len(gw.calls) == 2
     assert {r["verdict"] for r in conn.execute("SELECT verdict FROM ad_reviews")} == {"show"}
+
+
+def test_a_phone_with_year_like_groups_is_redacted_but_year_ranges_are_kept():
+    assert reader._phone_spans("Phone +44 20 1999 2010 anytime")
+    assert reader._phone_spans("Acme 2019 - 2021") == []
+    assert reader._redact("Call +44 20 1999 2010 after 5") == "Call [removed] after 5"
+    assert reader._redact("Worked 2019-2021, then 0400 123 456") == "Worked 2019-2021, then [removed]"

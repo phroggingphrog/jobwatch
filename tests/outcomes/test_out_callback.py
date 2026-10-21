@@ -69,6 +69,18 @@ def test_callback_stats_per_arm_and_digest(tmp_path, monkeypatch):
     assert "all arms: 2/2 → mean 0.167" in plain
 
 
+def test_saved_then_rejected_without_applying_is_not_a_trial(tmp_path, monkeypatch):
+    config = make_env(tmp_path, monkeypatch)
+    conn = dbm.connect(config.db_path)
+    t = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    m = [add_match(conn, i, arm="payroll_clerk") for i in (1, 2)]
+    set_status(conn, m[0], "rejected", actor="owner", source="t", now=t)   # never applied (same as outcomes/readiness)
+    set_status(conn, m[1], "applied", actor="owner", source="t", now=t)
+    set_status(conn, m[1], "rejected", actor="owner", source="t", now=t)   # applied, then rejected: a trial, no callback
+    st = callback_stats(conn)
+    assert (st["_all"]["successes"], st["_all"]["n"]) == (0, 1)
+
+
 def test_render_without_applications():
     lines = render_lines({"_all": posterior(0, 0)})
     assert "no resolved outcomes yet; pending=0 (prior mean 0.062)" in lines[-1]

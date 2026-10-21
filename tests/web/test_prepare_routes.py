@@ -1,6 +1,7 @@
 """Protected owner browser controls and reviewed application handoff."""
 import hashlib
 import json
+import sqlite3
 from concurrent.futures import Future
 from types import SimpleNamespace
 
@@ -34,8 +35,20 @@ class Browser:
         self.opened = False
     def close_all(self):
         self.opened = False
+    result = None
     def take_submit_result(self, aid):
-        return None
+        result, self.result = self.result, None
+        return result
+    confirms = None
+    def confirm_submit(self, aid, digest, prepared):
+        if self.confirms is None:
+            self.confirms = []
+        if getattr(self, 'refuse', None):
+            from jobwatch.web.browser_session import BrowserSessionError
+            raise BrowserSessionError(self.refuse)
+        self.confirms.append((aid, digest))
+        self.result = getattr(self, 'after_press', None)          # the page's verdict exists only after a press
+        return 'pressed'
     def snapshot(self, aid):
         self.frames += 1
         self.opened = False
@@ -65,6 +78,27 @@ def pending_state(monkeypatch, manifest, questions=None):
     monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
     monkeypatch.setattr(prepare_routes, 'prepare_application', lambda *a, **kwargs: None)
     return state
+
+
+def test_auto_fill_without_agentic_runs_table_is_nothing_ready_and_the_loop_survives_a_bad_tick(tmp_path, monkeypatch):
+    import asyncio
+    import time
+    client, browser, _ = setup(tmp_path, monkeypatch)
+    client.app.state.auto_fill_ready()                      # no agentic_runs table yet: nothing ready, no exception
+    real_sleep, ticks = asyncio.sleep, []
+    async def fast(delay, *a):
+        return await real_sleep(0.01 if delay == 60 else delay, *a)
+    def flaky():
+        ticks.append(1)
+        if len(ticks) == 1:
+            raise sqlite3.OperationalError('no such table: agentic_runs')
+    monkeypatch.setattr(asyncio, 'sleep', fast)
+    client.app.state.auto_fill_ready = flaky
+    with client:                                            # runs the lifespan, so the auto-fill loop
+        deadline = time.monotonic() + 5
+        while len(ticks) < 3 and time.monotonic() < deadline:
+            time.sleep(0.02)
+    assert len(ticks) >= 3
 
 
 def complete_queued_intake(browser):
@@ -302,3 +336,125 @@ def test_candidate_page_computes_local_statistics_without_model_calls(tmp_path, 
     assert 'Untrained: no observed outcomes' in response.text
     assert 'not hiring probability' in response.text
     assert not browser.opened
+
+
+def ready_state(monkeypatch, manifest):
+    state = dict(pending_state(monkeypatch, manifest), status='ready_for_owner', reason='', missing=[],
+                 attached_documents={'cv': 'a' * 64}, form_state='f' * 64,
+                 final_control={'selector': '#submit', 'label': 'submit application', 'url': 'https://x', 'frame_path': []})
+    monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
+    return state
+
+
+def test_board_confirmation_presses_submit_for_the_shown_fill_only(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened = True
+    state = ready_state(monkeypatch, manifest)
+    page = client.get(f'/job/{client.pid}/prepare').text
+    digest = sc.digest(state)
+    assert f'/job/{client.pid}/prepare/submit' in page and digest in page
+    assert client.post(f'/job/{client.pid}/prepare/submit', data={'digest': '0' * 64}).status_code == 409
+    assert browser.confirms is None                                   # a digest for another fill presses nothing
+    response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': digest}, follow_redirects=False)
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    aid = conn.execute('SELECT id FROM applications WHERE posting_id=?', (client.pid,)).fetchone()[0]
+    assert response.status_code == 303 and browser.confirms == [(str(aid), digest)]
+    kind, actor, source = conn.execute("SELECT kind, actor, source FROM application_events ORDER BY id DESC LIMIT 1").fetchone()
+    assert (kind, actor, source) == ('submit_confirmed', 'owner', 'board')
+
+
+def test_a_refused_board_confirmation_says_nothing_was_submitted(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened, browser.refuse = True, 'submit_confirmation_stale'
+    state = ready_state(monkeypatch, manifest)
+    response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': sc.digest(state)})
+    assert response.status_code == 409 and 'Nothing was submitted' in response.text
+
+
+def test_no_submit_button_without_a_confirmable_fill(tmp_path, monkeypatch):
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened = True
+    ready_state(monkeypatch, manifest).pop('final_control')
+    assert '/prepare/submit' not in client.get(f'/job/{client.pid}/prepare').text      # no confirm form
+
+
+def _queue(client, digest, *, now=None):
+    from jobwatch.apply import submit_confirm as sc
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    aid = conn.execute('SELECT id FROM applications WHERE posting_id=?', (client.pid,)).fetchone()[0]
+    request = sc.queue(conn, posting_id=client.pid, application_id=aid, confirm_digest=digest, approval='appr', now=now)
+    conn.close()
+    return aid, request['request_id']
+
+
+def _request(client, rid):
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    try:
+        return tuple(conn.execute('SELECT status, reason FROM submit_requests WHERE id=?', (rid,)).fetchone())
+    finally:
+        conn.close()
+
+
+def test_an_approved_chat_request_is_pressed_through_the_live_check_and_recorded(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened, browser.after_press = True, 'confident'
+    state = ready_state(monkeypatch, manifest)
+    aid, rid = _queue(client, sc.digest(state))
+    client.app.state.process_submit_requests()
+    assert browser.confirms == [(str(aid), sc.digest(state))] and _request(client, rid) == ('pressed', None)
+    browser.open_applications = lambda: [str(aid)]
+    client.app.state.settle_open_sessions()                          # the page's verdict closes the request
+    assert _request(client, rid) == ('submitted', None)
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    assert conn.execute('SELECT status FROM applications WHERE id=?', (aid,)).fetchone()[0] == 'applied'
+    assert conn.execute("SELECT source FROM application_events WHERE kind='submit_confirmed'").fetchone()[0] == 'agent-api'
+
+
+def test_a_stale_or_expired_chat_request_presses_nothing(tmp_path, monkeypatch):
+    import time
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened = True
+    state = ready_state(monkeypatch, manifest)
+    _, stale = _queue(client, '0' * 64)
+    client.app.state.process_submit_requests()
+    assert browser.confirms is None and _request(client, stale) == ('refused', 'submit_confirmation_stale')
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    conn.execute("UPDATE submit_requests SET approval='old'"); conn.commit(); conn.close()
+    _, expired = _queue(client, sc.digest(state), now=time.time() - sc.CONFIRM_SECONDS - 1)
+    client.app.state.process_submit_requests()
+    assert browser.confirms is None and _request(client, expired) == ('expired', None)
+
+
+def test_background_work_runs_once_per_person_as_that_person(tmp_path, monkeypatch):
+    from jobwatch import users
+    client, browser, _ = setup(tmp_path, monkeypatch)
+    users.create_user_dirs('friend')
+    (users.user_dir('friend') / 'jobwatch.db').touch()
+    seen = []
+    client.app.state.for_each_person(lambda: seen.append(users.current()))
+    assert seen == [users.DEFAULT_USER, 'friend']
+
+
+def test_a_submit_seen_while_no_prepare_page_is_open_is_still_recorded(tmp_path, monkeypatch):
+    client, browser, _ = setup(tmp_path, monkeypatch)
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    aid = conn.execute('SELECT id FROM applications WHERE posting_id=?', (client.pid,)).fetchone()[0]
+    browser.opened, browser.result = True, 'confident'
+    browser.open_applications = lambda: [str(aid)]
+    client.app.state.settle_open_sessions()
+    assert conn.execute('SELECT status FROM applications WHERE id=?', (aid,)).fetchone()[0] == 'applied'
+
+
+def test_a_refused_board_press_leaves_no_confirmed_event(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened, browser.refuse = True, 'submit_press_failed'
+    state = ready_state(monkeypatch, manifest)
+    response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': sc.digest(state)})
+    assert response.status_code == 409 and 'could not be pressed' in response.text
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    assert not conn.execute("SELECT 1 FROM application_events WHERE kind='submit_confirmed'").fetchone()

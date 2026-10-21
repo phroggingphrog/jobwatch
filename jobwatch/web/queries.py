@@ -4,6 +4,7 @@ little Python; no writes here except the UI-only marks (web_views, saved_searche
 in `state`)."""
 from __future__ import annotations
 
+import functools
 import html
 import json
 import re
@@ -15,8 +16,27 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from .. import db as dbm
+from ..commands.state import SUBMITTED
 
-MEL = ZoneInfo("Australia/Melbourne")
+
+def _tz() -> ZoneInfo:
+    """The signed-in person's timezone (place.person_timezone), cached per person + profile.yaml version: absolute()
+    runs once per board row and the lookup reads the profile."""
+    from jobwatch import users
+    from jobwatch.apply.paths import profile_dir
+    try:
+        mtime = (profile_dir() / "profile.yaml").stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    return _tz_for(users.current(), str(profile_dir()), mtime)
+
+
+@functools.lru_cache(maxsize=64)
+def _tz_for(person: str, profile: str, mtime: int) -> ZoneInfo:
+    from jobwatch.place import person_timezone
+    return person_timezone()
+
+
 PAGE_SIZE = 30
 TABLE_PAGE_SIZE = 50
 
@@ -87,7 +107,6 @@ DIM_LABEL = [("cv_match", "CV match"), ("north_star", "Fits the jobs you want"),
              ("red_flags", "Red flags")]
 SCORE_FLOORS = (3.5, 4.0, 4.5)
 SCORE_FLOOR_LABEL = {3.5: "3.5 and up: decent", 4.0: "4.0 and up: good", 4.5: "4.5 and up: strong"}
-APPLIED_PLUS = ("applied", "assessment", "interview", "offer")
 # canonical application states (applications schema comment), board order
 APP_STATES = ("interested", "drafting", "drafted", "applied", "assessment", "interview", "offer",
               "rejected", "withdrawn", "skipped")
@@ -209,7 +228,7 @@ def absolute(value) -> str:
     dt = value if isinstance(value, datetime) else parse_ts(value)
     if dt is None:
         return ""
-    return dt.astimezone(MEL).strftime("%a %-d %b %Y, %-I:%M %p %Z")
+    return dt.astimezone(_tz()).strftime("%a %-d %b %Y, %-I:%M %p %Z")
 
 
 def days_since(value, now=None) -> int | None:
@@ -305,8 +324,10 @@ def salary_display(r) -> str:
     lo, hi = r["salary_min"], r["salary_max"]
     if not (lo or hi):
         return ""
-    unit = {"hour": "/hr", "day": "/day", "year": ""}.get((r["salary_unit"] or "year").lower(), "")
-    fmt = (lambda v: f"${v:,.2f}") if unit == "/hr" else (lambda v: f"${v / 1000:,.0f}k" if v >= 1000 else f"${v:,.0f}")
+    unit = {"hour": "/hr", "day": "/day", "week": "/wk", "month": "/mo", "year": ""}.get((r["salary_unit"] or "year").lower(), "")
+    fmt = (lambda v: f"${v:,.2f}") if unit == "/hr" else (
+        lambda v: f"${v:,.0f}") if unit in ("/wk", "/mo") else (          # "$2k/wk" would round $1,500 away
+        lambda v: f"${v / 1000:,.0f}k" if v >= 1000 else f"${v:,.0f}")
     if lo and hi and lo != hi:
         return f"{fmt(lo)} – {fmt(hi)}{unit}"
     return f"{fmt(lo or hi)}{unit}"
@@ -557,7 +578,7 @@ def ui_status(app_status: str | None, viewed: bool) -> str:
         return "hidden"
     if app_status in ("interested", "drafting", "drafted"):
         return "saved"
-    if app_status in APPLIED_PLUS:
+    if app_status in SUBMITTED:
         return "applied"
     if app_status in ("rejected", "withdrawn"):
         return "closed"
@@ -1446,13 +1467,14 @@ def nav_counts(conn) -> dict:
 def insights(conn, reg: Registry, now: datetime | None = None) -> dict:
     now = now or datetime.now(UTC)
     since30 = dbm.ts(now - timedelta(days=30))
-    # new matches per Melbourne day, last 30 days
+    # new matches per day in the person's timezone, last 30 days
+    tz = _tz()
     per_day = Counter()
     for (at,) in conn.execute("SELECT matched_at FROM matches WHERE matched_at>=?", (since30,)):
         dt = parse_ts(at)
         if dt:
-            per_day[dt.astimezone(MEL).date()] += 1
-    today = now.astimezone(MEL).date()
+            per_day[dt.astimezone(tz).date()] += 1
+    today = now.astimezone(tz).date()
     days = [(today - timedelta(days=i)) for i in range(29, -1, -1)]
     series = [(d, per_day.get(d, 0)) for d in days]
     by_arm = conn.execute("SELECT arm, arm_tier, COUNT(*) FROM matches GROUP BY arm ORDER BY 3 DESC").fetchall()

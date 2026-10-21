@@ -236,6 +236,19 @@ def test_review_pending_reads_stores_and_caches(world):
     assert again["pending"] == 0 and gw.calls == []                 # the cache: no new model call
 
 
+def test_changed_candidate_settings_make_redo_read_the_ad_again(world, tmp_path):
+    config, conn, add = world
+    add("Accounts Clerk")
+    gw = FakeGateway()
+    reader.review_pending(conn, config, llm=make_llm(gw), limit=10)
+    gw.calls.clear()
+    same = reader.review_pending(conn, config, llm=make_llm(gw), limit=10, redo=True)
+    assert same["skipped_same"] == 1 and gw.calls == []
+    (tmp_path / "profile" / "interests_and_criteria.yaml").write_text("target_roles:\n  not_wanted: [shop_retail]\n")
+    changed = reader.review_pending(conn, config, llm=make_llm(gw), limit=10, redo=True)
+    assert changed["skipped_same"] == 0 and changed["reviewed"] == 1 and len(gw.calls) == 1
+
+
 def test_sponsored_ad_is_hidden_without_a_model_call(world):
     config, conn, add = world
     pid = add("Admin Assistant", source="seek", desc="short", raw={"displayType": "promoted", "isFeatured": True})
@@ -327,6 +340,15 @@ def test_recall_adds_plausible_titles_and_remembers_the_rest(world):
     assert nope  # asked once, remembered
 
 
+def test_recall_triage_parses_relevant_strictly():
+    rows = [{"id": i, "title": "T", "company": "C", "location": "L", "description": ""} for i in range(1, 7)]
+    vals = {1: True, 2: "false", 3: "no", 4: "yes", 5: None, 6: "True"}
+    reply = {"model": "m", "choices": [{"message": {"content": json.dumps(
+        {"results": [{"id": i, "relevant": v} for i, v in vals.items()]})}}]}
+    out = recall.triage_batch(LLM(transport=lambda *a: (200, reply), keys=["k"]), "m", "profile", rows)
+    assert out == {1: True, 2: False, 3: False, 4: True, 5: False, 6: True}
+
+
 def test_recall_rejects_are_remembered_and_a_failed_batch_is_retried(world):
     config, conn, add = world
     pid = add("Wizard Apprentice", match=False)
@@ -380,4 +402,39 @@ def test_a_network_timeout_does_not_kill_the_run(world):
     assert stats["reviewed"] == 1 and stats["model_failed"] == 1       # the other ad is still read; the timeout one stays pending
 
 
+def test_llm_string_error_payload_is_an_llm_error_not_an_attribute_error():
+    from jobwatch.llm import LLMError
+    llm = LLM(transport=lambda *a: (500, {"error": "upstream exploded"}), keys=["k"])
+    with pytest.raises(LLMError, match="upstream exploded"):
+        llm.chat("openai/sol", [{"role": "user", "content": "hi"}], json_mode=False)
 
+
+def test_llm_null_usage_counts_do_not_break_cost():
+    ok = {"model": "openai/sol", "choices": [{"message": {"content": "hi"}}],
+          "usage": {"prompt_tokens": None, "completion_tokens": 10}}
+    res = LLM(transport=lambda *a: (200, ok), keys=["k"]).chat(
+        "openai/sol", [{"role": "user", "content": "hi"}], json_mode=False)
+    assert res.text == "hi" and res.cost_usd == round(10 * 10.0 / 1e6, 5)
+
+
+
+
+
+def test_sort_not_target_stops_at_the_run_deadline(world):
+    import time
+    config, conn, add = world
+    for i in range(45):                                 # three batches of up to 20
+        pid = add(f"Not Wanted Job {i}")
+        conn.execute("INSERT INTO ad_reviews(posting_id, content_hash, prompt_version, model, verdict, reviewed_at, model_json, "
+                     "report_json) VALUES(?, 'h', 1, 'm', 'hide', ?, '{}', '{\"wanted\": \"not_wanted\"}')", (pid, dbm.ts()))
+    conn.commit()
+    calls = []
+
+    class Slow:
+        def chat(self, model, messages, **kw):
+            calls.append(kw)
+            raise reader.LLMError("upstream slow")      # each batch burns its time and fails
+    stats = reader.sort_not_target(conn, config, llm=Slow(), deadline=time.monotonic() - 1)
+    assert calls == [] and stats.get("time_limit")      # already past the deadline: no paid call is started
+    stats = reader.sort_not_target(conn, config, llm=Slow(), deadline=time.monotonic() + 60)
+    assert calls and all(kw.get("deadline") is not None and kw["timeout"] <= 60 for kw in calls)

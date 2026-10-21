@@ -661,3 +661,282 @@ def test_real_deepagents_research_checkpoints_on_file_database(world, monkeypatc
     cp = json.loads(conn.execute('SELECT checkpoint_json FROM agentic_runs').fetchone()[0])
     assert cp['research_queries'] == 1 and cp['research_pages'] == 0
     assert latest_result(conn, 46)['evaluation']['research_available'] is True
+
+
+def _chat_llm(script):
+    """Conversation-only gateway: replies come from `script`, one per supervisor call."""
+    from jobwatch import model_choice
+    replies, seen = iter(script), []
+    def transport(url, headers, body, timeout):
+        assert body['messages'][-1]['content'].startswith('Allowed tool schemas: ')
+        seen.append(body)
+        return 200, {'choices': [{'message': {'content': json.dumps(next(replies))}}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 7}}
+    return LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL), seen
+
+
+@pytest.mark.parametrize('call', [{'tool': 'assess_job', 'arguments': {}},
+                                  {'tool': 'draft_followup', 'arguments': {'application_id': 999}}])
+def test_gated_call_with_unbindable_args_does_not_brick_the_thread(world, monkeypatch, call):
+    from jobwatch import model_choice, users
+    from pipeline.agentic.chat import dispatch
+    conn, config, bundle, add = world
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([call, {'answer': 'That request was invalid; nothing was run.'}, {'answer': 'Still here.'}])
+    turn = lambda **kw: dispatch(person=users.DEFAULT_USER, thread_id='bad-args', config=config, llm=llm, **kw)
+    first = turn(message='Assess it')
+    # the unbindable approval never reaches a human; it is refused and the model continues
+    assert first['status'] == 'complete' and first['answer'] == 'That request was invalid; nothing was run.', first
+    second = turn(message='Hello again')
+    assert second['status'] == 'complete' and second['answer'] == 'Still here.', second
+
+
+def test_pending_approval_that_became_unbindable_is_refused_on_the_next_message(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    from pipeline.agentic.contracts import AgenticError
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'assess_job', 'arguments': {'posting_id': 42}}, {'answer': 'Refused, nothing was run.'},
+                           {'answer': 'No news.'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='stale-binding', config=config, llm=llm, **kw)
+    first = turn(message='Assess 42')
+    assert first['status'] == 'interrupted' and first['interactions'][0]['type'] == 'approval'
+    def broken(name, args, cfg):  # the world changed under the checkpointed interrupt
+        raise AgenticError('application_missing')
+    monkeypatch.setattr(chat, '_approval_binding', broken)
+    second = turn(message='Any news?')
+    assert second['status'] == 'complete' and second['answer'] == 'No news.', second  # the stale approval was refused, then the new message ran
+    assert 'Invalid arguments' in json.dumps(seen[1]), seen[1]
+
+
+def test_model_that_keeps_emitting_unbindable_calls_fails_the_turn_after_three_refusals(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    conn, config, bundle, add = world
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    bad = {'tool': 'assess_job', 'arguments': {}}
+    llm, seen = _chat_llm([bad] * 4 + [{'answer': 'never reached'}])
+    with pytest.raises(RuntimeErrorSafe, match='invalid_tool_call'):
+        dispatch(person=users.DEFAULT_USER, thread_id='loop', config=config, llm=llm, message='Assess it')
+    assert len(seen) == 4                                # the first call plus three refusals, then it stops paying
+
+
+def test_human_decision_on_an_approval_that_became_unbindable_is_refused(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    from pipeline.agentic.contracts import AgenticError
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'assess_job', 'arguments': {'posting_id': 42}}, {'answer': 'unexpected'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='decide-stale', config=config, llm=llm, **kw)
+    first = turn(message='Assess 42')
+    assert first['status'] == 'interrupted'
+    def gone(name, args, cfg):
+        raise AgenticError('application_missing')
+    monkeypatch.setattr(chat, '_approval_binding', gone)
+    with pytest.raises(RuntimeErrorSafe, match='approval_inputs_changed'):   # approving it now would run unbound work
+        turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+             approval_bindings=[i['binding'] for i in first['interactions']])
+    assert len(seen) == 1
+
+
+def test_transient_profile_error_does_not_refuse_a_valid_pending_approval(world, monkeypatch):
+    """A profile/evidence read failure is not 'invalid arguments': the approval stays pending for the human."""
+    from jobwatch import model_choice, users
+    from jobwatch.candidate.contracts import CandidateError
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'assess_job', 'arguments': {'posting_id': 42}}, {'answer': 'unexpected'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='transient', config=config, llm=llm, **kw)
+    first = turn(message='Assess 42')
+    assert first['status'] == 'interrupted' and first['interactions'][0]['type'] == 'approval'
+    real = chat._approval_binding
+    def mid_edit(name, args, cfg):
+        raise CandidateError('source_changed')
+    monkeypatch.setattr(chat, '_approval_binding', mid_edit)
+    with pytest.raises(Exception):
+        turn(message='Any news?')
+    assert len(seen) == 1                                # nothing was auto-rejected back to the model
+    monkeypatch.setattr(chat, '_approval_binding', real)
+    again = turn(message='Any news?')
+    assert again['status'] == 'interrupted' and again['interactions'][0]['type'] == 'approval', again
+
+
+def test_approved_auxiliary_call_with_extra_model_args_still_runs(world, monkeypatch):
+    """The approval hashes the model's full args; the execution-time check must use those same args."""
+    from jobwatch import model_choice, users, interview_prep
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    monkeypatch.setattr(interview_prep, 'generate', lambda jobs, ident, cfg, writer, reviewer: {'questions': ['synthetic']})
+    llm, seen = _chat_llm([{'tool': 'prepare_interview', 'arguments': {'posting_id': 42, 'note': 'extra'}},
+                           {'answer': 'Prepared.'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='extra-args', config=config, llm=llm, **kw)
+    first = turn(message='Prepare interview for 42')
+    assert first['status'] == 'interrupted' and first['interactions'][0]['type'] == 'approval', first
+    second = turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+                  approval_bindings=[i['binding'] for i in first['interactions']])
+    assert second['status'] == 'complete' and second['deliverables'][0]['content'] == {'questions': ['synthetic']}, second
+
+
+def test_failed_started_activity_row_does_not_leak_the_lease(world):
+    import sqlite3
+    from pipeline.agentic.store import AgenticStore
+    conn, config, bundle, add = world; add(42)
+    AgenticStore(conn).ensure()
+    conn.execute("CREATE TRIGGER no_started BEFORE INSERT ON agentic_activity WHEN NEW.event='started' "
+                 "BEGIN SELECT RAISE(ABORT,'synthetic disk error'); END")
+    llm = LLM(transport=SyntheticGateway(bundle), keys=['synthetic'])
+    try:
+        run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm)
+    except sqlite3.Error:
+        pass
+    assert conn.execute("SELECT COUNT(*) FROM agentic_runs WHERE status='claimed' OR lease_until>0").fetchone()[0] == 0
+
+
+def test_store_failure_in_the_finish_still_releases_lease_and_batch_slot(world, monkeypatch):
+    import sqlite3
+    from pipeline.agentic.persistence import PersistenceAdapter
+    from pipeline.agentic.runtime import BatchBudget
+    conn, config, bundle, add = world; add(42)
+    def locked(*args, **kwargs):
+        raise sqlite3.OperationalError('database is locked')
+    monkeypatch.setattr(PersistenceAdapter, 'set_stage', locked)
+    from pipeline.agentic.service import _config, _make_batch
+    from pipeline.agentic.store import AgenticStore
+    store = AgenticStore(conn); store.ensure()
+    batch = _make_batch(store, _config(config))
+    llm = LLM(transport=SyntheticGateway(bundle), keys=['synthetic'])
+    with pytest.raises(sqlite3.OperationalError):
+        run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm, batch=batch)
+    assert conn.execute("SELECT COUNT(*) FROM agentic_runs WHERE status='claimed' OR lease_until>0").fetchone()[0] == 0
+    assert batch._state.active_jobs == 0
+
+
+def test_failed_first_checkpoint_does_not_leak_the_batch_slot(world):
+    from pipeline.agentic.runtime import BatchBudget
+    conn, config, bundle, add = world; add(42)
+    batch = BatchBudget('unregistered-batch', max_concurrency=1)  # the store refuses its checkpoint (unknown_batch)
+    llm = LLM(transport=SyntheticGateway(bundle), keys=['synthetic'])
+    run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm, batch=batch)
+    assert batch._state.active_jobs == 0
+    assert conn.execute("SELECT COUNT(*) FROM agentic_runs WHERE status='claimed' OR lease_until>0").fetchone()[0] == 0
+
+
+def test_one_crashing_job_does_not_abort_the_batch(world, monkeypatch):
+    import sqlite3
+    from pipeline.agentic import service
+    conn, config, bundle, add = world; add(42); add(43, 'Synthetic Beta')
+    real = service.run_agentic_job
+    def flaky(pid, *args, **kwargs):
+        if pid == 42:
+            raise sqlite3.OperationalError('database is locked')
+        return real(pid, *args, **kwargs)
+    monkeypatch.setattr(service, 'run_agentic_job', flaky)
+    summary = agentic_batch_run([42, 43], config, conn, evidence_bundle=bundle, llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']))
+    assert summary['ready'] == 1 and summary['skipped'] == 1, summary
+    assert summary['deferred'][0]['posting_id'] == 42 and summary['deferred'][0]['reason'] == 'job_crashed'
+
+
+def test_posting_the_model_keeps_answering_invalidly_stops_jumping_the_queue(world, monkeypatch):
+    """MODEL_RETRY jobs go first in every run; a posting that failed validation three runs running must wait."""
+    import time
+    from pipeline import store
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    store.ensure(conn); service.AgenticStore(conn).ensure()
+    for pid in (1, 2, 3):
+        add(pid)
+        store.admit(conn, pid, str(pid), {}, Stage.INGESTED)
+        conn.execute("INSERT INTO agentic_runs(run_key,posting_id,status,reason) VALUES(?,?,'held','model_invalid_response')",
+                     (f'{pid:064x}', pid))
+    # posting 2: three consecutive invalid-model finishes (a deadline discard resets the run's own failed-attempt count);
+    # posting 3: an outage between them, which is not the posting's fault
+    for pid, reasons in ((2, ['model_invalid_response'] * 3), (3, ['model_invalid_response', 'model_unavailable', 'model_invalid_response'])):
+        for reason in reasons:
+            conn.execute("INSERT INTO agentic_activity(run_key,posting_id,event,at,reason) VALUES(?,?,'finished',?,?)",
+                         (f'{pid:064x}', pid, time.time() - 600, reason))
+    conn.commit()
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
+    selected = []
+    monkeypatch.setattr(service, 'agentic_batch_run', lambda ids, *a, **k: selected.extend(ids) or {})
+    service.after_collect(conn, config, max_seconds=60)
+    assert 2 not in selected and set(selected) == {1, 3}, selected
+
+
+def _ready_fill(conn, monkeypatch, posting_id, **change):
+    """A posting with an application whose browser fill stopped at the review page (what the web process records)."""
+    from jobwatch.apply import prepare
+    conn.execute("INSERT INTO applications(posting_id,status,created_at,updated_at) VALUES(?, 'interested', ?, ?)",
+                 (posting_id, db.ts(), db.ts()))
+    conn.commit()
+    state = {'status': 'ready_for_owner', 'run_id': 'a' * 32, 'package_hash': 'p' * 64, 'session_id': 't',
+             'page_url_sha256': 'u' * 64, 'owner_revision': 0, 'attached_documents': {'cv': 'c' * 64},
+             'final_control': {'selector': '#submit', 'label': 'submit application', 'url': 'https://x', 'frame_path': []},
+             'form_state': 'f' * 64, **change}
+    monkeypatch.setattr(prepare, 'latest_preparation', lambda root, aid: state)
+    return state
+
+
+def test_an_approved_chat_submit_queues_exactly_the_reviewed_fill(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from jobwatch.apply import submit_confirm as sc
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    state = _ready_fill(conn, monkeypatch, 42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'submit_application', 'arguments': {'posting_id': 42}}, {'answer': 'Queued for Submit.'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='submit', config=config, llm=llm, **kw)
+    first = turn(message='Submit 42')
+    item = first['interactions'][0]
+    assert first['status'] == 'interrupted' and item['type'] == 'approval' and item['operation'] == 'submit_application'
+    assert item['binding']['run_key'] == sc.digest(state)                    # the approval names this exact fill
+    assert sc.outcome(conn, 42) is None                                      # nothing queued before the human approves
+    second = turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+                  approval_bindings=[i['binding'] for i in first['interactions']])
+    assert second['status'] == 'complete', second
+    row = conn.execute('SELECT digest, status FROM submit_requests WHERE posting_id=42').fetchone()
+    assert tuple(row) == (sc.digest(state), 'pending')
+
+
+def test_a_chat_submit_whose_fill_changed_after_the_request_is_refused(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    conn, config, bundle, add = world
+    add(42)
+    _ready_fill(conn, monkeypatch, 42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'submit_application', 'arguments': {'posting_id': 42}}, {'answer': 'unexpected'}])
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id='submit-changed', config=config, llm=llm, **kw)
+    first = turn(message='Submit 42')
+    from jobwatch.apply import prepare
+    changed = dict(prepare.latest_preparation(None, None), form_state='9' * 64)
+    monkeypatch.setattr(prepare, 'latest_preparation', lambda root, aid: changed)
+    with pytest.raises(RuntimeErrorSafe, match='approval_inputs_changed'):
+        turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+             approval_bindings=[i['binding'] for i in first['interactions']])
+    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() or \
+        not conn.execute('SELECT 1 FROM submit_requests').fetchone()
+
+
+def test_a_chat_submit_without_a_reviewed_fill_is_refused_not_offered(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    _ready_fill(conn, monkeypatch, 42, status='needs_owner')
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm([{'tool': 'submit_application', 'arguments': {'posting_id': 42}},
+                           {'answer': 'There is no reviewed fill to submit.'}])
+    result = chat.dispatch(person=users.DEFAULT_USER, thread_id='submit-none', config=config, llm=llm, message='Submit 42')
+    assert result['status'] == 'complete' and result['answer'] == 'There is no reviewed fill to submit.', result

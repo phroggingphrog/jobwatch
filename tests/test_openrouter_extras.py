@@ -56,3 +56,18 @@ def test_one_jev_call_answers_injection_and_knockouts(monkeypatch):
     assert screen == {"injection": 0.02, "citizen_or_pr": 0.96, "five_years": 0.1}
     assert seen == [{"injection", "citizen_or_pr", "five_years"}]
     assert extras.KNOCKOUT_REASONS["citizen_or_pr"] == "work_rights:citizen_or_pr"  # board shows "needs citizen or PR"
+
+
+def test_embed_sends_the_key_only_to_the_gateway_it_belongs_to(monkeypatch):
+    import importlib
+    from types import SimpleNamespace
+
+    from jobwatch import model_choice
+    real = importlib.reload(extras)                      # conftest stubs embed(); this test needs the real one
+    sent = []
+    monkeypatch.setattr(real.requests, "post", lambda url, **kw: sent.append((url, kw["headers"])) or
+                        SimpleNamespace(status_code=200, json=lambda: {"data": [{"index": 0, "embedding": [1.0]}]}))
+    model_choice.set_gateway("https://own.example.com/v1", "own-key")
+    monkeypatch.setattr("jobwatch.llm.load_keys", lambda: [model_choice.own_key()])    # as load_keys: own key alone
+    assert real.embed(["x"]) == [[1.0]]
+    assert sent[-1][0] == "https://own.example.com/v1/embeddings" and sent[-1][1]["authorization"] == "Bearer own-key"

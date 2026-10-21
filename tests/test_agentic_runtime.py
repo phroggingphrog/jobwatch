@@ -208,3 +208,13 @@ def test_a_call_cut_off_by_the_run_clock_is_a_deadline_not_an_outage():
         assert exc.code == 'deadline'
     else:
         raise AssertionError('expected SafeLLMError')
+
+
+def test_invalid_checkpoint_restore_does_not_leak_the_batch_slot():
+    b = budget()
+    foreign = b.snapshot()  # batch "b"; restoring it into another batch is an invalid_checkpoint
+    batch = BatchBudget(batch_id="other", clock=lambda: 1000, max_concurrency=1)
+    with pytest.raises(Exception, match="invalid_checkpoint"):
+        JobBudget.restore(foreign, batch=batch, clock=lambda: 1000)
+    assert batch._state.active_jobs == 0
+    assert JobBudget(run_key="c" * 64, batch=batch, clock=lambda: 1000, deadline=1800)

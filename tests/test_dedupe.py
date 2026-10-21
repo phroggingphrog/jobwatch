@@ -38,6 +38,16 @@ def test_key_window(tmp_path):
     assert new                                       # older than 30 days: treated as a new posting
 
 
+def test_same_source_distinct_requisitions_are_not_merged(tmp_path):
+    conn = dbm.connect(tmp_path / "d.db")
+    kw = dict(title="Customer Service Consultant", company="Big Employer", location="Melbourne VIC")
+    ids = [ingest(conn, P("ats_workday", f"R{i}", f"https://big.wd3.example/job/R{i}", **kw)) for i in (1, 2, 3)]
+    assert [n for _, n in ids] == [True] * 3 and len({i for i, _ in ids}) == 3
+    # a different source seeing the same job still merges with the first
+    pid, new = ingest(conn, P("seek", "9", "https://www.seek.com.au/job/9", **kw))
+    assert not new and pid == ids[0][0]
+
+
 def test_key_normalisation():
     assert city_of("Melbourne VIC 3000") == city_of("Melbourne, Victoria, Australia") == "melbourne"
     a = dedupe_key(P("a", "1", "https://a.com", title="Payroll Officer - URGENT", company="The Acme Group"))

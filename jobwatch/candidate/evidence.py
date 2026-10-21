@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 from yaml.events import AliasEvent, DocumentStartEvent, ScalarEvent, SequenceStartEvent, MappingStartEvent
 
+from jobwatch.textdates import only_dates
 from jobwatch.apply.evidence import PF_RULES, extract_cv, extract_profile_yaml, extract_taxonomy, norm
 from ._private_io import PathEscapeError, read_profile_source
 from .contracts import (
@@ -97,7 +98,8 @@ def _line_contains(text: str, quote: str, line: int) -> bool:
 
 
 def _contact(item: dict[str, Any]) -> bool:
-    return bool(_CONTACT.search(item["text"]))
+    """An email, URL or phone number; a digit run that is only dates ("Acme 2019 - 2021") is not a phone."""
+    return any(not (m.group(0)[0] in "+0123456789" and only_dates(m.group(0))) for m in _CONTACT.finditer(item["text"]))
 
 
 def _extract_primary(contents: dict[str, bytes]) -> tuple[list[dict[str, Any]], str, str | None, dict[tuple[Any, ...], yaml.ScalarNode]]:

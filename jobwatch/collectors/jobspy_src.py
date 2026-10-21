@@ -125,5 +125,6 @@ def collect(cfg: CollectorContext, since=None, scrape=None) -> list[Posting]:
             posting = row_to_posting(row, term)
             if posting:
                 results.append(posting)
-        cfg.origins.add(f"jobspy:{term}")
+        if rows or not messages:                 # every site failing and nothing read is an outage, not an origin
+            cfg.origins.add(f"jobspy:{term}")
     return results[: cfg.limit] if cfg.limit else results

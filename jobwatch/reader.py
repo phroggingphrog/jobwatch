@@ -37,6 +37,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from . import adtext
+from .textdates import blank_dates, only_dates
 from . import db as dbm
 from .apply import paths as apaths
 from .llm import LLM, LLMError, parse_json
@@ -192,9 +193,6 @@ def _read(path: Path) -> str:
         return ""
 
 
-_YEAR_RANGE = re.compile(r"(?<!\d)(?:19|20)\d{2}\s*[\-‐-―−/]\s*(?:(?:19|20)\d{2}|\d{2}|present|current|now)(?!\d)", re.I)
-_YEAR_LIST = re.compile(r"(?<!\d)(?:(?:19|20)\d{2}[\s,;/|\-]+)+(?:19|20)\d{2}(?!\d)")
-_DATE_NUM = re.compile(r"(?<!\d)\d{1,2}[./-]\d{1,2}[./-](?:19|20)\d{2}(?!\d)|(?<!\d)(?:19|20)\d{2}-\d{2}-\d{2}(?!\d)")
 _PHONE_RUN = re.compile(r"\+?\(?\d[\d\s  -​‐-―−().\/\-]{6,}\d")
 # a bare domain: name.tld where tld is one of these common ones or ANY two letters (a country code). Tech and file names stay:
 # node.js, vue.js, notes.md, run.py (js, md, py, sh, ts, rs, rb, cs are file or tech suffixes here), asp.net, vb.net, ado.net
@@ -238,16 +236,22 @@ _DIGIT_WORDS = {"zero": "0", "oh": "0", "nought": "0", "one": "1", "two": "2", "
 _SPELLED = re.compile(r"\b(?:(double|triple)\s+)?(zero|oh|nought|one|two|three|four|five|six|seven|eight|nine)\b", re.I)
 
 
-def _protect(line: str) -> str:
-    """The line with year ranges, year lists and dates blanked out to same-length filler, so they are not read as phone digits."""
-    for rx in (_YEAR_RANGE, _YEAR_LIST, _DATE_NUM):
-        line = rx.sub(lambda m: "Y" * len(m.group(0)), line)
-    return line
+_protect = blank_dates          # year ranges, year lists and dates are not phone digits
 
 
 def _phone_spans(line: str) -> list[tuple[int, int]]:
-    """Spans of phone-like runs (8+ digits in any separator style) in the line."""
-    return [m.span() for m in _PHONE_RUN.finditer(_protect(line)) if sum(c.isdigit() for c in m.group(0)) >= 8]
+    """Spans of phone-like runs (8+ digits in any separator style) in the line, merged and in order. A run made only of
+    dates is not a phone; dates inside a longer run do not hide it ("+44 20 1999 2010")."""
+    digits = lambda m: sum(c.isdigit() for c in m.group(0)) >= 8
+    spans = [m.span() for m in _PHONE_RUN.finditer(_protect(line)) if digits(m)]
+    spans += [m.span() for m in _PHONE_RUN.finditer(line) if digits(m) and not only_dates(m.group(0))]
+    merged: list[tuple[int, int]] = []
+    for a, b in sorted(spans):
+        if merged and a <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(b, merged[-1][1]))
+        else:
+            merged.append((a, b))
+    return merged
 
 
 def _spelled_phone(line: str) -> bool:
@@ -1241,9 +1245,10 @@ def build_messages(posting, text: str, kind: str, profile: str, max_chars: int) 
     return [{"role": "system", "content": system_prompt()}, {"role": "user", "content": user}]
 
 
-def content_hash(posting, text: str, model: str, profile: str = "") -> str:
+def content_hash(posting, text: str, model: str, profile: str = "", settings: str = "") -> str:
     h = hashlib.sha256()
-    for part in (str(PROMPT_VERSION), model, profile, posting["title"] or "", posting["company"] or "", text or ""):
+    for part in (str(PROMPT_VERSION), model, profile, posting["title"] or "", posting["company"] or "", text or "",
+                 settings):                     # settings_block(): not-wanted kinds, programs, work rights are in the prompt too
         h.update(part.encode("utf-8", "replace"))
         h.update(b"\x00")
     return h.hexdigest()
@@ -1431,6 +1436,7 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
             stats["stopped"] = f"{host}: {fails[host]} failed fetches in a row ({adtext.last_status()})"
         return text, kind
 
+    prompt_settings = settings_block()
     leak = privacy_leak(profile)                # checked once: nothing is sent while the profile text looks like contact data
     if leak:
         log.warning("reader: the profile text failed the privacy check; no ad will be sent to the model")
@@ -1448,7 +1454,7 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
                 text, kind = (row["description"] or "").strip(), "teaser"     # a paid ad is hidden without a model call
             else:
                 text, kind = prepare(row)
-            chash = content_hash(row, text, cfg["model"], profile)
+            chash = content_hash(row, text, cfg["model"], profile, prompt_settings)
             if row["old_hash"] == chash and row["old_ver"] == PROMPT_VERSION:
                 stats["skipped_same"] += 1
                 used += stats["fetched"] > fetched_before    # a page was requested for it: that is a spent slot
@@ -1548,7 +1554,8 @@ reason with exactly one kind, judging by the day-to-day work described (the titl
 Reply with ONE JSON object: {"results": [{"id": <number>, "kind": "<kind>"}]} with one entry per job."""
 
 
-def sort_not_target(conn, config, llm: LLM | None = None, limit: int | None = 400, printer=None) -> dict:
+def sort_not_target(conn, config, llm: LLM | None = None, limit: int | None = 400, printer=None,
+                    deadline: float | None = None) -> dict:
     """Give every stored "not wanted" reading a not_target_kind it lacks (readings made before the field existed, or a model
     that left it out). One model call per 20 jobs, from the stored reading only (no ad fetch, no new full read); then the
     hiding rules run again for those rows, so a too_senior kind moves the job to "Too senior"."""
@@ -1562,15 +1569,22 @@ def sort_not_target(conn, config, llm: LLM | None = None, limit: int | None = 40
     stats = {"candidates": len(rows), "sorted": 0, "failed_batches": 0}
     done = []
     for i in range(0, len(rows), 20):            # 20 per call: longer replies from this route often come back cut or empty
+        if deadline is not None and time.monotonic() >= deadline:     # the run's time is spent: the rest waits for next run
+            stats["time_limit"] = True
+            break
         batch = rows[i:i + 20]
         lines = "\n".join(f'{r["posting_id"]} | {_clean(r["title"], 120)} | {_clean(r["company"], 60)} | family: '
                           f'{_clean(r["archetype"], 80)} | level: {r["seniority"] or "?"} | years asked: {r["min_years"] or "none"} | '
                           f'{_clean(r["reason"], 220)}' for r in batch)
         items = None
         for _attempt in range(2):               # one retry: a bad reply is usually a one-off
+            left = deadline - time.monotonic() if deadline is not None else 180
+            if left <= 0:
+                break
             try:
                 res = llm.chat(cfg["model"], [{"role": "system", "content": SORT_SYSTEM}, {"role": "user", "content": lines}],
-                               json_mode=False, max_tokens=4000, timeout=180)   # strict JSON mode breaks on this route
+                               json_mode=False, max_tokens=4000, timeout=min(180, left),   # strict JSON mode breaks on this route
+                               deadline=deadline)
                 data = parse_json(res.text or "")
                 items = data.get("results") if isinstance(data, dict) else None
             except Exception as exc:            # noqa: BLE001 - asked again next run
@@ -1658,7 +1672,7 @@ def after_collect(conn, config, printer=None, max_seconds: float | None = None) 
                 out["review_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
             if not deadline or time.monotonic() < deadline:
                 try:
-                    out["sort_not_target"] = sort_not_target(conn, config, limit=200)
+                    out["sort_not_target"] = sort_not_target(conn, config, limit=200, deadline=deadline)
                 except Exception as exc:                       # noqa: BLE001
                     log.exception("reader: sort_not_target failed")
                     out["sort_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"

@@ -37,7 +37,7 @@ arms:
                office assistant, office administrator, office coordinator, clerk,
                general clerk, administration support, admin support, administration,
                administrator, team assistant, office junior]
-    exclude: ['(system|systems|database|network|salesforce|cloud|it|crm|sharepoint|m365|server|platform|application|lms|security|identity) administrator',
+    exclude: ['\b(system|systems|database|network|salesforce|cloud|it|crm|sharepoint|m365|server|platform|application|lms|security|identity) administrator',
               'contracts? administrator', 'clinical', 'payroll', 'registrar', 'service desk']
   - id: admin_other
     anzsco: "5999"
@@ -161,13 +161,14 @@ arms:
     exclude: ['flight', 'cabin', 'ground crew', 'film', 'line crew', 'crew leader', 'deck', 'vessel']
 
 location:
-  # Any of these in the location text (or posting.state == VIC) = Melbourne/Victoria.
-  vic_patterns: ['\bmelbourne\b', '\bvictoria\b', '\bvic\b', '\bgeelong\b', '\bballarat\b',
-                 '\bbendigo\b', '\b3\d{3}\b']
+  # Any of these in the location text (or posting.state == VIC) = Melbourne/Victoria. Weak evidence ("Victoria" alone,
+  # a bare 3xxx postcode) is models.state_of's job, which sets posting.state after checking every other state first;
+  # a second copy here once disagreed ("Port Victoria SA", "Level 3500 Sydney", "Mumbai, MH 3000").
+  vic_patterns: ['\bmelbourne\b', '\bvic\b', '\bgeelong\b', '\bballarat\b', '\bbendigo\b']
   # "Remote" counts when the posting is in Australia (collectors already AU-gated) and no
   # overseas country is named.
   remote_patterns: ['\bremote\b', 'work from home', '\bwfh\b', 'anywhere in australia',
-                    'australia[- ]wide', '\bnational\b']
+                    'australia[- ]wide', '(?:^|[-/,|(]\s*)national(?=\s*(?:$|[-/,|)]))']   # same as fieldgen.NATIONAL
   # Unknown location from an employer whose registry entry says state: VIC -> include.
   allow_unknown_from_vic_employer: true
   # Suburb-only locations ("Caroline Springs"): match against Victorian localities whose names are

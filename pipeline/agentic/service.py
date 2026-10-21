@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import sqlite3
 import threading
 from pathlib import Path
@@ -39,6 +40,7 @@ from pipeline.agentic.research import LocalSearxSearch, PublicSnapshot, Research
 from jobwatch.settings import DEFAULT_MODEL
 
 
+log = logging.getLogger(__name__)
 RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
@@ -261,7 +263,11 @@ def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=N
     else:
         job = JobBudget(claim.run_key, batch, persist=persist, token_ceiling=cfg['job_token_ceiling'],
                         deadline=min(time.time() + cfg['job_seconds'], batch.deadline))
-        job._commit('snapshot')
+        try:
+            job._commit('snapshot')
+        except BaseException:
+            batch.release(job)  # admitted above; the caller never gets the job to release
+            raise
     job._invocation_deadline = invocation_deadline
     return job
 
@@ -339,16 +345,20 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     scope = current()
     trace_id = scope.run_id if scope else invocation_id
     def activity(event, code=None):
-        conn.execute('INSERT INTO agentic_activity(run_key,posting_id,collector_run_id,batch_id,invocation_id,event,at,reason) '
-                     'VALUES(?,?,?,?,?,?,?,?)', (key.value, posting_id, collector_run_id,
-                     batch.batch_id if batch else invocation_id, trace_id, event, time.time(), code))
-        conn.commit()
+        try:
+            conn.execute('INSERT INTO agentic_activity(run_key,posting_id,collector_run_id,batch_id,invocation_id,event,at,reason) '
+                         'VALUES(?,?,?,?,?,?,?,?)', (key.value, posting_id, collector_run_id,
+                         batch.batch_id if batch else invocation_id, trace_id, event, time.time(), code))
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()  # an open implicit transaction would make the release below fail as transaction_active
+            raise
         if scope:
             scope.event('job_' + event, posting_id=posting_id, run_key=key.value, reason=code)
-    activity('started')
     budget = None
     stage, reason, final_status = Stage.DLQ, 'execution_failed', 'held'
     try:
+        activity('started')  # inside the try: a failure here must still release the claim
         # Cached READY rechecks are public-only and do not renew exhausted model budgets.
         saved_package = adapter.load_artifact(key.value, 'package_bundle')
         if cached_ready or saved_package is not None:
@@ -510,15 +520,18 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         reason = code if isinstance(exc, AgenticError) and type(code) is str and code.replace('_', '').isalnum() else 'execution_failed'
     finally:
         try:
-            if stage != Stage.READY:
-                adapter.set_stage(claim, stage, reason, key.ad_hash)
-            store.release(claim, status=final_status, reason=reason)
+            try:
+                if stage != Stage.READY:
+                    adapter.set_stage(claim, stage, reason, key.ad_hash)
+            finally:
+                store.release(claim, status=final_status, reason=reason)  # even if the projection write fails (sqlite error)
             activity('finished', reason)
         except AgenticError:
             # A stale worker cannot overwrite the current worker's projection.
             pass
-        if budget is not None:
-            budget.batch.release(budget)
+        finally:
+            if budget is not None:
+                budget.batch.release(budget)
     return stage
 
 
@@ -547,10 +560,18 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             summary['deferred'].extend({'posting_id': p, 'reason': 'batch_deadline', 'next_eligible_at': None} for p in todo[n:])
             break
         skips = []
-        stage = run_agentic_job(pid, config, conn, batch=batch, evidence_bundle=bundle,
-                                candidate_cache=cache, _batch_registry=batches, _invocation_deadline=invocation_deadline,
-                                expected_run_key=expected_run_keys.get(pid) if expected_run_keys is not None else None,
-                                _skip_reasons=skips, **kwargs)
+        try:
+            stage = run_agentic_job(pid, config, conn, batch=batch, evidence_bundle=bundle,
+                                    candidate_cache=cache, _batch_registry=batches, _invocation_deadline=invocation_deadline,
+                                    expected_run_key=expected_run_keys.get(pid) if expected_run_keys is not None else None,
+                                    _skip_reasons=skips, **kwargs)
+        except AgenticError:
+            raise  # a refused snapshot or bad operation aborts the batch by design
+        except Exception as exc:  # noqa: BLE001 - one bad job (e.g. a sqlite error) never stops the batch; type only, no content
+            log.warning('agentic job %s crashed: %s', pid, type(exc).__name__)
+            summary['skipped'] += 1
+            summary['deferred'].append({'posting_id': pid, 'reason': 'job_crashed', 'next_eligible_at': None})
+            continue
         last = conn.execute("SELECT reason FROM agentic_runs WHERE posting_id=? ORDER BY rowid DESC LIMIT 1",
                             (pid,)).fetchone()
         if stage == Stage.DLQ and expected_run_keys is None and last is not None and last[0] == 'snapshot_changed' \
@@ -645,7 +666,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
                     refresh.append(pid)
             if len(pending) == 200 and len(refresh) == 20: break
         AgenticStore(conn).ensure()
-        pending = [pid for pid in unseen[:25] + pending if not _unreadable_backoff(conn, pid)]
+        pending = [pid for pid in unseen[:25] + pending if not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
         pending = _target_first(conn, config, pending)
         # A posting whose last run only refreshed its ad text (snapshot_changed) needs just the second pass; without
         # this it went to the back of the queue every time and 7029 never got its judgement.
@@ -668,20 +689,34 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
 
 
 MODEL_RETRY = ('model_unavailable', 'model_invalid_response', 'model_truncated_response', 'invalid_requirements')
+MODEL_INVALID = ('model_invalid_response', 'model_truncated_response', 'invalid_requirements')  # the model answered, wrongly
 UNREADABLE = ('posting_unavailable', 'posting_identity_unverified')
 UNREADABLE_TRIES, UNREADABLE_WAIT_H = 3, 12
+INVALID_TRIES, INVALID_WAIT_H = 3, 12
+
+
+def _repeat_backoff(conn, pid, reasons, tries, wait_h, now=None):
+    """True when the last `tries` finished runs of this posting all ended in one of `reasons` and the newest is under
+    `wait_h` old. Counted in agentic_activity: agentic_runs keeps one row per run_key, so a re-claim never adds a row
+    there (and a deadline discard resets the run's own failed-attempt count, so that cap never accumulates)."""
+    rows = conn.execute("SELECT reason,at FROM agentic_activity WHERE posting_id=? AND event='finished' "
+                        'ORDER BY id DESC LIMIT ?', (pid, tries)).fetchall()
+    if len(rows) < tries or any(r[0] not in reasons for r in rows):
+        return False
+    return (now or time.time()) - float(rows[0][1]) < wait_h * 3600
 
 
 def _unreadable_backoff(conn, pid, now=None):
-    """True when the last UNREADABLE_TRIES runs of this posting all failed to read the page and the newest is under
-    UNREADABLE_WAIT_H old: it is left alone for now so the run time goes to ads that can be read (2026-10-18: five
-    dead PageUp links cost a run every 20 minutes). A different outcome, or the wait passing, brings it back."""
-    rows = conn.execute('SELECT reason, json_extract(checkpoint_json,\'$.job_deadline\') FROM agentic_runs '
-                        'WHERE posting_id=? ORDER BY rowid DESC LIMIT ?', (pid, UNREADABLE_TRIES)).fetchall()
-    if len(rows) < UNREADABLE_TRIES or any(r[0] not in UNREADABLE for r in rows):
-        return False
-    newest = rows[0][1]
-    return newest is not None and (now or time.time()) - float(newest) < UNREADABLE_WAIT_H * 3600
+    """The last UNREADABLE_TRIES runs all failed to read the page and the newest is under UNREADABLE_WAIT_H old: it is
+    left alone for now so the run time goes to ads that can be read (2026-10-18: five dead PageUp links cost a run
+    every 20 minutes). A different outcome, or the wait passing, brings it back."""
+    return _repeat_backoff(conn, pid, UNREADABLE, UNREADABLE_TRIES, UNREADABLE_WAIT_H, now)
+
+
+def _invalid_backoff(conn, pid, now=None):
+    """Same for a posting the model keeps answering invalidly: MODEL_RETRY jobs go first in every run, so one that never
+    validates would otherwise be re-evaluated at full price each time. An outage (model_unavailable) is not counted."""
+    return _repeat_backoff(conn, pid, MODEL_INVALID, INVALID_TRIES, INVALID_WAIT_H, now)
 
 
 def _target_first(conn, config, pending):

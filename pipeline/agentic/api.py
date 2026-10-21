@@ -145,6 +145,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 if not isinstance(exc, (RuntimeErrorSafe, Conflict)) or not isinstance(code, str) or not re.fullmatch(r'[a-z_]{1,80}', code):
                     code = 'execution_failed'
                 with APIStore(person) as store:
+                    if code == 'cancelled' and stopping.is_set() and not store.raw_run(row['id'])['cancel_requested']:
+                        code = 'worker_interrupted'  # shutdown, not a user cancel: stay retryable (see CHAT.md recovery)
                     store.finish(row['id'], error=code)
 
     async def worker():
@@ -249,7 +251,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     def capabilities(principal=Depends(read)):
         return dict(schema_version=1, execution_mode=effective_mode(get_config(principal.person)),
                     skill_version=skill_version(), protocol='native-http',
-                    human_submit=True, scopes=sorted(principal.scopes))
+                    human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes))
 
     @app.post('/api/agent/threads', status_code=201)
     def create_thread(principal=Depends(write)):
@@ -292,8 +294,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
             cursor = after
             while not await request.is_disconnected():
                 with APIStore(principal.person) as store:
+                    state = store.raw_run(run_id)['state']  # state first: events committed after it are read below or next loop
                     batch = store.events(run_id, cursor)
-                    state = store.raw_run(run_id)['state']
                 for item in batch:
                     cursor = item['id']
                     yield f'id: {cursor}\nevent: {item["type"]}\ndata: {encoded(item)}\n\n'

@@ -55,7 +55,7 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
     results: list[Posting] = []
     seen: set[str] = set()
     for keyword in keywords:
-        extra = {}
+        extra, failed = {}, False
         if isinstance(keyword, tuple):       # ("remote", kw): one page, All Australia, remote only
             keyword = keyword[1]
             extra = {"where": remote.get("where", "All Australia"), "workarrangement": 3}
@@ -75,6 +75,7 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
                 cfg.error(f"seek '{keyword}' p{page}", exc)
                 if exc.status in (0, 403, 429) or exc.status >= 500:
                     return results          # back off for the rest of the run
+                failed = True
                 break
             rows = data.get("data") or []
             cfg.count_raw(len(rows))
@@ -87,5 +88,6 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
                         return results
             if len(rows) < int(params["pageSize"]):
                 break
-        cfg.origins.add(f"seek:{'remote:' if extra else ''}{keyword}")
+        if not failed:
+            cfg.origins.add(f"seek:{'remote:' if extra else ''}{keyword}")
     return results

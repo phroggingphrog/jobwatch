@@ -4,8 +4,11 @@ Nothing here knows any one person: a missing file or key means neutral behaviour
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 def _yaml(name: str) -> dict:
@@ -14,7 +17,11 @@ def _yaml(name: str) -> dict:
         from jobwatch.apply.paths import profile_dir
         data = yaml.safe_load((profile_dir() / name).read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except Exception:  # noqa: BLE001 - no profile yet: neutral behaviour
+    except OSError:                   # no profile yet: neutral behaviour
+        return {}
+    except Exception as exc:  # noqa: BLE001 - a broken file also means neutral, but not silently: limits would vanish unseen
+        log.warning("%s could not be read (%s): work-rights limits and exclusions are NOT applied until it is fixed",
+                    name, type(exc).__name__)
         return {}
 
 
@@ -26,6 +33,11 @@ def work_rights() -> dict:
 def hours_limit_per_fortnight() -> float | None:
     """candidate.work_rights.hours_limit_per_fortnight; None = no limit."""
     v = work_rights().get("hours_limit_per_fortnight")
+    if isinstance(v, str):            # "48" quoted in the YAML is still the person's limit
+        try:
+            v = float(v.strip())
+        except ValueError:
+            return None
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
 
 

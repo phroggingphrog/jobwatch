@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import logging
 import math
 import os
 import re
@@ -27,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 from pipeline import store as pstore
 
 from .. import db as dbm
+from .. import users
 from ..apply import paths as apaths
 from ..config import Config, load_config
 from ..origin_guard import OriginRejected, check_web_host, check_web_post
@@ -60,7 +62,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     config = config or load_config()
     db_path = config.db_path
     reg = q.Registry(lambda: config)
-    drafts_root = apaths.drafts_dir()
 
     c0 = dbm.connect(db_path)                          # migrate once at start-up
     pstore.ensure(c0)                                  # the pipeline's tables (the board reads pipeline_state)
@@ -72,14 +73,24 @@ def create_app(config: Config | None = None) -> FastAPI:
     from .prepare_routes import register as register_preparation
     sessions = BrowserSessionManager()          # per signed-in person (users.user_dir()), not one fixed root
 
+    def for_each_person(fn):
+        """Run background work once per person, as that person (their DB, folders and browser sessions)."""
+        for name in users.list_users():
+            if name != users.DEFAULT_USER and not users.db_path(name).exists():
+                continue                            # never create a DB from a background loop
+            try:
+                with users.use(name):
+                    fn()
+            except Exception:                       # one person's failure never stops the others
+                logging.getLogger(__name__).exception("background work failed for one person")
+
     @asynccontextmanager
     async def lifespan(app):
         async def recover_interviews():
             from jobwatch.interview_prep import queued_posting_ids, queued_subject_ids
             from pipeline.agentic.contracts import AgenticError
             from jobwatch.candidate.contracts import CandidateError
-            pending = BackgroundTasks()
-            def schedule():
+            def schedule(pending):
                 conn = conn_()
                 try:
                     for posting_id in (*queued_posting_ids(conn, config), *queued_subject_ids(conn, config)):
@@ -88,24 +99,45 @@ def create_app(config: Config | None = None) -> FastAPI:
                 except (AgenticError, CandidateError, sqlite3.Error, OSError):
                     pass
                 finally: conn.close()
-            await asyncio.to_thread(schedule)
-            await pending()
+            for name in users.list_users():     # each person's own queue, run as that person (their DB, profile and drafts)
+                if name != users.DEFAULT_USER and not users.db_path(name).exists(): continue   # never create a DB here
+                try:
+                    with users.use(name):
+                        pending = BackgroundTasks()
+                        await asyncio.to_thread(schedule, pending)
+                        await pending()
+                except Exception:
+                    logging.getLogger(__name__).exception("interview recovery failed for one person")
         async def auto_fill_loop():
             while True:
                 await asyncio.sleep(60)
-                await asyncio.to_thread(app.state.auto_fill_ready)
+                try:
+                    await asyncio.to_thread(for_each_person, app.state.auto_fill_ready)
+                except Exception:                  # one bad tick (locked db, missing table) must not end auto-fill for good
+                    logging.getLogger(__name__).exception("auto-fill tick failed")
+        async def submit_loop():
+            while True:                            # approved chat Submits and Submits seen with no prepare page open
+                await asyncio.sleep(5)
+                try:
+                    await asyncio.to_thread(for_each_person, app.state.process_submit_requests)
+                    await asyncio.to_thread(for_each_person, app.state.settle_open_sessions)
+                except Exception:
+                    logging.getLogger(__name__).exception("submit tick failed")
         recovery = asyncio.create_task(recover_interviews())
         filler = asyncio.create_task(auto_fill_loop())
+        submitter = asyncio.create_task(submit_loop())
         try:
             yield
         finally:
             filler.cancel()
+            submitter.cancel()
             try:
                 await recovery
             finally:
                 sessions.close_all()
 
     app = FastAPI(title="jobwatch", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app.state.for_each_person = for_each_person
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=str(HERE / "templates"))
     env = templates.env
@@ -311,7 +343,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             act.set_notes(conn, posting_id, notes)
             return "Notes saved"
         if action == "draft":
-            act.start_draft(conn, db_path, posting_id, config=config)
+            act.start_draft(conn, config.db_path, posting_id, config=config)
             return "Drafting your CV and letter… this takes a few minutes"
         raise HTTPException(404, "Unknown action")
 
@@ -353,7 +385,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     # -- applications ------------------------------------------------------------------------------
     def kanban_ctx(conn) -> dict:
-        apps = q.applications(conn, drafts_root)
+        apps = q.applications(conn, apaths.drafts_dir())
         cols = [(s, q.STATE_LABEL[s], [a for a in apps if a["status"] == s]) for s in q.KANBAN]
         drafting = [a for a in apps if a["status"] == "drafting"]
         if drafting and cols:
@@ -384,7 +416,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn,row['id'],channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and (row['id'],channel) in followup_active:
+                        if state['status'] == 'missing' and users.scoped(row['id'],channel) in followup_active:
                             state = {'status':'running','draft':None,'reason':None}
                 except (AgenticError,FollowupEventError,CandidateError): state = {'status':'unavailable','draft':None,'reason':None}
             name = '_followup_draft_status.html' if hx(request) else 'followup_draft.html'
@@ -411,10 +443,11 @@ def create_app(config: Config | None = None) -> FastAPI:
             except (AgenticError,FollowupEventError,CandidateError):
                 raise HTTPException(status_code=409,detail='Confirm the application dates, current job ad and profile before drafting.') from None
         finally:conn.close()
+        key=users.scoped(application_id,channel)      # application ids are per-person too
         with followup_lock:
-            if (application_id,channel) in followup_active:
+            if key in followup_active:
                 return RedirectResponse(f'/applications/{posting_id}/followup-draft?channel={channel}',status_code=303)
-            followup_active.add((application_id,channel))
+            followup_active.add(key)
         def work():
             c=None
             try:
@@ -426,7 +459,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 pass
             finally:
                 if c is not None: c.close()
-                with followup_lock: followup_active.discard((application_id,channel))
+                with followup_lock: followup_active.discard(key)
         background_tasks.add_task(work)
         return RedirectResponse(f'/applications/{posting_id}/followup-draft?channel={channel}',status_code=303)
 
@@ -467,7 +500,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 state = load_report(conn, posting_id, config)
                 if state['status'] == 'queued': state = {'status': 'running', 'report': None}
                 with interview_lock:
-                    if state['status'] == 'missing' and posting_id in interview_active:
+                    if state['status'] == 'missing' and users.scoped(posting_id) in interview_active:
                         state = {'status': 'running', 'report': None}
             except (AgenticError, CandidateError):
                 state = {'status': 'unavailable', 'report': None}
@@ -547,10 +580,11 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail='Interview preparation could not be queued. Check the current sources and try again.') from None
             finally:
                 if conn is not None: conn.close()
+        key = users.scoped(posting_id)         # ids are per-person: one person's run must not block another's
         with interview_lock:
-            if posting_id in interview_active:
+            if key in interview_active:
                 return
-            interview_active.add(posting_id)
+            interview_active.add(key)
         def work():
             c = None
             released = False
@@ -564,7 +598,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     # Check and release together so a concurrent requester cannot lose its wakeup.
                     with interview_lock:
                         if not is_queued(c, posting_id, config):
-                            interview_active.discard(posting_id)
+                            interview_active.discard(key)
                             released = True
                             break
                     attempt_retry = False
@@ -574,7 +608,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             finally:
                 if c is not None: c.close()
                 if not released:
-                    with interview_lock: interview_active.discard(posting_id)
+                    with interview_lock: interview_active.discard(key)
         background_tasks.add_task(work)
     def maybe_queue_interview(conn, posting_id, background_tasks):
         from jobwatch.interview_prep import should_prepare_after_interview
@@ -795,7 +829,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn, row['id'], channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and (row['id'], channel) in followup_active:
+                        if state['status'] == 'missing' and users.scoped(row['id'], channel) in followup_active:
                             state = {'status': 'running', 'draft': None, 'reason': None}
                 except (AgenticError, FollowupEventError, CandidateError):
                     state = {'status': 'unavailable', 'draft': None, 'reason': None}
@@ -1157,7 +1191,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     # -- files, health -----------------------------------------------------------------------------
     @app.get("/files/drafts/{path:path}")
     def draft_file(path: str):
-        root = drafts_root.resolve()
+        root = apaths.drafts_dir().resolve()            # the signed-in person's drafts, never the owner's
         target = (root / path).resolve()
         try:
             target.relative_to(root)

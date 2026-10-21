@@ -25,12 +25,43 @@ def test_state_of():
     assert state_of("Sydney NSW") == "NSW" and state_of("Paris") is None
 
 
+def test_foreign_places_sharing_au_names_are_not_australian():
+    for loc in ("Victoria Island, Lagos, Nigeria", "Victoria, Seychelles", "Sydney, Nova Scotia",
+                "Newcastle upon Tyne, UK", "Perth, Scotland"):
+        assert not is_australian(None, loc) and state_of(loc) is None, loc
+    assert is_australian(None, "Sydney, Australia") and is_australian(None, "Perth WA")
+    assert is_australian(None, "Wales Street, Newcastle NSW") and is_australian(None, "Sydney, New South Wales")
+
+
+def test_state_of_prefers_explicit_state_and_needs_postcode_context():
+    assert state_of("Victoria Park WA") == "WA" and state_of("Victoria Point QLD") == "QLD"
+    assert state_of("Mumbai, MH 3000") is None and state_of("Hamilton 3200, New Zealand") is None
+    assert state_of("Dandenong 3175") == "VIC" and state_of("Melbourne CBD 3000") == "VIC"
+
+
 def test_work_type_and_salary():
     assert work_type_of("Part time") == "PT" and work_type_of("FULL_TIME") == "FT"
     assert work_type_of("Casual") == "casual" and work_type_of("12M fixed term contract") == "contract"
     assert salary_from_text("$70,000 - $80,000 + super") == (70000, 80000, "year")
     assert salary_from_text("$32 - $35 per hour") == (32, 35, "hour")
     assert salary_from_text("$70K – $80K") == (70000, 80000, "year")
+
+
+def test_work_type_needs_word_boundaries():
+    for text in ("Internal Auditor", "Template Designer", "Attempt", "Contracts Administrator", "Casualty Clerk"):
+        assert work_type_of(text) is None, text
+    assert work_type_of("Intern") == "intern" and work_type_of("Summer Internship") == "intern"
+    assert work_type_of("Contract role") == "contract" and work_type_of("Contractor") == "contract"
+    assert work_type_of("Temp") == "temp" and work_type_of("Temporary") == "temp"
+    assert work_type_of("Permanent") == "FT" and work_type_of("fulltime") == "FT"
+
+
+def test_salary_unit_boundaries_and_month():
+    assert salary_from_text("$70,000 Joseph") == (70000, 70000, "year")      # "ph" only as its own token
+    assert salary_from_text("$70,000 graph") == (70000, 70000, "year")
+    assert salary_from_text("$38 ph") == (38, 38, "hour") and salary_from_text("$38 p.h.") == (38, 38, "hour")
+    assert salary_from_text("$6,000 per month") == (6000, 6000, "month")
+    assert salary_from_text("$6,000 a month + super") == (6000, 6000, "month")
 
 
 def test_relative_posted():
@@ -49,3 +80,15 @@ def test_posting_defaults_and_truncation():
 
 def test_html_to_text_double_escaped():
     assert html_to_text("&lt;p&gt;Hello&lt;/p&gt;&lt;p&gt;World &amp;amp; co&lt;/p&gt;") == "Hello\nWorld & co"
+
+
+def test_a_month_elsewhere_in_the_ad_is_not_a_monthly_salary():
+    assert salary_from_text("$85,000 + super. Team lunch once a month.")[2] == "year"
+    assert salary_from_text("$6,500 a month")[2] == "month"
+    assert salary_from_text("$6,500 per month")[2] == "month"
+
+
+def test_nsw_places_named_after_britain_stay_australian():
+    assert is_australian(None, "Armidale, New England NSW") and state_of("Armidale, New England NSW") == "NSW"
+    assert is_australian(None, "Scotland Island NSW")
+    assert not is_australian(None, "Manchester, England") and not is_australian(None, "Edinburgh, Scotland")

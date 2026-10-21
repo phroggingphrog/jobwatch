@@ -81,6 +81,16 @@ def test_scan_proposes_and_dedupes(env):
     assert stats2["proposals"] == 0 and stats2["llm_calls"] == 0
 
 
+def test_naive_timestamps_are_read_as_utc_and_do_not_crash_the_scan(env):
+    config, conn, mid, tmp_path = env
+    conn.execute("UPDATE applications SET applied_at='2026-10-01 00:00:00'")      # no offset
+    conn.commit()
+    mcp = synthetic_mail()
+    mcp.boxes[GM][0]["date"] = "2026-10-04 09:00:00"                               # naive mail date too
+    stats = run(config, conn, mcp, llm=FakeLLM({"label": "hired", "confidence": 0.8}))
+    assert stats["error"] is None and stats["proposals"] == 3
+
+
 def test_approve_reject_on_the_board(env, monkeypatch):
     config, conn, mid, tmp_path = env
     # Decide on the same day the proposals were made: with the real clock they pass the 7-day expiry (failed from 2026-10-13).
@@ -261,3 +271,17 @@ def test_mcp_loopback_urls_accepted(url):
 def test_mcp_non_loopback_urls_rejected(url):
     with pytest.raises(ValueError):
         McpClient(url)
+
+
+def test_friend_without_google_never_reads_owner_mailboxes(env, monkeypatch):
+    """A non-owner person with no Gmail connection gets no scan (not the owner's local MCP mail)."""
+    from jobwatch import users
+    import jobwatch.outcomes.sync as sync
+    config, conn, mid, tmp_path = env
+    built = []
+    monkeypatch.setattr(sync, "McpClient", lambda *a, **k: built.append(a) or synthetic_mail())
+    with users.use("friend"):
+        stats = run_outcomes(config, now=NOW, conn=conn, printer=lambda *_: None)
+    assert built == [] and stats["messages_scanned"] == 0 and stats["proposals"] == 0
+    assert stats["error"] is None and "Gmail" in stats["skipped"]
+    assert conn.execute("SELECT count(*) FROM outcome_proposals").fetchone()[0] == 0

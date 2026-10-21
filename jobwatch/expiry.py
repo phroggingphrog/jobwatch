@@ -2,7 +2,9 @@
 
 Every posting has expires_at (its closing date, else 30 days after posting). When that passes, the job is
 re-checked live with the same reader the AI pipeline uses: gone -> closed_at is set and the board hides it;
-still open -> expires_at moves to its closing date, or 7 days on; unreadable -> tried again tomorrow.
+still open -> expires_at moves to its closing date, or 7 days on, and a closed_at set earlier is cleared;
+unreadable -> tried again tomorrow. A closed job is re-checked only when a collector lists it again after it closed,
+and at most every RECHECK_CLOSED_DAYS: an aggregator that keeps listing a dead ad never reopens it by itself.
 """
 from __future__ import annotations
 
@@ -12,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 log = logging.getLogger(__name__)
 DEFAULT_DAYS = 30
+RECHECK_CLOSED_DAYS = 3
 
 
 def _iso(dt: datetime) -> str:
@@ -30,7 +33,8 @@ def record(conn, posting_id: int, observation, now: datetime | None = None) -> N
     """Store what one live check found."""
     now = now or datetime.now(timezone.utc)
     if observation.status == "closed":
-        conn.execute("UPDATE postings SET closed_at=? WHERE id=? AND closed_at IS NULL", (_iso(now), posting_id))
+        conn.execute("UPDATE postings SET closed_at=?, expires_at=? WHERE id=?",       # closed_at = last confirmed
+                     (_iso(now), _iso(now + timedelta(days=RECHECK_CLOSED_DAYS)), posting_id))
     elif observation.status == "active":
         until = now + timedelta(days=7)
         if observation.expires_at:
@@ -40,7 +44,7 @@ def record(conn, posting_id: int, observation, now: datetime | None = None) -> N
                     until = closes
             except ValueError:
                 pass
-        conn.execute("UPDATE postings SET expires_at=? WHERE id=?", (_iso(until), posting_id))
+        conn.execute("UPDATE postings SET expires_at=?, closed_at=NULL WHERE id=?", (_iso(until), posting_id))
     else:  # could not read it this time
         conn.execute("UPDATE postings SET expires_at=? WHERE id=?", (_iso(now + timedelta(days=1)), posting_id))
     conn.commit()
@@ -53,7 +57,8 @@ def sweep(conn, max_seconds: float = 180, limit: int = 20, observe=None, now: da
     now = now or datetime.now(timezone.utc)
     fill_missing(conn)
     rows = conn.execute("SELECT id, title, company, location, url, source FROM postings "
-                        "WHERE closed_at IS NULL AND expires_at <= ? ORDER BY expires_at LIMIT ?",
+                        "WHERE (closed_at IS NULL OR last_seen_at >= closed_at) AND expires_at <= ? "
+                        "ORDER BY expires_at LIMIT ?",
                         (_iso(now), limit)).fetchall()
     stop = time.monotonic() + max_seconds
     out = {"checked": 0, "closed": 0, "open": 0, "unknown": 0}

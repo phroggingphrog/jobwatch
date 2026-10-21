@@ -51,6 +51,7 @@ def test_state_tamper_rejected(env):
         s = g.make_state()
     assert g.check_state(s) == "friend"
     body, sig = s.rsplit(".", 1)
-    for bad in (body + ".0" + sig[1:], "x" + s, "junk", g.make_state("friend", now=1)):
+    flipped = ("1" if sig[0] == "0" else "0") + sig[1:]        # a real change: "0" over a leading "0" tampered nothing
+    for bad in (body + "." + flipped, "x" + s, "junk", g.make_state("friend", now=1)):
         with pytest.raises(ValueError):
             g.check_state(bad)

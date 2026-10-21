@@ -164,7 +164,8 @@ def install_auth(app: FastAPI) -> None:
             return await call_next(request)
         name = read_cookie(request.cookies.get(COOKIE))
         if name is None:
-            if request.headers.get("hx-request") or "application/json" in request.headers.get("accept", ""):
+            if (request.headers.get("hx-request") or path.startswith("/api/")     # fetch sends */*: a redirect reads as success
+                    or "application/json" in request.headers.get("accept", "")):
                 return JSONResponse({"error": "sign in required"}, status_code=401)
             return RedirectResponse("/login", status_code=303)
         with users.use(name):

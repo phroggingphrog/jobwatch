@@ -207,14 +207,15 @@ AU_STATE_NAMES = (
 _AU_TEXT = re.compile(rf"\b(Australia|Australian|{AU_CITIES}|{AU_STATE_NAMES})\b", re.I)
 # A state code counts when it follows a comma/space and/or precedes a postcode.
 _AU_STATE_CODE = re.compile(r"(?:,\s*|\s)(VIC|NSW|QLD|WA|SA|TAS|ACT|NT)\b(?:\s+\d{4})?|\b(VIC|NSW|QLD|TAS)\b")
-_NOT_AU = re.compile(r"\b(Florida|FL|British Columbia|BC|Canada|USA|United States|U\.S\.)\b")
+_NOT_AU = re.compile(r"\b(Florida|FL|British Columbia|BC|Canada|USA|United States|U\.S\.)\b|"
+                     r"\b(?i:Nigeria|Lagos|Seychelles|Nova Scotia|Scotland(?! Island)|(?<!New )England|Newcastle[ -]upon[ -]Tyne)\b")
 COUNTRY_AU = {"au", "aus", "australia"}
 
 _STATE_PATTERNS = [
-    ("VIC", re.compile(r"\b(VIC|Victoria|Melbourne|Geelong|Ballarat|Bendigo|Shepparton|Mildura|"
+    ("VIC", re.compile(r"\b(VIC|Melbourne|Geelong|Ballarat|Bendigo|Shepparton|Mildura|"
                        r"Warrnambool|Wodonga|Traralgon|Mornington|Dandenong|Frankston|Footscray|"
                        r"Richmond VIC|Docklands|Southbank|Carlton|Clayton|Box Hill|Ringwood|"
-                       r"Sunshine(?! Coast)|Werribee|Craigieburn|Epping VIC|Heidelberg|Melton|Pakenham)\b|\b3\d{3}\b", re.I)),
+                       r"Sunshine(?! Coast)|Werribee|Craigieburn|Epping VIC|Heidelberg|Melton|Pakenham)\b", re.I)),
     ("NSW", re.compile(r"\b(NSW|New South Wales|Sydney|Newcastle|Wollongong|Parramatta|Albury)\b", re.I)),
     ("QLD", re.compile(r"\b(QLD|Queensland|Brisbane|Gold Coast|Sunshine Coast|Townsville|Cairns|Toowoomba)\b", re.I)),
     ("WA", re.compile(r"\b(WA|Western Australia|Perth)\b")),
@@ -223,6 +224,10 @@ _STATE_PATTERNS = [
     ("ACT", re.compile(r"\b(ACT|Australian Capital Territory|Canberra)\b")),
     ("NT", re.compile(r"\b(NT|Northern Territory|Darwin)\b")),
 ]
+# Weak VIC evidence, used only when no other state is named: "Victoria" ("Victoria Park WA") and a bare 3xxx
+# postcode (not "MH 3000", not NZ).
+_VIC_WEAK = re.compile(r"\bVictoria\b|(?<![\w$.,/-])3\d{3}\b(?![.,]?\d)", re.I)
+_FOREIGN_POSTCODE = re.compile(r"(?<![A-Za-z])(?!VIC\b)[A-Z]{2} 3\d{3}\b|\b(?:New Zealand|NZ)\b")
 
 
 def state_of(location: str | None) -> str | None:
@@ -233,7 +238,7 @@ def state_of(location: str | None) -> str | None:
     for code, pattern in _STATE_PATTERNS:
         if pattern.search(text):
             return code
-    return None
+    return "VIC" if _VIC_WEAK.search(text) and not _FOREIGN_POSTCODE.search(text) else None
 
 
 def is_australian(country: Any = None, *texts: Any) -> bool:
@@ -255,17 +260,17 @@ def work_type_of(*values: Any) -> str | None:
     text = " ".join(str(v) for v in values if v).lower().replace("_", " ")
     if not text:
         return None
-    if "casual" in text:
+    if re.search(r"\bcasuals?\b", text):
         return "casual"
-    if re.search(r"part[ -]?time", text):
+    if re.search(r"\bpart[ -]?time\b", text):
         return "PT"
-    if re.search(r"intern", text):
+    if re.search(r"\bintern(?:ship)?s?\b", text):
         return "intern"
-    if re.search(r"contract|fixed[ -]?term|contractor", text):
+    if re.search(r"\bcontract(?:or|ing)?\b|\bfixed[ -]?term\b", text):
         return "contract"
-    if re.search(r"temp", text):
+    if re.search(r"\btemp(?:s|orary)?\b", text):
         return "temp"
-    if re.search(r"full[ -]?time|permanent|fulltime", text):
+    if re.search(r"\b(?:full[ -]?time|permanent)\b", text):
         return "FT"
     return None
 
@@ -281,12 +286,14 @@ def salary_from_text(text: str | None) -> tuple[float | None, float | None, str 
     if not nums:
         return None, None, None
     low = text.lower()
-    if re.search(r"per hour|p/h|/hr|an hour|hourly|ph\b", low):
+    if re.search(r"per hour|p/h|/hr|an hour|hourly|\bp\.?h\b", low):
         unit = "hour"
     elif re.search(r"per day|daily|p/d", low):
         unit = "day"
     elif re.search(r"per week|weekly", low):
         unit = "week"
+    elif re.search(r"per month|\d[\d,.]*k?\s*a month|/mth|/month|\bp/m\b|\bpcm\b", low):   # "a month" only after an amount
+        unit = "month"
     elif max(nums) < 200:
         unit = "hour"
     else:

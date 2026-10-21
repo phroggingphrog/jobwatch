@@ -12,10 +12,14 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function icon(n) { return '<svg class="ph-icon" aria-hidden="true" focusable="false"><use href="#lucide-' + n + '"/></svg>'; }
   function api(path, body) {
-    var opt = body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+    var opt = body === undefined ? { headers: { accept: "application/json" } }
+      : { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body) };
     return fetch(path, opt).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok) throw new Error(d.error || d.detail || ("Request failed (" + r.status + ")"));
+      var json = (r.headers.get("content-type") || "").indexOf("json") >= 0;
+      return r.json().catch(function () { return null; }).then(function (d) {
+        if (!r.ok) throw new Error(r.status === 401 ? "Your session ended. Reload to sign in again." : (d && (d.error || d.detail)) || ("Request failed (" + r.status + ")"));
+        /* a redirect to the login page (or any HTML) is not a success */
+        if (r.redirected || !json || d === null) throw new Error("Your session ended. Reload to sign in again.");
         return d;
       });
     });
@@ -519,7 +523,7 @@
     else if (dr.state === "failed" || dr.state === "error") h = '<p><strong>The draft did not finish.</strong></p><div class="ph-alert ph-alert--error"><span>' + esc(dr.error || "No reason was recorded.") + '</span></div><p class="ph-meta">Press Draft CV + letter to try again.</p>';
     else h = '<p><strong>No draft yet.</strong> <span class="ph-meta">Draft CV + letter makes a tailored CV and cover letter as PDFs.</span></p>';
     h += '<p><button type="button" class="ph-btn ph-btn--' + (dr.state === "ready" ? "outline" : "default") + '" data-act="draft" data-id="' + j.id + '"' + (dr.state === "running" ? " disabled" : "") + ">Draft CV + letter</button></p>" +
-      '<p class="ph-meta">Jobwatch fills the application and attaches your documents. You review the filled page and click Submit.</p>';
+      '<p class="ph-meta">Jobwatch fills the application and attaches your documents. You review the filled page, then click Submit or confirm it and Jobwatch presses Submit.</p>';
     return sec("CV and cover letter", h);
   }
   function glanceHtml(j) {
@@ -758,7 +762,7 @@
         (c[2].length ? '<ul class="jx-applist">' + c[2].map(function (a) { return appCard(a, d.followup_drafting_enabled); }).join("") + "</ul>" : '<p class="ph-meta">Nothing here yet</p>') + "</section>";
     }).join("");
     view.innerHTML = '<header class="c-head"><h1 class="c-h1" tabindex="-1">Applications</h1><p class="ph-meta">' + (d.total ? d.total + " tracked" : "Nothing tracked yet") + "</p></header>" +
-      '<p class="jx-note">Jobwatch writes your CV and letter and fills in the application form for you. It stops at the Submit button: check the form and press Submit yourself. Jobwatch sees the confirmation page and moves the job to Applied on its own; if it is not sure, the job asks "Did it go through?".</p><p><a class="ph-btn ph-btn--outline ph-btn--sm" href="#interview">Prepare an interview from a job URL</a></p>' +
+      '<p class="jx-note">Jobwatch writes your CV and letter and fills in the application form for you. It stops at the Submit button: check the form, then press Submit yourself or choose Submit this application. Jobwatch sees the confirmation page and moves the job to Applied on its own; if it is not sure, the job asks "Did it go through?".</p><p><a class="ph-btn ph-btn--outline ph-btn--sm" href="#interview">Prepare an interview from a job URL</a></p>' +
       (d.total ? '<div class="jx-kanban">' + cols + "</div>" : '<div class="jx-empty"><p class="jx-empty__t">No applications yet</p><p class="ph-meta">Save or draft a job on the board and it will appear here, ready to move along as things happen.</p><p><a class="ph-btn ph-btn--default" href="#board">Browse the board</a></p></div>') +
       (d.closed.length ? '<details class="jx-closed"><summary>Closed (' + d.closed.length + ')</summary><p class="ph-meta">Rejected, withdrawn and hidden. Change the status to bring one back.</p><ul class="jx-closedlist">' + d.closed.map(function (a) {
         return '<li><span class="ph-badge ph-badge--' + (a.status === "rejected" ? "destructive" : "secondary") + '">' + esc(META.states[a.status] || a.status) + '</span><span class="jx-closedlist__main"><a href="#job/' + a.posting_id + '">' + esc(a.title) + '</a> <span class="ph-meta">' + esc(a.company || "") + '</span></span><span class="ph-meta" title="' + esc(a.updated_abs) + '">' + esc(a.updated_ago) + "</span>" + statusSelect(a) + "</li>"; }).join("") + "</ul></details>" : "");

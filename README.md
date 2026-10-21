@@ -2,7 +2,8 @@
 
 A self-hosted job-application assistant. It collects job postings from many sources, filters them against what you
 are looking for, has an AI model read each ad against your own profile, and drafts a tailored CV and cover letter
-for the jobs you choose. It never applies for you: you review and submit by hand.
+for the jobs you choose. It never applies on its own: you review the filled form and either press Submit yourself
+or confirm that exact form and let Jobwatch press it.
 
 The current delivery focus is the native agent API and backend. Read
 [INTENT.md](INTENT.md) for the agreed goal and [AGENTS.md](AGENTS.md) for contributor
@@ -336,7 +337,7 @@ health and the employer registry), Insights. Keys on the board: `j`/`k` move, `s
 Reads: `jobwatch/web/queries.py`. Writes: `jobwatch/web/actions.py` (ledger and state APIs only).
 Template contexts: `jobwatch/web/CONTRACT.md`. Guards: Host allow-list, Origin/Referer required on every POST,
 cross-site sub-requests refused, CSP `script-src 'self'`, only http(s) links, draft files served only by exact name
-inside the drafts folder. jobwatch never applies for you: drafting makes PDFs you submit by hand.
+inside the drafts folder. jobwatch never applies on its own: Submit is your click, or your confirmation of that exact filled form.
 
 ## Undo
 

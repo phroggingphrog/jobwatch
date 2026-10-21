@@ -8,7 +8,7 @@
   {% include "_preparation.html" %}
   {% if browser.open %}
   <section class="browser-panel" aria-label="Live application browser">
-    <p id="browser-help">Click inside the live page to control it. Type normally, use Tab to move between fields, or paste text. Review the answers, then click Submit in the application.</p>
+    <p id="browser-help">Click inside the live page to control it. Type normally, use Tab to move between fields, or paste text. Review the answers, then click Submit in the application, or use Submit this application below.</p>
     <p id="browser-control-message" role="status"></p>
     <img id="application-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/job/{{ job.id }}/browser/stream"
          data-action-url="/job/{{ job.id }}/browser/action" alt="Live application page" aria-describedby="browser-help">

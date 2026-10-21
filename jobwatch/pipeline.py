@@ -59,6 +59,7 @@ def run_collector(conn, config: Config, rules: Rules, http: Fetcher, name: str, 
     except Exception as exc:  # a collector must never crash the run
         crash = f"{type(exc).__name__}: {str(exc)[:200]}"
         log.exception("collector %s crashed", name)
+        postings = list(ctx.collected)       # what it had already read (per-employer collectors) is still stored
     latency = int((time.monotonic() - started) * 1000)
 
     stats = {"collector": name, "fetched": ctx.raw_count, "au_kept": len(postings),

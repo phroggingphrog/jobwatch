@@ -38,8 +38,10 @@ from pydantic import Field, TypeAdapter
 
 from jobwatch import users, model_choice
 from jobwatch.apply.paths import ensure_dir
+from jobwatch.candidate.contracts import CandidateError
 from jobwatch.llm import LLM, load_keys
 from pipeline.agentic.deepagents_runtime import _messages_for_gateway
+from pipeline.agentic.contracts import AgenticError
 from pipeline.agentic.runtime import RuntimeErrorSafe
 from pipeline.agentic.chat_storage import ChatSaver, ChatStore
 from pipeline.agentic import execution as invocation
@@ -64,8 +66,10 @@ Interview preparation and follow-up drafting require approval.
 Do not infer success from a plan or your own reasoning.
 Report posting id, run key, status and defer reason from tools. Missing facts mean ask,
 not invent. Memory notes are advisory, never profile facts or eligibility overrides.
-You cannot edit profiles, submit applications, click Submit, contact anyone, change
-settings, or execute code. The human alone presses final Submit outside this agent.
+You cannot edit profiles, contact anyone, change settings, or execute code. Final Submit
+happens only by the owner's own click or through submit_application, which needs the owner's
+approval of that exact reviewed form and only queues the press; check it with submit_status.
+Never call submit_application unless the owner asked to submit that job.
 To answer, return {\"answer\":\"text\"}; to use a tool return
 {\"tool\":\"name\",\"arguments\":{...}}. One tool per response.
 """
@@ -102,11 +106,24 @@ def job_connection(config, *, write=False):
         connection.close()
 
 
+GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview', 'draft_followup', 'submit_application')
+
+
 def _approval_binding(name, args, config):
     """Bind an approval to actual evidence/config, not an LLM description."""
     from pipeline.agentic.service import enabled, snapshot_inventory
     value = {'tool': name, 'arguments': args, 'skills': skill_version(), 'enabled': enabled(config)}
-    if enabled(config):
+    if name == 'submit_application':
+        # Bound to the exact reviewed browser fill (jobwatch.apply.submit_confirm), not to evidence or a run key.
+        from jobwatch.apply import prepare, submit_confirm
+        from jobwatch.apply.paths import data_dir
+        with job_connection(config) as jobs:
+            row = jobs.execute('SELECT id FROM applications WHERE posting_id=?', (args['posting_id'],)).fetchone()
+        confirm = submit_confirm.digest(prepare.latest_preparation(data_dir(), str(row['id']))) if row else None
+        if confirm is None:
+            raise AgenticError('submit_not_ready')
+        value.update(snapshot=confirm, application_id=row['id'])
+    elif enabled(config):
         from jobwatch.candidate.evidence import snapshot_evidence
         from jobwatch.apply.paths import profile_dir
         with job_connection(config) as jobs:
@@ -390,7 +407,8 @@ def _build(person, conn, config, llm, selected, saver, store):
             return {'status': 'deferred', 'reason': 'agentic_disabled'}
         arg = 'application_id' if name == 'draft_followup' else 'posting_id'
         binding = scope.approvals.get((name, identity)) if scope else None
-        if binding is None or binding != _approval_binding(name, {arg: identity}, config):
+        # Re-bind the args the approval hashed (the model may send extras the tool ignores), so only a changed world fails.
+        if binding is None or binding != _approval_binding(name, binding['arguments'], config):
             raise RuntimeErrorSafe('approval_inputs_changed')
         with job_connection(config, write=True) as jobs:
             jobs.row_factory = sqlite3.Row
@@ -416,6 +434,33 @@ def _build(person, conn, config, llm, selected, saver, store):
         return auxiliary('draft_followup', application_id)
 
     @tool
+    def submit_application(posting_id: int) -> dict:
+        """Press the employer's final Submit on the filled application, after a human approves that exact reviewed
+        form. Only queues: the web board presses within 15 minutes if the live form is still unchanged."""
+        from jobwatch.apply import submit_confirm
+        binding = scope.approvals.get(('submit_application', posting_id)) if scope else None
+        if binding is None or binding != _approval_binding('submit_application', binding['arguments'], config):
+            raise RuntimeErrorSafe('approval_inputs_changed')
+        with job_connection(config, write=True) as jobs:
+            row = jobs.execute('SELECT id FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
+            # One request per approving run: a retry of that run never queues it again, a fresh approval can.
+            approval = hashlib.sha256((binding['digest'] + ':' + (scope.run_id if scope else '')).encode()).hexdigest()
+            queued = submit_confirm.queue(jobs, posting_id=posting_id, application_id=row['id'],
+                                          confirm_digest=binding['run_key'], approval=approval)
+        if scope:
+            scope.outcomes.append({'posting_id': posting_id, 'status': 'submit_' + queued['status']})
+        return {'posting_id': posting_id, **queued}
+
+    @tool
+    def submit_status(posting_id: int) -> dict:
+        """Read what happened to the latest approved Submit for a posting (pending, submitted, unsure, refused, expired)."""
+        from jobwatch.apply import submit_confirm
+        with job_connection(config) as jobs:
+            if not jobs.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone():
+                return {'posting_id': posting_id, 'status': 'none'}
+            return {'posting_id': posting_id, **(submit_confirm.outcome(jobs, posting_id) or {'status': 'none'})}
+
+    @tool
     def ask_human(question: str) -> str:
         """Ask for a missing personal fact. Human response arrives through an interrupt; no profile write."""
         return 'No answer supplied; do not invent a fact.'
@@ -427,10 +472,9 @@ def _build(person, conn, config, llm, selected, saver, store):
         permissions=permissions, middleware=[TodoListMiddleware(), boundary,
             FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
                                  _permissions=permissions)],
-        tools=[run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup,
-               find_jobs, application_status, source_health, ask_human],
-        interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in
-                        ('run_career_ops','assess_job','prepare_application','prepare_interview','draft_followup')},
+        tools=[run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup, submit_application,
+               submit_status, find_jobs, application_status, source_health, ask_human],
+        interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
                       'ask_human': {'allowed_decisions': ['respond']}},
         subagents=[{'name': 'career-reader', 'description': 'Inspect full saved job ads and existing run/defer outcomes.',
             'system_prompt': SYSTEM + '\nRead only: inspect_job returns the authoritative saved ad and outcome.',
@@ -474,10 +518,16 @@ def _chat_interactions(values, config=None) -> list[dict]:
             if name == 'ask_human':
                 events.append({'type': 'question', 'interaction_id': action.get('id') or f'question-{index}',
                                'question': args.get('question', '')})
-            elif name in ('run_career_ops','assess_job','prepare_application','prepare_interview','draft_followup'):
+            elif name in GATED:
+                try:
+                    binding = _approval_binding(name, args, config) if config is not None else None
+                except CandidateError:
+                    raise  # a profile/evidence read problem is not bad args: fail the turn, keep the approval pending
+                except (KeyError, TypeError, AgenticError):  # bad/missing id: nothing to approve
+                    events.append({'type': 'invalid_action', 'interaction_id': action.get('id') or f'action-{index}', 'operation': name})
+                    continue
                 events.append({'type': 'approval', 'interaction_id': action.get('id') or f'approval-{index}',
-                               'posting_id': args.get('posting_id'), 'operation': name,
-                               'binding': _approval_binding(name, args, config) if config is not None else None,
+                               'posting_id': args.get('posting_id'), 'operation': name, 'binding': binding,
                                'summary': action.get('description', 'Run Career Ops for this job.')})
             else:
                 events.append({'type': 'unsupported', 'interaction_id': action.get('id') or f'action-{index}'})
@@ -549,8 +599,26 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                     ident = hashlib.sha256(json.dumps([person, thread_id]).encode()).hexdigest()
                     graph_config = {'configurable': {'thread_id': ident, 'invocation_id': execution.run_id}, 'callbacks': [], 'recursion_limit': 110,
                                     'metadata': {'invocation_id': execution.run_id}}
+                    def refuse_unbindable(values):
+                        """A gated call with bad args checkpoints an interrupt no human can approve (its binding fails every
+                        time), which would brick the thread. Reject it (authorizes nothing) so the model carries on."""
+                        result = None
+                        for _ in range(3):
+                            items = _chat_interactions(values, cfg)
+                            if not any(i['type'] == 'invalid_action' for i in items):
+                                return result
+                            execution.check()
+                            result = graph.invoke(Command(resume={'decisions': [
+                                {'type': 'respond', 'message': 'No answer supplied; do not invent a fact.'} if i['type'] == 'question' else
+                                {'type': 'reject', 'message': 'Invalid arguments: no such saved posting or application. Nothing was run.'}
+                                for i in items]}), graph_config)
+                            values = [i.value for i in result.get('__interrupt__', ())]
+                        raise RuntimeErrorSafe('invalid_tool_call')
                     previous = graph.get_state(graph_config)
                     pending = [i for task in previous.tasks for i in task.interrupts]
+                    if pending and decisions is None and not recover and refuse_unbindable([i.value for i in pending]) is not None:
+                        previous = graph.get_state(graph_config)  # a stuck thread healed; carry on with the new message
+                        pending = [i for task in previous.tasks for i in task.interrupts]
                     checkpoint = previous.config.get('configurable', {}).get('checkpoint_id') if previous.config else None
                     same_invocation = (previous.metadata or {}).get('invocation_id') == execution.run_id
                     if expected_checkpoint and expected_checkpoint != checkpoint and not (recover and same_invocation):
@@ -583,6 +651,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                         if len(decisions) != len(interactions):
                             raise RuntimeErrorSafe('invalid_decisions')
                         for index, (decision, item) in enumerate(zip(decisions, interactions)):
+                            if item['type'] == 'invalid_action':
+                                raise RuntimeErrorSafe('approval_inputs_changed')
                             if item['type'] == 'approval':
                                 if decision.get('type') not in ('approve', 'reject'):
                                     raise RuntimeErrorSafe('invalid_decisions')
@@ -614,6 +684,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                     continue
                                 execution.deliverables.append({'operation': item.name, 'content': content})
                     interrupts = [i.value for i in result.get('__interrupt__', ())]
+                    if interrupts and (refused := refuse_unbindable(interrupts)) is not None:
+                        result, interrupts = refused, [i.value for i in refused.get('__interrupt__', ())]
                     saved = graph.get_state(graph_config)
                     return {'status': 'interrupted' if interrupts else 'complete', 'thread_id': thread_id,
                         'checkpoint_id': saved.config['configurable'].get('checkpoint_id'),

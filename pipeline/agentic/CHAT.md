@@ -105,7 +105,14 @@ Deep Agents provides planning, scoped virtual files, named reader/company-resear
 specialists, per-person advisory memory, skills and human interrupts. Existing
 bounded evaluator/writer/reviewer role graphs own canonical assessment and package
 work. Their model transport, route checks and invocation budgets are shared with
-the supervisor. No shell, arbitrary host filesystem or final Submit tool is exposed.
+the supervisor. No shell or arbitrary host filesystem is exposed. `submit_application` is
+the only Submit path: it is approval-gated (approve scope), bound to the reviewed browser
+fill's confirmation digest, and only queues a `submit_requests` row; the web process presses
+within 15 minutes if the live form still matches, and `submit_status` reports the outcome
+(pending, pressed, submitted, unsure, refused, expired). The web process trusts rows in the
+person's jobs DB: code running as the agent API can write that DB, so the approval scope
+protects the chat path, not a compromised agent process. The approval shows the posting id,
+not the filled answers; review the fill on the board first.
 
 `find_jobs`, `application_status` and `source_health` support read-only discovery.
 The reader can retrieve canonical evidence by source name, hash and explicit line

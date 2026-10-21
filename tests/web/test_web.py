@@ -73,6 +73,16 @@ def test_unknown_job_is_404(client):
     assert client.get("/api/job/99999").status_code == 404
 
 
+def test_salary_display_labels_every_pay_period():
+    from jobwatch.web.queries import salary_display
+    def show(lo, hi, unit):
+        return salary_display({"salary_text": None, "salary_min": lo, "salary_max": hi, "salary_unit": unit})
+    assert show(1500, 1800, "week") == "$1,500 – $1,800/wk"
+    assert show(8500, None, "month") == "$8,500/mo"
+    assert show(70000, 80000, "year") == "$70k – $80k"
+    assert show(38, None, "hour") == "$38.00/hr"
+
+
 def test_host_header_guard(client):
     assert client.get("/healthz", headers={"host": "evil.example"}).status_code == 403
     assert client.get("/healthz", headers={"host": "jobs.example.com"}).status_code == 200
@@ -153,3 +163,81 @@ def test_javascript_urls_never_become_links(client):
     conn.commit()
     js = (Path(__file__).resolve().parents[2] / "jobwatch/web/static/app/app.js").read_text()
     assert js.count("javascript:") == 0 and js.count('test(j.url || "")') >= 2   # the app only links http(s) ad urls
+
+
+def _friend_client(client, monkeypatch):
+    """The same app, signed in as a second person ('friend') with their own data folder."""
+    from jobwatch import users
+    from jobwatch.web.auth_routes import set_password
+    monkeypatch.setenv("JOBWATCH_SESSION_SECRET", "s3cret")
+    set_password("friend", "longenough1")
+    users.create_user_dirs("friend")
+    r = client.post("/login", data={"username": "friend", "password": "longenough1"}, follow_redirects=False)
+    assert r.status_code == 303
+    return client
+
+
+def test_draft_files_are_served_from_the_signed_in_persons_folder(client, monkeypatch):
+    owner = client.tmp / "data" / "drafts" / "1" / "v1"
+    owner.mkdir(parents=True)
+    (owner / "cv.pdf").write_bytes(b"%PDF-1.4 owner")
+    friend = client.tmp / "data" / "users" / "friend" / "drafts" / "1" / "v1"
+    friend.mkdir(parents=True)
+    (friend / "cv.pdf").write_bytes(b"%PDF-1.4 friend")
+    c = _friend_client(client, monkeypatch)
+    r = c.get("/files/drafts/1/v1/cv.pdf")
+    assert r.status_code == 200 and r.content == b"%PDF-1.4 friend"      # never the owner's CV
+
+
+def test_draft_worker_runs_as_the_person_who_started_it(client, monkeypatch, tmp_path):
+    import threading
+    from jobwatch import users
+    from jobwatch.config import DEFAULT_CONFIG_DIR, DEFAULT_SETTINGS, Config, _merge
+    from jobwatch.web import actions as act
+    seen, done = {}, threading.Event()
+
+    class Chain:
+        class DraftRefused(Exception):
+            pass
+
+        def gate(self, conn, match_id):
+            pass
+
+        def start_draft(self, conn, match_id, actor):
+            seen["user"] = users.current()
+            seen["db"] = conn.execute("PRAGMA database_list").fetchone()[2]
+            done.set()
+
+    monkeypatch.setattr(act, "_chain", lambda: Chain())
+    settings = _merge(DEFAULT_SETTINGS, {"db_path": str(client.tmp / "data" / "jobwatch.db"),
+                                         "agentic": {"enabled": False}})
+    config = Config(config_dir=DEFAULT_CONFIG_DIR, settings=settings, rules={}, searches={}, feeds={}, employers=[])
+    users.create_user_dirs("friend")
+    with users.use("friend"):
+        conn = dbm.connect(config.db_path)
+        pid = seed(conn, 1, "Friend's Clerk job")
+        act.start_draft(conn, config.db_path, pid, config=config)
+        conn.close()
+        assert done.wait(5)
+        assert act.draft_job(pid)["state"] in ("running", "done")
+    assert act.draft_job(pid) is None                  # the owner never sees the friend's draft job
+    assert seen["user"] == "friend"
+    assert seen["db"] == str(users.db_path("friend"))
+
+
+def test_board_times_use_the_persons_timezone(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+    from jobwatch import place
+    from jobwatch.apply import render
+    from jobwatch.web import queries as q
+    monkeypatch.setattr(place, "_candidate", render._candidate)       # the real profile reader, not the Melbourne stub
+    pdir = tmp_path / "profile"
+    pdir.mkdir()
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(pdir))
+    (pdir / "profile.yaml").write_text("candidate:\n  timezone: Australia/Perth\n")
+    noon = datetime(2026, 1, 15, 4, 0, tzinfo=UTC)                 # 12:00 in Perth, 15:00 in Melbourne
+    assert q.absolute(noon).endswith("12:00 PM AWST")
+    (pdir / "profile.yaml").write_text("candidate:\n  timezone: Australia/Melbourne\n")
+    import os, time
+    os.utime(pdir / "profile.yaml", ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))   # a profile edit is picked up
+    assert q.absolute(noon).endswith("3:00 PM AEDT")

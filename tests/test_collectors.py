@@ -306,3 +306,53 @@ def test_jobspy_site_errors_captured():
     ctx = make_ctx(FakeHttp({}), searches={"jobspy": {"searches": ["x"]}})
     assert jobspy_src.collect(ctx, scrape=fake) == []
     assert ctx.errors and "429" in ctx.errors[0] and "Google" in ctx.errors[0]
+
+
+def test_failed_sites_do_not_count_as_origins():
+    import logging
+
+    def blocked(**kw):
+        logging.getLogger("JobSpy:Google").error("Google response status code 429")
+        return pd.DataFrame([])
+
+    ctx = make_ctx(FakeHttp({}), searches={"jobspy": {"searches": ["x"]}})
+    jobspy_src.collect(ctx, scrape=blocked)
+    assert ctx.errors and not ctx.origins
+    ctx2 = make_ctx(FakeHttp({"seek.com.au": 404}), searches={"seek": {"keywords": ["x"]}})
+    assert seek.collect(ctx2) == [] and ctx2.errors and not ctx2.origins
+
+
+def test_techone_jobs_without_an_apply_url_get_distinct_urls():
+    from jobwatch.collectors import ats_techone
+    data = {"DataSet": [{"JOBID": "11", "TITLE": "Rates Officer"}, {"JOBID": "12", "TITLE": "Payroll Officer"},
+                        {"JOBID": "13", "TITLE": "Records Officer", "RESOLVEDAPPLYURL": "https://t1.example/apply?t=x"}]}
+    out = ats_techone.parse_dataset(data, {"name": "Council", "careers_url": "https://council.example/careers"})
+    assert len({p.url for p in out}) == 3 and out[2].url == "https://t1.example/apply?t=x"
+    assert all(p.url.startswith("https://council.example/careers") for p in out[:2])
+
+
+def test_malformed_xml_employer_does_not_kill_the_others():
+    http = FakeHttp({"/527/": "<rss><channel><item>", "/528/": fixture_text("pageup.xml")})
+    ctx = make_ctx(http, [emp("pageup", name="Broken", tenant="527"), emp("pageup", name="Fine", tenant="528")])
+    out = ats_pageup.collect(ctx)
+    assert len(out) == 2 and {p.origin for p in out} == {"Fine"}
+    assert ctx.errors and "Broken" in ctx.errors[0] and "pageup:Broken" not in ctx.origins
+
+
+def test_rss_malformed_pageup_feed_does_not_kill_the_collector():
+    feeds = {"feeds": [{"name": "Bad", "url": "https://bad.example/rss", "format": "pageup", "company": "B"},
+                       {"name": "Example", "url": "https://jobs.example.org.au/rss", "company": "Example Org"}]}
+    ctx = make_ctx(FakeHttp({"bad.example": "<rss><item>", "jobs.example.org.au": fixture_text("rss_generic.xml")}),
+                   feeds=feeds)
+    out = rss.collect(ctx)
+    assert len(out) == 2 and {p.origin for p in out} == {"Example"} and "Bad" in ctx.errors[0]
+
+
+def test_successfactors_parse_failure_does_not_keep_validators(monkeypatch):
+    from jobwatch.collectors import ats_successfactors as sf
+    key = "http_cache:https://c.example.com/googlefeed.xml"
+    ctx = make_ctx(FakeHttp({"/googlefeed.xml": "<rss>"}, headers={"ETag": "abc"}),
+                   [emp("successfactors", host="c.example.com")])
+    monkeypatch.setattr(sf, "parse_successfactors", lambda *a, **k: (_ for _ in ()).throw(AttributeError("bad")))
+    assert sf.collect(ctx) == [] and ctx.errors
+    assert not ctx.state_get(key, None)

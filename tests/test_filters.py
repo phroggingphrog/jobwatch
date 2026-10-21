@@ -89,6 +89,33 @@ def test_location_rules(rules):
     assert rules.evaluate(P("Bookkeeper", "Dandenong 3175")).matched
 
 
+@pytest.mark.parametrize("title", ["Credit Administrator", "Audit Administrator", "Benefit Administrator"])
+def test_it_administrator_exclude_needs_a_word_boundary(rules, title):
+    assert rules.evaluate(P(title)).matched
+
+
+@pytest.mark.parametrize("title", ["IT Administrator", "Network Administrator", "Contracts Administrator"])
+def test_it_administrators_still_excluded(rules, title):
+    assert not rules.evaluate(P(title)).matched
+
+
+def test_national_in_a_title_is_not_remote(rules):
+    assert rules.evaluate(P("National Payroll Officer", "Sydney NSW")).reason == "location"
+    assert rules.evaluate(P("Payroll Officer - National Accounts", "Sydney NSW")).reason == "location"
+    assert rules.evaluate(P("Payroll Officer", "National")).rules["location"] == "remote_au"
+
+
+@pytest.mark.parametrize("location", ["Victoria Park WA", "Victoria Point QLD", "Hamilton 3200, New Zealand",
+                                      "Sydney NSW 3000"])
+def test_vic_patterns_ignore_other_places(rules, location):
+    assert rules.evaluate(P("Bookkeeper", location)).reason == "location"
+
+
+@pytest.mark.parametrize("location", ["Victoria, Australia", "Victoria", "Dandenong 3175", "3000"])
+def test_vic_patterns_still_match_victoria(rules, location):
+    assert rules.evaluate(P("Bookkeeper", location)).rules["location"] == "melbourne_vic"
+
+
 def test_experience_exclude_and_flag(rules):
     assert rules.evaluate(P("Payroll Officer", description="Minimum 5+ years experience in payroll.")).reason == "experience"
     d = rules.evaluate(P("Payroll Officer", description="You have 2-3 years of experience."))
@@ -136,3 +163,17 @@ def test_t9_false_positives_not_matched(rules, title):
 def test_t9_true_positives_still_match(rules, title, arm):
     d = rules.evaluate(P(title))
     assert d.matched and d.arm == arm
+
+
+@pytest.mark.parametrize("location", ["Australia - National", "Sydney / National", "National"])
+def test_national_as_a_location_is_remote(rules, location):
+    assert rules.evaluate(P("Payroll Officer", location)).rules["location"] == "remote_au"
+
+
+@pytest.mark.parametrize("location", [
+    "Victoria Park WA", "Victoria Point QLD", "Port Victoria SA", "Hamilton 3200, New Zealand", "Sydney NSW 3000",
+    "Mumbai, MH 3000", "Level 3500 Sydney", "Suite 3001, 10 King St, Sydney", "Wellington 3000 NZ", "$3000 bonus",
+    "Victoria Island, Lagos", "Victoria, Australia", "Victoria", "Dandenong 3175", "3000", "Carlton 3053"])
+def test_the_vic_location_rule_agrees_with_state_of(rules, location):
+    from jobwatch.models import state_of
+    assert (rules.location_rule(P("Bookkeeper", location)) == "melbourne_vic") == (state_of(location) == "VIC")

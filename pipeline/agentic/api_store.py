@@ -196,7 +196,7 @@ class APIStore:
         with self.transaction():
             row = self.raw_run(ident)
             interactions = (result or {}).get('interactions', [])
-            state = ('cancelled' if error == 'cancelled' else
+            state = ('cancelled' if error == 'cancelled' else 'interrupted' if error == 'worker_interrupted' else
                      'deferred' if error == 'person_busy' else 'failed') if error else 'completed'
             if interactions and not error:
                 if len(interactions) > 8 or any(x['type'] not in ('question', 'approval') for x in interactions):
@@ -278,10 +278,13 @@ class APIStore:
             if self.conn.execute("SELECT COUNT(*) FROM api_runs WHERE state='queued'").fetchone()[0] >= 20:
                 raise Conflict('queue_full')
             payload = json.loads(row['input_json'])
+            if 'decisions' in payload and self.conn.execute('SELECT 1 FROM api_interactions WHERE resume_run=? AND expires<=?',
+                                                            (ident, time.time())).fetchone():
+                raise Conflict('interaction_expired')  # same 24h rule as respond(): a stale approval never authorizes work
             # Lock contention occurs before graph execution. Retry that original
             # request normally; only an interrupted worker needs checkpoint recovery.
             if row['state'] == 'interrupted':
                 payload['recover'] = True
-            self.conn.execute("UPDATE api_runs SET state='queued',error=NULL,input_json=?,updated=? WHERE id=?",
+            self.conn.execute("UPDATE api_runs SET state='queued',error=NULL,cancel_requested=0,input_json=?,updated=? WHERE id=?",
                               (encoded(payload), time.time(), ident))
             self.event(ident, 'recovery_requested')

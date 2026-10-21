@@ -1,7 +1,7 @@
 # Set up your own Jobwatch
 
 Jobwatch is for a few people on one server. Everyone gets their own folder, profile, CV, answers, job list and logins.
-Nothing is shared between people and nothing is ever submitted for you.
+Nothing is shared between people, and nothing is submitted unless you press Submit or confirm that exact filled form.
 
 1. `uv sync`, copy `.env.example` to `.env`, fill it in (see below), then `uv run jobwatch web`.
 2. Open the board, sign in as the first person (password from `JOBWATCH_OWNER_PASSWORD`). Friends sign up with `JOBWATCH_INVITE_CODE`.

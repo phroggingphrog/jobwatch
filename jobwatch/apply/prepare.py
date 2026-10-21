@@ -23,6 +23,7 @@ from .jev_forms import jev_next_button, jev_prefill
 from .answers_agent import AnswerPlan, AnswerRefused, answer_application, load_answer_sources, save_owner_answer, with_career_record
 from .prefill import PrefillRefused, file_snapshot, private_bytes, require_host
 from .paths import safe_write_text
+from .submit_confirm import FINAL_LABEL, form_state, record_control
 from .prefill_workflow import (
     authorize_workflow, discover_application, fill_application, plan_from_discovery,
     prepare_next_navigation, private_write, session_id,
@@ -78,7 +79,7 @@ def _document_role(control):
     return 'cv' if cv and not letter else 'letter' if letter and not cv else None
 
 
-def _finish(run_dir, status, filled, completed, missing=(), reason='', screenshots=()):
+def _finish(run_dir, status, filled, completed, missing=(), reason='', screenshots=(), review=None):
     # Keep questions/answers separate from status used by the public board.
     distinct = {}
     for item in missing:
@@ -110,6 +111,7 @@ def _finish(run_dir, status, filled, completed, missing=(), reason='', screensho
         prepared.update(json.loads(private_bytes(run_dir / 'browser-state.json')))
     if (run_dir / 'attachments.json').exists():
         prepared['attached_documents'] = json.loads(private_bytes(run_dir / 'attachments.json'))
+    prepared.update(review or {})           # final_control + form_state: what an owner Submit confirmation binds to
     _write_json(run_dir / 'prepared.json', prepared)
     safe_write_text(run_dir.parent / 'latest.json', json.dumps({'run_id': run_dir.name}))
     return result
@@ -351,21 +353,24 @@ def prepare_application(page, *, application_id: str, package_manifest, document
                 return _finish(run_dir, 'needs_adapter', filled, completed,
                                reason='unsupported_form_control', screenshots=screenshots)
             completed += 1
-            buttons = [dict(button, frame_path=scope['frame_path']) for scope in discovery['scopes'] for button in scope['buttons']]
+            buttons = [dict(button, frame_path=scope['frame_path'], url=scope['url'])
+                       for scope in discovery['scopes'] for button in scope['buttons']]
             next_buttons = [button for button in buttons if button['label'].strip().casefold() in
                             ('next', 'next step', 'continue', 'continue application', 'save and continue', 'save & continue')]
             if not next_buttons:
                 chosen = jev_next_button(buttons)
                 next_buttons = [chosen] if chosen is not None else []
             if not next_buttons:
-                final = [button for button in buttons if re.fullmatch(
-                    r'(submit|apply|send)( (application|now|my application))?', button['label'].strip().casefold())]
+                final = [button for button in buttons if FINAL_LABEL.fullmatch(button['label'].strip().casefold())]
                 if len(final) != 1:
                     return _finish(run_dir, 'needs_adapter', filled, completed, reason='final_review_control_unrecognized', screenshots=screenshots)
                 if 'cv' not in attached:
                     return _finish(run_dir, 'needs_adapter', filled, completed, reason='document_controls_incomplete', screenshots=screenshots)
+                control = record_control(page, {key: final[0][key] for key in ('selector', 'frame_path', 'url')})
+                review = {'final_control': control, 'form_state': form_state(page)} if control else {}
                 return _finish(run_dir, 'ready_for_owner', filled, completed,
-                               reason='' if 'letter' in attached else 'cover_letter_not_requested', screenshots=screenshots)
+                               reason='' if 'letter' in attached else 'cover_letter_not_requested', screenshots=screenshots,
+                               review=review)
             if len(next_buttons) != 1:
                 return _finish(run_dir, 'needs_adapter', filled, completed, reason='next_control_ambiguous', screenshots=screenshots)
             if next_buttons[0]['frame_path']:

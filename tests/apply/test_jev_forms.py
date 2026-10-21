@@ -62,3 +62,13 @@ skill_bank:
     assert "Reconciled ledgers" in text and "My own words" in text and "MYOB" in text
     for banned in ("Overstated claim", "Old words", "SAP", "2000-01-01", "Bob"):
         assert banned not in text
+
+
+def test_previous_employer_matches_whole_words_not_substrings(tmp_path):
+    (tmp_path / "master_resume.md").write_text(
+        "## Professional experience\n### Analyst, ANZ\n### Clerk, Cole\n### Tutor, Northside Tax\n## Education\n")
+    def worked(company):
+        return jf.job_answers(tmp_path, {"company": company})["background.previously_worked_for_employer"][1]
+    assert worked("Manzanita Holdings") == "no" and worked("Coles Group") == "no"
+    assert worked("ANZ Banking Group") == "yes" and worked("Cole Pty Ltd") == "yes"
+    assert worked("Northside Tax Services Pty Ltd") == "yes"

@@ -301,3 +301,52 @@ def test_large_unused_profile_does_not_block_writer_and_reviewer_at_default_budg
     for index in (1, 4):
         tool_result = json.loads(calls[index]["messages"][-1]["content"])
         assert json.loads(tool_result["result"])[0]["text"] == source
+
+
+def test_screening_answer_is_never_taken_by_position_when_its_question_is_missing(tmp_path):
+    from pipeline.agentic import draft
+    from pipeline.agentic.contracts import AgenticScreeningAnswer, DraftProposal
+    bundle = _bundle(tmp_path)
+    questions = ("Are you an Australian citizen?", "Describe your reporting experience")
+    evaluation = _evaluation(bundle.bundle_hash).model_copy(update={"screening_questions": questions})
+    cited = AgenticScreeningAnswer(
+        question=questions[1], answer="I automated reporting with Python.", source="evidence",
+        citations=(SourceCitation(source_id="cv.md", content_hash=bundle.sources["cv.md"], quote="Automated reporting with Python"),))
+    content = _proposal({"evaluation": {"run_key": evaluation.run_key.model_dump(mode="json")},
+                         "evaluation_hash": draft._evaluation_hash(evaluation)})["content"]
+    # The model skipped the citizenship question and answered only the second one.
+    proposal = DraftProposal(run_key=evaluation.run_key, evaluation_hash=draft._evaluation_hash(evaluation),
+                             evidence_hash=bundle.bundle_hash, content=content, screening_answers=(cited,))
+    out = draft._proposal(SimpleNamespace(output=proposal), evaluation.run_key, draft._evaluation_hash(evaluation), evaluation, bundle)
+    first, second = out.screening_answers
+    assert (first.question, first.source, first.answer) == (questions[0], "owner_to_answer", "")  # not cross-wired
+    assert (second.question, second.source) == (questions[1], "evidence") and second.answer == cited.answer
+
+
+def _failure_captures(run_key):
+    from pipeline.agentic import draft, review
+    verdict = SimpleNamespace(verdict="reject", criteria={"claims_supported": False}, feedback=("quotes the private letter",))
+    draft._save_pdf_failure(run_key, b"%PDF cv", b"%PDF letter", {"ok": False})
+    draft._save_rejection(run_key, verdict, {"letter": "Dear private employer", "removed": []})
+    review._log_review_failure(run_key, {"verdict": "approve", "feedback": ["private reviewer words"]})
+
+
+def _written(root):
+    return [p for p in root.rglob("*") if p.is_file()]
+
+
+def test_private_failure_capture_is_off_unless_opted_in(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("JOBWATCH_CAPTURE_PRIVATE_FAILURES", raising=False)
+    _failure_captures(_evaluation().run_key)
+    assert _written(tmp_path) == []  # CV/letter PDFs, letter text and reviewer replies stay out of the data dir
+
+
+def test_opted_in_private_failure_capture_is_owner_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("JOBWATCH_CAPTURE_PRIVATE_FAILURES", "true")
+    _failure_captures(_evaluation().run_key)
+    files = _written(tmp_path)
+    assert {p.name for p in files} >= {"cv.pdf", "letter.pdf", "report.json"} and len(files) == 5
+    assert all(p.stat().st_mode & 0o777 == 0o600 for p in files), [oct(p.stat().st_mode) for p in files]
+    assert all(p.parent.stat().st_mode & 0o077 == 0 for p in files)

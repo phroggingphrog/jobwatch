@@ -5,8 +5,10 @@ and one Playwright thread. Snapshot attachments disconnect without closing it.
 """
 from __future__ import annotations
 
+import contextvars
 from concurrent.futures import Future
 from dataclasses import dataclass
+import functools
 import hashlib
 import ipaddress
 import math
@@ -22,11 +24,15 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
+from jobwatch.apply.submit_confirm import FINAL_LABEL
+
 
 _CONFIRM_TEXT = re.compile(r"thank you for (applying|your application|submitting)|thanks for applying|"
     r"application (has been |was )?(submitted|received|sent)|(successfully|we've|we have) (submitted|received) your application|"
-    r"your application (is|has been) (complete|in)", re.I)
-_CONFIRM_URL = re.compile(r"(?:^|[/_.-])(thank-?you|confirm(ation|ed)?|success|submitted|received|complete(d)?)(?:$|[/_.-])", re.I)
+    r"your application (is|has been) (complete|in)\b", re.I)          # \b: "is incomplete" / "is invalid" are failures
+# Only the last path segment counts: a step such as /complete-profile or /confirm-email is not a confirmation page.
+_CONFIRM_URL = re.compile(r"(?:^|[/_.-])(thank-?you|confirmation|confirmed|success|submitted|received|completed)"
+                          r"(?:\.\w+)?/?$", re.I)
 
 
 class BrowserSessionError(ValueError):
@@ -233,7 +239,7 @@ class _Session:
             # Verification/login buttons can also say Submit. They must never
             # authorize transmission of the employer's application form.
             if (page is self.application_page and not self.owner_checkpoint and not verification and
-                    re.fullmatch(r'(submit|apply|send)( (application|now|my application))?', label)):
+                    FINAL_LABEL.fullmatch(label)):
                 self._release_review(page)
                 self._arm_submit_watch(page)
                 return callback(page)
@@ -273,6 +279,30 @@ class _Session:
         self.submit_result = None
         self.submit_watch = {'url': page.url, 'text_before': bool(_CONFIRM_TEXT.search(text)),
                              'unsure_at': now + 6, 'until': now + 90, 'next': now + 1}
+
+    def _confirmed_submit(self, page, expected, prepared):
+        """Owner-confirmed Submit: press the recognised final control once, only while the live page, session and
+        owner revision still give the digest the owner confirmed (jobwatch.apply.submit_confirm)."""
+        from jobwatch.apply import submit_confirm
+        if page is not self.application_page or not self.review_protected or self.owner_checkpoint:
+            raise BrowserSessionError('submit_not_confirmable')
+        try:
+            live = submit_confirm.live_digest(prepared, page, session_id=self.target_id, owner_revision=self.owner_revision)
+            control = submit_confirm.final_control(page, prepared['final_control']) if live == expected else None
+        except Exception:  # noqa: BLE001 - anything unreadable is not the confirmed form
+            control = None
+        if control is None:
+            raise BrowserSessionError('submit_confirmation_stale')
+        self._release_review(page)
+        self._arm_submit_watch(page)
+        try:
+            control.click(timeout=10000)
+        except Exception:
+            # Not pressed (overlay, detached): put the review guard back so nothing else can submit this form.
+            self.submit_watch = None
+            self._protect_review(page)
+            raise BrowserSessionError('submit_press_failed') from None
+        return 'pressed'
 
     def _check_submit(self):
         watch = self.submit_watch
@@ -440,7 +470,7 @@ class _Session:
                                 self.automation_active = False
                         continue
                     try:
-                        if kind == 'owner' and self.automation_active:
+                        if kind in ('owner', 'view') and self.automation_active:
                             raise BrowserSessionError('automation_in_progress')
                         if kind == 'owner':
                             self.owner_revision += 1
@@ -456,6 +486,12 @@ class _Session:
                             with self.lock:
                                 self.automation_active = False
                         future.set_result(result)
+                    except BrowserSessionError as exc:
+                        if kind != 'confirm':
+                            with self.lock:
+                                self.last_error = str(exc)
+                        future.set_exception(BrowserSessionError(str(exc)) if kind == 'confirm'
+                                             else BrowserSessionError('browser_action_failed'))
                     except Exception as exc:
                         with self.lock:
                             self.last_error = str(exc) if isinstance(exc, BrowserSessionError) else 'browser_action_failed'
@@ -489,6 +525,7 @@ class _Session:
 
     def submit(self, kind, callback):
         future = Future()
+        callback = functools.partial(contextvars.copy_context().run, callback)   # runs as the person who asked
         with self.lock:
             if self.state != 'ready':
                 raise BrowserSessionError('browser_session_not_ready')
@@ -563,6 +600,13 @@ class BrowserSessionManager:
     def status(self, application_id):
         return self._get(application_id).status()
 
+    def open_applications(self) -> list[str]:
+        """Application ids with a live browser for the current person."""
+        from jobwatch import users
+        with self.lock:
+            return [key[1] if isinstance(key, tuple) else key for key, session in self.sessions.items()
+                    if session.state == 'ready' and (self.data_root is not None or key[0] == users.current())]
+
     def take_submit_result(self, application_id):
         """'confident' | 'unsure' | None: what the page showed after the owner pressed Submit. Read once."""
         try:
@@ -575,6 +619,11 @@ class BrowserSessionManager:
 
     def prepare(self, application_id, callback) -> Future:
         return self._get(application_id).submit('prepare', callback)
+
+    def confirm_submit(self, application_id, expected_digest: str, prepared: dict, *, timeout=60) -> str:
+        """Press final Submit for the exact fill the owner confirmed; BrowserSessionError with a fixed reason otherwise."""
+        session = self._get(application_id)
+        return session.submit('confirm', lambda page: session._confirmed_submit(page, expected_digest, prepared)).result(timeout=timeout)
 
     def with_page(self, application_id, callback, *, timeout=120):
         return self._get(application_id).submit('inspect', callback).result(timeout=timeout)
@@ -634,7 +683,10 @@ class BrowserSessionManager:
             dx, dy = action.get('dx', 0), action.get('dy', 0)
             if any(type(value) not in (int, float) or not math.isfinite(value) or abs(value) > 5000 for value in (dx, dy)):
                 raise BrowserSessionError('invalid_browser_scroll')
-            callback = lambda page: page.mouse.wheel(dx, dy)
+            # Scrolling to review changes nothing in the form, so it is not an owner revision (that would void a
+            # Submit confirmation every time the owner reads the page); field changes are caught by form_state.
+            session.submit('view', lambda page: page.mouse.wheel(dx, dy)).result(timeout=15)
+            return session.status()
         else:
             raise BrowserSessionError('invalid_browser_action')
         operation = callback

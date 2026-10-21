@@ -109,4 +109,4 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
                 seen.add(p.source_id)
                 results.append(p)
         cfg.origins.add(f"jora:{keyword}")
-    return results
+    return results[: cfg.limit] if cfg.limit else results
