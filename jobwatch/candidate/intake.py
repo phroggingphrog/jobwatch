@@ -45,7 +45,8 @@ KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
-         "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand")
+         "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
+         "proposal_in_progress")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -282,7 +283,8 @@ def _check(raw, docs, n: int) -> ProfileFact | None:
     return ProfileFact(id=f"f{n}", section=section, value=value, basis=basis, sources=sources, note=note)
 
 
-def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int | None = None) -> Proposal:
+def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int | None = None,
+            deadline: float | None = None) -> Proposal:
     """Parse the uploads into a draft Proposal (revision 1) and store it; profile/ is not touched."""
     root = _root(person)
     index = _read_json(root / "uploads.json", {})
@@ -302,7 +304,7 @@ def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int |
         raise IntakeError("no_extractable_text")
     res = llm.chat(get_model("reader", person), [
         {"role": "system", "content": PROMPT % {"sections": ", ".join(SECTIONS)}},
-        {"role": "user", "content": "\n\n".join(blocks)}], json_mode=True)
+        {"role": "user", "content": "\n\n".join(blocks)}], json_mode=True, deadline=deadline)
     if not isinstance(res.data, dict):
         raise IntakeError("parse_failed")
     facts: list[ProfileFact] = []

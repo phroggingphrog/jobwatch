@@ -120,7 +120,7 @@ def test_upload_size_and_type_limits(env):
     assert big.status_code == 413 and big.json() == {'error': 'too_large'}
     # declared length over the cap is refused before reading; the streamed body is also counted
     r = c.post(P + '/uploads', content=b'x', headers={**h(), 'Content-Length': str(11 * 1024 * 1024), 'Content-Type': 'multipart/form-data; boundary=x'})
-    assert r.status_code in (413, 400)
+    assert r.status_code == 413 and r.json() == {'error': 'too_large'}
     chunked = c.post(P + '/uploads', content=(b'x' * 65536 for _ in range(200)), headers={**h(), 'Content-Type': 'multipart/form-data; boundary=x'})
     assert chunked.status_code == 413 and chunked.json() == {'error': 'too_large'}
     # exactly the cap is accepted; the cap is not raised for other routes
@@ -128,6 +128,9 @@ def test_upload_size_and_type_limits(env):
     r = c.post(P + '/proposals', content=b'{"upload_ids": [], "pad": "' + b'x' * 70000 + b'"}', headers={**h(), 'Content-Type': 'application/json'})
     assert r.status_code == 413 and r.json() == {'error': 'request_too_large'}
     assert c.post(P + '/uploads', files={'file': ('cv.txt', CV)}, data={'kind': 'cv'}).status_code == 401
+    big_cv = {'files': {'file': ('cv.txt', b'x' * 70000)}, 'data': {'kind': 'cv'}}
+    assert c.post(P + '/uploads', headers=h(APPROVE), **big_cv).status_code == 403   # no run scope: refused before buffering
+    assert c.post(P + '/uploads', headers=h(), **big_cv).status_code == 201
     assert c.post(P + '/uploads', data={'kind': 'cv'}, headers=h()).status_code == 422
 
 
@@ -148,3 +151,47 @@ def test_every_intake_code_has_a_mapping():
 def test_capabilities_lists_profile(env):
     caps = env.get('/api/agent/capabilities', headers=h()).json()
     assert caps['profile']['upload_max_bytes'] == 10 * 1024 * 1024
+
+
+def test_json_cap_applies_to_patch_too(env):
+    c = env
+    pid = proposal(c)['id']
+    pad = {'op': 'add', 'section': 'skill', 'value': 'x' * 70000}
+    r = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': 1, 'edits': [pad]}, headers=h(APPROVE))
+    assert r.status_code == 413 and r.json() == {'error': 'request_too_large'}
+    ok = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': 1, 'edits': [{**pad, 'value': 'Bookkeeping'}]}, headers=h(APPROVE))
+    assert ok.status_code == 200 and ok.json()['revision'] == 2
+
+
+def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
+    import threading
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
+    for person in ('fixture-a', 'fixture-b'):
+        users.create_user_dirs(person)
+    started, release, seen = threading.Event(), threading.Event(), []
+
+    class Blocking:
+        def chat(self, *a, **kw):
+            seen.append(kw.get('deadline'))
+            started.set()
+            assert release.wait(10)
+            return FakeLLM().chat(*a, **kw)
+    credentials = {RUN: Principal('fixture-a'), OTHER: Principal('fixture-b')}
+    app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: Blocking())
+    with TestClient(app) as c:
+        ids = {t: upload(c, token=t).json()['upload_id'] for t in (RUN, OTHER)}
+        first = {}
+        def go():
+            first['r'] = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
+        t = threading.Thread(target=go)
+        t.start()
+        assert started.wait(10)
+        r = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
+        assert r.status_code == 409 and r.json() == {'error': 'proposal_in_progress'}
+        release.set()
+        t.join(10)
+        assert first['r'].status_code == 201 and seen[0] is not None           # deadline passed to the LLM
+        again = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
+        assert again.status_code == 201                                       # slot released in finally

@@ -77,7 +77,7 @@ documents, contacts an employer or submits; confirmation only starts discovery w
 
 | Method and path | Scope | Result |
 |---|---|---|
-| `POST /api/agent/profile/uploads` | run | Multipart `file` + form `kind` (`cv`, `letter`, `evidence`; `.pdf .docx .txt .md`, 10 MiB). 201 `{upload_id,sha256,kind,bytes}`. Only route exempt from the 64 KiB cap; counted while streaming. |
+| `POST /api/agent/profile/uploads` | run | Multipart `file` + form `kind` (`cv`, `letter`, `evidence`; `.pdf .docx .txt .md`, 10 MiB). 201 `{upload_id,sha256,kind,bytes}`. Only route exempt from the 64 KiB cap (all POST, PUT, PATCH and DELETE bodies are capped); needs run scope before the body is read; counted while streaming. |
 | `POST /api/agent/profile/proposals` | run | `{upload_ids,base_version}` -> 201 proposal (facts with basis and sources, open questions). |
 | `GET /api/agent/profile/proposals/{id}` | read | The proposal. |
 | `PATCH /api/agent/profile/proposals/{id}` | interact | `{expected_revision,edits}` (`add`, `set`, `remove`). |
@@ -90,7 +90,7 @@ Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_f
 `already_adopted`, `profile_edited_by_hand`. 413: `too_large`. 415: `unsupported_type`. 422:
 `no_extractable_text`, `invalid_edit`, `parse_failed`, `unreadable_document`, `nothing_to_adopt`. 404:
 `upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
-403: `person_required`. Capabilities include a `profile` object with the upload limits.
+403: `person_required`. 409 also `proposal_in_progress` (one paid parse per person at a time; 180 s deadline). Capabilities include a `profile` object with the upload limits.
 
 ## Runtime and recovery
 

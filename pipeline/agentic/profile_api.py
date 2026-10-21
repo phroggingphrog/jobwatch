@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -14,7 +16,8 @@ from jobwatch.candidate.intake import IntakeError
 PREFIX = '/api/agent/profile'
 UPLOAD_PATH = PREFIX + '/uploads'
 UPLOAD_BODY_CAP = intake.MAX_UPLOAD_BYTES + 64 * 1024     # file cap plus multipart framing; the exact file cap is intake's
-STATUS = {'proposal_changed': 409, 'scope_changed': 409, 'adopt_first': 409, 'proposal_not_draft': 409,
+PROPOSE_SECONDS = 180      # overall deadline for the one paid parse a person may have in flight
+STATUS = {'proposal_in_progress': 409, 'proposal_changed': 409, 'scope_changed': 409, 'adopt_first': 409, 'proposal_not_draft': 409,
           'already_adopted': 409, 'profile_edited_by_hand': 409,
           'too_large': 413, 'unsupported_type': 415,
           'no_extractable_text': 422, 'invalid_edit': 422, 'parse_failed': 422, 'unreadable_document': 422,
@@ -49,6 +52,7 @@ class ConfirmRequest(_Body):
 
 
 def mount(app, require, get_config, llm_factory):
+    busy, busy_lock = set(), threading.Lock()   # persons with a proposal parse in flight
     read, run, interact, approve = (require(s) for s in ('read', 'run', 'interact', 'approve'))
 
     @app.exception_handler(IntakeError)
@@ -80,7 +84,16 @@ def mount(app, require, get_config, llm_factory):
         if llm is None:
             from jobwatch.llm import LLM
             llm = LLM()
-        return dump(call(principal.person, intake.propose, body.upload_ids, llm, base_version=body.base_version))
+        with busy_lock:
+            if principal.person in busy:
+                raise IntakeError('proposal_in_progress')
+            busy.add(principal.person)
+        try:
+            return dump(call(principal.person, intake.propose, body.upload_ids, llm, base_version=body.base_version,
+                             deadline=time.monotonic() + PROPOSE_SECONDS))
+        finally:
+            with busy_lock:
+                busy.discard(principal.person)
 
     @app.get(PREFIX + '/proposals/{proposal_id}')
     def get_proposal(proposal_id: str, principal=Depends(read)):

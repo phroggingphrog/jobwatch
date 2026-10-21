@@ -186,18 +186,32 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         finally:
             os.close(fd)
 
+    def lookup(authorization):
+        value = authorization.removeprefix('Bearer ') if authorization and authorization.startswith('Bearer ') else ''
+        digest = hashlib.sha256(value.encode()).digest()
+        principal = None
+        for expected, possible in hashes:
+            if hmac.compare_digest(digest, expected):
+                principal = possible
+        return principal
+
     app = FastAPI(title='Jobwatch Agent API', version='1', lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware('http')
     async def private_responses(request, call_next):
         # Bound JSON bodies before validation; do not log or echo their contents.
-        if request.method == 'POST':
-            # Only the profile upload route has its own, larger cap; it needs a valid bearer before we buffer 10 MiB.
-            upload = request.url.path == profile_api.UPLOAD_PATH
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            # Every body-bearing method is capped at 64 KiB; only the profile upload has its own larger cap, and it
+            # needs a bearer with run scope before we buffer 10 MiB.
+            upload = request.method == 'POST' and request.url.path == profile_api.UPLOAD_PATH
             cap, chunks, size = (profile_api.UPLOAD_BODY_CAP if upload else 65536), [], 0
-            if upload and not known(request.headers.get('authorization')):
-                return JSONResponse({'error': 'authentication_required'}, status_code=401, headers={'WWW-Authenticate': 'Bearer'})
+            if upload:
+                who = lookup(request.headers.get('authorization'))
+                if who is None:
+                    return JSONResponse({'error': 'authentication_required'}, status_code=401, headers={'WWW-Authenticate': 'Bearer'})
+                if 'run' not in who.scopes:
+                    return JSONResponse({'error': 'scope_required'}, status_code=403)
             too_large = {'error': 'too_large'} if upload else {'error': 'request_too_large'}
             declared = request.headers.get('content-length', '')
             if declared.isdigit() and int(declared) > cap:
@@ -212,17 +226,6 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
         return response
-
-    def lookup(authorization):
-        value = authorization.removeprefix('Bearer ') if authorization and authorization.startswith('Bearer ') else ''
-        digest = hashlib.sha256(value.encode()).digest()
-        principal = None
-        for expected, possible in hashes:
-            if hmac.compare_digest(digest, expected):
-                principal = possible
-        return principal
-
-    known = lookup
 
     def require(scope):
         def authenticate(authorization: str | None = Header(default=None)):
