@@ -76,7 +76,7 @@ def _main(argv: list[str]) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     p_run = sub.add_parser("run", help="collect, filter, dedupe, alert")
     p_run.add_argument("--tier", choices=["fast", "slow", "all"], default="fast")
-    p_run.add_argument("--dry-run", action="store_true", help="mark new matches dry_run instead of board")
+    p_run.add_argument("--dry-run", action="store_true", help="store postings and matches, but leave new matches queued (not on the board)")
     p_run.add_argument("--only", choices=registry.COLLECTORS, help="run one collector")
     p_run.add_argument("--limit", type=int, help="max postings per collector (also stops requests early)")
     sub.add_parser("read", help="AI reader only: read and judge waiting ads, no collecting")
