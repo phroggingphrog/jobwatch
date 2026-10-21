@@ -21,7 +21,8 @@ direction takes precedence; preserve their words and do not silently narrow the 
   Read [the backend contract](pipeline/agentic/CHAT.md) and actual call sites before editing.
 - Keep candidate facts and preferences in each person's approved runtime files.
   Preserve per-person isolation, server-bound identity and exact-input approvals.
-- Never submit an application, contact an employer, or treat model text as human
+- Never submit an application except through the owner's confirmed-Submit path
+  (`jobwatch/apply/submit_confirm.py`); never contact an employer or treat model text as human
   approval. Keep candidate data on approved paid routes and out of hosted tracing.
 - Work in an isolated branch or worktree. Do not activate services, timers or a
   deployment as a side effect of a source change.

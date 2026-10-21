@@ -43,8 +43,11 @@ Keywords may help discover postings; they do not decide personal fit.
 
 ## Boundaries
 
-- The human alone submits applications. The agent does not send employer messages
-  or move money. Approval to prepare materials does not authorize submission.
+- An application is submitted only by the owner's own click on the employer's Submit,
+  or by Jobwatch pressing it after the owner explicitly confirms that exact reviewed fill
+  (board button, or an approved chat `submit_application`). Approval to prepare materials
+  does not authorize submission, and auto-fill never submits by itself. The agent does not
+  send employer messages or move money.
 - Identity comes from authentication. Human responses belong to their exact
   pending interaction and inputs; recovery must not reuse an old approval for new work.
 - Personal claims require approved canonical evidence. Advisory memory and model
@@ -65,7 +68,8 @@ Keywords may help discover postings; they do not decide personal fit.
 - Authorized users can retrieve verified documents. Restart, retry and cancellation
   preserve identity, approval boundaries and accountable usage.
 - Claims of deployment and writing quality require their own evidence. A form map
-  does not establish that a browser form was filled; final Submit remains human-only.
+  does not establish that a browser form was filled; final Submit needs the owner's click or
+  their confirmation of that exact filled form.
 
 Operational contracts and setup are in [the backend guide](pipeline/agentic/CHAT.md).
 Domain terms live in [GLOSSARY.md](GLOSSARY.md); architecture decisions live in
@@ -124,3 +128,15 @@ Owner's embedding-model choice, 2026-10-21:
 Use Qwen3 Embedding 8B through the existing paid OmniRoute route for canonical
 candidate-evidence retrieval. Approval is specific to embeddings; the chat route
 allowlist, budgets, per-person credentials and human approval boundaries remain.
+
+## Confirmed Submit
+
+Owner direction on 2026-10-21:
+
+> yeah its allright if it closes the owners open browwser, so basically it can submit either th eowner click the submit button OR with an explicit confirmation by user
+
+Auto-fill may close the owner's open browser for the same person. A confirmation binds to
+the reviewed fill (run, package, browser target, page URL, owner revision, attached PDFs,
+the one recognised final control and the read-back field values) and is refused if any of
+it changed, after one use, or 15 minutes after a chat approval. See
+`jobwatch/apply/submit_confirm.py`.

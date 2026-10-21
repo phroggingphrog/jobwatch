@@ -353,7 +353,7 @@ def test_board_confirmation_presses_submit_for_the_shown_fill_only(tmp_path, mon
     state = ready_state(monkeypatch, manifest)
     page = client.get(f'/job/{client.pid}/prepare').text
     digest = sc.digest(state)
-    assert 'Submit this application' in page and digest in page
+    assert f'/job/{client.pid}/prepare/submit' in page and digest in page
     assert client.post(f'/job/{client.pid}/prepare/submit', data={'digest': '0' * 64}).status_code == 409
     assert browser.confirms is None                                   # a digest for another fill presses nothing
     response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': digest}, follow_redirects=False)
@@ -377,7 +377,7 @@ def test_no_submit_button_without_a_confirmable_fill(tmp_path, monkeypatch):
     client, browser, manifest = setup(tmp_path, monkeypatch)
     browser.opened = True
     ready_state(monkeypatch, manifest).pop('final_control')
-    assert 'Submit this application' not in client.get(f'/job/{client.pid}/prepare').text
+    assert '/prepare/submit' not in client.get(f'/job/{client.pid}/prepare').text      # no confirm form
 
 
 def _queue(client, digest, *, now=None):
