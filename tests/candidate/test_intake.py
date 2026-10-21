@@ -40,6 +40,7 @@ def person():
     users.create_user_dirs('sam')
     with users.use('sam'):
         yield 'sam'
+    intake._inflight.clear()
 
 
 @pytest.fixture
@@ -1000,3 +1001,46 @@ def test_upload_profile_files_refuses_symlinks(person):
 
 def test_upload_profile_files_with_nothing_to_offer(person):
     assert intake.upload_profile_files(person) == []
+
+
+def _backdate(person, pid, seconds):
+    import os
+    path = users.user_dir(person) / 'intake' / 'proposals' / (pid + '.json')
+    old = time.time() - seconds
+    os.utime(path, (old, old))
+
+
+def test_a_parsing_draft_with_no_live_parse_is_recovered(person, fake_llm, upload_id, monkeypatch):
+    real, dead = intake._spawn, {'on': True}
+    monkeypatch.setattr(intake, '_spawn', lambda *a: None if dead['on'] else real(*a))   # no worker runs: the process "died"
+    p = intake.start_proposal(person, [upload_id], fake_llm)
+    qid = next(q.id for q in p.questions if q.section == 'career_focus')
+    mine = intake.answer(person, p.id, expected_revision=1, question_id=qid, text='Bookkeeping')
+    intake._release(person)                                            # and its slot is gone
+    assert intake.load_proposal(person, p.id).status == 'parsing'      # too fresh: another process may still own it
+    _backdate(person, p.id, 2 * intake.PARSE_SECONDS + 30)
+    got = intake.load_proposal(person, p.id)
+    assert got.status == 'draft' and got.parse_error == 'parse_interrupted' and got.revision == mine.revision + 1
+    assert [f.value for f in got.facts if f.actor == 'person'] == ['Bookkeeping']
+    assert intake.open_proposal(person).status == 'draft'
+    dead['on'] = False
+    assert intake.add_uploads(person, p.id, [upload_id], fake_llm).status == 'parsing'   # usable again
+    settle(person, p.id)
+
+
+def test_a_parsing_draft_with_a_live_slot_is_not_recovered(person, fake_llm, upload_id, monkeypatch):
+    monkeypatch.setattr(intake, '_spawn', lambda *a: None)
+    p = intake.start_proposal(person, [upload_id], fake_llm)           # the slot stays claimed
+    _backdate(person, p.id, 2 * intake.PARSE_SECONDS + 30)
+    assert intake.load_proposal(person, p.id).status == 'parsing'
+    intake._release(person)
+
+
+def test_start_proposal_that_cannot_spawn_finishes_as_parse_failed(person, fake_llm, upload_id, monkeypatch):
+    def boom(*a):
+        raise RuntimeError('cannot start thread')
+    monkeypatch.setattr(intake, '_spawn', boom)
+    with pytest.raises(RuntimeError):
+        intake.start_proposal(person, [upload_id], fake_llm)
+    saved = intake.open_proposal(person)
+    assert saved.status == 'draft' and saved.parse_error == 'parse_failed' and not intake._inflight

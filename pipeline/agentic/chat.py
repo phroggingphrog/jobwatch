@@ -11,6 +11,7 @@ import json
 import os
 import re
 import sqlite3
+import string
 import threading
 import time
 from contextvars import Context
@@ -500,6 +501,26 @@ def _build(person, conn, config, llm, selected, saver, store):
                            'note': f.note, 'sources': [{'line': r.line, 'quote': r.quote} for r in f.sources]} for f in p.facts],
                 'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
 
+    def _said(*texts):
+        """Fail closed: every string must be inside what the person wrote this turn (casefold, collapsed whitespace, no edge punctuation)."""
+        from jobwatch.candidate import intake
+        def norm(x):
+            return ' '.join(x.casefold().split()).strip(string.punctuation + ' ')
+        heard = [norm(t) for t in (scope.human_texts if scope else ())]
+        for text in texts:
+            n = norm(text) if type(text) is str else ''
+            if not n or not any(n in h for h in heard):
+                raise intake.IntakeError('not_person_words')
+
+    def _leaves(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            for v in value.values():
+                yield from _leaves(v)
+        else:
+            yield None                                        # a list or number is not the person's words
+
     def _open():
         from jobwatch.candidate import intake
         p = intake.open_proposal(person)
@@ -515,8 +536,15 @@ def _build(person, conn, config, llm, selected, saver, store):
         if type(upload_ids) is not list or any(type(i) is not str for i in upload_ids):
             raise RuntimeErrorSafe('invalid_request')
         try:
+            if scope and scope.parse_starts:
+                return {'status': 'refused', 'reason': 'one_parse_per_turn'}
             ids = list(upload_ids) + (intake.upload_profile_files(person) if use_existing_files else [])
-            invocation.require_route(llm, model_choice.get_model('reader', person))      # candidate data goes only to paid routes
+            reader = model_choice.get_model('reader', person)
+            invocation.require_route(llm, reader)                                       # candidate data goes only to paid routes
+            tokens = intake.estimate_parse_tokens(person, ids)
+            if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
+                scope.reserve(reader, 'profile_parse', tokens, 4000)
+                scope.parse_starts += 1
             current = intake.current_version(person)
             return _draft(intake.start_proposal(person, ids, llm, base_version=current['version'] if current else None))
         except intake.IntakeError as exc:
@@ -539,6 +567,7 @@ def _build(person, conn, config, llm, selected, saver, store):
         from jobwatch.candidate import intake
         try:
             p = _open()
+            _said(text)
             return _draft(intake.answer(person, p.id, expected_revision=p.revision, question_id=question_id, text=text))
         except intake.IntakeError as exc:
             return _refused(exc)
@@ -550,6 +579,9 @@ def _build(person, conn, config, llm, selected, saver, store):
         from jobwatch.candidate import intake
         try:
             p = _open()
+            if type(edits) is not list:
+                raise intake.IntakeError('invalid_edit')
+            _said(*(leaf for e in edits if isinstance(e, dict) and e.get('op') in ('add', 'set') for leaf in _leaves(e.get('value'))))
             return _draft(intake.edit(person, p.id, expected_revision=p.revision, edits=edits))
         except intake.IntakeError as exc:
             return _refused(exc)
@@ -804,6 +836,15 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                         value = {'messages': [{'role': 'user', 'content': message}]}
                         if not previous.values:
                             value['files'] = {p: create_file_data(content) for p, content in skill_files().items()}
+                    # What the person wrote, set by the server for the profile tools: this turn's message, else the last human
+                    # message in the thread plus any human answer to ask_human. Nothing here comes from the model.
+                    if message is not None:
+                        execution.human_texts = (message,)
+                    else:
+                        past = [m for m in (previous.values or {}).get('messages', []) if getattr(m, 'type', None) == 'human']
+                        execution.human_texts = tuple(
+                            [c for c in (past[-1].content,) if type(c) is str] if past else []) + tuple(
+                            d['message'] for d in (decisions or []) if d.get('type') == 'respond' and type(d.get('message')) is str)
                     execution.check()
                     result = previous.values if recover and same_invocation and not previous.next else graph.invoke(value, graph_config)
                     if recover and same_invocation and not execution.deliverables:

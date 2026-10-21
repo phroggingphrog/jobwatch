@@ -50,7 +50,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
-         "proposal_in_progress", "profile_incomplete", "proposal_parsing")
+         "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -315,6 +315,12 @@ def _load_docs(person: str, upload_ids: list[str]) -> tuple[list[tuple[str, list
     return docs, blocks
 
 
+def estimate_parse_tokens(person: str, upload_ids: list[str]) -> int:
+    """Rough prompt size (tokens) of parsing these uploads, for budget reservation; validates the ids like the parse does."""
+    _, blocks = _load_docs(person, upload_ids)
+    return (len(PROMPT) + sum(len(b) for b in blocks)) // 3
+
+
 def _model_parse(person: str, docs, blocks, llm: LLM, deadline: float | None) -> tuple[list[ProfileFact], list[Question]]:
     """The one paid call: checked facts (ids f1..) and the model's questions (ids q1..), nothing added by us."""
     res = llm.chat(get_model("reader", person), [
@@ -466,7 +472,11 @@ def start_proposal(person: str, upload_ids: list[str], llm: LLM, *, base_version
                             uploads=tuple(dict.fromkeys(sha for sha, _ in docs)), facts=tuple(facts),
                             questions=tuple(questions), status="parsing")
         save_proposal(person, proposal)
-        _spawn(person, proposal.id, base_version, docs, blocks, llm, deadline)
+        try:
+            _spawn(person, proposal.id, base_version, docs, blocks, llm, deadline)
+        except BaseException:
+            _finish_parse(person, proposal.id, base_version, [], None, "parse_failed")     # no worker will ever merge
+            raise
     except BaseException:
         _release(person)
         raise
@@ -482,7 +492,7 @@ def add_uploads(person: str, proposal_id: str, upload_ids: list[str], llm: LLM, 
     _claim(person)
     try:
         with _locked(person, proposal_id + ".lock", "proposals"):
-            cur = load_proposal(person, proposal_id)
+            cur = load_proposal(person, proposal_id, own_slot=True)     # the slot is ours: only a dead worker leaves 'parsing'
             if cur.status == "parsing":
                 raise IntakeError("proposal_parsing")
             if cur.status != "draft":
@@ -578,14 +588,20 @@ def save_proposal(person: str, proposal: Proposal) -> None:
     _write_private(_root(person) / "proposals" / (proposal.id + ".json"), proposal.model_dump_json().encode())
 
 
-def load_proposal(person: str, proposal_id: str) -> Proposal:
+def load_proposal(person: str, proposal_id: str, *, own_slot: bool = False) -> Proposal:
     if not isinstance(proposal_id, str) or not _ID.match(proposal_id):
         raise IntakeError("proposal_not_found")
+    path = _root(person) / "proposals" / (proposal_id + ".json")
     try:
-        return Proposal.model_validate_json(
-            read_regular_file(_root(person) / "proposals" / (proposal_id + ".json"), MAX_JSON_BYTES))
+        p = Proposal.model_validate_json(read_regular_file(path, MAX_JSON_BYTES))
+        mtime = path.stat().st_mtime if p.status == "parsing" else 0
     except (FileNotFoundError, OSError, ValueError):
         raise IntakeError("proposal_not_found") from None
+    if p.status == "parsing" and (own_slot or person not in _inflight) and time.time() - mtime > 2 * PARSE_SECONDS:
+        # The worker is gone (a killed process) and no parse could still own it, even in another process: the draft
+        # becomes usable again with the person's answers. Computed on read, so it needs no lock; the next write persists it.
+        return p.model_copy(update={"status": "draft", "parse_error": "parse_interrupted", "revision": p.revision + 1})
+    return p
 
 
 # ----------------------------------------------------------------------------- corrections and answers

@@ -1254,7 +1254,7 @@ def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkey
         {'tool': 'profile_status', 'arguments': {}},
         {'tool': 'profile_confirmation', 'arguments': {}},
         {'answer': 'Tell me your work rights.'}])
-    result = chat.dispatch(person=person, thread_id='onb-tools', config=config, llm=llm, message='Help me set up my profile')
+    result = chat.dispatch(person=person, thread_id='onb-tools', config=config, llm=llm, message='Help me set up my profile, I want Bookkeeping')
     assert result['status'] == 'complete' and result['tools'] == ['profile_start', 'profile_answer', 'profile_answer',
                                                                   'profile_status', 'profile_confirmation'], result
     with users.use(person):
@@ -1286,3 +1286,79 @@ def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkey
     result = chat.dispatch(person=person, thread_id='onb-empty', config=config, llm=llm, message='Confirm?')
     tool_msg = next(m['content'] for m in seen[-1]['messages'] if 'profile_incomplete' in str(m['content']))
     assert result['status'] == 'complete' and 'career focus' in tool_msg.lower()
+
+
+def _tool_texts(seen):
+    return json.dumps([m['content'] for body in seen for m in body['messages']])
+
+
+def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    person, prop, config = onboarding
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_answer', 'arguments': {'question_id': 'q3', 'text': 'Permanent resident'}},
+        {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'skill', 'value': 'Python'}]}},
+        {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'preference', 'value': {'note': 'Remote only'}}]}},
+        {'answer': 'Could you tell me your work rights?'}])
+    chat.dispatch(person=person, thread_id='words', config=config, llm=llm, message='My work rights are Citizen. I know excel.')
+    assert _tool_texts(seen).count('not_person_words') >= 3
+    with users.use(person):
+        now = intake.load_proposal(person, prop.id)
+    assert now.revision == prop.revision and now.facts == prop.facts            # nothing was recorded
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_answer', 'arguments': {'question_id': 'q3', 'text': ' citizen. '}},
+        {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'skill', 'value': 'Excel'}]}},
+        {'answer': 'Noted.'}])
+    chat.dispatch(person=person, thread_id='words2', config=config, llm=llm, message='My work rights are Citizen. I know excel.')
+    with users.use(person):
+        got = intake.load_proposal(person, prop.id)
+    stated = {(f.section, f.value) for f in got.facts if f.actor == 'person'}
+    assert ('work_rights', 'citizen.') in {(s, v.strip()) for s, v in stated} or ('work_rights', 'citizen') in stated
+    assert ('skill', 'Excel') in stated and got.revision == prop.revision + 2
+
+
+def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    person, prop, config = onboarding
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_confirm', 'arguments': {'proposal_id': prop.id}},
+        {'tool': 'profile_answer', 'arguments': {'question_id': 'q1', 'text': 'between roles'}},
+        {'tool': 'profile_answer', 'arguments': {'question_id': 'q2', 'text': 'from March'}},
+        {'answer': 'Noted.'}])
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='resumed', config=config, llm=llm, **kw)
+    first = turn(message='I am between roles and want bookkeeping')
+    assert first['status'] == 'interrupted'
+    second = turn(decisions=[{'type': 'reject'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+                  approval_bindings=[i['binding'] for i in first['interactions']])
+    assert second['status'] == 'complete', second
+    with users.use(person):
+        got = intake.load_proposal(person, prop.id)
+    stated = {f.section: f.value for f in got.facts if f.actor == 'person'}
+    assert stated.get('employment_status') == 'between roles' and 'availability' not in stated    # q2 text was never said
+    assert 'not_person_words' in _tool_texts(seen)
+
+
+def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, monkeypatch):
+    from jobwatch import model_choice, users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
+    person = 'twice'
+    users.create_user_dirs(person)
+    with users.use(person):
+        up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
+    start = {'tool': 'profile_start', 'arguments': {'upload_ids': [up], 'use_existing_files': False}}
+    llm, seen = _onboarding_llm([start, start, {'answer': 'Started.'}])
+    result = chat.dispatch(person=person, thread_id='twice', config=config, llm=llm, message='Start my profile')
+    assert result['status'] == 'complete' and 'one_parse_per_turn' in _tool_texts(seen)
+    base = chat.dispatch(person=person, thread_id='none', config=config, llm=_onboarding_llm([{'answer': 'Hi'}])[0], message='Hi')
+    assert result['usage']['model_calls'] == 3 + 1                  # three chat calls plus the one reserved parse
+    assert result['usage']['charged_tokens'] > base['usage']['charged_tokens'] + 3000
+    with users.use(person):
+        assert len(list((users.user_dir(person) / 'intake' / 'proposals').glob('*.json'))) == 1
+        _settled(person, intake.open_proposal(person).id)

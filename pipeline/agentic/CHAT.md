@@ -111,6 +111,14 @@ bound to the exact `proposal_digest` and `scope_digest` (a changed draft or scop
 and model text is never approval. It starts discovery within the scope shown; it authorises no documents, employer
 messages or submission. The legacy `/welcome` onboarding is unchanged.
 
+`profile_answer` and `profile_correct` are refused with `not_person_words` unless every recorded string is (after casefold,
+whitespace collapse and edge-punctuation trim) inside the person's own message for the turn (on a resumed turn: the last human
+message in the thread or a human answer to `ask_human`; none means refused). `profile_start` reserves its background parse
+against the turn's budget and may start one parse per turn. A draft left `parsing` by a dead worker (no live slot, file older
+than 2 x 180 s) reads back as `draft` with `parse_error` `parse_interrupted`, answers kept. The parse slot frees just after
+the draft turns `draft`, so an immediate new start can briefly see `proposal_in_progress`. A person-stated location does not
+drop a parsed one (both are kept). The optional MCP adapter does not know `profile_confirm` and refuses it (`invalid_chat_interaction`).
+
 Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
 confirmed scope (`approved.json` has `scope` and `scope_digest`). A version made by `jobwatch profile adopt` has none, so
 it authorises nothing until `scope-confirm` (or `jobwatch --user <name> profile confirm-scope`, which prints the scope,
