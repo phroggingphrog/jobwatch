@@ -237,13 +237,16 @@ def _build(person, conn, config, llm, selected, saver, store):
             approved = scope.approvals.get((tool_name, posting_id)) if scope else None
             if approved is None:
                 raise RuntimeErrorSafe('human_decision_required')
+            skips = []
             stage = run_agentic_job(posting_id, config, jobs, llm=llm, llm_drafter=llm, llm_reviewer=llm,
-                operation=operation, expected_run_key=approved.get('run_key'))
+                operation=operation, expected_run_key=approved.get('run_key'), _skip_reasons=skips)
             row = jobs.execute('SELECT run_key,status,reason FROM agentic_runs WHERE posting_id=? '
                                'ORDER BY generation DESC LIMIT 1', (posting_id,)).fetchone()
             outcome = {'posting_id': posting_id, 'stage': str(stage) if stage else None,
                     'run_key': row[0] if row else None, 'status': row[1] if row else 'deferred',
                     'reason': row[2] if row else 'not_run'}
+            if stage is None:
+                outcome.update(status='deferred', **(skips[0] if skips else {'reason': 'not_admitted'}))
             if scope:
                 scope.outcomes.append(outcome)
             if operation == 'evaluate':

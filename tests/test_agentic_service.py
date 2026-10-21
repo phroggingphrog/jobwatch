@@ -162,7 +162,7 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
     conversation_calls = []
     def transport(url, headers, body, timeout):
         if body['messages'][-1]['content'].startswith('Allowed tool schemas: '):
-            value = {'tool':'prepare_application','arguments':{'posting_id':42}} if not conversation_calls else {'answer':'Prepared the application; final Submit remains human.'}
+            value = {'tool':'prepare_application','arguments':{'posting_id':42}} if len(conversation_calls) % 2 == 0 else {'answer':'Check the saved operation outcome; final Submit remains human.'}
             conversation_calls.append(value)
             return 200, {'choices':[{'message':{'content':json.dumps(value)}}], 'usage':{'prompt_tokens':11,'completion_tokens':7}}
         return synthetic(url, headers, body, timeout)
@@ -195,6 +195,22 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
             if artifact['kind']!='form_map':assert response.content.startswith(b'%PDF')
         assert finished['result']['usage']['model_calls']>1
         assert conn.execute("SELECT COUNT(*) FROM agentic_packages WHERE phase='complete'").fetchone()[0]==1
+        calls_before = len(synthetic.calls)
+        assert run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm,
+                               operation='evaluate') == Stage.READY
+        assert latest_result(conn, 42)['status'] == 'ready'
+        assert len(synthetic.calls) == calls_before
+        def busy(*args, _skip_reasons, **kwargs):
+            _skip_reasons.append({'posting_id': 42, 'reason': 'lease_conflict', 'next_eligible_at': 123.0})
+        monkeypatch.setattr('pipeline.agentic.service.run_agentic_job', busy)
+        again=client.post('/api/agent/threads/'+thread+'/runs', headers={**headers,'Idempotency-Key':'busy-42'},
+                          json={'message':'Prepare job 42 again'}).json()
+        pending=wait(client,again['id'])
+        resumed=client.post('/api/agent/interactions/'+pending['interactions'][0]['id']+'/responses',
+            headers={'Authorization':'Bearer '+approve_key},json={'decision':'approve'}).json()
+        deferred=wait(client,resumed['run_id'])['result']['outcomes'][0]
+        assert deferred['status']=='deferred' and deferred['reason']=='lease_conflict', deferred
+        assert deferred['next_eligible_at']==123.0
         print('NATIVE PACKAGE: authenticated approval -> cited evaluation -> CV/letter PDFs + form map; one immutable package, no Submit.')
 
 
