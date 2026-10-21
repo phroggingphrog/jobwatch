@@ -528,6 +528,17 @@ def _build(person, conn, config, llm, selected, saver, store):
             raise intake.IntakeError('proposal_not_found')
         return p
 
+    def _on_latest(change):
+        """Apply the person's answer or correction to the open draft; if the background parse merged in between (the
+        revision moved), apply it once more to the merged draft. Merges keep fact and question ids, so this is safe."""
+        from jobwatch.candidate import intake
+        try:
+            return change(_open())
+        except intake.IntakeError as exc:
+            if exc.code != 'proposal_changed':
+                raise
+            return change(_open())
+
     @tool
     def profile_start(upload_ids: list[str], use_existing_files: bool = False) -> dict:
         """Start drafting the person's profile from their uploaded documents (upload ids) and, if use_existing_files, from their
@@ -566,9 +577,9 @@ def _build(person, conn, config, llm, selected, saver, store):
         faithfully; never invent, infer or paraphrase a fact, and never answer for them."""
         from jobwatch.candidate import intake
         try:
-            p = _open()
             _said(text)
-            return _draft(intake.answer(person, p.id, expected_revision=p.revision, question_id=question_id, text=text))
+            return _draft(_on_latest(lambda p: intake.answer(person, p.id, expected_revision=p.revision,
+                                                             question_id=question_id, text=text)))
         except intake.IntakeError as exc:
             return _refused(exc)
 
@@ -578,11 +589,10 @@ def _build(person, conn, config, llm, selected, saver, store):
         {op:'remove',fact_id}. Values must be what the person said in their latest message; never invent or infer a fact."""
         from jobwatch.candidate import intake
         try:
-            p = _open()
             if type(edits) is not list:
                 raise intake.IntakeError('invalid_edit')
             _said(*(leaf for e in edits if isinstance(e, dict) and e.get('op') in ('add', 'set') for leaf in _leaves(e.get('value'))))
-            return _draft(intake.edit(person, p.id, expected_revision=p.revision, edits=edits))
+            return _draft(_on_latest(lambda p: intake.edit(person, p.id, expected_revision=p.revision, edits=edits)))
         except intake.IntakeError as exc:
             return _refused(exc)
 
