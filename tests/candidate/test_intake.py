@@ -748,6 +748,37 @@ def test_hand_edit_after_a_confirmed_version_is_refused(person, full, fake_llm, 
     assert err.value.code == 'profile_edited_by_hand' and (apaths.profile_dir() / 'master_resume.md').read_text() == 'hand edit\n'
 
 
+def test_a_hand_edit_after_confirmation_turns_discovery_off_until_the_files_match_again(person, full, fake_llm, upload_id):
+    from jobwatch import discovery_gate
+    ok(person, full)
+    assert intake.discovery_scope(person) is not None and discovery_gate.allowed('run')
+    path = apaths.profile_dir() / 'profile.yaml'
+    confirmed = path.read_bytes()
+    path.write_text(confirmed.decode() + '# unreviewed hand edit\n')
+    assert intake.discovery_scope(person) is None and not discovery_gate.allowed('run')      # skipped: no_confirmed_profile
+    with pytest.raises(intake.IntakeError) as err:                  # a new proposal cannot overwrite the edit either
+        ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1))
+    assert err.value.code == 'profile_edited_by_hand' and intake.discovery_scope(person) is None
+    path.write_bytes(confirmed)                                     # back to exactly what was confirmed
+    assert intake.discovery_scope(person) is not None and discovery_gate.allowed('run')
+
+
+def test_a_removed_file_or_an_added_file_does_not_turn_discovery_off(person, full):
+    ok(person, full)
+    recorded = intake.current_version(person)['file_sha256']
+    assert 'profile.yaml' in recorded
+    (apaths.profile_dir() / 'zzz-notes.txt').write_text('not a profile file\n')
+    assert intake.discovery_scope(person) is not None
+
+
+def test_discovery_scope_is_checked_as_the_person_not_the_ambient_user(person, full):
+    ok(person, full)
+    (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Edited\n')
+    users.create_user_dirs('other')
+    with users.use('other'):
+        assert intake.discovery_scope('sam') is None
+
+
 def test_adopted_extras_are_carried_into_the_next_evidence_snapshot(person, full, fake_llm, upload_id):
     hand_made({**HAND, 'evidence.yaml': 'items: []\n'})
     intake.adopt_existing(person, actor='person')

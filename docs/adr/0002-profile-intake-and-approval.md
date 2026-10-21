@@ -69,7 +69,8 @@ over-infer, and a CV gap alone does not establish unemployment.
   `scope_digest`, non-empty basis) and the live `profile/` files still match the
   hashes recorded for that version. Otherwise it is skipped with
   `no_confirmed_profile`. A hand edit after confirmation therefore pauses
-  discovery until a new proposal is confirmed. Collection is evaluate-only. The
+  discovery until the files match the confirmed version again; confirming a new
+  proposal never overwrites a hand edit (`profile_edited_by_hand`). Collection is evaluate-only. The
   scope's daily assessment count and token ceiling bound each person's day.
 
 ## Consequences

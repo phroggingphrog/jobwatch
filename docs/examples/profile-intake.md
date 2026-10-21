@@ -717,7 +717,8 @@ HTTP 201:
 ```
 
 Version 2 records `"base_version": 1` and the scope shown; version 1 is unchanged. Discovery is
-on only from this point. A proposal with nothing to search for (no evidence-backed experience, skill or career
+on only from this point, and only while the files in `profile/` still match the confirmed
+version (a hand edit pauses it until they match again). A proposal with nothing to search for (no evidence-backed experience, skill or career
 focus) is refused when confirming with `409 {"error": "profile_incomplete"}`.
 
 ## Chat onboarding

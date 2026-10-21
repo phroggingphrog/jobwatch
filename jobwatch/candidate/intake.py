@@ -1004,12 +1004,17 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
 
 def discovery_scope(person: str) -> SearchScope | None:
     """The scope discovery may run within: only when the CURRENT version was confirmed with its scope shown
-    (scope + matching scope_digest). No version, an adopted version, or anything unreadable authorises nothing."""
+    (scope + matching scope_digest) and the live profile/ files still match what it recorded, because assessment reads
+    them live. No version, an adopted version, a hand edit since, or anything unreadable authorises nothing."""
     try:
         cur = current_version(person)
         if not cur or not cur.get("scope") or not cur.get("scope_digest"):
             return None
         scope = SearchScope.model_validate(cur["scope"], strict=False)
-        return scope if scope.basis and _scope_digest(scope) == cur["scope_digest"] else None
-    except (OSError, ValueError, KeyError, TypeError):
+        if not scope.basis or _scope_digest(scope) != cur["scope_digest"]:
+            return None
+        with users.use(person):                            # profile/ is the person's own, whoever asks
+            _refuse_hand_edits(apaths.profile_dir(), cur.get("file_sha256") or {})
+        return scope
+    except (OSError, ValueError, KeyError, TypeError):     # includes IntakeError(profile_edited_by_hand)
         return None

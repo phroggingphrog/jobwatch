@@ -118,7 +118,9 @@ the draft turns `draft`, so an immediate new start can briefly see `proposal_in_
 drop a parsed one (both are kept). The optional MCP adapter does not know `profile_confirm` and refuses it (`invalid_chat_interaction`).
 
 Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
-confirmed scope (`approved.json` has `scope` and `scope_digest`). A version made by `jobwatch profile adopt` has none, so
+confirmed scope (`approved.json` has `scope` and `scope_digest`) and the live `profile/` files still match the hashes
+that version recorded (assessment reads them live, so a hand edit after confirming pauses discovery until the files match
+again; `confirm` refuses to overwrite such an edit with `profile_edited_by_hand`). A version made by `jobwatch profile adopt` has no scope, so
 it authorises nothing: an adopted owner onboards through a proposal with `base_version` set to the current version (guided in chat,
 optionally from their existing files via `profile_start` with `use_existing_files`, or over the API), then confirms the scope shown. `jobwatch run` and `read` skip a person
 without one (`--user all` still runs everyone else) and `after_collect` returns `{"skipped":"no_confirmed_profile"}`.
