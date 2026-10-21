@@ -73,6 +73,16 @@ def test_unknown_job_is_404(client):
     assert client.get("/api/job/99999").status_code == 404
 
 
+def test_salary_display_labels_every_pay_period():
+    from jobwatch.web.queries import salary_display
+    def show(lo, hi, unit):
+        return salary_display({"salary_text": None, "salary_min": lo, "salary_max": hi, "salary_unit": unit})
+    assert show(1500, 1800, "week") == "$1,500 – $1,800/wk"
+    assert show(8500, None, "month") == "$8,500/mo"
+    assert show(70000, 80000, "year") == "$70k – $80k"
+    assert show(38, None, "hour") == "$38.00/hr"
+
+
 def test_host_header_guard(client):
     assert client.get("/healthz", headers={"host": "evil.example"}).status_code == 403
     assert client.get("/healthz", headers={"host": "jobs.example.com"}).status_code == 200

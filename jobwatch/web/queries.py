@@ -305,8 +305,10 @@ def salary_display(r) -> str:
     lo, hi = r["salary_min"], r["salary_max"]
     if not (lo or hi):
         return ""
-    unit = {"hour": "/hr", "day": "/day", "year": ""}.get((r["salary_unit"] or "year").lower(), "")
-    fmt = (lambda v: f"${v:,.2f}") if unit == "/hr" else (lambda v: f"${v / 1000:,.0f}k" if v >= 1000 else f"${v:,.0f}")
+    unit = {"hour": "/hr", "day": "/day", "week": "/wk", "month": "/mo", "year": ""}.get((r["salary_unit"] or "year").lower(), "")
+    fmt = (lambda v: f"${v:,.2f}") if unit == "/hr" else (
+        lambda v: f"${v:,.0f}") if unit in ("/wk", "/mo") else (          # "$2k/wk" would round $1,500 away
+        lambda v: f"${v / 1000:,.0f}k" if v >= 1000 else f"${v:,.0f}")
     if lo and hi and lo != hi:
         return f"{fmt(lo)} – {fmt(hi)}{unit}"
     return f"{fmt(lo or hi)}{unit}"
