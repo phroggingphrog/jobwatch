@@ -261,3 +261,17 @@ def test_mcp_loopback_urls_accepted(url):
 def test_mcp_non_loopback_urls_rejected(url):
     with pytest.raises(ValueError):
         McpClient(url)
+
+
+def test_friend_without_google_never_reads_owner_mailboxes(env, monkeypatch):
+    """A non-owner person with no Gmail connection gets no scan (not the owner's local MCP mail)."""
+    from jobwatch import users
+    import jobwatch.outcomes.sync as sync
+    config, conn, mid, tmp_path = env
+    built = []
+    monkeypatch.setattr(sync, "McpClient", lambda *a, **k: built.append(a) or synthetic_mail())
+    with users.use("friend"):
+        stats = run_outcomes(config, now=NOW, conn=conn, printer=lambda *_: None)
+    assert built == [] and stats["messages_scanned"] == 0 and stats["proposals"] == 0
+    assert stats["error"] is None and "Gmail" in stats["skipped"]
+    assert conn.execute("SELECT count(*) FROM outcome_proposals").fetchone()[0] == 0

@@ -320,7 +320,7 @@ def scan(conn, mcp: McpClient, conf: dict, *, dry_run: bool, now=None, llm=None,
 def new_stats() -> dict:
     return {"tools": 0, "applications": 0, "searches": 0, "search_errors": 0, "messages_scanned": 0,
             "already_seen": 0, "unmatched": 0, "bodies_read": 0, "llm_calls": 0, "would_llm": 0,
-            "not_outcome": 0, "no_change": 0, "proposals": 0, "expired": 0, "error": None}
+            "not_outcome": 0, "no_change": 0, "proposals": 0, "expired": 0, "skipped": None, "error": None}
 
 
 def run_outcomes(config, dry_run: bool = False, show: bool = False, printer=print, mcp=None,
@@ -335,6 +335,10 @@ def run_outcomes(config, dry_run: bool = False, show: bool = False, printer=prin
         if mcp is None and users.current() != users.DEFAULT_USER and google_oauth.load():
             from ..google_gmail import GmailMcp      # a connected friend reads their own Gmail
             mcp, conf = GmailMcp(), {**conf, "mailboxes": [{"account": "gmail", "mailbox": "all"}]}
+        elif mcp is None and users.current() != users.DEFAULT_USER:
+            # the local MCP mail server is the owner's mailboxes: never match them to a friend's applications
+            stats["skipped"] = "no Gmail connection for this person: mail scan skipped"
+            return stats
         mcp = mcp or McpClient(conf["mcp_url"])
         stats["tools"] = len(mcp.list_tools())
         proposals = scan(conn, mcp, conf, dry_run=dry_run, now=now, llm=llm, stats=stats)
