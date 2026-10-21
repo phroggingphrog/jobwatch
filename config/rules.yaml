@@ -161,11 +161,10 @@ arms:
     exclude: ['flight', 'cabin', 'ground crew', 'film', 'line crew', 'crew leader', 'deck', 'vessel']
 
 location:
-  # Any of these in the location text (or posting.state == VIC) = Melbourne/Victoria.
-  # "Victoria Park WA" is not Victoria; a bare 3xxx postcode counts unless an other-state/NZ marker sits beside it.
-  vic_patterns: ['\bmelbourne\b', '\bvictoria\b(?!\s+(?:park|point|island|falls|beach)\b)', '\bvic\b',
-                 '\bgeelong\b', '\bballarat\b', '\bbendigo\b',
-                 '(?<!nsw )(?<!qld )(?<!tas )(?<!wa )(?<!sa )(?<!nt )(?<!act )(?<![\w$.,/-])3\d{3}\b(?![.,]?\d)(?!\W*(?:nz|new zealand|nsw|qld|wa|sa|act|nt|tas)\b)']
+  # Any of these in the location text (or posting.state == VIC) = Melbourne/Victoria. Weak evidence ("Victoria" alone,
+  # a bare 3xxx postcode) is models.state_of's job, which sets posting.state after checking every other state first;
+  # a second copy here once disagreed ("Port Victoria SA", "Level 3500 Sydney", "Mumbai, MH 3000").
+  vic_patterns: ['\bmelbourne\b', '\bvic\b', '\bgeelong\b', '\bballarat\b', '\bbendigo\b']
   # "Remote" counts when the posting is in Australia (collectors already AU-gated) and no
   # overseas country is named.
   remote_patterns: ['\bremote\b', 'work from home', '\bwfh\b', 'anywhere in australia',

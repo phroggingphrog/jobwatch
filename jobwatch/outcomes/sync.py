@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 from .. import db as dbm
 from .. import google_oauth, users
 from ..commands import apply_api
-from ..commands.state import RANK
+from ..commands.state import RANK, SUBMITTED
 from ..models import now_utc
 from .classify import classify_llm, classify_rules, never_hired
 from .mcp import DEFAULT_URL, McpClient
@@ -41,7 +41,7 @@ DEFAULTS = {
     "max_llm_calls": 10,
     "slack_days": 2,             # mail up to 2 days before applied_at counts (the owner may log late)
 }
-ACTIVE = ("applied", "assessment", "interview", "offer")
+ACTIVE = SUBMITTED
 SEEN_KEY, SEEN_CAP = "outcomes:seen", 5000
 BATCHES_KEY, LAST_BATCH_KEY = "outcomes:batches", "outcomes:last_batch"
 _STOP = {"pty", "ltd", "limited", "group", "australia", "australian", "inc", "the", "and", "of",

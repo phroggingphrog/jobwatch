@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from .. import ledger, onboarding
+from ..commands.state import SUBMITTED   # past the draft stages: a new draft never moves these back
 from ..llm import LLM
 from ..model_choice import get_model
 from . import render, review
@@ -30,7 +31,6 @@ from .verify_pdf import verify_pdf
 log = logging.getLogger(__name__)
 CURRENT_DAYS = 30          # a match is current if its posting was seen in the last 30 days
 TERMINAL = ("skipped", "withdrawn", "rejected")
-SUBMITTED = ("applied", "assessment", "interview", "offer")      # past the draft stages: a new draft never moves these back
 
 
 class DraftRefused(Exception):

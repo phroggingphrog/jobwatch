@@ -28,6 +28,12 @@ def current() -> str:
     return _current.get()
 
 
+def scoped(*ids) -> tuple:
+    """(current person, *ids): the key for any in-process registry of running work. Ids (posting, application) are
+    per person, so a bare id would let one person's run block or show up as another's."""
+    return (current(), *ids)
+
+
 @contextlib.contextmanager
 def use(name: str):
     """Run a block as this person."""

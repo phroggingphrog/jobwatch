@@ -56,7 +56,7 @@ def set_status(conn, posting_id: int, status: str, *, source: str = SOURCE) -> d
                       match_id=app["match_id"], arm=app["arm"])
     else:
         values["created_at"] = at
-    if status in ("applied", "assessment", "interview", "offer") and not values.get("applied_at"):
+    if status in cstate.SUBMITTED and not values.get("applied_at"):
         values["applied_at"] = at
     row = ledger.upsert(conn, "applications", "applications", values, commit=False)
     ledger.upsert(conn, "applications", "application_events", {
@@ -71,7 +71,7 @@ def set_status(conn, posting_id: int, status: str, *, source: str = SOURCE) -> d
 def hide(conn, posting_id: int) -> dict:
     """Hide = 'skipped'. Refused once the application is past 'applied' (change its status instead)."""
     app = _app_for_posting(conn, posting_id)
-    if app and app["status"] in ("applied", "assessment", "interview", "offer"):
+    if app and app["status"] in cstate.SUBMITTED:
         raise ActionError(f"Already {app['status']}: change its status instead of hiding it")
     return set_status(conn, posting_id, "skipped")
 
@@ -109,7 +109,7 @@ def _chain():
 
 def draft_job(posting_id: int) -> dict | None:
     with _LOCK:
-        j = _JOBS.get((users.current(), posting_id))
+        j = _JOBS.get(users.scoped(posting_id))
         return dict(j) if j else None
 
 
@@ -123,7 +123,7 @@ def start_draft(conn, db_path, posting_id: int, *, config=None) -> dict:
     m = conn.execute("SELECT id FROM matches WHERE posting_id=?", (posting_id,)).fetchone()
     if m is None and not use_agentic:
         raise ActionError("Only matched jobs can be drafted (this job did not match a target arm).")
-    key = (users.current(), posting_id)
+    key = users.scoped(posting_id)
     with _LOCK:
         j = _JOBS.get(key)
         if j and j["state"] == "running":

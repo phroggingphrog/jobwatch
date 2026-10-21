@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from jobwatch import ledger
 from jobwatch import db as dbm
+from jobwatch.commands.state import SUBMITTED
 from jobwatch.apply import paths
 from jobwatch.web import actions as act
 from jobwatch.apply.prepare import latest_preparation, prepare_application, record_owner_answer
@@ -82,7 +83,7 @@ def register(app, config, conn_factory, render, sessions):
         conn = conn_factory()
         try:
             row = conn.execute('SELECT id,status FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
-            if row is None or row['status'] in ('applied', 'assessment', 'interview', 'offer', 'hired'):
+            if row is None or row['status'] in (*SUBMITTED, 'hired'):
                 return
             if result == 'confident':
                 act.set_status(conn, posting_id, 'applied', source='submit-detected')
@@ -108,7 +109,7 @@ def register(app, config, conn_factory, render, sessions):
                 prepared = None
         can_prepare = bool(package and package.get('inputs_current') and package.get('status') == 'ready' and package.get('manifest')
                            and package.get('cv_pdf') and package.get('letter_pdf')
-                           and job['status'] not in ('applied', 'assessment', 'interview', 'offer', 'hired', 'rejected'))
+                           and job['status'] not in (*SUBMITTED, 'hired', 'rejected'))
         if not can_prepare:
             prepared = None
         if prepared and (not browser['open'] or browser.get('last_error')

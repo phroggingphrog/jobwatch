@@ -394,7 +394,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn,row['id'],channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and (users.current(),row['id'],channel) in followup_active:
+                        if state['status'] == 'missing' and users.scoped(row['id'],channel) in followup_active:
                             state = {'status':'running','draft':None,'reason':None}
                 except (AgenticError,FollowupEventError,CandidateError): state = {'status':'unavailable','draft':None,'reason':None}
             name = '_followup_draft_status.html' if hx(request) else 'followup_draft.html'
@@ -421,7 +421,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             except (AgenticError,FollowupEventError,CandidateError):
                 raise HTTPException(status_code=409,detail='Confirm the application dates, current job ad and profile before drafting.') from None
         finally:conn.close()
-        key=(users.current(),application_id,channel)      # application ids are per-person too
+        key=users.scoped(application_id,channel)      # application ids are per-person too
         with followup_lock:
             if key in followup_active:
                 return RedirectResponse(f'/applications/{posting_id}/followup-draft?channel={channel}',status_code=303)
@@ -478,7 +478,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 state = load_report(conn, posting_id, config)
                 if state['status'] == 'queued': state = {'status': 'running', 'report': None}
                 with interview_lock:
-                    if state['status'] == 'missing' and (users.current(), posting_id) in interview_active:
+                    if state['status'] == 'missing' and users.scoped(posting_id) in interview_active:
                         state = {'status': 'running', 'report': None}
             except (AgenticError, CandidateError):
                 state = {'status': 'unavailable', 'report': None}
@@ -558,7 +558,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail='Interview preparation could not be queued. Check the current sources and try again.') from None
             finally:
                 if conn is not None: conn.close()
-        key = (users.current(), posting_id)         # ids are per-person: one person's run must not block another's
+        key = users.scoped(posting_id)         # ids are per-person: one person's run must not block another's
         with interview_lock:
             if key in interview_active:
                 return
@@ -807,7 +807,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn, row['id'], channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and (users.current(), row['id'], channel) in followup_active:
+                        if state['status'] == 'missing' and users.scoped(row['id'], channel) in followup_active:
                             state = {'status': 'running', 'draft': None, 'reason': None}
                 except (AgenticError, FollowupEventError, CandidateError):
                     state = {'status': 'unavailable', 'draft': None, 'reason': None}

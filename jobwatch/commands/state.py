@@ -16,7 +16,8 @@ STATUSES = ("interested", "drafting", "drafted", "applied", "assessment", "inter
 
 # Progress order for outcome updates; a lower or equal rank never overwrites a higher one.
 RANK = {"applied": 1, "assessment": 2, "interview": 3, "offer": 4}
-APPLIED_PLUS = ("applied", "assessment", "interview", "offer", "rejected")
+SUBMITTED = ("applied", "assessment", "interview", "offer")      # sent to the employer: the one list of these
+APPLIED_PLUS = (*SUBMITTED, "rejected")
 SUCCESS = ("assessment", "interview", "offer")
 OPEN_EXCLUDED = ("rejected", "withdrawn", "skipped")
 
@@ -73,7 +74,7 @@ def set_status(conn, match_id: int, to_status: str, *, actor: str, source: str,
         values["applied_at"] = app["applied_at"]
     else:
         values["created_at"] = at
-    if to_status in ("applied", "assessment", "interview", "offer") and not values.get("applied_at"):
+    if to_status in SUBMITTED and not values.get("applied_at"):
         values["applied_at"] = at
     changed = from_status != to_status
     row = apply_api.upsert(conn, "applications", "applications", values, commit=False)

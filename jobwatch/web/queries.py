@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 from .. import db as dbm
+from ..commands.state import SUBMITTED
 
 
 def _tz() -> ZoneInfo:
@@ -106,7 +107,6 @@ DIM_LABEL = [("cv_match", "CV match"), ("north_star", "Fits the jobs you want"),
              ("red_flags", "Red flags")]
 SCORE_FLOORS = (3.5, 4.0, 4.5)
 SCORE_FLOOR_LABEL = {3.5: "3.5 and up: decent", 4.0: "4.0 and up: good", 4.5: "4.5 and up: strong"}
-APPLIED_PLUS = ("applied", "assessment", "interview", "offer")
 # canonical application states (applications schema comment), board order
 APP_STATES = ("interested", "drafting", "drafted", "applied", "assessment", "interview", "offer",
               "rejected", "withdrawn", "skipped")
@@ -578,7 +578,7 @@ def ui_status(app_status: str | None, viewed: bool) -> str:
         return "hidden"
     if app_status in ("interested", "drafting", "drafted"):
         return "saved"
-    if app_status in APPLIED_PLUS:
+    if app_status in SUBMITTED:
         return "applied"
     if app_status in ("rejected", "withdrawn"):
         return "closed"

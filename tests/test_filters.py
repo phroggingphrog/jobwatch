@@ -168,3 +168,12 @@ def test_t9_true_positives_still_match(rules, title, arm):
 @pytest.mark.parametrize("location", ["Australia - National", "Sydney / National", "National"])
 def test_national_as_a_location_is_remote(rules, location):
     assert rules.evaluate(P("Payroll Officer", location)).rules["location"] == "remote_au"
+
+
+@pytest.mark.parametrize("location", [
+    "Victoria Park WA", "Victoria Point QLD", "Port Victoria SA", "Hamilton 3200, New Zealand", "Sydney NSW 3000",
+    "Mumbai, MH 3000", "Level 3500 Sydney", "Suite 3001, 10 King St, Sydney", "Wellington 3000 NZ", "$3000 bonus",
+    "Victoria Island, Lagos", "Victoria, Australia", "Victoria", "Dandenong 3175", "3000", "Carlton 3053"])
+def test_the_vic_location_rule_agrees_with_state_of(rules, location):
+    from jobwatch.models import state_of
+    assert (rules.location_rule(P("Bookkeeper", location)) == "melbourne_vic") == (state_of(location) == "VIC")
