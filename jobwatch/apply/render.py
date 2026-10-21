@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 from .verify import CLAIM_LISTS
 
@@ -189,7 +188,8 @@ def letter_markdown(draft: dict, profile, posting: dict, tagged: bool = False,
     body = ["\n" + " ".join(_claim_text(c, tagged) for c in p) for p in paras if p]
     if tagged:
         return "\n".join(body).strip() + "\n"
-    day = (today or datetime.now(ZoneInfo("Australia/Melbourne"))).strftime("%-d/%-m/%Y")
+    from ..place import person_timezone          # the person's own zone (profile, else install default), not always Melbourne
+    day = (today or datetime.now(person_timezone())).strftime("%-d/%-m/%Y")
     header = [_header_md(profile, cv_tpl)]
     company = (posting.get("company") or "").strip()
     title = (posting.get("title") or "").strip()

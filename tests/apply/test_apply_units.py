@@ -133,6 +133,22 @@ def test_verifier_rejects_trivial_spans_overclaimed_years_and_unparsable_results
     assert got["c1"] == "missing_key_span" and got["c11"] == "derivation_mismatch" and got["c30"] == "derivation_unverifiable"
 
 
+def test_letter_date_uses_the_persons_timezone(profile, monkeypatch):
+    from datetime import UTC, datetime
+    from zoneinfo import ZoneInfo
+    from jobwatch import place
+    from jobwatch.apply import render
+
+    class Fixed(datetime):                       # 2026-10-21 12:00 UTC: the 21st in Melbourne, the 22nd in Kiritimati
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 21, 12, 0, tzinfo=UTC).astimezone(tz)
+    monkeypatch.setattr(render, "datetime", Fixed)
+    monkeypatch.setattr(place, "person_timezone", lambda: ZoneInfo("Pacific/Kiritimati"))
+    md = render.letter_markdown(fake_draft(profile), profile, {"company": "Acme", "title": "Clerk"})
+    assert "22/10/2026" in md and "21/10/2026" not in md
+
+
 def test_verifier_headings_come_from_evidence_only(profile):
     d = fake_draft(profile, with_invented=False)
     d["cv"]["experience"][1]["role_ids"] = ["made.up.id"]
