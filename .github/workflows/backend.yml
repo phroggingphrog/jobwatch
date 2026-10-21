@@ -3,6 +3,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      full_regression:
+        description: Run the complete release regression, including synthetic browser forms
+        type: boolean
+        default: false
 concurrency:
   group: backend-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -34,3 +39,21 @@ jobs:
           tests/test_preference_service.py
           tests/outcomes/test_out_callback.py
           tests/outcomes/test_readiness.py
+          tests/apply/test_apply_units.py::test_seed_script_copies_not_moves
+  release-regression:
+    if: github.event_name == 'workflow_dispatch' && inputs.full_regression
+    needs: synthetic-backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen --extra dev --extra browser
+      - run: uv run --no-sync python -m playwright install --with-deps chromium
+      - name: Full release regression (synthetic data only)
+        env:
+          JOBWATCH_SETTINGS: /dev/null
+        run: uv run --no-sync python -m pytest -q -x
