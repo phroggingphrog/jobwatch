@@ -355,7 +355,7 @@ class LLM:
             if deadline is not None and time.monotonic() >= deadline:
                 raise DeadlineExceeded("model deadline exhausted")
             err = (payload or {}).get("error") if isinstance(payload, dict) else None
-            if status in (401, 403) or (err and str(err.get("code", "")) in
+            if status in (401, 403) or (isinstance(err, dict) and str(err.get("code", "")) in
                                          ("permission_denied", "invalid_api_key")):
                 last_err = f"key #{idx + 1} refused for {model} (HTTP {status})"
                 log.info(last_err)
@@ -371,8 +371,8 @@ class LLM:
             price = _price(model)
             cost = None
             if price and usage:
-                cost = round((usage.get("prompt_tokens", 0) * price[0]
-                              + usage.get("completion_tokens", 0) * price[1]) / 1e6, 5)
+                cost = round(((usage.get("prompt_tokens") or 0) * price[0]
+                              + (usage.get("completion_tokens") or 0) * price[1]) / 1e6, 5)
             res = LLMResult(model=model, served=payload.get("model"), text=text,
                             usage={k: usage.get(k) for k in ("prompt_tokens", "completion_tokens")},
                             seconds=round(time.monotonic() - t0, 2), cost_usd=cost)

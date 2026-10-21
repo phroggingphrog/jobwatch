@@ -380,4 +380,19 @@ def test_a_network_timeout_does_not_kill_the_run(world):
     assert stats["reviewed"] == 1 and stats["model_failed"] == 1       # the other ad is still read; the timeout one stays pending
 
 
+def test_llm_string_error_payload_is_an_llm_error_not_an_attribute_error():
+    from jobwatch.llm import LLMError
+    llm = LLM(transport=lambda *a: (500, {"error": "upstream exploded"}), keys=["k"])
+    with pytest.raises(LLMError, match="upstream exploded"):
+        llm.chat("openai/sol", [{"role": "user", "content": "hi"}], json_mode=False)
+
+
+def test_llm_null_usage_counts_do_not_break_cost():
+    ok = {"model": "openai/sol", "choices": [{"message": {"content": "hi"}}],
+          "usage": {"prompt_tokens": None, "completion_tokens": 10}}
+    res = LLM(transport=lambda *a: (200, ok), keys=["k"]).chat(
+        "openai/sol", [{"role": "user", "content": "hi"}], json_mode=False)
+    assert res.text == "hi" and res.cost_usd == round(10 * 10.0 / 1e6, 5)
+
+
 
