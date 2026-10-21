@@ -133,7 +133,11 @@ class JobBudget:
         self._failed_attempts = self._queries = self._pages = self._job_charged = 0
         self.batch.admit(self)
         if checkpoint is not None:
-            self._restore(checkpoint)
+            try:
+                self._restore(checkpoint)
+            except BaseException:
+                self.batch.release(self)  # an invalid checkpoint must not leak the admitted slot
+                raise
 
     def _memory_persist(self, checkpoint, *, expected_revision, reservation_id, operation):
         self.events.append(("persist", operation, expected_revision, reservation_id))
