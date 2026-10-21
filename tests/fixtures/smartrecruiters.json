@@ -1,0 +1,45 @@
+{
+ "offset": 0,
+ "limit": 100,
+ "totalFound": 2,
+ "content": [
+  {
+   "id": "744000000000001",
+   "name": "Accounts Receivable Officer",
+   "company": {
+    "identifier": "ExampleCo",
+    "name": "Example Co"
+   },
+   "releasedDate": "2026-10-05T00:03:25.801Z",
+   "location": {
+    "city": "Clayton",
+    "region": "VIC",
+    "country": "au",
+    "remote": false,
+    "fullLocation": "Clayton, VIC, Australia"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   }
+  },
+  {
+   "id": "744000000000002",
+   "name": "Engineering Director",
+   "company": {
+    "identifier": "ExampleCo",
+    "name": "Example Co"
+   },
+   "releasedDate": "2026-10-05T00:03:25.801Z",
+   "location": {
+    "city": "Sydney",
+    "country": "au",
+    "fullLocation": "Sydney, , Australia"
+   },
+   "typeOfEmployment": {
+    "id": "permanent",
+    "label": "Full-time"
+   }
+  }
+ ]
+}

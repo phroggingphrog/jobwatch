@@ -1,0 +1,141 @@
+/* Chat r6. Semantic aliases are local to the chat; shared shell and tokens stay untouched. */
+.c-chat{
+  --chat-canvas:var(--card);
+  --chat-ink:var(--foreground);
+  --chat-ink-muted:var(--muted-foreground);
+  --chat-surface-quiet:var(--muted);
+  --chat-hover:var(--row-hover-bg);
+  --chat-active:var(--row-active-bg);
+  --chat-line:var(--border);
+  --chat-composer-border:var(--input);
+  --chat-focus:var(--ring);
+  --chat-danger:var(--destructive);
+  --chat-send-bg:var(--primary);
+  --chat-send-fg:var(--primary-foreground);
+  --chat-col:45rem;
+  --chat-measure:72ch;
+  --chat-prose-size:16px;
+  --chat-prose-lh:1.7;
+  --chat-h-size:var(--fs-20);
+  --chat-radius-pill:var(--radius-full);
+  --chat-greet-size:32px;
+  background:var(--chat-canvas);color:var(--chat-ink);font-family:var(--font-sans);
+}
+.c-chat [hidden]{display:none!important}
+.c-chat :is(.ph-msg,.ph-msg__body,.ph-bubble,.ph-results,.ph-toolcall,.ph-notice,.c-prose){min-width:0;overflow-wrap:anywhere}
+.c-chat :is(button,summary,input,select,textarea,a):focus-visible{outline:var(--focus-width) solid var(--chat-focus);outline-offset:2px}
+.c-chat__log:focus-visible{outline:var(--focus-width) solid var(--chat-focus);outline-offset:-2px;border-radius:var(--radius-md)}
+.c-chat__title{font-size:var(--fs-20);line-height:1.4;font-weight:600;min-width:0;overflow-wrap:anywhere}
+.c-chat[data-empty="true"] .c-chat__title{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.c-chat[data-empty="true"] .c-chat__head{justify-content:flex-end}
+.c-chat__greet{font-family:var(--font-display);font-size:var(--chat-greet-size);line-height:1.25;font-weight:400;letter-spacing:-0.02em;text-align:center;max-width:24ch;overflow-wrap:anywhere}
+.c-chat__head .ph-btn,.c-chat__chats{color:var(--chat-ink-muted);min-height:var(--target-min);border-radius:var(--chat-radius-pill)}
+.c-chat__head .ph-btn:hover{color:var(--chat-ink);background:var(--chat-hover)}
+
+/* Complete prose only; the streaming paragraph remains plain text. */
+.c-chat .ph-msg{max-width:none}
+.c-chat .ph-msg--bot{justify-self:stretch;max-width:var(--chat-measure);gap:var(--space-2)}
+.c-chat .ph-msg--bot .ph-msg__body{gap:var(--space-4);font-size:var(--chat-prose-size);line-height:var(--chat-prose-lh);color:var(--chat-ink)}
+.c-chat .ph-msg__who{font-size:var(--fs-12);line-height:1.4;color:var(--chat-ink-muted)}
+.c-chat .ph-msg__body>[data-stream],.c-chat .ph-bubble{white-space:pre-wrap}
+.c-chat .c-prose{display:grid;gap:var(--space-4);max-width:var(--chat-measure);font-size:var(--chat-prose-size);line-height:var(--chat-prose-lh);font-family:var(--font-sans);color:var(--chat-ink)}
+.c-chat .c-prose :is(p,h3,h4,ul,ol){margin:0;white-space:normal}
+.c-chat .c-prose__h{font-family:var(--font-display);font-size:var(--chat-h-size);line-height:1.4;font-weight:600;letter-spacing:-0.02em;color:var(--chat-ink)}
+.c-chat .c-prose strong{font-weight:600}
+.c-chat .c-prose__list{display:grid;gap:var(--space-2);padding-inline-start:var(--space-4)}
+.c-chat ul.c-prose__list{list-style:disc}
+.c-chat ol.c-prose__list{list-style:decimal}
+.c-chat .c-prose__list li::marker{color:var(--chat-ink-muted)}
+.c-chat .ph-msg--owner{max-width:80%}
+.c-chat .ph-bubble{padding:var(--space-3) var(--space-4);border:0;border-radius:var(--radius);background:var(--chat-surface-quiet);color:var(--chat-ink);line-height:1.6}
+.c-chat .ph-results{gap:var(--space-2)}
+.c-chat .ph-results>li{padding:var(--space-3);background:var(--chat-surface-quiet);border-radius:var(--radius-md);border:0}
+.c-chat .ph-results>li+li{border-top:0}
+.c-chat .ph-toolcall{border:0;background:var(--chat-surface-quiet);border-radius:var(--radius-md)}
+.c-chat .ph-toolcall__head{flex-wrap:wrap;min-height:0;padding:var(--space-2) var(--space-3);color:var(--chat-ink-muted)}
+.c-chat .ph-toolcall__body{border-top:0;margin-top:0;padding:0 var(--space-3) var(--space-2);color:var(--chat-ink-muted)}
+.c-chat .ph-notice{border:0;background:var(--chat-surface-quiet);border-radius:var(--radius-md)}
+.c-chat .ph-notice__act .ph-btn--outline{border-color:transparent;background:var(--chat-canvas)}
+
+/* Quiet, always reachable answer actions. More is a native keyboard disclosure. */
+.c-chat .ph-msg-actions{margin:0;gap:0;align-items:start}
+.c-chat :is(.ph-msg-actions__btn,.ph-branch__btn){display:inline-flex;align-items:center;justify-content:center;min-width:var(--target-min);min-height:var(--target-min);border:0;border-radius:var(--chat-radius-pill);background:transparent;color:var(--chat-ink-muted)}
+.c-chat :is(.ph-msg-actions__btn,.ph-branch__btn):is(:hover,:focus-visible):not(:disabled){background:var(--chat-hover);color:var(--chat-ink)}
+.c-chat .ph-msg-actions__btn[aria-pressed="true"]{background:var(--chat-active);color:var(--chat-ink)}
+.c-chat .ph-branch{margin:0;max-width:100%;color:var(--chat-ink-muted)}
+.c-chat .ph-branch__btn:disabled{color:var(--chat-ink-muted);cursor:not-allowed}
+.c-chat .c-more{position:relative}
+.c-chat .c-more>summary{list-style:none;cursor:pointer}
+.c-chat .c-more>summary::-webkit-details-marker{display:none}
+.c-chat .c-more__menu{position:absolute;inset-inline-start:0;top:100%;z-index:var(--z-drawer);display:grid;gap:var(--space-1);width:max-content;max-width:calc(100vw - var(--gutter) * 2);padding:var(--space-2);background:var(--chat-canvas);border:var(--border-width) solid var(--chat-line);border-radius:var(--radius-md)}
+.c-chat .c-more__menu>[data-act="regen"]{justify-content:start;padding-inline:var(--space-3);gap:var(--space-2);border-radius:var(--radius-sm)}
+.c-chat .c-more__menu>[data-act="regen"]::after{content:attr(aria-label)}
+.c-chat .c-more__menu :focus-visible{outline-offset:-2px}
+
+/* One collapsed pipeline strip outside the conversation. */
+.c-chat .c-errbar{background:var(--chat-surface-quiet);border-radius:var(--radius-md);min-width:0}
+.c-chat .c-errbar__summary{display:flex;align-items:center;gap:var(--space-2);width:100%;min-height:var(--target-min);padding:var(--space-2) var(--space-3);border:0;border-radius:var(--radius-md);font:inherit;font-size:var(--fs-13);text-align:left;background:transparent;color:var(--chat-ink-muted);cursor:pointer}
+.c-chat .c-errbar__summary>.ph-icon:first-child{color:var(--chat-danger);flex:none}
+.c-chat .c-errbar__summary:is(:hover,:focus-visible){background:var(--chat-hover);color:var(--chat-ink)}
+.c-chat .c-errbar__summary:focus-visible{outline-offset:-2px}
+.c-chat .c-errbar__text{min-width:0;overflow-wrap:anywhere}
+.c-chat .c-errbar__chev{margin-inline-start:auto;flex:none;transition:transform var(--dur-open) ease}
+.c-chat .c-errbar__summary[aria-expanded="true"] .c-errbar__chev{transform:rotate(180deg)}
+.c-chat .c-errbar__list{display:grid;gap:var(--space-3);list-style:none;margin:0;padding:0 var(--space-3) var(--space-3);max-height:25dvh;overflow-y:auto;overscroll-behavior:contain}
+.c-chat .c-errbar__item{display:grid;gap:var(--space-2);min-width:0}
+.c-chat .c-errbar__item+.c-errbar__item{border-top:var(--border-width) solid var(--chat-line);padding-top:var(--space-3)}
+.c-chat .c-errbar__msg{font-size:var(--fs-13);line-height:1.6;color:var(--chat-ink-muted);overflow-wrap:anywhere}
+.c-chat .c-errbar__item .ph-btn{justify-self:start;min-height:var(--target-min)}
+.c-chat__status{font-size:var(--fs-13);color:var(--chat-ink-muted)}
+.c-chat :is(#chatStatus,#chatBanner):empty{display:none}
+
+/* Composer and empty-thread chips. Footer never scrolls with the answer. */
+.c-chat #chatForm{display:grid;gap:var(--space-2);min-width:0}
+.c-chat .ph-composer{display:flex;flex-direction:column;align-items:stretch;gap:0;padding:var(--space-2);background:var(--chat-canvas);border:var(--border-width) solid var(--chat-composer-border);border-radius:var(--chat-radius-pill);box-shadow:0 1px 2px color-mix(in oklch,var(--chat-ink) 8%,transparent)}
+.c-chat .ph-composer:focus-within{outline:var(--focus-width) solid var(--chat-focus);outline-offset:2px}
+.c-chat .c-chat__compose-row{display:flex;align-items:center;gap:var(--space-2);min-width:0}
+.c-chat .ph-composer .ph-textarea{flex:1;width:0;min-width:0;max-height:10.5rem;overflow-y:auto;resize:none;border:0;background:transparent;color:var(--chat-ink);padding:var(--space-2) var(--space-1);border-radius:0;min-height:var(--target-min);font-size:var(--chat-prose-size);line-height:1.5;box-shadow:none}
+.c-chat .ph-composer .ph-textarea:focus-visible{outline:none}
+.c-chat .ph-composer .ph-textarea::placeholder{color:var(--chat-ink-muted);opacity:1}
+.c-chat .ph-composer:has(#chatSend:disabled){background:var(--chat-surface-quiet)}
+.c-chat .ph-composer :is(#chatSend,#chatAttachToggle){flex:none;align-self:center;min-width:var(--target-min);width:var(--target-min);height:var(--target-min);min-height:var(--target-min);padding:0;border-radius:var(--chat-radius-pill)}
+.c-chat #chatSend{background:var(--chat-send-bg);color:var(--chat-send-fg)}
+.c-chat #chatSend:disabled{background:var(--chat-surface-quiet);color:var(--chat-ink-muted);opacity:1}
+.c-chat #chatAttachToggle{color:var(--chat-ink-muted)}
+.c-chat #chatAttachToggle:is(:hover,:focus-visible){background:var(--chat-hover);color:var(--chat-ink)}
+.c-chat #chatSend span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.c-chat__hint{font-size:var(--fs-12);line-height:1.4;text-align:center;color:var(--chat-ink-muted)}
+.c-chat .c-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--space-2)}
+.c-chat .ph-chip{display:inline-flex;align-items:center;min-height:var(--target-min);max-width:100%;padding:var(--space-2) var(--space-3);border:0;border-radius:var(--chat-radius-pill);background:var(--chat-surface-quiet);color:var(--chat-ink);font:inherit;font-size:var(--fs-13);text-align:left;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
+.c-chat .ph-chip:is(:hover,:focus-visible):not(:disabled){background:var(--chat-hover);color:var(--chat-ink)}
+.c-chat .ph-chip:disabled{color:var(--chat-ink-muted);cursor:not-allowed}
+
+/* Head options. The existing horizontal ellipsis glyph is rotated, not replaced. */
+.c-chat #threadActions{position:relative;display:block;min-width:0}
+.c-chat #threadActions>summary{display:flex;align-items:center;justify-content:center;min-width:var(--target-min);min-height:var(--target-min);padding:0;border-radius:var(--chat-radius-pill);list-style:none;color:var(--chat-ink-muted);cursor:pointer}
+.c-chat #threadActions>summary::-webkit-details-marker{display:none}
+.c-chat #threadActions>summary:is(:hover,:focus-visible){background:var(--chat-hover);color:var(--chat-ink)}
+.c-chat .c-chat__ellipsis,.c-chat .c-more>summary>.ph-icon{transform:rotate(90deg)}
+.c-chat .c-chat__options{position:absolute;inset-inline-end:0;top:100%;z-index:var(--z-drawer);display:grid;gap:var(--space-1);width:min(20rem,calc(100vw - var(--gutter) * 2));max-height:65dvh;overflow-y:auto;overscroll-behavior:contain;padding:var(--space-3);background:var(--chat-canvas);border:var(--border-width) solid var(--chat-line);border-radius:var(--radius-md);color:var(--chat-ink)}
+.c-chat .c-chat__options .ph-btn{justify-content:start;white-space:normal;min-height:var(--target-min);border-radius:var(--radius-sm)}
+.c-chat .c-chat__options :is(select,input){max-width:100%;min-width:0;min-height:var(--target-min)}
+.c-chat .c-chat__options .f-field{min-width:0}
+.c-chat .c-chat__options :focus-visible{outline-offset:-2px}
+.c-chat #chatAttachments>summary{display:flex;align-items:center;min-height:var(--target-min);padding:0 var(--space-3);border-radius:var(--radius-sm);font-size:var(--fs-13);color:var(--chat-ink-muted);cursor:pointer}
+.c-chat #chatAttachments>summary:is(:hover,:focus-visible){background:var(--chat-hover);color:var(--chat-ink)}
+.c-chat .c-chat__attachment-panel{display:grid;gap:var(--space-3);padding-block:var(--space-3)}
+.c-chat #threadFile{height:auto}
+.c-chat #threadFiles{display:flex;flex-wrap:wrap;gap:var(--space-2);min-width:0;list-style:none;margin:0;padding:var(--space-2) var(--space-3)}
+.c-chat #threadFiles:not(:has(.f-attach)){display:none}
+.c-chat .f-attach{display:flex;align-items:center;gap:var(--space-2);max-width:100%;min-width:0;padding-inline:var(--space-3) var(--space-1);border-radius:var(--chat-radius-pill);background:var(--chat-surface-quiet);font-size:var(--fs-13)}
+.c-chat .f-attach__name{min-width:0;overflow-wrap:anywhere;flex:1}
+.c-chat .f-attach>.ph-meta{flex-basis:100%;order:2;font-size:var(--fs-12);padding-bottom:var(--space-2)}
+.c-chat .f-attach>.ph-btn{min-height:var(--target-min);border:0;border-radius:var(--chat-radius-pill);padding-inline:var(--space-2)}
+
+@media (min-width:640px){.c-chat{--chat-greet-size:40px}}
+@media (min-width:768px){.c-chat{--chat-prose-size:17px;--chat-prose-lh:1.75;--chat-greet-size:44px}}
+@media (min-width:1280px){.c-chat{--chat-greet-size:48px}}
+@media (prefers-reduced-motion:reduce){.c-chat,.c-chat *{transition:none!important;animation:none!important;scroll-behavior:auto!important}.c-chat .c-errbar__chev{transform:none!important}}
+
+/* Real data has one server chat and no file upload: hide the browser-only thread and attach tools. */
+[data-real] .c-chat__chats,[data-real] #threadActions,[data-real] #chatAttachToggle{display:none}

@@ -1,0 +1,13 @@
+{
+ "jobPostingInfo": {
+  "title": "Customer Service Consultant",
+  "jobDescription": "<p>Answer customer calls. Casual and part time shifts available.</p>",
+  "location": "Melbourne VIC",
+  "startDate": "2026-10-05",
+  "timeType": "Part time",
+  "country": {
+   "descriptor": "Australia",
+   "alpha2Code": "AU"
+  }
+ }
+}

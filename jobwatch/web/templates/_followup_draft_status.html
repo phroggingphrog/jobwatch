@@ -1,0 +1,24 @@
+<section id="followup-draft" class="ph-card"{% if draft_state.status == 'running' %} hx-get="/applications/{{ posting_id }}/followup-draft?channel={{ channel }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  {% if draft_state.status == 'ready' %}
+  <h2>Draft ready for your review</h2>
+  <p>The draft passed an independent review against the saved application and profile. Check it before you send it. Nothing has been sent.</p>
+  {% if channel == 'email' %}<label for="followup-subject">Subject</label>
+  <textarea id="followup-subject" class="followup-copy" rows="2" readonly>{{ draft_state.draft.proposal.subject }}</textarea>{% endif %}
+  <label for="followup-body">Message</label>
+  <textarea id="followup-body" class="followup-copy" rows="12" readonly>{{ draft_state.draft.proposal.body }}</textarea>
+  <p>Select and copy the text into your email or message app. After sending it yourself, record the sent event on Applications.</p>
+  {% elif draft_state.status == 'running' %}
+  <h2>Writing and reviewing your follow-up…</h2><p>This page will update when the review finishes. Nothing is sent automatically.</p>
+  {% elif draft_state.status == 'missing' %}
+  <h2>Prepare a tailored follow-up</h2><p>Your saved application history and profile will be used to write and independently review a draft.</p>
+  <form method="post" action="/applications/{{ posting_id }}/followup-draft"><input type="hidden" name="channel" value="{{ channel }}"><button class="ph-btn ph-btn--default" type="submit">Generate {{ 'LinkedIn' if channel == 'linkedin' else 'follow-up' }} draft</button></form>
+  {% elif draft_state.status == 'disabled' %}
+  <p>Follow-up drafting is not enabled for this installation.</p>
+  {% elif draft_state.status == 'held' %}
+  <h2>Draft held for verification</h2><p>A verified draft is not available. No message has been sent.</p>
+  <p>You can retry after the issue is resolved. Previous usage still counts toward the same token and attempt limits.</p>
+  <form method="post" action="/applications/{{ posting_id }}/followup-draft"><input type="hidden" name="channel" value="{{ channel }}"><input type="hidden" name="retry" value="true"><button class="ph-btn ph-btn--outline" type="submit">Retry within remaining allowance</button></form>
+  {% else %}
+  <h2>Check follow-up readiness</h2><p>The follow-up may not be due, or the application dates, job ad or profile need verification. A previously prepared draft is not shown if these inputs changed.</p>
+  {% endif %}
+</section>

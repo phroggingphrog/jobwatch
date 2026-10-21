@@ -1,0 +1,11 @@
+[Unit]
+Description=jobwatch AI reader only (reads and judges waiting ads, no collecting)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/apps/jobwatch
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch read
+TimeoutStartSec=15min
+Environment=PLAYWRIGHT_BROWSERS_PATH=%h/.local/share/jobwatch-browsers
+Nice=10

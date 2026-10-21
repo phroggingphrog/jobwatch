@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?><feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+<category term="melbourne" label="r/melbourne"/><updated>2026-10-05T12:47:13+00:00</updated><id>/r/melbourne/new/.rss</id><title>newest submissions : melbourne</title>
+<entry><author><name>/u/example_user_one</name><uri>https://www.reddit.com/user/example_user_one</uri></author><category term="melbourne" label="r/melbourne"/>
+<content type="html">&lt;div class=&quot;md&quot;&gt;&lt;p&gt;Small cafe in Fitzroy looking for a casual barista, weekends. DM me.&lt;/p&gt;&lt;/div&gt; submitted by &lt;a href=&quot;https://www.reddit.com/user/example_user_one&quot;&gt; /u/example_user_one &lt;/a&gt;</content>
+<id>t3_aaa111</id><link href="https://www.reddit.com/r/melbourne/comments/aaa111/hiring_casual_barista_fitzroy/" /><updated>2026-10-05T10:00:00+00:00</updated><published>2026-10-05T10:00:00+00:00</published><title>[Hiring] Casual Barista - Fitzroy</title></entry>
+<entry><author><name>/u/example_user_two</name></author><category term="melbourne" label="r/melbourne"/>
+<content type="html">&lt;p&gt;Applied to 200 jobs, two interviews, zero callbacks. Is the job market this bad?&lt;/p&gt;</content>
+<id>t3_bbb222</id><link href="https://www.reddit.com/r/melbourne/comments/bbb222/job_market/" /><updated>2026-10-05T09:00:00+00:00</updated><published>2026-10-05T09:00:00+00:00</published><title>Job market in Melbourne right now</title></entry>
+<entry><author><name>/u/example_user_three</name></author><category term="melbourne" label="r/melbourne"/>
+<content type="html">&lt;p&gt;Best dumplings in the CBD?&lt;/p&gt;</content>
+<id>t3_ccc333</id><link href="https://www.reddit.com/r/melbourne/comments/ccc333/dumplings/" /><updated>2026-10-05T08:00:00+00:00</updated><published>2026-10-05T08:00:00+00:00</published><title>Dumplings</title></entry>
+<entry><author><name>/u/example_user_four</name></author><category term="melbourne" label="r/melbourne"/>
+<content type="html">&lt;p&gt;Anyone hiring in Melbourne? Need work.&lt;/p&gt;</content>
+<id>t3_ddd444</id><link href="https://www.reddit.com/r/melbourne/comments/ddd444/anyone_hiring/" /><updated>2026-10-05T07:00:00+00:00</updated><published>2026-10-05T07:00:00+00:00</published><title>Is anyone hiring?</title></entry>
+</feed>

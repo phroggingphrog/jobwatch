@@ -1,0 +1,17 @@
+# Conditional logit with outside option U[4]=0. Non-centred family prior.
+model {
+  for (k in 1:K) { beta[k] ~ dnorm(prior_mean[k], 4) }
+  mu_alpha ~ dnorm(0, 1)
+  tau ~ dnorm(0, 4) T(0,)
+  for (f in 1:F) {
+    alpha_raw[f] ~ dnorm(0, 1)
+    alpha[f] <- mu_alpha + a0[f] + tau * alpha_raw[f]
+  }
+  for (s in 1:N) {
+    for (a in 1:3) { U[s,a] <- alpha[family[s,a]] + inprod(beta[], X[s,a,]) }
+    U[s,4] <- 0
+    for (a in 1:4) { e[s,a] <- exp(U[s,a] - max(U[s,])) }
+    for (a in 1:4) { p[s,a] <- e[s,a] / sum(e[s,]) }
+    y[s] ~ dcat(p[s,])
+  }
+}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Follow-up draft{% endblock %}
+{% block content %}
+<div class="ph-page-head"><h1>Follow-up for {{ job.title }}</h1><p>{{ job.company }}</p></div>
+<p><a href="/#applications">Back to applications</a> · <a href="?channel=email">Email draft</a> · <a href="?channel=linkedin">LinkedIn draft</a></p>
+{% include "_followup_draft_status.html" %}
+{% endblock %}

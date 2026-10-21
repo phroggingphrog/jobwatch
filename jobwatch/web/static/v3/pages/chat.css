@@ -1,0 +1,36 @@
+/* Chat page */
+.chat{max-width:680px;margin:0 auto}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.clog{list-style:none;margin:0 0 16px;padding:0;display:flex;flex-direction:column;gap:16px}
+.cmsg{max-width:100%}
+.cmsg--me{align-self:flex-end;max-width:85%;background:var(--card);border:1px solid var(--line);border-radius:16px 16px 4px 16px;padding:10px 16px}
+.cmsg--me p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.cmsg--bot{align-self:flex-start;width:100%}
+.cmsg__t{margin:4px 0 0;font-size:13px;color:var(--mute)}
+.cmsg--note{align-self:stretch;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 16px;color:var(--ink)}
+.prose{color:var(--ink);overflow-wrap:anywhere}
+.prose p{margin:0 0 10px}
+.prose h3{font-size:17px;font-weight:500;margin:14px 0 6px}
+.prose ul,.prose ol{margin:0 0 10px;padding-left:22px}
+.prose li{margin-bottom:4px}
+.prose code{background:var(--low-bg);border-radius:6px;padding:1px 6px;font-size:.92em}
+.cask{padding:16px 18px;margin-bottom:16px}
+.cask__k{margin:0;font-size:14px;color:var(--mute)}
+.cask__q{margin:4px 0 12px;font-family:var(--serif);font-size:20px;line-height:1.3;color:var(--ink)}
+.cask__other{display:flex;gap:8px;margin-top:12px}
+.cask__other .cinput{flex:1;min-width:0}
+.cnotes{margin:0 0 16px}
+.cdock{position:sticky;bottom:12px;z-index:5;background:var(--bg);padding:8px 0 4px;margin-top:8px}
+.cchips{margin-bottom:10px}
+.chip--btn{margin:0;min-height:44px;padding:0 16px;border:1px solid var(--line);background:var(--card);font:inherit;font-size:15px;cursor:pointer;text-align:left}
+.chip--btn:hover{border-color:var(--ink)}
+.cform{display:flex;gap:8px;align-items:flex-end}
+.cinput{width:100%;min-height:48px;padding:11px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;resize:none;line-height:1.4}
+.cform .cinput{flex:1;min-width:0}
+.cinput:focus{outline:2px solid var(--ink);outline-offset:1px}
+@media (max-width:720px){
+ .cdock{bottom:64px;padding-bottom:10px}
+ .cmsg--me{max-width:92%}
+ .cask__other{flex-direction:column}
+ .chip--btn{border-radius:12px}
+}

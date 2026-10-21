@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Review application{% endblock %}
+{% block content %}
+<div class="jobpage">
+  <nav class="crumbs"><a href="/#job/{{ job.id }}">← {{ job.title }}</a></nav>
+  <h1>Review your application</h1>
+  <p>{{ job.company }} · {{ job.title }}</p>
+  {% include "_preparation.html" %}
+  {% if browser.open %}
+  <section class="browser-panel" aria-label="Live application browser">
+    <p id="browser-help">Click inside the live page to control it. Type normally, use Tab to move between fields, or paste text. Review the answers, then click Submit in the application.</p>
+    <p id="browser-control-message" role="status"></p>
+    <img id="application-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/job/{{ job.id }}/browser/stream"
+         data-action-url="/job/{{ job.id }}/browser/action" alt="Live application page" aria-describedby="browser-help">
+    <form method="post" action="/job/{{ job.id }}/browser/close"><button class="ph-btn ph-btn--outline" type="submit">Close browser</button></form>
+  </section>
+  {% else %}
+  <form method="post" action="/job/{{ job.id }}/browser/open">
+    <button class="ph-btn ph-btn--default" type="submit" {% if not job.application_id %}disabled{% endif %}>Open application here</button>
+  </form>
+  <p class="muted">The application opens in a private browser inside Jobwatch. Sign in there if the employer requires it.</p>
+  {% endif %}
+</div>
+{% endblock %}

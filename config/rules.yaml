@@ -1,0 +1,246 @@
+# jobwatch match rules (PLAN D5). Plain config, no LLM, no candidate profile.
+#
+# A posting MATCHES when:
+#   1. its title matches at least one arm keyword (word-boundary, case/accent-insensitive), AND
+#   2. its location passes (Melbourne/Victoria, remote within Australia, or unknown location
+#      from an employer marked state: VIC in the registry), AND
+#   3. no seniority exclude fires (and description does not ask for >= exclude_min_years).
+# Flags are WARNINGS shown in the alert, never filters (work rights = flag, per D5).
+#
+# Arms follow an ABS target-occupations CSV (ANZSCO 4-digit). Core arms
+# first, fallback (casual retail/hospitality, switched off 2026-10-07) last. When several arms match, the first
+# listed arm is the primary one; all matching arms are recorded.
+
+arms:
+  # ---------------- core ----------------
+  - id: accounting_clerk
+    anzsco: "5511"
+    tier: core
+    keywords: [accounts payable, accounts receivable, accounts officer, accounts clerk,
+               accounts assistant, accounts administrator, ap officer, ar officer, ap/ar,
+               cost clerk, finance officer, finance assistant, finance administrator,
+               billing officer, billing clerk, credit officer, accounts and payroll]
+  - id: bookkeeper
+    anzsco: "5512"
+    tier: core
+    keywords: [bookkeeper, bookkeeping, book keeper]
+  - id: payroll_clerk
+    anzsco: "5513"
+    tier: core
+    keywords: [payroll officer, payroll clerk, payroll administrator, payroll assistant,
+               payroll coordinator, payroll specialist, payroll]
+  - id: general_clerk
+    anzsco: "5311"
+    tier: core
+    keywords: [administration officer, admin officer, administrative officer,
+               administration assistant, admin assistant, administrative assistant,
+               office assistant, office administrator, office coordinator, clerk,
+               general clerk, administration support, admin support, administration,
+               administrator, team assistant, office junior]
+    exclude: ['(system|systems|database|network|salesforce|cloud|it|crm|sharepoint|m365|server|platform|application|lms|security|identity) administrator',
+              'contracts? administrator', 'clinical', 'payroll', 'registrar', 'service desk']
+  - id: admin_other
+    anzsco: "5999"
+    tier: core
+    keywords: [facilities administrator, business support officer, team support officer,
+               project administrator, program administrator, support officer, records officer,
+               administrative services officer]
+    exclude: ['disability', '\bit support', 'aged care', 'youth', 'clinical', 'learning support',
+              'behaviour', 'peer support', 'family support', 'housing support', 'community support']
+  - id: data_entry
+    anzsco: "5321"
+    tier: core
+    keywords: [data entry, data entry operator, keyboard operator, typist, data processing,
+               data processor, transcription]
+  - id: receptionist
+    anzsco: "5421"
+    tier: core
+    keywords: [receptionist, reception, front desk, front office, medical receptionist,
+               admissions clerk, admissions officer, patient services officer, ward clerk,
+               concierge]
+  - id: call_centre
+    anzsco: "5411"
+    tier: core
+    keywords: [call centre, contact centre, customer service representative,
+               customer service consultant, customer contact, inbound, customer care,
+               phone support, telephone]
+  - id: information_officer
+    anzsco: "5412"
+    tier: core
+    keywords: [customer service officer, customer service, customer support officer,
+               customer support, information officer, enquiry officer, enquiries officer,
+               inquiry officer, customer experience officer, client services officer,
+               client service officer, service officer, member services]
+    exclude: ['protective service', 'field service', 'service technician', 'service engineer',
+              'customer service manager', 'service desk analyst']
+  - id: graduate_accountant
+    anzsco: "2211"
+    tier: core
+    keywords: [graduate accountant, junior accountant, assistant accountant, tax accountant,
+               taxation accountant, accounting graduate, tax graduate, graduate tax,
+               accountant, tax associate, accounting associate]
+    exclude: ['\bexperienced\b']   # T9: graduate/junior arm, not experienced hires
+  - id: graduate_auditor
+    anzsco: "2212"
+    tier: core
+    keywords: [graduate auditor, audit graduate, auditor, audit associate, audit assistant,
+               assurance graduate, assurance associate, internal audit, external audit]
+    exclude: ['\bexperienced\b']   # T9: e.g. "Experienced Analyst | External Audit"
+  - id: data_analyst
+    anzsco: "2241"
+    tier: core
+    keywords: [data analyst, junior data analyst, reporting analyst, insights analyst,
+               data graduate, analytics graduate, data scientist, data and reporting,
+               reporting officer, data officer, analytics analyst]
+    exclude: ['research fellow', 'biostatistic']
+  - id: management_analyst
+    anzsco: "2247"
+    tier: core
+    keywords: [management analyst, organisation analyst, organisational analyst,
+               organization analyst, process analyst, business improvement analyst,
+               operations analyst, performance analyst, continuous improvement analyst,
+               planning analyst]
+    exclude: ['\b(technology|workplace|systems|network|cyber|security|infrastructure|platform)\b']   # T9: IT ops, not business ops
+  - id: ict_business_analyst
+    anzsco: "2611"
+    tier: core
+    keywords: [business analyst, systems analyst, bi analyst, business intelligence analyst,
+               ict business analyst, functional analyst, junior business analyst,
+               graduate business analyst]
+  # -------------- graduate / trainee programs --------------
+  - id: programs          # owner 2026-10-05/07: internships, vacation, graduate, cadet programs are wanted (AI reader judges the field)
+    anzsco: ""
+    tier: core
+    keywords: [internship, intern, interns, summer intern, summer internship, vacation program, vacation programme,
+               vacationer, vacationers, vacation student, summer vacation, winter vacation, summer program,
+               graduate, graduates, graduate program, graduate programme, grad program, undergraduate,
+               cadet, cadetship, traineeship, finance trainee, accounting trainee, business trainee,
+               administration trainee, clerkship, industry placement, work integrated learning]
+  - id: retail_management_trainee
+    anzsco: "1421"
+    tier: core
+    keywords: [management trainee, management candidate, manager candidate, trainee manager,
+               manager in training, retail graduate program, store management graduate]
+  # -------------- fallback (casual) --------------
+  - id: retail_sales
+    enabled: false      # owner 2026-10-05/07: shop-floor and hospitality are not wanted
+    anzsco: "6211"
+    tier: fallback
+    keywords: [sales assistant, retail assistant, retail team member, store team member,
+               retail sales, sales associate, retail associate, team member, store assistant,
+               shop assistant]
+    exclude: ['warehouse', '\barbor\b', '\btree\b', '\bplanting\b']   # T9: council tree crews
+  - id: checkout
+    enabled: false      # owner 2026-10-05/07: shop-floor and hospitality are not wanted
+    anzsco: "6311"
+    tier: fallback
+    keywords: [checkout operator, checkout, cashier, console operator, service desk operator]
+  - id: barista_bar
+    enabled: false      # owner 2026-10-05/07: shop-floor and hospitality are not wanted
+    anzsco: "4311"
+    tier: fallback
+    keywords: [barista, bar attendant, bartender, bar staff, bar tender, bar and gaming]
+  - id: cafe_worker
+    enabled: false      # owner 2026-10-05/07: shop-floor and hospitality are not wanted
+    anzsco: "4312"
+    tier: fallback
+    keywords: [cafe all rounder, cafe all-rounder, cafe attendant, cafe worker, cafe staff,
+               cafe assistant, kitchen hand, all rounder, all-rounder]
+  - id: waiter
+    enabled: false      # owner 2026-10-05/07: shop-floor and hospitality are not wanted
+    anzsco: "4315"
+    tier: fallback
+    keywords: [waiter, waitress, waitstaff, wait staff, food and beverage attendant,
+               food & beverage attendant, front of house, restaurant all rounder, floor staff]
+  - id: fast_food
+    enabled: false      # owner 2026-10-05/07: shop-floor and hospitality are not wanted
+    anzsco: "8511"
+    tier: fallback
+    keywords: [crew member, fast food, kitchen crew, restaurant crew, crew, cook (fast food),
+               food preparation]
+    exclude: ['flight', 'cabin', 'ground crew', 'film', 'line crew', 'crew leader', 'deck', 'vessel']
+
+location:
+  # Any of these in the location text (or posting.state == VIC) = Melbourne/Victoria.
+  vic_patterns: ['\bmelbourne\b', '\bvictoria\b', '\bvic\b', '\bgeelong\b', '\bballarat\b',
+                 '\bbendigo\b', '\b3\d{3}\b']
+  # "Remote" counts when the posting is in Australia (collectors already AU-gated) and no
+  # overseas country is named.
+  remote_patterns: ['\bremote\b', 'work from home', '\bwfh\b', 'anywhere in australia',
+                    'australia[- ]wide', '\bnational\b']
+  # Unknown location from an employer whose registry entry says state: VIC -> include.
+  allow_unknown_from_vic_employer: true
+  # Suburb-only locations ("Caroline Springs"): match against Victorian localities whose names are
+  # unique to Victoria (ABS SAL 2021), unless another state is named in the location text.
+  vic_localities_file: config/vic_localities.txt
+  other_state_patterns: ['\bnsw\b', '\bnew south wales\b', '\bqld\b', '\bqueensland\b', '\bsa\b',
+                         '\bsouth australia\b', '\bwa\b', '\bwestern australia\b', '\btas\b',
+                         '\btasmania\b', '\bnt\b', '\bnorthern territory\b', '\bact\b', '\bsydney\b',
+                         '\bbrisbane\b', '\badelaide\b', '\bperth\b', '\bhobart\b', '\bdarwin\b',
+                         '\bcanberra\b', '\bnew zealand\b', '\bauckland\b']
+
+seniority:
+  # Title words that exclude a posting (all arms).
+  exclude_title: ['\bsenior\b', '\bsnr\b', '\bsr\.?\b', '\blead\b', '\bleader\b', '\bmanager\b',
+                  '\bmanagement accountant\b', '\bhead of\b', '\bhead\b', '\bprincipal\b',
+                  '\bdirector\b', '\bchief\b', '\bexecutive\b', '\bvp\b', '\bpartner\b',
+                  '\bsupervisor\b', '\bcontroller\b', '\bstaff engineer\b', '\barchitect\b',
+                  '\bexpert\b', '\bspecialist ii+\b', '\blevel [3-9]\b', '\bconsultant ii+\b',
+                  '\bgeneral manager\b', '\bowner\b', '\bcfo\b', '\bceo\b', '\bcoo\b',
+                  '\bstore manager\b', '\bassistant manager\b', '\b(chef|cook) de\b',
+                  '\bsous chef\b', '\bhead chef\b', '\bvps ?[5-7]\b', '\baps ?[6-9]\b', '\bel ?[12]\b']
+  # Off-target titles (not seniority, just never a target arm), all arms.
+  exclude_title_global: ['\bengineer\b', '\bdeveloper\b', '\bnurse\b', '\bregistered\b',
+                         '\bdriver\b', '\bmechanic\b', '\belectrician\b', '\bphysio', '\bdoctor\b',
+                         '\bteacher\b', '\bpsycholog', '\bpharmacist\b', '\blawyer\b', '\bsolicitor\b']
+  # Phrases removed from the title before the seniority check (so they never trigger it).
+  exempt_phrases: ['team member', 'crew member', 'customer service team leader trainee',
+                   'leadership program', 'graduate program', 'management trainee',
+                   'management candidate', 'manager candidate', 'trainee manager', 'manager in training',
+                   'executive assistant']
+  # Pay grade / classification field (Careers.Vic "Grade", etc.) that excludes a posting.
+  # VPS 1-3 = entry (flagged below), VPS 4 = ok, VPS 5+ / SES / executive = excluded.
+  exclude_classification: ['\bvps ?[5-7]\b', '\bvps ?ses', '\bses ?[1-3]?\b', '\bexecutive\b',
+                           '\bsenior technical specialist\b', '\bsts\b', '\baps ?[6-9]\b',
+                           '\bel ?[12]\b', '\bprincipal\b']
+  # Description asks for this many years or more -> exclude.
+  exclude_min_years: 5
+
+flags:
+  work_rights_required:
+    - 'australian citizen'
+    - 'citizenship'
+    - 'permanent resident'
+    - '\bpr\b'
+    - 'full (australian )?working rights'
+    - 'unrestricted (australian )?(working|work) rights'
+    - 'security clearance'
+    - '\bbaseline\b.{0,20}clearance'
+    - '\bnv-?1\b|\bnv-?2\b|negative vetting|agsva'
+    - 'public service act 1999'
+  # Equal-opportunity boilerplate that mentions citizenship is not a requirement.
+  work_rights_ignore: ['without regard to', 'regardless of', 'irrespective of']
+  full_time_only:
+    title_or_type: ['\bfull[- ]?time\b']
+    unless: ['\bpart[- ]?time\b', '\bcasual\b', '\bflexible hours\b', '\bjob[- ]?share\b']
+  experience_flag_min_years: 2
+  entry_level: ['\bgraduate\b', '\bjunior\b', '\btrainee\b', '\bentry[- ]level\b',
+                '\bno experience\b', '\bintern(ship)?\b', '\bcadet(ship)?\b', '\bassistant\b']
+  # Classification (pay grade) that marks an entry-level role -> entry_level flag.
+  entry_classification: ['\bvps ?[1-3]\b', '\baps ?[1-3]\b', '\bgraduate\b']
+
+# Registry arm names (employers.yaml `arms`, brief vocabulary) -> rules.yaml arm ids.
+# Reporting only (e.g. "does this employer usually hire for the matched arm?"); matching is by title.
+registry_arm_map:
+  clerical_accounting: [accounting_clerk, bookkeeper, payroll_clerk]
+  admin: [general_clerk, admin_other, information_officer]
+  reception: [receptionist]
+  data_entry: [data_entry]
+  customer_service: [call_centre, information_officer]
+  graduate_accounting: [graduate_accountant]
+  graduate_audit: [graduate_auditor]
+  data_analyst: [data_analyst]
+  business_analyst: [management_analyst, ict_business_analyst]
+  retail: [retail_sales, checkout]
+  hospitality: [barista_bar, cafe_worker, waiter, fast_food]
+  retail_management_trainee: [retail_management_trainee]

@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Job evaluation{% endblock %}
+{% block content %}
+<div class="jobpage"><nav class="crumbs"><a href="/#job/{{ job.id }}">← {{ job.title }}</a></nav><h1>Job evaluation</h1><p>{{ job.company }} · {{ job.title }}</p>
+{% if evaluation %}
+<p><strong>{{ evaluation.global_score }}/5</strong> · {{ evaluation.archetype }}</p>
+<dl>{% for name, dimension in evaluation.dimensions.items() %}<dt>{{ name|replace('_',' ')|title }} · {{ dimension.score }}/5</dt><dd>{{ dimension.reason }}</dd>{% endfor %}</dl>
+<h2>Requirements and evidence</h2><table><thead><tr><th>Requirement</th><th>Importance</th><th>Evidence match</th></tr></thead><tbody>
+{% for requirement in evaluation.requirements.requirements %}<tr><td>{{ requirement.text }}</td><td>{{ requirement.importance|replace('_',' ') }}</td><td>{% for match in evaluation.matches if match.requirement_id == requirement.id %}
+<strong>{{ match.match|replace('_',' ')|title }}</strong>
+{% for citation in match.evidence %}<blockquote>{{ citation.quote }}</blockquote><small>{{ citation.source_id }}</small>{% endfor %}
+{% if match.risk %}<p><strong>Risk:</strong> {{ match.risk }}</p>{% endif %}
+{% if match.mitigation %}<p><strong>Next step:</strong> {{ match.mitigation }}</p>{% endif %}
+{% endfor %}</td></tr>{% endfor %}
+</tbody></table>
+{% for section, text in evaluation.report.items() %}<section><h2>Assessment {{ section }}</h2><p>{{ text }}</p></section>{% endfor %}
+{% else %}<p>This job has not completed agent evaluation yet.</p>{% endif %}</div>{% endblock %}

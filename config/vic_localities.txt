@@ -1,0 +1,2555 @@
+# Victorian suburbs/localities whose names are NOT shared with another state (ABS ASGS 2021 SAL, CL_SAL_2021, CC BY 4.0)
+# Source: https://data.api.abs.gov.au/rest/dataflow/ABS/C21_G01_SAL/1.0.0?references=codelist  fetched 2026-10-06; 2553 of 2946 VIC names kept
+abbeyard
+aberfeldie
+aberfeldy
+acheron
+adams estate
+addington
+adelaide lead
+agnes
+aintree
+aire valley
+aireys inlet
+airly
+airport west
+albacutya
+albanvale
+alberton west
+albion
+alfredton
+allambee
+allambee reserve
+allambee south
+allans flat
+allansford
+allendale
+allestree
+almonds
+almurta
+alphington
+altona meadows
+altona north
+alvie
+amherst
+amor
+amphitheatre
+anakie
+ancona
+anderson
+anglers rest
+anglesea
+annuello
+antwerp
+appin south
+ararat
+arawata
+arbuckle
+arcadia south
+archdale
+archdale junction
+archerton
+archies creek
+ardeer
+ardmona
+areegra
+armstrong
+arnold west
+arthurs creek
+arthurs seat
+ascot (ballarat - vic.)
+ascot (greater bendigo - vic.)
+ascot vale
+ashburton
+ashwood
+aspendale
+aspendale gardens
+athlone
+attwood
+aubrey
+auchmore
+avalon
+avenel
+avon plains
+avondale heights
+avonmore
+avonsleigh
+axe creek
+axedale
+ayrford
+bacchus marsh
+baddaginnie
+badger creek
+bael bael
+bagshot
+bagshot north
+bahgallah
+bailieston
+bairnsdale
+bakery hill
+balintore
+ballan
+ballangeich
+ballapur
+ballarat central
+ballarat east
+ballarat north
+ballendella
+balliang
+balliang east
+ballyrogan
+balmattum
+balnarring
+balnarring beach
+balook
+balwyn
+balwyn north
+bamawm
+bamawm extension
+bambra
+bamganie
+bandiana
+bangerang
+bangholme
+bannerton
+banyan
+banyena
+baranduda
+barfold
+baringhup
+baringhup west
+barjarg
+barkers creek
+barkstead
+barmah
+barnadown
+barnawartha
+barnawartha north
+baromi
+barongarook
+barongarook west
+barrabool
+barrakee
+barramunga
+barraport
+barraport west
+barrys reef
+barunah park
+barunah plains
+barwidgee
+barwite
+barwon downs
+barwon heads
+bass
+batesford
+bathumi
+baw baw village
+baxter
+bayindeen
+bayles
+bayswater north
+beaconsfield upper
+bealiba
+bearii
+bears lagoon
+beauchamp
+beazleys bridge
+beeac
+beech forest
+beechworth
+beenak
+belgrave
+belgrave heights
+belgrave south
+bell park
+bell post hill
+bellarine
+bellbird creek
+bellbrae
+bellbridge
+bellellen
+bellfield (banyule - vic.)
+bellfield (northern grampians - vic.)
+bells beach
+bemm river
+bena
+benalla
+benambra
+benayeo
+bend of islands
+bendigo
+bendoc
+bengworden
+benjeroop
+benloch
+bennison
+bentleigh
+bentleigh east
+benwerrin
+beremboke
+berrimal
+berringa
+berringama
+berriwillock
+berrybank
+berrys creek
+berwick
+bessiebelle
+bet bet
+bete bolong
+bete bolong north
+bethanga
+betley
+beverford
+beveridge
+big desert
+big hill (greater bendigo - vic.)
+big hill (surf coast - vic.)
+big pats creek
+biggara
+billabong
+bimbourie
+bindi
+binginwarri
+bingo munjie
+birchip
+birchip west
+birdwoodton
+birregurra
+bittern
+blackburn
+blackburn north
+blackburn south
+blackwarry
+blairgowrie
+blakeville
+blampied
+blind bight
+blowhard
+bo peep
+bobinawarrah
+bochara
+bogong
+boho
+boho south
+boigbeat
+boinka
+boisdale
+bolangum
+bolinda
+bolton
+bolwarrah
+bona vista
+bonang
+bonbeach
+bonegilla
+boneo
+bonn
+bonnie brook
+bookaar
+boola
+boolarong
+boolarra
+boolarra south
+boole poole
+boolite
+boomahnoomoonah
+boorcan
+boorhaman
+boorhaman east
+boorhaman north
+boorolite
+boorool
+boort
+boosey
+boralma
+bornes hill
+boronia
+borung
+bostocks creek
+botanic ridge
+boundary bend
+bowenvale
+boweya
+boweya north
+bowmans forest
+bowser
+box hill north
+box hill south
+boxwood
+bradford
+bradvale
+braeside
+branxholme
+bravington
+braybrook
+breakaway creek
+breakwater
+breamlea
+brenanah
+brewster
+briagolong
+briar hill
+bridge creek
+bridgewater north
+bridgewater on loddon
+brighton east
+brim
+brimboal
+brimin
+brimpaen
+bringalbert
+brit brit
+broadford
+brodribb river
+broken creek
+bromley
+brookville
+broomfield
+bruarong
+brucknell
+brumby
+brunswick east
+brunswick west
+bruthen
+buangor
+buchan
+buchan south
+buckley
+buckley swamp
+buckrabanyule
+budgeree
+budgerum east
+buffalo
+buffalo river
+bulart
+buldah
+bulgana
+bullaharre
+bullarook
+bullarto
+bullarto south
+bulleen
+bullengarook
+bullioh
+bullumwaal
+buln buln
+buln buln east
+bumberrah
+bunbartha
+bundalaguah
+bundalong
+bundalong south
+bundara
+bunding
+bung bong
+bungador
+bungal
+bungalally
+bungeet
+bungeet west
+bunguluke
+buninyong
+bunkers hill
+bunyip
+bunyip north
+buragwonduc
+burkes bridge
+burkes flat
+burnbank
+burnewang
+burnley
+burnside heights
+burramboot
+burramine
+burramine south
+burrowye
+burrumbeet
+burwood east
+bushfield
+butchers ridge
+byaduk
+byaduk north
+byawatha
+bylands
+byrneside
+cabbage tree
+cabbage tree creek
+cadello
+cairnlea
+calder park
+caldermeade
+california gully
+calivil
+callawadda
+callignee
+callignee north
+callignee south
+calrossie
+calulu
+cambarville
+cambrian hill
+campbellfield
+campbells bridge
+campbells creek
+campbells forest
+canadian
+canary island
+caniambo
+cann river
+cannie
+cannons creek
+cannum
+cape bridgewater
+cape clear
+cape conran
+cape otway
+cape paterson
+cape schanck
+cape woolamai
+capel sound
+capels crossing
+carag carag
+caralulup
+caramut
+carapooee
+carapooee west
+carapook
+carboor
+cardigan
+cardigan village
+cardinia
+cardross
+cargerie
+caringal
+carisbrook
+carlisle river
+carlsruhe
+carlton north
+carlyle
+carnegie
+carngham
+caroline springs
+carpendeit
+carrajung
+carrajung lower
+carrajung south
+carranballac
+carron
+carrum
+carrum downs
+carwarp
+cashmore
+castella
+casterton
+castle donnington
+castlemaine
+catani
+cathkin
+catumnal
+caulfield
+caulfield east
+caulfield north
+caulfield south
+caveat
+cavendish
+ceres
+chadstone
+chandlers creek
+chapel flat
+chapple vale
+charam
+charlemont
+charleroi
+chelsea
+chelsea heights
+chepstowe
+cherokee
+cherrypool
+cheshunt
+cheshunt south
+chesney vale
+chetwynd
+chewton
+chewton bushlands
+chillingollah
+chiltern
+chiltern valley
+chinangin
+chinkapook
+chintin
+chirnside park
+chirrip
+chocolyn
+chum creek
+churchill island
+chute
+claretown
+clarinda
+clarkefield
+clarkes hill
+clayton
+clayton south
+clear lake
+clematis
+clifton creek
+clifton hill
+clifton springs
+clonbinane
+clover flat
+cloverlea
+club terrace
+clyde north
+clydebank
+coalville
+cobains
+cobaw
+cobbannah
+cobberas
+cobblebank
+cobden
+cobram
+cobram east
+cobrico
+cobungra
+coburg
+coburg north
+cocamba
+cochranes creek
+cocoroc
+coghills creek
+cohuna
+coimadai
+cokum
+colac
+colac colac
+colac east
+colac west
+colbinabbin
+colbrook
+coleraine
+colignan
+combienbar
+concongella
+condah
+congupna
+connewarre
+connewirricoo
+coojar
+coolaroo
+coomboona
+coomoora
+coongulla
+coonooer bridge
+coonooer west
+cooriemungle
+cope cope
+cora lynn
+corack
+corack east
+coragulac
+coral bank
+corindhap
+corio
+cornella
+cornishtown
+coronet bay
+corop
+cororooke
+corringle
+corryong
+corunnun
+cosgrove south
+costerfield
+cotswold
+cottles bridge
+cowa
+cowangie
+cowes
+cowleys creek
+cowwarr
+craigieburn
+cranbourne
+cranbourne east
+cranbourne north
+cranbourne south
+cranbourne west
+creek junction
+creek view
+creightons creek
+creswick
+creswick north
+crib point
+crookayan
+crooked river
+crossley
+crossover
+crowlands
+croxton east
+croydon hills
+croydon north
+croydon south
+crymelon
+cudgee
+cudgewa
+culgoa
+culla
+cullen
+cullulleraine
+cundare
+cundare north
+curdies river
+curdievale
+curyo
+dadswells bridge
+dales creek
+dallas
+dalmore
+daltons bridge
+dalyenong
+dalyston
+dandenong
+dandenong north
+dandenong south
+dandongadale
+dargo
+darley
+darlimurla
+darnum
+darraweit guim
+darriman
+dartmouth
+daylesford
+dean
+deans marsh
+deanside
+deddick valley
+dederang
+deep lead
+deer park
+delacombe
+delahey
+delatite
+delburn
+delegate river
+denicull creek
+denison
+dennington
+denver
+deptford
+dereel
+dergholm
+derrimut
+derrinal
+derrinallum
+devenish
+devils river
+devon meadows
+devon north
+dewhurst
+dhurringile
+diamond creek
+digby
+diggers rest
+diggora
+dimboola
+dingee
+dingley village
+dingwall
+dinner plain
+dixons creek
+dobie
+docker
+dockers plains
+docklands
+doctors flat
+dollar
+don valley
+donald
+doncaster
+doncaster east
+donvale
+dooboobetic
+dooen
+dookie
+dookie college
+doreen
+dorodong
+double bridges
+douglas
+doveton
+dreeite
+dreeite south
+driffield
+drik drik
+dromana
+dropmore
+drouin
+drouin east
+drouin south
+drouin west
+drumanure
+drumborg
+drumcondra
+drummartin
+drummond
+drummond north
+drung
+dry diggings
+drysdale
+duchembegarra
+dumbalk
+dumbalk north
+dumosa
+dunach
+dundonnell
+dunluce
+dunneworthy
+dunnstown
+dunrobin
+durdidwarrah
+durham lead
+durham ox
+dutson
+dutson downs
+dutton way
+duverney
+eagle point
+eaglehawk
+eaglehawk north
+eaglemont
+earlston
+east bairnsdale
+east bendigo
+east geelong
+east melbourne
+east sale
+east wangaratta
+east warburton
+eastern view
+eastville
+ebden
+echuca
+echuca village
+echuca west
+ecklin south
+eddington
+eden park
+edenhope
+edgecombe
+edi upper
+edithvale
+eganstown
+eildon
+elaine
+eldorado
+elevated plains
+elingamite
+elingamite north
+elizabeth island
+ellaswood
+ellerslie
+elliminyt
+ellinbank
+elmhurst
+elmore
+elphinstone
+elsternwick
+eltham north
+elwood
+endeavour hills
+englefield
+enochs point
+ensay
+ensay north
+eppalock
+ercildoune
+erica
+errinundra
+esmond
+essendon
+essendon fields
+essendon north
+essendon west
+eumemmerring
+eurack
+euroa
+eurobin
+evansford
+eversley
+everton
+everton upper
+exford
+eynesbury
+fairbank
+fairhaven
+fairley
+fairy dell (campaspe - vic.)
+fairy dell (east gippsland - vic.)
+faraday
+fawcett
+fawkner
+fentons creek
+fern hill
+fernbank
+fernihurst
+fernshaw
+ferntree gully
+ferny creek
+fiery flat
+fish creek
+fish point
+fiskville
+fitzroy north
+flaggy creek
+flagstaff
+flamingo beach
+flemington
+flora hill
+flynns creek
+footscray
+forge creek
+foster
+foster north
+fosterville
+foxhow
+framlingham
+framlingham east
+franklinford
+frankston
+frankston north
+frankston south
+fraser rise
+freeburgh
+french island
+frenchmans
+freshwater creek
+fryerstown
+fumina
+fumina south
+fyans creek
+fyansford
+gaffneys creek
+gainsborough
+gannawarra
+gapsted
+gardenvale
+garfield
+garfield north
+garibaldi
+garvoc
+gateway island
+gatum
+gazette
+geelong
+geelong west
+gelantipy
+gellibrand
+gellibrand lower
+gelliondale
+gembrook
+genoa
+gentle annie
+gerahmin
+gerang gerung
+gerangamete
+germania
+gerrigerrup
+gherang
+gheringhap
+ghin ghin
+giffard
+giffard west
+gil gil
+gilderoy
+gillieston
+gillum
+gipsy point
+girgarre
+girgarre east
+gisborne
+gisborne south
+gladstone park
+gladysdale
+glen alvie
+glen creek
+glen forbes
+glen huntly
+glen park
+glen valley
+glen waverley
+glen wills
+glenaire
+glenaladale
+glenalbyn
+glenaroua
+glenbrae
+glenburn
+glendaruel
+glendonald
+glenfalloch
+glenfyne
+glengarry north
+glengarry west
+glengower
+glenhope
+glenhope east
+glenisla
+glenlofty
+glenlogie
+glenloth
+glenloth east
+glenluce
+glenmaggie
+glenormiston north
+glenormiston south
+glenpatrick
+glenrowan
+glenrowan west
+glenthompson
+glomar beach
+gnarwarre
+gnotuk
+gobarup
+gobur
+golden gully
+golden point (ballarat - vic.)
+golden point (mount alexander - vic.)
+golden square
+goldie
+gong gong
+gonn crossing
+goomalibee
+goon nure
+goongerah
+gooram
+gooramadda
+goorambat
+goornong
+gooroc
+gorae
+gorae west
+gormandale
+goroke
+goschen
+goughs bay
+goulburn weir
+gowanbrae
+gowanford
+gowangardie
+gowar east
+gower
+grahamvale
+grampians
+grand ridge
+grangefields
+granite rock
+grantville
+granya
+grassmere
+grays bridge
+graytown
+gre gre
+gre gre north
+gre gre south
+great western
+gredgwin
+greendale
+greensborough
+greenwald
+grenville
+greta south
+greta west
+grey river
+gringegalgona
+gritjurk
+grovedale
+gruyere
+gunbower
+gundowring
+gunyah
+guys forest
+guys hill
+gymbowen
+haddon
+hadfield
+hallam
+hallora
+halls gap
+hallston
+hamlyn heights
+hampton east
+hampton park
+hansonville
+happy valley (golden plains - vic.)
+happy valley (swan hill - vic.)
+harcourt
+harcourt north
+harkaway
+harkness
+harmers haven
+harrietville
+harrow
+harston
+hattah
+havelock
+haven
+hawkesdale
+hawkhurst
+hawthorn east
+hazel park
+hazelwood
+hazelwood north
+hazelwood south
+healesville
+heath hill
+heathcote junction
+heathcote south
+heatherton
+heathmere
+heathmont
+hedley
+heidelberg
+heidelberg heights
+heidelberg west
+hensley park
+hepburn
+hepburn springs
+hernes oak
+hesket
+hesse
+heyfield
+heytesbury lower
+heywood
+hiamdale
+hiawatha
+high camp
+highett
+highlands
+highton
+hilgay
+hilldene
+hillside (east gippsland - vic.)
+hillside (melton - vic.)
+hinnomunjie
+hmas cerberus
+hoddles creek
+hollands landing
+homerton
+homewood
+hopetoun park
+hoppers crossing
+hordern vale
+horfield
+horsham
+hotham heights
+hotspur
+howes creek
+howitt plains
+howqua
+howqua hills
+howqua inlet
+hughesdale
+humevale
+hunter
+hunterston
+huntly
+huntly north
+huon
+huon creek
+hurstbridge
+icy creek
+iguana creek
+illabarook
+illawarra
+illowa
+indented head
+indigo valley
+ingliston
+inverleigh
+inverloch
+invermay park
+iona
+iraak
+irrewarra
+irrewillipe
+irrewillipe east
+ivanhoe east
+jacana
+jack river
+jackass flat
+jacob creek
+jam jerrup
+jan juc
+jancourt
+jancourt east
+jarklin
+jarrahmond
+jarvis creek
+jeeralang
+jeeralang junction
+jeetho
+jeffcott
+jeffcott north
+jeparit
+jeruk
+jil jil
+jindivick
+joel joel
+joel south
+johanna
+johnsonville
+joyces creek
+jumbuk
+jumbunna
+junction village
+jungaburra
+junortoun
+kaarimba
+kadnook
+kalimna
+kalimna west
+kalkallo
+kalkee
+kallista
+kalorama
+kalpienung
+kamarooka
+kamarooka north
+kanagulk
+kancoona
+kangaroo ground
+kaniva
+kanumbra
+kanya
+kanyapella
+karabeal
+kardella
+kardella south
+kariah
+karnak
+karramomus
+karyrie
+katamatite
+katamatite east
+katandra
+katandra west
+katunga
+kawarren
+kealba
+keely
+keilor
+keilor downs
+keilor east
+keilor lodge
+keilor north
+keilor park
+kellalac
+kelvin view
+kenley
+kennedys creek
+kennett river
+kennington
+kerang
+kerang east
+kergunyah
+kergunyah south
+kernot
+kerrie
+kerrisdale
+kevington
+kew east
+kewell
+keysborough
+kialla
+kialla east
+kialla west
+kiata
+kiewa
+kilcunda
+killara (glenelg - vic.)
+killara (wodonga - vic.)
+kilmany
+kilmore
+kilmore east
+kilsyth
+kilsyth south
+king valley
+kinglake
+kinglake central
+kinglake west
+kingower
+kingsbury
+kingsville
+kinnabulla
+kinypanial
+kirkstall
+kirwans bridge
+kithbrook
+knebsworth
+knockwood
+knowsley
+knoxfield
+koallah
+koetong
+kolora
+kongwak
+konongwootong
+koo wee rup
+koo wee rup north
+kooloonong
+koonda
+koondrook
+koonoomoo
+koonwarra
+kooreh
+koorlong
+koornalla
+kooroocheang
+koorool
+koorooman
+kooyong
+koriella
+korobeit
+koroit
+korong vale
+koroop
+korumburra
+korumburra south
+korweinguboora
+kotta
+kotupna
+koyuga
+krowera
+kunat
+kurraca
+kurraca west
+kurting
+kurunjang
+kyabram
+kyabram south
+kyneton
+kyneton south
+kyvalley
+laanecoorie
+laang
+labertouche
+laceby
+ladys pass
+laen
+laen east
+laen north
+laharum
+lake boga
+lake bolac
+lake bunga
+lake charm
+lake condah
+lake eildon
+lake eppalock
+lake fyans
+lake gardens
+lake goldsmith
+lake lonsdale
+lake marmal
+lake meran
+lake mundi
+lake powell
+lake rowan
+lake tyers
+lake tyers beach
+lake tyrrell
+lake wellington
+lake wendouree
+lake wongan
+lakes entrance
+lal lal
+lalbert
+lalor
+lamplough
+lancaster
+lance creek
+lancefield
+landsborough west
+lang lang
+lang lang east
+langdons hill
+langi kal kal
+langi logan
+langkoop
+langley
+langsborough
+langwarrin
+langwarrin south
+lara
+lardner
+larpent
+lascelles
+launching place
+lauriston
+lavers hill
+laverton north
+lawler
+lawloit
+leaghur
+ledcourt
+leichardt
+leitchville
+lemnos
+leneva
+leonards hill
+leongatha
+leongatha north
+leongatha south
+leopold
+lerderderg
+leslie manor
+lethbridge
+lexton
+licola
+licola north
+lillicur
+lillimur
+lilliput
+lima
+lima east
+lima south
+lindenow
+lindenow south
+lindsay
+lindsay point
+linga
+linton
+liparoo
+litchfield
+little desert
+little hampton
+llanelly
+llowalong
+loch
+loch sport
+loch valley
+lockington
+lockwood
+lockwood south
+loddon vale
+logan
+londrigan
+long forest
+long gully
+longerenong
+longlea
+longwarry
+longwarry north
+longwood east
+lorquon
+lovely banks
+lower moira
+lower norton
+lower plenty
+loy yang
+lubeck
+lucas
+lucyvale
+lurg
+lynbrook
+lyonville
+lysterfield
+lysterfield south
+macedon
+macks creek
+macorna
+macorna north
+macs cove
+madalya
+maddingley
+mafeking
+maffra west upper
+magpie
+maiden gully
+maidstone
+mailors flat
+main lead
+main ridge
+maindample
+maintongoon
+major plains
+majorca
+mallacoota
+malmsbury
+malvern east
+mambourin
+manangatang
+mandurang
+mandurang south
+manifold heights
+mannerim
+mannibadar
+manns beach
+manor lakes
+manorina
+maramingo creek
+marcus hill
+mardan
+maribyrnong
+marionvale
+markwood
+marlbed
+marlo
+marnoo
+marnoo east
+marnoo west
+marong
+maroona
+marraweeney
+marshall
+marthavale
+marungi
+maryknoll
+marysville
+massey
+matlock
+mccrae
+mcintyre
+mckenzie creek
+mckenzie hill
+mckinnon
+mcloughlins beach
+mcmahons creek
+mcmillans
+mead
+meadow creek
+meadow heights
+meatian
+meeniyan
+meering west
+meerlieu
+melbourne
+melbourne airport
+melton south
+melton west
+melville forest
+melwood
+mena park
+mentone
+menzies creek
+mepunga
+mepunga east
+mepunga west
+merbein
+merbein south
+merbein west
+meredith
+meringur
+merino
+mernda
+merriang
+merriang south
+merricks
+merricks beach
+merricks north
+merrigum
+merrijig (east gippsland - vic.)
+merrijig (mansfield - vic.)
+merrimu
+merrinee
+merton
+metcalfe
+metcalfe east
+metung
+mickleham
+middle creek
+middle tarwin
+miepoll
+miga lake
+milawa
+mildura
+mill park
+millgrove
+milloo
+milltown
+milnes bridge
+mincha
+mincha west
+miners rest
+mingay
+minhamite
+minimay
+mininera
+minjah
+minmindie
+minyip
+miowera
+miralie
+miram
+mirboo
+mirboo north
+mirimbah
+mirranatwa
+mitchellstown
+mitiamo
+mitre
+mitta mitta
+mittyack
+mockinya
+modella
+modewarre
+moe south
+moggs creek
+moglonemby
+mokepilly
+moliagul
+molka
+mollongghip
+mologa
+molyullah
+monbulk
+monegeetta
+mongans bridge
+monomak
+monomeith
+mont albert
+mont albert north
+montgomery
+montmorency
+moolap
+moolerr
+moolort
+moonambel
+moondarra
+moonee ponds
+moonlight flat (central goldfields - vic.)
+moonlight flat (mount alexander - vic.)
+moorabbin
+moorabbin airport
+moorabool
+mooralla
+moorilim
+moormbool west
+moornapa
+moorngag
+moorooduc
+mooroolbark
+mooroopna
+mooroopna north
+mooroopna north west
+moranding
+mordialloc
+morgiana
+moriac
+moroka
+morrisons
+morrl morrl
+morton plains
+morwell
+mossiface
+mount alfred
+mount beauty
+mount beckworth
+mount best
+mount bolton
+mount bruno
+mount buffalo
+mount buller
+mount burnett
+mount bute
+mount camel
+mount cameron
+mount clear
+mount cole
+mount cole creek
+mount cottrell
+mount dandenong
+mount doran
+mount dryden
+mount duneed
+mount eccles
+mount egerton
+mount eliza
+mount emu
+mount evelyn
+mount franklin
+mount glasgow
+mount helen
+mount hooghly
+mount lonarch
+mount macedon
+mount major
+mount martha
+mount mercer
+mount moriac
+mount napier
+mount prospect
+mount richmond
+mount rowan
+mount sabine
+mount tassie
+mount taylor
+mount toolebewong
+mount wallace
+mount waverley
+mountain bay
+moutajup
+moyhu
+moyreisk
+moyston
+muckatah
+muckleford
+muckleford south
+mudgegonga
+mumbannar
+mundoona
+munro
+muntham
+murchison east
+murchison north
+murgheboluc
+murmungee
+murnungin
+murra warra
+murrabit
+murrabit west
+murrawee
+murray-sunset
+murraydale
+murrayville
+murrindal
+murrindindi
+murroon
+murrumbeena
+murtoa
+musk
+musk vale
+muskerry
+myall (buloke - vic.)
+myall (gannawarra - vic.)
+myamyn
+myers flat
+myrniong
+myrrhee
+myrtlebank
+myrtleford
+mysia
+mystic park
+mywee
+nagambie
+nalangil
+nalinga
+nambrok
+nandaly
+nangana
+nangeela
+nangiloc
+nanneella
+nap nap marra
+napoleons
+nar nar goon
+nar nar goon north
+narbethong
+nareeb
+nareen
+nareewillock
+nariel valley
+naring
+naringal
+naringal east
+naroghid
+narracan
+narraport
+narrapumelap south
+narrawong
+narre warren
+narre warren east
+narre warren north
+narre warren south
+nathalia
+natimuk
+natte yallock
+natya
+navarre
+navigators
+nayook
+neds corner
+neereman
+neerim
+neerim east
+neerim junction
+neerim north
+neerim south
+neilborough
+nelse
+nelson
+nerrena
+nerrin nerrin
+nerrina
+nerring
+neuarpurr
+new gisborne
+newborough
+newbury
+newcomb
+newfield
+newham
+newhaven
+newlands arm
+newlyn
+newlyn north
+newmerella
+newry
+newtown (golden plains - vic.)
+newtown (greater geelong - vic.)
+nhill
+nichols point
+niddrie
+nilma
+nilma north
+ninda
+nintingbool
+ninyeunook
+nirranda
+nirranda east
+nirranda south
+noble park
+noble park north
+noojee
+noorat
+noorat east
+noorinbee
+noorinbee north
+noradjuha
+norlane
+norong
+north bendigo
+north blackwood
+north geelong
+north melbourne
+north wangaratta
+north warrandyte
+north wonthaggi
+northcote
+norval
+notting hill
+nowa nowa
+nowhere creek
+nowie
+nug nug
+nuggetty
+nulla vale
+nullawarre
+nullawarre north
+nullawil
+numurkah
+nunawading
+nungurner
+nunniong
+nurcoung
+nurrabiel
+nurran
+nutfield
+nyah
+nyah west
+nyarrin
+nyerimilang
+nyrraby
+oak park
+oaklands junction
+oakleigh
+oakleigh east
+oakleigh south
+oakvale
+ocean grange
+ocean grove
+officer
+officer south
+old tallangatta
+ombersley
+omeo
+omeo valley
+ondit
+orbost
+ormond
+orrvale
+osbornes flat
+outtrim
+ouyen
+ovens
+oxley flats
+ozenkadnook
+paaratte
+painswick
+pakenham
+pakenham south
+pakenham upper
+panmure
+panton hill
+paradise beach
+paraparap
+park orchards
+parkdale
+parwan
+paschendale
+pascoe vale
+pascoe vale south
+pastoria
+pastoria east
+patchewollock
+patho
+patterson lakes
+patyah
+pearcedale
+pearsondale
+peechelba
+peechelba east
+pelluebla
+pennyroyal
+pental island
+pentland hills
+percydale
+peronne
+perry bridge
+petticoat creek
+piangil
+picola
+picola west
+piedmont
+pier milan
+pigeon ponds
+piggoreet
+pimpinio
+pine view
+pioneer bay
+pipers creek
+pira
+piries
+pirron yallock
+pitfield
+pittong
+point cook
+point leo
+point lonsdale
+point wilson
+polisbet
+pomborneit
+pomborneit east
+pomborneit north
+pomonal
+pompapiel
+poolaijelo
+pootilla
+poowong
+poowong east
+poowong north
+porcupine ridge
+porepunkah
+port albert
+port campbell
+port fairy
+port franklin
+port melbourne
+port welshpool
+portarlington
+portland north
+portland west
+portsea
+pound creek
+powelltown
+powers creek
+powlett plains
+prahran
+pranjip
+princes hill
+princetown
+puckapunyal
+pura pura
+purdeet
+purnim
+purnim west
+pyalong
+pyramid hill
+quambatook
+quandong
+quantong
+quarry hill
+rainbow
+ranceby
+rathscar
+rathscar west
+ravenhall
+ravenswood south
+rawson
+raymond island
+raywood
+red cliffs
+red hill south
+red lion
+redan
+redcastle
+redesdale
+reedy dam
+reedy flat
+reedy lake
+research
+reynard
+rheola
+rhyll
+rhymney
+riachella
+rich avon
+rich avon east
+rich avon west
+richmond plains
+riddells creek
+riggs creek
+ringwood east
+ringwood north
+ripplebrook
+rippleside
+ripponlea
+riverslea
+robertsons beach
+robinvale
+rochford
+rockbank
+rocklands
+rocklyn
+rokewood
+rokewood junction
+romsey
+rosanna
+rose river
+rosebud
+roses gap
+rosewhite
+roslynmead
+rossbridge
+rostron
+rowsley
+rowville
+roxburgh park
+rubicon
+ruby
+ruffy
+rupanyup
+rushworth
+russells bridge
+rutherglen
+ryans
+ryanston
+rythdale
+sailors falls
+sailors gully
+sailors hill
+sale
+salisbury west
+samaria
+sandhill lake
+sandhurst
+sargood
+sarsfield
+sawmill settlement
+scarsdale
+scoresby
+scotchmans lead
+scotsburn
+sea lake
+seabrook
+seacombe
+seaholme
+seaspray
+seaview
+sebastian
+sedgwick
+selby
+separation creek
+serviceton
+seville
+seville east
+shady creek
+shays flat
+she oaks
+sheans creek
+sheep hills
+shelbourne
+shelford
+shepherds flat
+shepparton
+shepparton east
+shepparton north
+sherbrooke
+shoreham
+sidonia
+silvan
+silverleaves
+simpsons creek
+simson
+skenes creek
+skenes creek north
+skibo
+skinners flat
+skipton
+slaty creek
+smeaton
+smiths beach
+smiths gully
+smokeytown
+smoko
+smythes creek
+smythesdale
+snake island
+snake valley
+somers
+south dudley
+south geelong
+south kingsville
+south melbourne
+south morang
+south purrumbete
+south wharf
+south yarra
+southbank
+spargo creek
+speed
+spotswood
+springbank
+springdallah
+springfield (buloke - vic.)
+springfield (macedon ranges - vic.)
+springhurst
+springmount
+springvale south
+st albans park
+st andrews beach
+st arnaud
+st arnaud east
+st arnaud north
+st germains
+st helena
+st helens plains
+st kilda east
+st kilda west
+staceys bridge
+staffordshire reef
+staghorn flat
+staughton vale
+stavely
+stawell
+steels creek
+stockdale
+stockyard hill
+stonehaven
+stony creek (central goldfields - vic.)
+stony creek (south gippsland - vic.)
+stonyford
+stradbroke
+strangways
+straten
+strath creek
+strathallan
+strathbogie
+strathdale
+strathdownie
+strathewen
+strathfieldsaye
+strathkellar
+strathlea
+strathmerton
+strathmore heights
+strathtulloh
+streatham
+stuart mill
+sugarloaf creek
+suggan buggan
+sulky
+summerlands
+sunbury
+sunday creek
+sunderland bay
+sunshine north
+sunshine west
+surrey hills
+sutherlands creek
+sutton grange
+swan hill
+swan hill west
+swan island
+swan marsh
+swanpool
+swanwater
+swanwater west
+swifts creek
+sylvaterre
+tabberabbera
+tabilk
+tabor
+taggerty
+tahara
+tahara bridge
+tahara west
+talgarno
+tallandoon
+tallangatta
+tallangatta east
+tallangatta south
+tallangatta valley
+tallarook
+tallygaroopna
+tambo crossing
+tambo upper
+tamboon
+tamboritha
+taminick
+tamleugh
+tamleugh north
+tandarook
+tandarra
+tangambalanga
+tanjil
+tanjil bren
+tanjil south
+tanwood
+tanybryn
+tarcombe
+tarilta
+tarnagulla
+tarneit
+tarnook
+taroon
+tarra valley
+tarranyurk
+tarraville
+tarrawarra
+tarrawingee
+tarrayoukyan
+tarrengower
+tarrenlea
+tarrington
+tarrone
+tarwin
+tarwin lower
+tatong
+tatura
+tatura east
+tatyoon
+tawonga
+tawonga south
+taylor bay
+taylors hill
+taylors lakes
+teal point
+tecoma
+teddywaddy
+teddywaddy west
+telangatuk east
+telford
+telopea downs
+templestowe
+templestowe lower
+tempy
+tenby point
+terang
+terip terip
+terrappee
+terrick terrick
+terrick terrick east
+tesbury
+tetoora road
+thalia
+the cove
+the gurdies
+the heart
+the honeysuckles
+the patch
+the sisters
+thologolong
+thomastown
+thomson (baw baw - vic.)
+thomson (greater geelong - vic.)
+thoona
+thornbury
+thornhill park
+thorpdale
+thorpdale south
+thowgla valley
+three bridges
+timboon
+timboon west
+timmering
+timor west
+tinamba
+tinamba west
+tintaldra
+tittybong
+tol tol
+tolmie
+tom groggin
+tongala
+tonghi creek
+tongio
+tonimbuk
+tooan
+tooborac
+toolamba
+toolamba west
+toolangi
+toolern vale
+toolleen
+toolome
+toolondo
+toolong
+toombon
+toora north
+tooradin
+toorak
+toorloo arm
+toorongo
+tootgarook
+torrita
+torrumbarry
+torwood
+tostaree
+tottington
+tourello
+towan
+towaninny
+towaninny south
+tower hill
+towong
+towong upper
+trafalgar east
+trafalgar south
+tragowel
+traralgon
+traralgon east
+traralgon south
+travancore
+trawalla
+trawool
+traynors lagoon
+tremont
+trentham
+trentham east
+tresco
+tresco west
+trida
+truganina
+tubbut
+tuerong
+tulkara
+tullamarine
+tungamah
+turoar
+turriff
+turriff east
+turtons creek
+tutye
+tyaak
+tyabb
+tyers
+tylden
+tynong
+tynong north
+tyntynder
+tyntynder south
+tyrendarra
+tyrendarra east
+tyrrell
+tyrrell downs
+ullina
+ullswater
+ultima
+ultima east
+ulupna
+undera
+underbool
+upotipotpon
+upper ferntree gully
+upper gundowring
+upper lurg
+upper plenty
+upper ryans creek
+upton hill
+upwey
+valencia creek
+vasey
+vaughan
+vectis
+vermont
+vermont south
+vervale
+vesper
+viewbank
+vinifera
+violet town
+vite vite
+vite vite north
+w tree
+waaia
+waanyarra
+waarre
+wabonga
+waggarandall
+wahgunyah
+wahring
+wail
+wairewa
+waitchie
+wal wal
+waldara
+walhalla
+walhalla east
+walkerville north
+walkerville south
+wallace
+wallacedale
+wallagaraugh
+wallaloo
+wallaloo east
+wallan
+wallinduc
+wallington
+wallup
+walpa
+walpeup
+walwa
+wandana heights
+wandiligong
+wandin east
+wandin north
+wando bridge
+wando vale
+wandong
+wandown
+wangandary
+wangarabell
+wangaratta south
+wangie
+wangoom
+wannon
+wantirna
+wantirna south
+waranga shores
+waratah bay
+wareek
+wargan
+warmur
+warncoort
+warne
+warneet
+warrabkook
+warracknabeal
+warragul
+warragul south
+warragul west
+warrak
+warrandyte
+warrandyte south
+warranwood
+warrayure
+warrenbayne
+warrenheip
+warrenmang
+warrion
+warrnambool
+warrock
+warrong
+wartook
+watchem
+watchem west
+watchupga
+waterford park
+waterholes
+waterways
+watsonia
+watsonia north
+wattle bank
+wattle creek
+wattle glen
+waubra
+waurn ponds
+waygara
+weatherboard
+wedderburn junction
+wee wee rup
+weeaproinah
+weering
+weerite
+wehla
+weir views
+wellsford
+welshmans reef
+wemen
+wendouree
+wensleydale
+werneth
+werona
+werribee
+werribee south
+werrimull
+wesburn
+west bendigo
+west creek
+west footscray
+west melbourne
+west wodonga
+westby
+westmeadows
+westmere
+whanregarwen
+wharparilla
+wheatsheaf
+wheelers hill
+whipstick
+whirily
+whiteheads creek
+whitelaw
+whitlands
+whittington
+whittlesea
+whoorel
+whorouly
+whorouly east
+whorouly south
+whroo
+wickliffe
+wilby
+wildwood
+wilkur
+willangie
+willatook
+willaura
+willaura north
+willenabrina
+williams landing
+williamstown north
+willow grove
+willowmavin
+willung
+willung south
+wilsons hill
+wilsons promontory
+wimbledon heights
+winchelsea
+winchelsea south
+wingan river
+wingeel
+winjallok
+winlaton
+winnambool
+winnap
+winnindoo
+winslow
+winter valley
+winton north
+wirrate
+wiseleigh
+wodonga
+wollert
+wombelano
+won wron
+wonga
+wonga park
+wongarra
+wongungarra
+wonnangatta
+wonthaggi
+wonwondah
+wonyip
+wood wood
+woodend north
+woodfield
+woodglen
+woodhouse
+woodside beach
+woodstock on loddon
+woodstock west
+wool wool
+woolamai
+woolenook
+woolsthorpe
+woomelang
+wooragee
+woorarra east
+woorarra west
+wooreen
+woori yallock
+woorinen
+woorinen north
+woorinen south
+woorndoo
+wooroonook
+woosang
+wootong vale
+worrowing
+wrathung
+wrixon
+wroxham
+wuk wuk
+wulgulmerang
+wulgulmerang east
+wulgulmerang west
+wunghnu
+wurdiboluc
+wurruk
+wy yung
+wycheproof
+wycheproof south
+wychitella
+wychitella north
+wye river
+wyelangta
+wyndham vale
+wyuna east
+yaapeet
+yabba north
+yabba south
+yackandandah
+yalca
+yalla-y-poora
+yallambie
+yallourn
+yallourn north
+yalmy
+yambuk
+yambuna
+yan yean
+yanac
+yanakie
+yando
+yandoit
+yandoit hills
+yangery
+yangoura
+yannathan
+yapeen
+yarck
+yarpturk
+yarra glen
+yarra junction
+yarraberb
+yarragon
+yarragon south
+yarram
+yarrambat
+yarraville
+yarrawalla
+yarrawonga south
+yarroweyah
+yatchaw
+yawong hills
+yellingbo
+yendon
+yeodene
+yering
+yeungroon
+yeungroon east
+yielima
+yinnar
+yinnar south
+youanmite
+youarang
+yulecart
+yundool
+yuroke
+yuulong
+zeerust
+zumsteins

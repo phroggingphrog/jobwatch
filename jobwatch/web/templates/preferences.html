@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Preferences{% endblock %}
+{% block content %}
+<div class="jobpage">
+<section class="ph-page-head"><h1>Your job preferences</h1>
+<p>Choose the job you would most want to pursue, or none of these. This teaches your personal ranking; it never applies for a job.</p></section>
+<section class="ph-card">
+<h2>Learning status: {{ preference_state.status|replace('_', ' ') }}</h2>
+<p>{{ preference_state.n_choices }} recorded choices. Training: {{ preference_state.n_train }} / {{ preference_state.minimum_train }} minimum. Validation: {{ preference_state.n_holdout }} / {{ preference_state.minimum_holdout }} minimum.</p>
+<p>A trained ranking is available only after convergence and validation checks pass. Job eligibility is checked separately.</p>
+{% if preference_error %}<p role="alert">{{ preference_error }}</p>{% endif %}
+{% if preference_state.fit %}
+<details><summary>Model validation details</summary>
+<p>Four chains; {{ preference_state.fit.n_train }} training choices and {{ preference_state.fit.n_holdout }} held-out choices. A higher held-out log score is better.</p>
+<p>Fitted model: {{ preference_state.fit.holdout_log_score }}. Prior baseline: {{ preference_state.fit.prior_log_score }}.</p>
+<p>These describe your choices between jobs, not your chance of being hired.</p>
+</details>
+{% endif %}
+<form method="post" action="/preferences/new"><button class="ph-btn ph-btn--outline" type="submit">Compare three jobs</button></form>
+</section>
+{% for item in choices|reverse %}
+<section class="ph-card">
+<h2>{% if item.answered %}Recorded choice{% elif not item.current %}Jobs changed: comparison paused{% else %}Which would you choose?{% endif %}</h2>
+<form method="post" action="/preferences/{{ item.id }}/pick">
+<input type="hidden" name="request_id" value="{{ item.request_id }}">
+{% for a in item.alternatives %}
+<p><a href="/?job={{ a.posting_id }}">{{ a.title }}</a> · {{ a.company }}
+{% if not item.answered and item.current %}<button class="ph-btn ph-btn--outline" type="submit" name="selected" value="{{ a.posting_id }}">Choose this job</button>{% elif item.answered and item.selected == a.posting_id %}<strong>Chosen</strong>{% endif %}</p>
+{% endfor %}
+{% if not item.answered and item.current %}<button class="ph-btn ph-btn--outline" type="submit" name="selected" value="none">None of these</button>{% elif item.answered and item.selected is none %}<p>Chosen: none of these</p>{% endif %}
+</form>
+{% if item.prediction %}
+<details><summary>Model ranking and uncertainty for this recorded comparison</summary>
+<p>{{ item.prediction.meaning }} Intervals below contain 95% of the retained posterior draws.</p>
+<ol>{% for pid in item.prediction.ranking %}{% for a in item.alternatives if a.posting_id == pid %}<li>{{ a.title }} · {{ a.company }}</li>{% endfor %}{% endfor %}</ol>
+{% for p in item.prediction.alternatives %}
+{% for a in item.alternatives if a.posting_id == p.posting_id %}<h3>{{ a.title }}</h3>{% endfor %}
+<p>Choice probability: {{ '%.1f'|format(p.choice_probability.mean * 100) }}%; interval {{ '%.1f'|format(p.choice_probability.hdi_low * 100) }} to {{ '%.1f'|format(p.choice_probability.hdi_high * 100) }}%.</p>
+<p>Unavailable inputs: {{ p.missing_features|join(', ') }}.</p>
+<details><summary>What contributes to the ranking</summary>
+<p>Family baseline utility: {{ '%.3f'|format(p.family_intercept.mean) }}. Total utility: {{ '%.3f'|format(p.utility.mean) }}.</p>
+<ul>{% for name, value in p.contributions.items() %}<li>{{ name|replace('_', ' ') }}: {{ '%.3f'|format(value.mean) }} ({{ '%.3f'|format(value.hdi_low) }} to {{ '%.3f'|format(value.hdi_high) }})</li>{% endfor %}</ul>
+</details>
+{% endfor %}
+<p>None of these: {{ '%.1f'|format(item.prediction.none_probability.mean * 100) }}%; interval {{ '%.1f'|format(item.prediction.none_probability.hdi_low * 100) }} to {{ '%.1f'|format(item.prediction.none_probability.hdi_high * 100) }}%.</p>
+<p>This is a retrospective view of a recorded comparison. Training comparisons are not out-of-sample validation.</p>
+</details>
+{% endif %}
+</section>
+{% else %}<p>No comparisons yet. Current eligible job evaluations are needed to create one.</p>{% endfor %}
+</div>
+{% endblock %}

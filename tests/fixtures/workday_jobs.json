@@ -1,0 +1,32 @@
+{
+ "total": 3,
+ "jobPostings": [
+  {
+   "title": "Customer Service Consultant",
+   "externalPath": "/job/Melbourne-VIC/Customer-Service-Consultant_JR100001",
+   "locationsText": "Melbourne VIC",
+   "postedOn": "Posted Today",
+   "bulletFields": [
+    "JR100001"
+   ]
+  },
+  {
+   "title": "Analyst, Business Analyst",
+   "externalPath": "/job/Tower-A-Ho-Chi-Minh-City-VNM/Analyst--Business-Analyst_JR118959-1",
+   "locationsText": "2 Locations",
+   "postedOn": "Posted 27 Days Ago",
+   "bulletFields": [
+    "JR118959"
+   ]
+  },
+  {
+   "title": "Data Entry Operator",
+   "externalPath": "/job/Docklands/Data-Entry-Operator_JR100003",
+   "locationsText": "2 Locations",
+   "postedOn": "Posted 2 Days Ago",
+   "bulletFields": [
+    "JR100003"
+   ]
+  }
+ ]
+}

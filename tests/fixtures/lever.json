@@ -1,0 +1,36 @@
+[
+ {
+  "id": "lev-1",
+  "text": "Payroll Officer",
+  "categories": {
+   "location": "Melbourne, Victoria",
+   "commitment": "Part Time",
+   "allLocations": [
+    "Melbourne, Victoria"
+   ]
+  },
+  "country": "AU",
+  "createdAt": 1791180000000,
+  "hostedUrl": "https://jobs.lever.co/exampleco/lev-1",
+  "descriptionPlain": "Must have full working rights in Australia.",
+  "workplaceType": "onsite",
+  "salaryRange": {
+   "currency": "AUD",
+   "interval": "per-year-salary",
+   "min": 65000,
+   "max": 72000
+  }
+ },
+ {
+  "id": "lev-2",
+  "text": "Payroll Officer",
+  "categories": {
+   "location": "London",
+   "commitment": "Full-time"
+  },
+  "country": "GB",
+  "createdAt": 1791180000000,
+  "hostedUrl": "https://jobs.lever.co/exampleco/lev-2",
+  "descriptionPlain": "UK role"
+ }
+]

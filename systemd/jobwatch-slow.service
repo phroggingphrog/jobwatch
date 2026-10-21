@@ -1,0 +1,10 @@
+[Unit]
+Description=jobwatch slow tier (collect, filter, dedupe, alert)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/apps/jobwatch
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch run --tier slow
+TimeoutStartSec=45min
+Nice=10

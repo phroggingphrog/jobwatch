@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Answers{% endblock %}
+{% block content %}
+<div class="jobpage">
+<section class="ph-page-head"><h1>Form answers</h1>
+<p>{{ filled }} of {{ fields|length }} filled. These fill job forms automatically. Leave one empty to answer it by hand. Saved on this server only.</p>
+{% if saved %}<p role="status"><strong>Saved.</strong></p>{% endif %}</section>
+<form method="post" action="/answers">
+{% set ns = namespace(sec='') %}
+{% for f in fields %}
+{% if f.section != ns.sec %}{% if ns.sec %}</section>{% endif %}<section class="ph-card"><h2>{{ f.section }}</h2>{% set ns.sec = f.section %}{% endif %}
+<label class="a-field jx-qfield"><span class="ph-label">{{ f.label }}</span><input type="text" name="{{ f.id }}" value="{{ f.value }}" maxlength="300">{% if f.hint %}<small>{{ f.hint }}</small>{% endif %}</label>
+{% endfor %}
+</section>
+<p><button class="ph-btn ph-btn--outline" type="submit">Save answers</button></p>
+</form>
+</div>
+{% endblock %}

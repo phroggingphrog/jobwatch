@@ -1,0 +1,15 @@
+[Unit]
+Description=jobwatch web board (loopback 127.0.0.1:8960; public host via Cloudflare Access)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/jobwatch
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch web --host 127.0.0.1 --port 8960
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target

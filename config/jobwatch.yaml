@@ -1,0 +1,54 @@
+# jobwatch runtime settings. Overridable with env: JOBWATCH_DB, JOBWATCH_CONFIG_DIR, JOBWATCH_EMPLOYERS.
+db_path: ~/.local/share/jobwatch/jobwatch.db
+timezone: Australia/Melbourne
+http:
+  timeout: 20        # seconds per request (hard max 20)
+  min_delay: 1.5     # seconds between requests to the same host (clamped to 1-2)
+alerts:
+  max_age_hours: 72        # provider-dated postings older than this get alerts.status 'stale' (bookkeeping; the board decides NEW itself)
+retention_days: 90         # non-matching postings unseen this long are deleted
+tiers:
+  # careers_vic is in both: fast runs read pages 1-2, slow runs read up to 10 pages (newest first,
+  # stopping at already-seen ids).
+  fast: [ats_greenhouse, ats_lever, ats_ashby, ats_workable, ats_smartrecruiters, ats_workday,
+         ats_pageup, ats_employmenthero, ats_scouttalent, ats_oracle, careers_vic,
+         ats_pulse, ats_recruitmenthub, ats_jobs_search, ats_elmo, ats_techone, rss, reddit]
+  slow: [jobspy_src, seek, jora, careers_vic, ats_successfactors, ats_phenom, ats_atlassian, jsonld_pages]
+reader:
+  # 7 Oct 2026: every timer run now does AI recall on new Melbourne-area ads (title + first 400 characters, judged by
+  # meaning) and then the full-ad AI reader (prompt v5) on up to 60 new matches. Undo: set enabled: false.
+  enabled: true
+openrouter_extras:
+  # Owner 2026-10-12: the OpenRouter key is limited to Jev + embeddings (key file is only needed for Jev). Public ad text only, never CV/visa/answers.
+  # Jev holds ads that hide instructions for the AI; embeddings read the closest-to-target ads first.
+  # Undo: enabled: false (everything runs as before).
+  enabled: true
+  key_file: ~/.config/jobwatch/openrouter-jev.key
+  jev_model: typesafe/jev-1.13
+  jev_hold_at: 0.9        # hidden instructions for the AI -> held
+  duplicate_at: 0.8       # same company, >=95% alike, Jev "same vacancy" >= this -> newer copy archived
+  knockout_at:            # archive before Opus reads the ad (calibrated 2026-10-12 on 30 real ads)
+    citizen_or_pr: 0.9    # ad requires citizenship / PR / clearance / unrestricted rights
+    five_years: 0.95      # ad requires 5+ years or is senior/manager level (0.9 caught retail Assistant Managers)
+  embed_model: openrouter/qwen/qwen3-embedding-8b  # through OmniRoute (owner 2026-10-12); Jev stays direct
+pipeline:
+  # Deterministic state pipeline (pipeline/graph.py, owner spec 8 Oct 2026). ON since 2026-10-08 (BUI-98): every timer
+  # run calls the graph instead of the reader; the board shows its verdicts. Undo: enabled: false (the reader returns).
+  enabled: true
+  threshold: 3.8          # node 4: score >= 3.8 goes to drafting
+  ingest_limit: 200       # node 1: new jobs admitted per run
+  fetch_budget: 25        # node 1: ad pages fetched per run
+  drafts_per_run: 3       # node 5: cost cap; the rest wait for the next run
+  drafts_per_day: 10      # node 5: cost cap over 24 h across all runs (about $17/day at $1.70 a draft)
+  concurrency: 6
+  agentic:
+    # Live since a58b444 (owner-enabled).
+    # Rollback: false restores the previous pipeline.
+    enabled: true
+    credential_index: 1  # key 0 is not allowed for claude/ combos (BUI-350)
+    job_token_ceiling: 1500000  # 2026-10-12 late: retries of one job share this budget; Morrows hit 900k after 10 writer + 2 reviewer turns. Earlier 2026-10-12: writer now also reads the owner's voice guide; 600k ran out in review round 2;  # BUI-350: 250k ran out mid-evaluation; conservative reservations for complete evidence-backed documents
+    batch_token_ceiling: 2000000
+    research_enabled: true  # existing local SearXNG; public employer/job facts only
+    max_batch_jobs: 20
+    concurrency: 2
+

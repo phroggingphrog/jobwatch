@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Connect accounts{% endblock %}
+{% block content %}
+<div class="jobpage">
+  <section class="ph-page-head"><h1>Connect accounts</h1>
+  <p>Sign in to each job site yourself, in the private browser below. Jobwatch never sees or stores your password; only the browser keeps the login.</p></section>
+  {% if request.query_params.get('error') %}<p class="ph-alert ph-alert--warning">The browser could not open. Try again.</p>{% endif %}
+  <section class="ph-card">
+    <ul class="account-list">
+    {% for s in sites %}
+      <li class="account-row">
+        <span class="account-name">{{ s.label }}</span>
+        <span class="ph-badge {{ 'ph-badge--success' if s.connected else 'ph-badge--secondary' }}">{{ 'Connected' if s.connected else 'Not connected' }}</span>
+        <form method="post" action="/accounts/{{ s.key }}/connect"><button class="ph-btn ph-btn--sm {{ 'ph-btn--outline' if s.connected else 'ph-btn--default' }}" type="submit">{{ 'Reconnect' if s.connected else 'Connect' }}</button></form>
+      </li>
+    {% endfor %}
+    </ul>
+  </section>
+  {% if browser_open %}
+  <section class="browser-panel" aria-label="Live sign-in browser">
+    <p id="browser-help">Click inside the page, then type your email and password as normal. When you are signed in, choose Done.</p>
+    <p id="browser-control-message" role="status"></p>
+    <img id="application-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/accounts/browser/stream"
+         data-action-url="/accounts/browser/action" alt="Live sign-in page" aria-describedby="browser-help">
+    <form method="post" action="/accounts/browser/close"><button class="ph-btn ph-btn--default" type="submit">Done, close browser</button></form>
+  </section>
+  {% endif %}
+  <p class="muted">Status is a check for the site's sign-in cookie in this browser profile.</p>
+</div>
+{% endblock %}

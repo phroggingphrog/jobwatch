@@ -1,0 +1,74 @@
+# Generic RSS/Atom job feeds (collector: rss, fast tier) and Reddit (collector: reddit).
+# Only feeds confirmed to return items are enabled. Verified 2026-10-06.
+
+feeds:
+  - name: La Trobe University (PageUp)
+    url: https://jobs.latrobe.edu.au/en/latest_jobs.rss
+    format: pageup          # PageUp job:* namespace; location like "Australia|Melbourne (Bundoora)"
+    company: La Trobe University
+    au: true
+    enabled: true           # 15 items on 2026-10-06
+  - name: Cardinia Shire Council (Adlogic)
+    url: https://careers.cardinia.vic.gov.au/adlogic-jobs/rss
+    company: Cardinia Shire Council
+    default_location: Cardinia, VIC
+    au: true
+    enabled: true           # 6 items on 2026-10-06 (council sweep)
+  # Careers.Vic (Victorian public service): no public RSS found. /rss, /jobs/rss and /feed are
+  # 404 and the /jobs page links no feed (2026-10-06). Job alerts need a login. Left out.
+  # - name: Careers.Vic
+  #   url: <none confirmed>
+  # APSJobs: /rss answers 401; no public feed confirmed (2026-10-06). Left out.
+  # - name: APSJobs
+  #   url: <none confirmed>
+  # EthicalJobs: /rss returns the HTML home page, not a feed (2026-10-06). Left out.
+  # - name: EthicalJobs
+  #   url: <none confirmed>
+
+reddit:
+  enabled: true
+  # Reddit asks for a descriptive UA. No username or contact details are sent.
+  user_agent: "linux:jobwatch:0.1 (personal job-alert reader; low-volume RSS polling)"
+  requests_per_run: 3        # feeds per run, rotating (anonymous RSS quota is tiny; ~1 min of waits)
+  min_interval_seconds: 3    # >= 2 s between Reddit requests
+  max_wait_seconds: 65       # wait for the rate-limit window to reset only if it is this short
+  feeds:
+    # stream: auto = classify each post (hiring -> alerts, chatter -> digest);
+    # chatter = a sub read mainly for market talk (hiring posts there still alert if they
+    #           name Melbourne/VIC/remote). location = the sub is local, so hiring posts
+    #           need no location wording.
+    - {sub: melbourne, stream: auto, location: "Melbourne VIC"}   # active (2026-10-06); local sub
+    - {sub: auscorp, stream: chatter}                      # active
+    - {sub: AusFinance, stream: chatter, q: "job OR salary OR graduate OR interview OR redundancy"}
+    - {sub: AustralianAccounting, stream: chatter}         # active
+    - {sub: Accounting, stream: chatter, q: "australia OR melbourne OR big 4 graduate"}
+    - {sub: AusUnemployed, stream: chatter}
+    - {sub: cscareerquestionsOCE, stream: chatter}
+    - {sub: australia, stream: chatter, q: "job market OR job search OR callbacks"}
+    - {sub: melbourne, stream: auto, location: "Melbourne VIC", q: "hiring OR job OR vacancy"}
+    # r/MelbourneJobs exists but its newest post is from 2020: dead, left out.
+    # - {sub: MelbourneJobs, stream: auto}
+
+  hiring_keywords: ['\[hiring\]', '\(hiring\)', "\\bwe'?re hiring\\b", '\bnow hiring\b',
+                    '\bjob opening', '\bvacanc(y|ies)\b', '\blooking to hire\b',
+                    '\bposition available\b', '\bhiring\b']
+  hiring_location: ['melbourne', '\bvic\b', 'victoria', '\bremote\b']
+  # Questions about hiring are chatter, not job ads.
+  not_hiring: ['\bfor hire\b', 'anyone hiring', 'who.{0,10}hiring', 'hiring (process|manager|freeze)',
+               'is .{0,30} hiring\?', '\?\s*$']
+  chatter_themes:
+    callbacks_ghosting: ['callback', 'call back', '\bghost', 'no response', 'never heard back',
+                         'radio silence', 'no reply']
+    interviews: ['interview']
+    rejections: ['\breject', 'unsuccessful', 'knocked back']
+    applications: ['\bapplications?\b', 'applied (to|for)', '\bapplying\b', 'cover letter',
+                   '\bresume\b', '\bcv\b']
+    graduate_programs: ['graduate program', 'grad program', 'graduate role', '\bgrad\b',
+                        'internship', 'vacation program', 'clerkship']
+    salary_pay: ['\bsalary', '\bpay rise', 'award rate', 'per hour', 'underpaid', 'pay cut']
+    job_search: ['job search', 'job hunt', 'looking for work', 'unemployed', 'centrelink',
+                 'workforce australia', 'job market', 'out of work']
+    visa_work_rights: ['\bvisa\b', '\bpr\b', 'citizenship', 'work rights', 'sponsorship']
+    layoffs: ['redundan', 'layoff', 'laid off', 'restructur']
+    ai_automation: ['\bai\b', 'automation', 'chatgpt', '\bllm']
+    recruiters: ['recruiter', 'recruitment agency', 'headhunt']

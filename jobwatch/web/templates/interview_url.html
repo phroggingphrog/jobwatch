@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Prepare an interview{% endblock %}
+{% block content %}
+<div class="ph-page-head"><h1>Prepare for an interview</h1><p>Use a job URL, including a role you have not evaluated or applied for.</p></div>
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="/interview-prep/open" class="ph-card">
+<p><label for="prep-url">Job posting URL</label><input id="prep-url" name="url" type="url" required maxlength="8192" placeholder="https://…" value="{{ entry_url|default('') }}"></p>
+<details{% if error %} open{% endif %}><summary>Use a saved job description</summary>
+<p>For a closed or inaccessible posting, paste the whole description. It will be labelled as supplied by you.</p>
+<p><label for="prep-title">Role title</label><input id="prep-title" name="title" maxlength="500" value="{{ entry_title|default('') }}"></p>
+<p><label for="prep-company">Company</label><input id="prep-company" name="company" maxlength="500" value="{{ entry_company|default('') }}"></p>
+<p><label for="prep-jd">Full job description</label><textarea id="prep-jd" name="pasted_jd" rows="12" maxlength="100000">{{ entry_jd|default('') }}</textarea></p>
+</details>
+<p>Next, review the source and add any interview notes before generating. This does not create an application or send anything.</p>
+<button class="ph-btn ph-btn--default" type="submit">Open interview preparation</button>
+</form>
+{% if subjects %}<section class="ph-card"><h2>Saved interview preparation</h2><ul>{% for subject in subjects %}<li><a href="/interview-prep/subjects/{{ subject.subject_id }}">{{ subject.ad.title }}</a> · {{ subject.ad.company }} · {{ subject.ad.acquired_at }}</li>{% endfor %}</ul></section>{% endif %}
+{% endblock %}

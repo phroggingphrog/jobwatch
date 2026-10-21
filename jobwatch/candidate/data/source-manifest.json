@@ -1,0 +1,37 @@
+{
+  "gwas_to_iwas_to_dwas.csv": {
+    "url": "https://www.onetcenter.org/dl_files/database/db_31_0_csv/gwas_to_iwas_to_dwas.csv",
+    "sha256": "ae4e9f166187bfe8e6328a21470689ed188e7ed831090ace2a21c66cebb31a49",
+    "bytes": 351780
+  },
+  "tasks_to_dwas.csv": {
+    "url": "https://www.onetcenter.org/dl_files/database/db_31_0_csv/tasks_to_dwas.csv",
+    "sha256": "15624d31acb85627736a87dc7c485edffe30361262571c8242fad4ae9e7678a6",
+    "bytes": 5602660
+  },
+  "work_activities.csv": {
+    "url": "https://www.onetcenter.org/dl_files/database/db_31_0_csv/work_activities.csv",
+    "sha256": "6c266205b2926c0c854a7a577aae29fe492c71bb0df7e197adca830b58fe4ea1",
+    "bytes": 11829015
+  },
+  "task_statements.csv": {
+    "url": "https://www.onetcenter.org/dl_files/database/db_31_0_csv/task_statements.csv",
+    "sha256": "4568e14d8db6f05551ad37e056e909b13ebae4a26bcb5ff915bb5f281d582c57",
+    "bytes": 3461375
+  },
+  "abs-structure.xlsx": {
+    "url": "https://www.abs.gov.au/statistics/classifications/anzsco-australian-and-new-zealand-standard-classification-occupations/2022/anzsco%202022%20structure%20062023.xlsx",
+    "sha256": "cb0293f016f086b26c5570294919226d6fdbd5c248120e92c039a0cce9d7e907",
+    "bytes": 205482
+  },
+  "abs-correspondence.xlsx": {
+    "url": "https://www.abs.gov.au/statistics/classifications/anzsco-australian-and-new-zealand-standard-classification-occupations/2022/anzsco%202022%20correspondence%20tables.xlsx",
+    "sha256": "a735b4b8fb52a35c36acb3e0c3a80fd21e2ed11d93c9bc5875f483a6a540d76d",
+    "bytes": 316314
+  },
+  "esco.xlsx": {
+    "url": "https://www.onetcenter.org/crosswalks/esco/ESCO_to_ONET-SOC.xlsx",
+    "sha256": "bf6c854f7ffc935eba67a296d6d7fa4d40b70fb26bcdb5ecb5621374bca6f35b",
+    "bytes": 213061
+  }
+}

@@ -1,0 +1,122 @@
+/* 20-ui/gap-components.css
+   Library gaps for Board, Job page and Chat. Not in lib/phrog-ui.css; load after it and after the direction theme.css.
+   Token-driven only: no hex, no fixed colours. 44px targets (--target-min), focus ring on every control,
+   reduced motion switches everything off. Shared by A, B and C; directions change tokens, not these rules. */
+
+/* ---- Split list + detail (Board, CAP-2). Desktop: list | detail. Phone: one pane at a time. ---- */
+.ph-split {
+  display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; flex: 1;
+  background: var(--background); color: var(--foreground);
+}
+.ph-split__list, .ph-split__detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.ph-split__list { background: var(--card); }
+.ph-split__detail[hidden] { display: none !important; }
+@media (min-width: 1024px) {
+  .ph-split { grid-template-columns: minmax(280px, 380px) minmax(0, 1fr); }
+  .ph-split__list { border-right: var(--border-width) solid var(--border); }
+  .ph-split__list, .ph-split__detail { overflow: auto; }
+}
+
+/* ---- Tab strip under a page header (Job page: Evaluation | CV | Letter | Form). ---- */
+.ph-tabstrip {
+  display: flex; gap: var(--space-1); overflow-x: auto; scrollbar-width: none;
+  border-bottom: var(--border-width) solid var(--border); padding: 0 var(--gutter);
+}
+.ph-tabstrip::-webkit-scrollbar { display: none; }
+.ph-tabstrip__tab {
+  position: relative; flex: none; min-height: var(--target-min); padding: 0 var(--space-3);
+  display: inline-flex; align-items: center; gap: var(--space-2);
+  background: transparent; border: 0; color: var(--muted-foreground); font: inherit; font-size: var(--fs-15);
+  cursor: pointer; white-space: nowrap;
+}
+.ph-tabstrip__tab:hover { color: var(--foreground); }
+.ph-tabstrip__tab[aria-selected="true"] { color: var(--foreground); font-weight: 600; }
+.ph-tabstrip__tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--primary);
+}
+.ph-tabstrip__tab:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -2px; }
+.ph-tabstrip__count { font-size: var(--fs-12); color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+
+/* ---- Message action bar (Chat: copy, retry, branch, thumbs). Icon buttons with text in aria-label; visible on focus and hover. ---- */
+.ph-msg-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-top: var(--space-2); }
+.ph-msg-actions__btn {
+  min-width: var(--target-min); min-height: var(--target-min); display: inline-flex; align-items: center; justify-content: center;
+  gap: var(--space-1); padding: 0 var(--space-2); background: transparent; border: 0; border-radius: var(--radius-sm);
+  color: var(--muted-foreground); font: inherit; font-size: var(--fs-13); cursor: pointer;
+}
+.ph-msg-actions__btn:hover { background: var(--row-hover-bg); color: var(--foreground); }
+.ph-msg-actions__btn:active { background: var(--row-active-bg); }
+.ph-msg-actions__btn:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: 2px; }
+.ph-msg-actions__btn[aria-pressed="true"] { color: var(--foreground); background: var(--row-active-bg); }
+
+/* ---- Branch picker (Chat: "2 of 3" between sibling replies). ---- */
+.ph-branch { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--fs-13); color: var(--muted-foreground); }
+.ph-branch__btn {
+  min-width: var(--target-min); min-height: var(--target-min); display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: var(--border-width) solid var(--border); border-radius: var(--radius-sm);
+  color: var(--foreground); cursor: pointer;
+}
+.ph-branch__btn:disabled { color: var(--button-disabled-fg); cursor: not-allowed; }
+.ph-branch__btn:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: 2px; }
+.ph-branch__count { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: center; }
+
+/* ---- Suggestion row (Chat empty state and after a reply: tappable prompts). ---- */
+.ph-suggest { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ph-suggest__item {
+  min-height: var(--target-min); padding: 0 var(--space-3); display: inline-flex; align-items: center; text-align: left;
+  background: var(--card); color: var(--foreground); border: var(--border-width) solid var(--border);
+  border-radius: var(--radius-full); font: inherit; font-size: var(--fs-15); cursor: pointer;
+}
+.ph-suggest__item:hover { background: var(--row-hover-bg); }
+.ph-suggest__item:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: 2px; }
+.ph-suggest__item:disabled { color: var(--button-disabled-fg); background: var(--button-disabled-bg); cursor: not-allowed; }
+
+/* ---- Tool-call card (Chat: "Read job page", "Filled 4 of 6 fields"). Status = glyph + word. ---- */
+.ph-toolcall { border: var(--border-width) solid var(--card-border); border-radius: var(--radius); background: var(--card); color: var(--card-fg); }
+.ph-toolcall__head { display: flex; align-items: center; gap: var(--space-2); min-height: var(--target-min); padding: var(--space-2) var(--card-inset); }
+.ph-toolcall__name { font-family: var(--font-mono); font-size: var(--fs-13); font-weight: 500; overflow-wrap: anywhere; }
+.ph-toolcall__status { margin-left: auto; font-size: var(--fs-13); color: var(--muted-foreground); white-space: nowrap; }
+.ph-toolcall__status[data-state="done"] { color: var(--success); }
+.ph-toolcall__status[data-state="error"] { color: var(--destructive); }
+.ph-toolcall__body { padding: 0 var(--card-inset) var(--space-3); font-size: var(--fs-13); color: var(--muted-foreground); border-top: var(--border-width) solid var(--row-line); margin-top: 0; padding-top: var(--space-2); }
+.ph-toolcall__toggle { min-height: var(--target-min); background: transparent; border: 0; color: var(--foreground); font: inherit; font-size: var(--fs-13); cursor: pointer; width: 100%; text-align: left; padding: 0 var(--card-inset); }
+.ph-toolcall__toggle:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -2px; }
+
+/* ---- Thread list (Chat left column). Rows are buttons; the active row has aria-current. ---- */
+.ph-threads { display: flex; flex-direction: column; list-style: none; margin: 0; padding: 0; }
+.ph-threads__item { border-bottom: var(--border-width) solid var(--row-line); }
+.ph-threads__btn {
+  width: 100%; min-height: var(--target-min); padding: var(--row-pad) var(--gutter); display: grid; gap: 2px; text-align: left;
+  background: transparent; border: 0; color: var(--foreground); font: inherit; cursor: pointer;
+}
+.ph-threads__btn:hover { background: var(--row-hover-bg); }
+.ph-threads__btn[aria-current="true"] { background: var(--row-active-bg); font-weight: 600; }
+.ph-threads__btn:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -2px; }
+.ph-threads__meta { font-size: var(--fs-13); color: var(--muted-foreground); }
+
+/* ---- Composer attachment chip (Chat: CV.pdf, letter.txt). Remove is its own 44px button. ---- */
+.ph-attach { display: inline-flex; align-items: center; gap: 0; max-width: 100%; min-height: var(--target-min); background: var(--muted); border: var(--border-width) solid var(--border); border-radius: var(--radius-full); font-size: var(--fs-13); }
+.ph-attach__name { padding: 0 var(--space-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground); }
+.ph-attach__remove { min-width: var(--target-min); min-height: var(--target-min); display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 0; border-radius: var(--radius-full); color: var(--foreground); cursor: pointer; }
+.ph-attach__remove:focus-visible { outline: var(--focus-width) solid var(--focus-ring); outline-offset: -2px; }
+.ph-attach[data-state="error"] { border-color: var(--destructive); }
+.ph-attach[data-state="error"] .ph-attach__name::before { content: "Failed: "; color: var(--destructive); font-weight: 600; }
+
+/* ---- Form-preview frame (Job page: rendered snapshot of the employer form up to Submit). Read-only, no live inputs. ---- */
+.ph-formframe { border: var(--border-width) solid var(--card-border); border-radius: var(--radius); background: var(--card); overflow: hidden; }
+.ph-formframe__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-height: var(--target-min); padding: 0 var(--card-inset); border-bottom: var(--border-width) solid var(--row-line); font-size: var(--fs-13); color: var(--muted-foreground); }
+.ph-formframe__body { padding: var(--card-inset); display: grid; gap: var(--space-3); }
+.ph-formframe__field { display: grid; gap: var(--space-1); }
+.ph-formframe__value { min-height: var(--target-min); display: flex; align-items: center; padding: 0 var(--space-3); border: var(--border-width) solid var(--input-border); border-radius: var(--radius-md); background: var(--input-bg); color: var(--input-fg); }
+.ph-formframe__value[data-state="missing"] { border-style: dashed; color: var(--muted-foreground); }
+.ph-formframe__note { font-size: var(--fs-13); color: var(--muted-foreground); }
+
+/* ---- Reduced motion: nothing animates or transitions. ---- */
+@media (prefers-reduced-motion: reduce) {
+  .ph-split *, .ph-tabstrip *, .ph-msg-actions *, .ph-branch *, .ph-suggest *, .ph-toolcall *, .ph-threads *, .ph-attach *, .ph-formframe * {
+    transition: none !important; animation: none !important; scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Touch: on phone, action icons keep 44px; hover-only information is not used anywhere above. ---- */
+@media (hover: none) { .ph-msg-actions__btn { opacity: 1; } }

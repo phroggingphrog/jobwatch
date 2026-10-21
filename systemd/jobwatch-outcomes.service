@@ -1,0 +1,9 @@
+[Unit]
+Description=jobwatch outcome sync (read-only mail scan -> outcome proposals for the web Inbox)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/apps/jobwatch
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch outcomes
+TimeoutStartSec=15min

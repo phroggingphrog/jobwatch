@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Example Jobs</title><link>https://jobs.example.org.au/</link>
+<item><title>Administration Officer - Melbourne CBD</title><link>https://jobs.example.org.au/job/1?utm_source=rss</link>
+<guid>job-1</guid><pubDate>Mon, 05 Oct 2026 22:00:00 +0000</pubDate><description>&lt;p&gt;Melbourne VIC. Casual admin role.&lt;/p&gt;</description></item>
+<item><title>Barista</title><link>https://jobs.example.org.au/job/2</link><guid>job-2</guid>
+<pubDate>Mon, 05 Oct 2026 21:00:00 +0000</pubDate><description>Brisbane QLD cafe.</description></item>
+</channel></rss>

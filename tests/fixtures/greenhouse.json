@@ -1,0 +1,100 @@
+{
+ "jobs": [
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/cultureamp/jobs/8219709",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": true
+    }
+   ],
+   "internal_job_id": 3557418,
+   "location": {
+    "name": "Melbourne"
+   },
+   "metadata": null,
+   "id": 8219709,
+   "updated_at": "2026-09-23T01:03:39-04:00",
+   "requisition_id": "3161",
+   "title": "Associate Site Reliability Engineer",
+   "company_name": "Culture Amp",
+   "first_published": "2026-09-20T22:33:35-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;&lt;em&gt;We\u2019re big believers in the power of IRL, so for most roles we ask Campers to work from their local Culture Amp office an average of 2 days a week to unlock connection, pace and culture together.&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Join us on our mission to make a better world of work.&amp;nbsp;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;Culture Amp is the world\u2019s leading employee experience platform, revolutionizing how 25 million employees across more than 6,000 companies create a better world of work. Culture Amp empowers companies of all sizes and industries to transform employee engagement, drive performance management, and develop high-performing teams. Powered by people science and the most comprehensive employee dataset in the world, the most innovative companies including Canva, On, Asana, Dolby, McDonalds and Nasdaq depend on Culture Amp every day.&lt;/p&gt;\n&lt;p&gt;Culture Amp is backed by leading venture capital funds and has offices in the US, UK, Germany and Australia. Culture Amp has been recognized as one of the world\u2019s top private cloud companies by Forbes and most innovative companies by Fast Company.&lt;/p&gt;\n&lt;p&gt;For more information visit &lt;a class=&quot;c-link&quot; href=&quot;http://cultureamp.com/&quot; target=&quot;_blank&quot; data-stringify-link=&quot;http://cultureamp.com&quot; data-sk=&quot;tooltip_parent&quot;&gt;cultureamp.com&lt;/a&gt;.&lt;/p&gt;&lt",
+   "departments": [
+    {
+     "id": 14656,
+     "name": "Engineering",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "offices": [
+    {
+     "id": 9029,
+     "name": "Melbourne",
+     "location": "Level 10, 31 Queen St, Melbourne",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "ai_disclaimer": null,
+   "include_ai_disclaimer": null,
+   "ai_opt_out_request_url": "http://app.greenhouse.io/ai_opt_out_request/job_post/8219709/ai_opt_out"
+  },
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/cultureamp/jobs/8212621",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": true
+    }
+   ],
+   "internal_job_id": 3554208,
+   "location": {
+    "name": "Chicago"
+   },
+   "metadata": null,
+   "id": 8212621,
+   "updated_at": "2026-10-01T11:41:01-04:00",
+   "requisition_id": "3157",
+   "title": "Director, North America Marketing",
+   "company_name": "Culture Amp",
+   "first_published": "2026-09-23T14:30:36-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;&lt;strong&gt;&lt;em&gt;We\u2019re big believers in the power of IRL, so for most roles we ask Campers to work from their local Culture Amp office an average of 2 days a week to unlock connection, pace and culture together.&lt;/em&gt;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;Join us on our mission to make a better world of work.&amp;nbsp;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;Culture Amp is the world\u2019s leading employee experience platform, revolutionizing how 25 million employees across more than 6,000 companies create a better world of work. Culture Amp empowers companies of all sizes and industries to transform employee engagement, drive performance management, and develop high-performing teams. Powered by people science and the most comprehensive employee dataset in the world, the most innovative companies including Canva, On, Asana, Dolby, McDonalds and Nasdaq depend on Culture Amp every day.&lt;/p&gt;\n&lt;p&gt;Culture Amp is backed by leading venture capital funds and has offices in the US, UK, Germany and Australia. Culture Amp has been recognized as one of the world\u2019s top private cloud companies by Forbes and most innovative companies by Fast Company.&lt;/p&gt;\n&lt;p&gt;For more information visit &lt;a class=&quot;c-link&quot; href=&quot;http://cultureamp.com/&quot; target=&quot;_blank&quot; data-stringify-link=&quot;http://cultureamp.com&quot; data-sk=&quot;tooltip_parent&quot;&gt;cultureamp.com&lt;/a&gt;.&lt;/p&gt;&lt",
+   "departments": [
+    {
+     "id": 34600,
+     "name": "Marketing",
+     "child_ids": [
+      48124
+     ],
+     "parent_id": null
+    }
+   ],
+   "offices": [
+    {
+     "id": 87482,
+     "name": "Chicago ",
+     "location": null,
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "ai_disclaimer": null,
+   "include_ai_disclaimer": null,
+   "ai_opt_out_request_url": "http://app.greenhouse.io/ai_opt_out_request/job_post/8212621/ai_opt_out"
+  }
+ ]
+}

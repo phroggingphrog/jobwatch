@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block title %}Models{% endblock %}
+{% block content %}
+<div class="jobpage">
+<section class="ph-page-head"><h1>Models</h1>
+<p>Pick which AI model does each job. Your pick is used for you only.</p>
+{% if saved %}<p role="status"><strong>Saved.</strong></p>{% endif %}
+{% if error %}<p role="alert"><strong>Not saved:</strong> {{ error }}</p>{% endif %}
+{% if not gateway_ok %}<p role="status">Could not load the model list from the gateway. Type the model id by hand.</p>{% endif %}</section>
+<datalist id="model-list">{% for m in options %}<option value="{{ m }}">{% endfor %}</datalist>
+<form method="post" action="/models" id="models-form">
+<section class="ph-card"><h2>Which model for which job</h2>
+{% for r in rows %}
+<div class="mrow" data-role="{{ r.role }}">
+  <label for="m-{{ r.role }}"><strong>{{ r.label }}</strong></label>
+  <div class="mrow-line">
+    <input type="text" id="m-{{ r.role }}" name="{{ r.role }}" value="{{ r.value }}" list="model-list" maxlength="120" autocomplete="off" spellcheck="false">
+    <button class="ph-btn ph-btn--outline" type="button" data-test="{{ r.role }}">Test</button>
+  </div>
+  <small class="mwhy" data-why>{% if r.why %}{{ r.why }}{% elif not r.custom %}Default (server setting).{% endif %}</small>
+  <small class="mres" data-result role="status"></small>
+</div>
+{% endfor %}
+<p><button class="ph-btn ph-btn--outline" type="submit">Save models</button> <small>Test uses the saved model, so save first.</small></p>
+</section>
+</form>
+<form method="post" action="/models">
+<section class="ph-card"><h2>Your keys</h2>
+<p><small>{% if gw.own %}Using your own gateway. Key ends in <code>{{ gw.key_tail }}</code>.{% else %}Using the server's gateway. Fill this in to use your own instead (OmniRoute, OpenRouter, OpenAI, anything OpenAI-compatible). Leave both empty to keep the server's.{% endif %}</small></p>
+<p><label>Gateway base URL<br><input type="text" name="base_url" value="{{ gw.base_url if gw.own else '' }}" placeholder="https://openrouter.ai/api/v1" maxlength="200" style="width:100%;max-width:32rem"></label></p>
+<p><label>API key<br><input type="password" name="api_key" value="" placeholder="{% if gw.own %}ends in {{ gw.key_tail }} (leave empty to keep){% else %}paste key{% endif %}" autocomplete="off" maxlength="300" style="width:100%;max-width:32rem"></label></p>
+<p><small>Stored privately on this server for you only, never shown back in full. Clear the URL and leave the key empty to go back to the server's gateway.</small></p>
+<p><button class="ph-btn ph-btn--outline" type="submit">Save keys</button></p>
+</section>
+</form>
+</div>
+{% endblock %}

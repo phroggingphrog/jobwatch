@@ -1,0 +1,10 @@
+[Unit]
+Description=jobwatch fast tier every 20 min (ATS APIs, RSS, Reddit)
+
+[Timer]
+OnCalendar=*:00/20
+RandomizedDelaySec=60
+Persistent=false
+
+[Install]
+WantedBy=timers.target

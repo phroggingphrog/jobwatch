@@ -1,0 +1,9 @@
+[Unit]
+Description=jobwatch weekly digest, Monday 08:00 Melbourne
+
+[Timer]
+OnCalendar=Mon *-*-* 08:00:00 Australia/Melbourne
+Persistent=true
+
+[Install]
+WantedBy=timers.target

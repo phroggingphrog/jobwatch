@@ -1,0 +1,213 @@
+{
+ "data": [
+  {
+   "advertiser": {
+    "id": "39756186",
+    "description": "Western Specialist Centre"
+   },
+   "bulletPoints": [
+    "Join a growing, multi-award-winning specialist healthcare practice",
+    "Entry-level applicants welcome with on-the-job training provided",
+    "Supportive, family-friendly team helping women, children and families"
+   ],
+   "classifications": [
+    {
+     "classification": {
+      "id": "6251",
+      "description": "Administration & Office Support"
+     },
+     "subclassification": {
+      "id": "6252",
+      "description": "Administrative Assistants"
+     }
+    }
+   ],
+   "companyName": "Western Specialist Centre",
+   "companyProfileStructuredDataId": 3277454,
+   "displayStyle": {
+    "search": "sourcrProfile"
+   },
+   "displayType": "promoted",
+   "employer": {
+    "id": "3277454",
+    "name": "Western Specialist Centre"
+   },
+   "id": "95045949",
+   "isFeatured": true,
+   "listingDate": "2026-10-04T21:35:12Z",
+   "listingDateDisplay": "18h ago",
+   "locations": [
+    {
+     "label": "Craigieburn, Melbourne VIC",
+     "countryCode": "AU",
+     "seoHierarchy": [
+      {
+       "contextualName": "Craigieburn VIC 3064"
+      },
+      {
+       "contextualName": "All Melbourne VIC"
+      }
+     ]
+    }
+   ],
+   "roleId": "administration-officer",
+   "salaryLabel": "",
+   "tags": [
+    {
+     "type": "URGENT",
+     "label": "Immediate start"
+    }
+   ],
+   "teaser": "Entry-level welcome! Join WSC  in a fast-paced admin role with training and team support",
+   "title": "Administration Officer \u2013 Organized Superstar Entry-Level Applicants Welcome",
+   "workTypes": [
+    "Part time"
+   ],
+   "workArrangements": {
+    "data": [
+     {
+      "id": "1",
+      "label": {
+       "text": "On-site"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "advertiser": {
+    "id": "62776595",
+    "description": "Physiotots"
+   },
+   "bulletPoints": [
+    "Be part of something meaningful and make a difference every day",
+    "Enjoy a varied role where no two days are ever quite the same",
+    "Join a friendly, supportive team where the little things matter most"
+   ],
+   "classifications": [
+    {
+     "classification": {
+      "id": "1211",
+      "description": "Healthcare & Medical"
+     },
+     "subclassification": {
+      "id": "6334",
+      "description": "Medical Administration"
+     }
+    }
+   ],
+   "companyName": "Physiotots",
+   "companyProfileStructuredDataId": 3259011,
+   "displayStyle": {
+    "search": "sourcrProfile"
+   },
+   "displayType": "promoted",
+   "employer": {
+    "id": "3259011",
+    "name": "Physiotots"
+   },
+   "id": "95043130",
+   "isFeatured": true,
+   "listingDate": "2026-10-04T06:35:43Z",
+   "listingDateDisplay": "1d ago",
+   "locations": [
+    {
+     "label": "Cranbourne West, Melbourne VIC",
+     "countryCode": "AU",
+     "seoHierarchy": [
+      {
+       "contextualName": "Cranbourne West VIC 3977"
+      },
+      {
+       "contextualName": "All Melbourne VIC"
+      }
+     ]
+    }
+   ],
+   "roleId": "administration-coordinator",
+   "salaryLabel": "$35 \u2013 $45 per hour",
+   "teaser": "Love being organised and making a difference? Join our paediatric Physio & OT team, where it\u2019s the little things that matter most.",
+   "title": "Practice Administration Coordinator Paediatric Allied Health",
+   "workTypes": [
+    "Full time"
+   ],
+   "workArrangements": {
+    "data": [
+     {
+      "id": "1",
+      "label": {
+       "text": "On-site"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "advertiser": {
+    "id": "39756186",
+    "description": "Western Specialist Centre"
+   },
+   "bulletPoints": [
+    "Join a growing, multi-award-winning specialist healthcare practice",
+    "Entry-level applicants welcome with on-the-job training provided",
+    "Supportive, family-friendly team helping women, children and families"
+   ],
+   "classifications": [
+    {
+     "classification": {
+      "id": "6251",
+      "description": "Administration & Office Support"
+     },
+     "subclassification": {
+      "id": "6252",
+      "description": "Administrative Assistants"
+     }
+    }
+   ],
+   "companyName": "Western Specialist Centre",
+   "companyProfileStructuredDataId": 3277454,
+   "displayStyle": {
+    "search": "sourcrProfile"
+   },
+   "displayType": "promoted",
+   "employer": {
+    "id": "3277454",
+    "name": "Western Specialist Centre"
+   },
+   "id": "99999999",
+   "isFeatured": true,
+   "listingDate": "2026-10-04T21:35:12Z",
+   "listingDateDisplay": "18h ago",
+   "locations": [
+    {
+     "label": "Auckland",
+     "countryCode": "NZ"
+    }
+   ],
+   "roleId": "administration-officer",
+   "salaryLabel": "",
+   "tags": [
+    {
+     "type": "URGENT",
+     "label": "Immediate start"
+    }
+   ],
+   "teaser": "Entry-level welcome! Join WSC  in a fast-paced admin role with training and team support",
+   "title": "Administration Officer \u2013 Organized Superstar Entry-Level Applicants Welcome",
+   "workTypes": [
+    "Part time"
+   ],
+   "workArrangements": {
+    "data": [
+     {
+      "id": "1",
+      "label": {
+       "text": "On-site"
+      }
+     }
+    ]
+   }
+  }
+ ],
+ "totalCount": 3
+}

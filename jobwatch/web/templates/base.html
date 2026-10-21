@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Jobs{% endblock %} · Jobwatch</title>
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/static/pebble/icons/logo.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/pebble/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400&display=swap">
+<link rel="stylesheet" href="/static/v3/v3.css">
+<link rel="stylesheet" href="/static/v3/server.css">
+<script src="/static/app/shell.js" defer></script>
+<script src="/static/htmx.min.js" defer></script>
+{% if path.endswith('/prepare') or path == '/accounts' %}
+<link rel="stylesheet" href="/static/browser.css">
+<script src="/static/browser.js" defer></script>
+{% endif %}
+{% if path == "/models" %}<script src="/static/models.js" defer></script>{% endif %}
+</head>
+<body class="server">
+<a class="skip" href="#main">Skip to content</a>
+<header class="bar">
+  <a class="brand" href="/#today"><span class="brand__mark" aria-hidden="true">J</span>Jobwatch</a>
+  <nav class="tabs" aria-label="Main">
+    <a class="tab" href="/#today">Today</a>
+    <a class="tab" href="/#jobs">Jobs</a>
+    <a class="tab" href="/#applications">Applications</a>
+    <a class="tab" href="/#more" aria-current="page">More</a>
+  </nav>
+</header>
+<main id="main" tabindex="-1">
+{% block content %}{% endblock %}
+</main>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

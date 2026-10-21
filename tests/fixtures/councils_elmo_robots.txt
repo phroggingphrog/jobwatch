@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /careers/*/job
+Allow: /careers/*/jobs
+Allow: /careers/*/pages
+Disallow: /careers/*
+Disallow: /

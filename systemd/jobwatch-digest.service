@@ -1,0 +1,9 @@
+[Unit]
+Description=jobwatch weekly digest (Reddit chatter + stats)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/apps/jobwatch
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch digest
+TimeoutStartSec=5min
