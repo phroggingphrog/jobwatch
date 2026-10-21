@@ -180,3 +180,25 @@ def test_ledger_upsert_text_primary_key(conn):
     conn.commit()
     ledger.reindex(conn)
     assert ledger.snapshot(conn) == before and len(before["commands"]) == 2
+
+
+@pytest.mark.parametrize("status", ["applied", "assessment", "interview", "offer"])
+def test_drafting_never_moves_an_application_backwards(conn, profile, status):
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    conn.execute("UPDATE postings SET last_seen_at=?", (now,))
+    app = ledger.upsert(conn, "applications", "applications",
+                        {"posting_id": 1, "match_id": 1, "status": status, "created_at": now, "updated_at": now})
+    app_id = start_draft(conn, 1, "cli", llm=FakeLLM(profile), profile=profile)
+    assert app_id == app["id"] and draft_status(conn, app_id)["status"] == "ready"
+    assert conn.execute("SELECT status FROM applications WHERE id=?", (app_id,)).fetchone()[0] == status
+    assert not conn.execute("SELECT 1 FROM application_events WHERE kind='status' AND application_id=?", (app_id,)).fetchone()
+
+
+def test_a_status_changed_during_the_chain_is_not_overwritten(conn, profile):
+    class Skipper(FakeLLM):                 # the owner skips the job while the chain runs
+        def chat(self, *a, **k):
+            conn.execute("UPDATE applications SET status='skipped'")
+            conn.commit()
+            return super().chat(*a, **k)
+    app_id = start_draft(conn, 1, "cli", llm=Skipper(profile), profile=profile)
+    assert conn.execute("SELECT status FROM applications WHERE id=?", (app_id,)).fetchone()[0] == "skipped"

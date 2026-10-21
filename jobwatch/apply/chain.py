@@ -30,6 +30,7 @@ from .verify_pdf import verify_pdf
 log = logging.getLogger(__name__)
 CURRENT_DAYS = 30          # a match is current if its posting was seen in the last 30 days
 TERMINAL = ("skipped", "withdrawn", "rejected")
+SUBMITTED = ("applied", "assessment", "interview", "offer")      # past the draft stages: a new draft never moves these back
 
 
 class DraftRefused(Exception):
@@ -74,7 +75,7 @@ def gate(conn: sqlite3.Connection, match_id: int) -> tuple[sqlite3.Row, sqlite3.
     app = dict(row) if row else None
     if app and app["status"] in TERMINAL:
         raise DraftRefused(f"application {app['id']} is '{app['status']}'")
-    if app and app["status"] == "drafting":
+    if app:                                   # busy is judged from the draft rows: a submitted application keeps its status
         stale = (datetime.now(UTC) - timedelta(hours=2)).isoformat(timespec="seconds")
         busy = conn.execute("SELECT 1 FROM drafts WHERE application_id=? AND status='drafting' "
                             "AND created_at>=?", (app["id"], stale)).fetchone()
@@ -96,7 +97,8 @@ def start_draft(conn: sqlite3.Connection, match_id: int, actor_event: str, *, ll
                              "status": "interested", "created_at": now, "updated_at": now}, commit=False)
     _event(conn, app["id"], "command", "owner", actor_event, detail={"command": "draft", "match_id": match_id})
     prev_status = app["status"]
-    app = _set_status(conn, app, "drafting", "jobwatch", actor_event)
+    if prev_status not in SUBMITTED:
+        app = _set_status(conn, app, "drafting", "jobwatch", actor_event)
     version = (conn.execute("SELECT MAX(version) FROM drafts WHERE application_id=?",
                             (app["id"],)).fetchone()[0] or 0) + 1
     vdir = drafts_dir() / str(app["id"]) / f"v{version}"
@@ -130,8 +132,10 @@ def start_draft(conn: sqlite3.Connection, match_id: int, actor_event: str, *, ll
                    "review_json": json.dumps(summary.get("reviewer_edits", {})),
                    "models_json": json.dumps({"models": summary["models"], "calls": llm.calls})},
                   commit=False)
-    _set_status(conn, app, "drafted" if status == "ready" else prev_status, "jobwatch", actor_event,
-                {"draft_version": version, "draft_status": status})
+    cur = conn.execute("SELECT * FROM applications WHERE id=?", (app["id"],)).fetchone()   # not the stale dict
+    if cur is not None and cur["status"] == "drafting":      # skipped/applied meanwhile: keep the owner's change
+        _set_status(conn, dict(cur), "drafted" if status == "ready" else prev_status, "jobwatch", actor_event,
+                    {"draft_version": version, "draft_status": status})
     conn.commit()
     return app["id"]
 
