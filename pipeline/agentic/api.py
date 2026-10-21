@@ -22,10 +22,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from jobwatch import users
 from jobwatch.apply.paths import ensure_dir
+from jobwatch.candidate import intake
 from jobwatch.execution_mode import effective_mode
 from pipeline.agentic.api_store import APIStore, Conflict, encoded
 from pipeline.agentic.chat import dispatch, skill_version, job_database, job_connection
 from pipeline.agentic.execution import Execution
+from pipeline.agentic import profile_api
 from pipeline.agentic.persistence import _read_artifact
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
@@ -184,18 +186,40 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         finally:
             os.close(fd)
 
+    def lookup(authorization):
+        value = authorization.removeprefix('Bearer ') if authorization and authorization.startswith('Bearer ') else ''
+        digest = hashlib.sha256(value.encode()).digest()
+        principal = None
+        for expected, possible in hashes:
+            if hmac.compare_digest(digest, expected):
+                principal = possible
+        return principal
+
     app = FastAPI(title='Jobwatch Agent API', version='1', lifespan=lifespan,
                   docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.middleware('http')
     async def private_responses(request, call_next):
         # Bound JSON bodies before validation; do not log or echo their contents.
-        if request.method == 'POST':
-            chunks, size = [], 0
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            # Every body-bearing method is capped at 64 KiB; only the profile upload has its own larger cap, and it
+            # needs a bearer with run scope before we buffer 10 MiB.
+            upload = request.method == 'POST' and request.url.path == profile_api.UPLOAD_PATH
+            cap, chunks, size = (profile_api.UPLOAD_BODY_CAP if upload else 65536), [], 0
+            if upload:
+                who = lookup(request.headers.get('authorization'))
+                if who is None:
+                    return JSONResponse({'error': 'authentication_required'}, status_code=401, headers={'WWW-Authenticate': 'Bearer'})
+                if 'run' not in who.scopes:
+                    return JSONResponse({'error': 'scope_required'}, status_code=403)
+            too_large = {'error': 'too_large'} if upload else {'error': 'request_too_large'}
+            declared = request.headers.get('content-length', '')
+            if declared.isdigit() and int(declared) > cap:
+                return JSONResponse(too_large, status_code=413)
             async for chunk in request.stream():
                 size += len(chunk)
-                if size > 65536:
-                    return JSONResponse({'error': 'request_too_large'}, status_code=413)
+                if size > cap:
+                    return JSONResponse(too_large, status_code=413)
                 chunks.append(chunk)
             request._body = b''.join(chunks)
         response = await call_next(request)
@@ -205,12 +229,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
 
     def require(scope):
         def authenticate(authorization: str | None = Header(default=None)):
-            value = authorization.removeprefix('Bearer ') if authorization and authorization.startswith('Bearer ') else ''
-            digest = hashlib.sha256(value.encode()).digest()
-            principal = None
-            for expected, possible in hashes:
-                if hmac.compare_digest(digest, expected):
-                    principal = possible
+            principal = lookup(authorization)
             if principal is None:
                 raise HTTPException(401, 'authentication_required', headers={'WWW-Authenticate': 'Bearer'})
             if scope not in principal.scopes:
@@ -236,6 +255,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     async def failed(request, exc):
         return JSONResponse({'error': 'service_unavailable'}, status_code=503)
 
+    profile_api.mount(app, require, get_config, llm_factory)
+
     @app.get('/health')
     def health():
         active = getattr(app.state, 'worker', None)
@@ -251,7 +272,9 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     def capabilities(principal=Depends(read)):
         return dict(schema_version=1, execution_mode=effective_mode(get_config(principal.person)),
                     skill_version=skill_version(), protocol='native-http',
-                    human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes))
+                    human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes),
+                    profile=dict(upload_max_bytes=intake.MAX_UPLOAD_BYTES, kinds=list(intake.KINDS),
+                                 extensions=list(intake.EXTENSIONS)))
 
     @app.post('/api/agent/threads', status_code=201)
     def create_thread(principal=Depends(write)):

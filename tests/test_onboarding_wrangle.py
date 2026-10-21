@@ -146,3 +146,23 @@ def test_run_chain_passes_only_own_samples(tmp_path, monkeypatch):
         with pytest.raises(Stop):
             chain.run_chain(None, {"id": 1, "title": "t", "company": "c"}, 1, 1, tmp_path, CaptureLLM(), profile)
     assert "I like people and I like ward work" in seen[0] and "OWNER LETTER" not in seen[0]
+
+
+def test_legacy_string_work_rights_reads_as_unknown(tmp_path, monkeypatch):
+    from jobwatch.candidate import person
+    (tmp_path / "profile.yaml").write_text(yaml.safe_dump({"candidate": {"work_rights": "Australian citizen"}}))
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(tmp_path))
+    assert person.work_rights() == {"statement": "Australian citizen"}
+    assert person.hours_limit_per_fortnight() is None
+
+
+def test_build_profile_writes_structured_work_rights(tmp_path, monkeypatch):
+    monkeypatch.setattr(onboarding, "write_profile_file", lambda user, name, text: None)
+    class L:
+        def chat(self, *a, **k):
+            return SimpleNamespace(data={"name": "Sam", "work_rights": "Australian citizen"})
+    profile, _ = onboarding.build_profile("cv", "sam", L())
+    assert profile["candidate"]["work_rights"] == {"statement": "Australian citizen"}
+    class E:
+        def chat(self, *a, **k): return SimpleNamespace(data={"name": "Sam"})
+    assert onboarding.build_profile("cv", "sam", E())[0]["candidate"]["work_rights"] == {}

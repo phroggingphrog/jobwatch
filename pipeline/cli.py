@@ -44,6 +44,9 @@ def handle(args) -> int | None:
                               "ORDER BY d.id"):
             print(f"{r['id']:>5} posting {r['posting_id']:>6} {r['node']:<9} x{r['attempts']}  {r['title'][:50]}  | {r['e']}")
         return 0
+    from jobwatch import discovery_gate
+    if not discovery_gate.allowed("pipeline " + args.action):      # run and sort assess; no confirmed scope, no assessment
+        return 0
     # run: one at a time (shares the reader's lock, so it never runs beside a review or another pipeline run)
     with adtext.review_lock(adtext.lock_path(config)) as got:
         if not got:

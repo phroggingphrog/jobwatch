@@ -129,6 +129,22 @@ Use Qwen3 Embedding 8B through the existing paid OmniRoute route for canonical
 candidate-evidence retrieval. Approval is specific to embeddings; the chat route
 allowlist, budgets, per-person credentials and human approval boundaries remain.
 
+## Profile intake and discovery
+
+Owner direction on 2026-10-21, on when discovery may run and how a profile is set up:
+
+> Job discovery should only be able to be turned on when the current profile already firm
+
+> yeah thats why initial setup the AGENT will guide you and ask all relevant files and basically ask you questions to set up the profile (onboarding)
+
+> should be interactive and processing your data/profile while asking
+
+Discovery runs for a person only while their current profile version is confirmed and carries a
+confirmed search scope. Initial setup is guided by the agent, which asks for the relevant files and
+asks the person questions while their documents are processed in the background. Confirmation does not
+authorise document preparation, employer messages or submission. See [ADR 0002](docs/adr/0002-profile-intake-and-approval.md)
+and [the worked example](docs/examples/profile-intake.md).
+
 ## Confirmed Submit
 
 Owner direction on 2026-10-21:

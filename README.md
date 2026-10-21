@@ -84,6 +84,18 @@ jobwatch init-db                    # create or migrate the DB (idempotent)
   partial failures exit 0 and show up in `jobwatch health` and the Sources page. There is no failure push.
 - Environment overrides: `JOBWATCH_DB`, `JOBWATCH_CONFIG_DIR`, `JOBWATCH_EMPLOYERS`.
 
+## Profile workflow
+
+Discovery runs only for a person whose current profile is confirmed, with a confirmed search scope.
+
+1. **Onboard.** Either let the chat agent guide you (it asks for your files and your questions while it reads them in the background) or use the API under `/api/agent/profile`: upload a CV, letter or evidence file, start a proposal, answer the open questions, correct facts. Facts are marked evidence, inference or unknown; a CV gap alone does not establish unemployment.
+2. **Confirm.** Review the confirmation (facts, search scope, daily limits). Confirming needs the approve scope, or in chat your own approval of those exact digests, and writes an immutable version under `profile-versions/`.
+3. **Discover.** Collection and assessment then run within the confirmed scope and limits.
+
+Existing installs: discovery stays off until a confirmed profile exists. `jobwatch --user <name> profile adopt` turns your current `profile/` files into version 1, which protects them from being overwritten and keeps them in the history; it authorises no discovery. To turn discovery on, onboard on top of that version: let the chat agent guide you (it can read your existing files through `profile_start` with `use_existing_files`) or start a proposal with `base_version` set to the current version, then confirm the scope shown. A scope with nothing to search for is refused (`profile_incomplete`).
+
+Confirmation does not authorise document preparation, employer messages or submission; those keep their own approvals, and Submit stays on the owner-confirmed path. Walk-through with real requests and responses: [docs/examples/profile-intake.md](docs/examples/profile-intake.md).
+
 ## Config files (`config/`)
 
 | File | What it holds |
@@ -204,8 +216,9 @@ systemctl --user daemon-reload
 systemctl --user enable --now jobwatch-fast.timer jobwatch-slow.timer jobwatch-outcomes.timer jobwatch-digest.timer
 ```
 
-- `jobwatch-fast.timer`: every 20 min (+ up to 60 s jitter) runs `jobwatch run --tier fast`.
-- `jobwatch-slow.timer`: every 2 h at :10 (+ up to 15 min jitter) runs `jobwatch run --tier slow`.
+- `jobwatch-fast.timer`: every 20 min (+ up to 60 s jitter) runs `jobwatch --user all run --tier fast`.
+- `jobwatch-slow.timer`: every 2 h at :10 (+ up to 15 min jitter) runs `jobwatch --user all run --tier slow`.
+- Discovery is off for a person until their current profile is confirmed with its search scope shown, and while the live `profile/` files differ from that confirmed version (a hand edit after confirming pauses it until the files match again; `jobwatch profile adopt` alone does not turn it on, and a scope with nothing to search for is refused as `profile_incomplete`; onboard with a proposal built on the current version and confirm it). Unconfirmed people are skipped; `--user all` splits the unit's time over those who run.
 - `jobwatch-outcomes.timer`: 07:00, 09:00 … 21:00 Melbourne runs `jobwatch outcomes`.
 - `jobwatch-digest.timer`: Monday 08:00 Melbourne runs `jobwatch digest` (the text goes to the journal).
 

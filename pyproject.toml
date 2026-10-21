@@ -17,6 +17,8 @@ dependencies = [
     "pydantic>=2.6",
     "deepagents==0.7.23",
     "langchain>=1.4.0,<2",
+    "pypdf>=5",
+    "python-docx>=1.1",
 ]
 
 [project.optional-dependencies]

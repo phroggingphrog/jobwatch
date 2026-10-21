@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import make_config
+from conftest import confirm_discovery, make_config
 from jobwatch import adtext, reader
 from jobwatch import db as dbm
 from jobwatch import pipeline
@@ -424,6 +424,7 @@ def _args(**over):
 
 def test_cli_review_and_recall_skip_while_another_run_holds_the_lock(world, monkeypatch, capsys):
     from jobwatch import review_cli
+    confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     ran = []
     monkeypatch.setattr(reader, "review_pending", lambda *a, **kw: ran.append(kw) or {"reviewed": 0})
@@ -439,8 +440,10 @@ def test_cli_review_and_recall_skip_while_another_run_holds_the_lock(world, monk
 
 
 # --------------------------------------------------- the pipeline hook
-def _pipeline_world(tmp_path, monkeypatch, order):
+def _pipeline_world(tmp_path, monkeypatch, order, confirmed=True):
     config = make_config(settings={"tiers": {"fast": [], "slow": []}}, tmp_path=tmp_path)
+    if confirmed:
+        confirm_discovery(config)       # the AI step runs only for a person whose profile was confirmed with its scope
     real_publish, real_prune = pipeline.publish, dbm.prune
     monkeypatch.setattr(pipeline, "publish", lambda conn, dry_run=False: order.append("publish") or real_publish(conn, dry_run))
     monkeypatch.setattr(dbm, "prune", lambda conn, days: order.append("prune") or real_prune(conn, days))
@@ -639,6 +642,7 @@ def test_refetch_bypasses_the_24h_wait_and_the_try_cap_for_pending_ads(world, mo
 
 def test_cli_refetch_flag_reaches_review_pending(world, monkeypatch):
     from jobwatch import review_cli
+    confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     seen = []
     monkeypatch.setattr(reader, "review_pending", lambda *a, **kw: seen.append(kw) or {"reviewed": 0})
@@ -649,6 +653,7 @@ def test_cli_refetch_flag_reaches_review_pending(world, monkeypatch):
 # --------------------------------------------------- round 2: rederive takes review.lock
 def test_cli_rederive_exits_1_without_touching_rows_while_a_review_runs(world, monkeypatch, capsys):
     from jobwatch import review_cli
+    confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     pid = world.add("Clerk", desc="The whole ad is in the feed. " * 40)
     review(world)
@@ -934,3 +939,17 @@ def test_a_clean_run_has_no_error_field(tmp_path, monkeypatch):
     config = _pipeline_world(tmp_path, monkeypatch, [])
     monkeypatch.setattr(reader, "after_collect", lambda conn, cfg, **kw: {"enabled": False})
     assert "error" not in pipeline.run(config, "fast")
+
+
+def test_pipeline_gate_skips_every_tier_without_a_confirmed_profile(tmp_path, monkeypatch):
+    from jobwatch import execution_mode
+    import pipeline.graph as graph
+    from pipeline.agentic import service as agentic
+    config = _pipeline_world(tmp_path, monkeypatch, [], confirmed=False)
+    called = []
+    for mod in (reader, graph, agentic):
+        monkeypatch.setattr(mod, "after_collect", lambda *a, **k: called.append(1) or {})
+    for mode in ("agentic", "pipeline", "reader"):
+        monkeypatch.setattr(execution_mode, "effective_mode", lambda cfg, m=mode: m)
+        assert pipeline.run(config, "fast")["ai"] == {"skipped": "no_confirmed_profile", "execution_mode": mode}
+    assert called == []

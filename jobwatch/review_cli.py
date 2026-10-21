@@ -43,6 +43,9 @@ def handle(args) -> int | None:
               f"{kinds.get('partial', 0)} from a cut text only (ad body not fetched)")
         return 0
     if args.action in ("run", "recall", "sort"):
+        from . import discovery_gate
+        if not discovery_gate.allowed("review " + args.action):
+            return 0
         return _locked(args, config, conn)
     if args.action == "rederive":
         return _rederive(config, conn)

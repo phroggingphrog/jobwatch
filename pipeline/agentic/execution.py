@@ -52,6 +52,8 @@ class Execution:
     actual_tokens: int = 0
     unknown_usage_calls: int = 0
     approvals: dict = field(default_factory=dict)
+    human_texts: tuple = ()          # what the person wrote this turn (server-set); profile tools may record only these words
+    parse_starts: int = 0
     outcomes: list = field(default_factory=list)
     deliverables: list = field(default_factory=list)
     lock: object = field(default_factory=threading.RLock)

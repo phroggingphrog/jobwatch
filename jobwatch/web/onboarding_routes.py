@@ -1,32 +1,15 @@
 """/welcome: upload a CV, build the person's profile and their own search config (TASK-111 child 3)."""
 import html
-import io
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 
 from jobwatch import fieldgen, onboarding, users
+from jobwatch.candidate.intake import extract_text  # noqa: F401  (moved; re-exported for this route)
 
 _PAGE = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
          "<title>Welcome</title><body style='font:16px system-ui;max-width:36rem;margin:2rem auto;padding:0 1rem'>"
          "<h1>Welcome</h1>{body}</body>")
-
-
-def extract_text(filename: str, data: bytes) -> str:
-    name = (filename or "").lower()
-    if name.endswith(".pdf"):
-        try:
-            from pypdf import PdfReader
-        except ImportError:
-            raise ValueError("PDF reading is not installed on this server. Please upload a .txt or .docx file.")
-        return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(data)).pages)
-    if name.endswith(".docx"):
-        try:
-            import docx
-        except ImportError:
-            raise ValueError("DOCX reading is not installed on this server. Please upload a .txt file.")
-        return "\n".join(p.text for p in docx.Document(io.BytesIO(data)).paragraphs)
-    return data.decode("utf-8", errors="replace")
 
 
 KINDS = (("cv", "Your CV"), ("letter", "Cover letters you have written (your own style samples)"),
