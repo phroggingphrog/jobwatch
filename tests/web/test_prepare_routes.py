@@ -37,6 +37,15 @@ class Browser:
         self.opened = False
     def take_submit_result(self, aid):
         return None
+    confirms = None
+    def confirm_submit(self, aid, digest, prepared):
+        if self.confirms is None:
+            self.confirms = []
+        if getattr(self, 'refuse', None):
+            from jobwatch.web.browser_session import BrowserSessionError
+            raise BrowserSessionError(self.refuse)
+        self.confirms.append((aid, digest))
+        return 'pressed'
     def snapshot(self, aid):
         self.frames += 1
         self.opened = False
@@ -324,3 +333,45 @@ def test_candidate_page_computes_local_statistics_without_model_calls(tmp_path, 
     assert 'Untrained: no observed outcomes' in response.text
     assert 'not hiring probability' in response.text
     assert not browser.opened
+
+
+def ready_state(monkeypatch, manifest):
+    state = dict(pending_state(monkeypatch, manifest), status='ready_for_owner', reason='', missing=[],
+                 attached_documents={'cv': 'a' * 64}, form_state='f' * 64,
+                 final_control={'selector': '#submit', 'label': 'submit application', 'url': 'https://x', 'frame_path': []})
+    monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
+    return state
+
+
+def test_board_confirmation_presses_submit_for_the_shown_fill_only(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened = True
+    state = ready_state(monkeypatch, manifest)
+    page = client.get(f'/job/{client.pid}/prepare').text
+    digest = sc.digest(state)
+    assert 'Submit this application' in page and digest in page
+    assert client.post(f'/job/{client.pid}/prepare/submit', data={'digest': '0' * 64}).status_code == 409
+    assert browser.confirms is None                                   # a digest for another fill presses nothing
+    response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': digest}, follow_redirects=False)
+    conn = sqlite3.connect(client.data / 'jobwatch.db')
+    aid = conn.execute('SELECT id FROM applications WHERE posting_id=?', (client.pid,)).fetchone()[0]
+    assert response.status_code == 303 and browser.confirms == [(str(aid), digest)]
+    kind, actor, source = conn.execute("SELECT kind, actor, source FROM application_events ORDER BY id DESC LIMIT 1").fetchone()
+    assert (kind, actor, source) == ('submit_confirmed', 'owner', 'board')
+
+
+def test_a_refused_board_confirmation_says_nothing_was_submitted(tmp_path, monkeypatch):
+    from jobwatch.apply import submit_confirm as sc
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened, browser.refuse = True, 'submit_confirmation_stale'
+    state = ready_state(monkeypatch, manifest)
+    response = client.post(f'/job/{client.pid}/prepare/submit', data={'digest': sc.digest(state)})
+    assert response.status_code == 409 and 'Nothing was submitted' in response.text
+
+
+def test_no_submit_button_without_a_confirmable_fill(tmp_path, monkeypatch):
+    client, browser, manifest = setup(tmp_path, monkeypatch)
+    browser.opened = True
+    ready_state(monkeypatch, manifest).pop('final_control')
+    assert 'Submit this application' not in client.get(f'/job/{client.pid}/prepare').text

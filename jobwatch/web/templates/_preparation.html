@@ -4,9 +4,16 @@
   {% if browser.automation_active %}
     <p><strong>Filling your application…</strong> Jobwatch is preparing answers and attaching your documents. Browser controls return when it finishes.</p>
   {% elif job.status == 'applied' %}
-    <p class="ph-alert"><strong>Applied.</strong> Jobwatch saw your Submit go through and marked this job Applied.</p>
+    <p class="ph-alert"><strong>Applied.</strong> Jobwatch saw the Submit go through and marked this job Applied.</p>
   {% elif prepared and prepared.status == 'ready_for_owner' %}
-    <p class="ph-alert"><strong>Filled and ready for your review.</strong> Check the live application below, then click its Submit button yourself.</p>
+    <p class="ph-alert"><strong>Filled and ready for your review.</strong> Check the live application below, then click its Submit button yourself, or have Jobwatch press it for you.</p>
+    {% if confirm_digest %}
+    <form method="post" action="/job/{{ job.id }}/prepare/submit" class="submit-confirm">
+      <input type="hidden" name="digest" value="{{ confirm_digest }}">
+      <button class="ph-btn ph-btn--default" type="submit">Submit this application</button>
+      <small>Jobwatch presses the employer's Submit once, for exactly this filled form. If anything on the page changes first, nothing is sent.</small>
+    </form>
+    {% endif %}
   {% elif prepared and prepared.reason == 'missing_profile_facts' %}
     <p><strong>A few facts are missing from your profile.</strong> Answer here once; Jobwatch will remember them and fill the application.</p>
     <form method="post" action="/job/{{ job.id }}/answers" class="answer-intake">

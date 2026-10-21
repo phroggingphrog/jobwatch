@@ -17,6 +17,8 @@ from starlette.concurrency import run_in_threadpool
 from jobwatch import ledger
 from jobwatch import db as dbm
 from jobwatch.commands.state import SUBMITTED
+from jobwatch.apply import submit_confirm
+from jobwatch.web.browser_session import BrowserSessionError
 from jobwatch.apply import paths
 from jobwatch.web import actions as act
 from jobwatch.apply.prepare import latest_preparation, prepare_application, record_owner_answer
@@ -85,12 +87,15 @@ def register(app, config, conn_factory, render, sessions):
             row = conn.execute('SELECT id,status FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
             if row is None or row['status'] in (*SUBMITTED, 'hired'):
                 return
+            last = conn.execute("SELECT kind FROM application_events WHERE application_id=? ORDER BY id DESC LIMIT 1",
+                                (row['id'],)).fetchone()
+            source = 'submit-confirmed' if last and last['kind'] == 'submit_confirmed' else 'submit-detected'
             if result == 'confident':
-                act.set_status(conn, posting_id, 'applied', source='submit-detected')
+                act.set_status(conn, posting_id, 'applied', source=source)
             else:
                 ledger.upsert(conn, 'applications', 'application_events', {
                     'application_id': row['id'], 'at': dbm.ts(), 'kind': 'submit_unsure', 'from_status': row['status'],
-                    'to_status': None, 'actor': 'jobwatch', 'source': 'submit-detected', 'detail_json': '{}'})
+                    'to_status': None, 'actor': 'jobwatch', 'source': source, 'detail_json': '{}'})
         finally:
             conn.close()
 
@@ -117,8 +122,8 @@ def register(app, config, conn_factory, render, sessions):
                          or prepared.get('owner_revision') != browser.get('owner_revision')
                          or prepared.get('page_url_sha256') != browser.get('page_url_sha256')):
             prepared = None
-        return dict(job=job, package=package, browser=browser, prepared=prepared,
-                    can_prepare=can_prepare, error=error)
+        return dict(job=job, package=package, browser=browser, prepared=prepared, can_prepare=can_prepare,
+                    confirm_digest=submit_confirm.digest(prepared) if browser['open'] else None, error=error)
 
     def start_preparation(posting_id, *, intake=None):
         job, package = app_context(posting_id)
@@ -266,6 +271,42 @@ def register(app, config, conn_factory, render, sessions):
         except Exception:
             raise HTTPException(400, 'Check each answer matches the available choices.') from None
         start_preparation(posting_id, intake=(dict(prepared), replies))
+        return RedirectResponse(f'/job/{posting_id}/prepare', status_code=303)
+
+    def confirmed_submit(posting_id, confirm, source):
+        """Press final Submit for the fill the owner confirmed (board button or approved chat request). Returns None
+        when pressed, else a fixed reason; nothing is pressed unless the live page still matches `confirm`."""
+        state = preparation_context(posting_id)
+        prepared = state['prepared']
+        if state['browser']['automation_active'] or not confirm or submit_confirm.digest(prepared) != confirm:
+            return 'submit_confirmation_stale'
+        aid = str(state['job']['application_id'])
+        conn = conn_factory()
+        try:
+            ledger.upsert(conn, 'applications', 'application_events', {
+                'application_id': int(aid), 'at': dbm.ts(), 'kind': 'submit_confirmed', 'from_status': state['job']['status'],
+                'to_status': None, 'actor': 'owner', 'source': source,
+                'detail_json': json.dumps({'confirmation': confirm[:16], 'run_id': prepared['run_id']})})
+        finally:
+            conn.close()
+        try:
+            sessions.confirm_submit(aid, confirm, prepared)
+        except BrowserSessionError as exc:
+            return str(exc) if str(exc) in ('submit_confirmation_stale', 'submit_not_confirmable') else 'browser_unavailable'
+        except Exception:
+            return 'browser_unavailable'
+        return None
+
+    app.state.confirmed_submit = confirmed_submit
+
+    @app.post('/job/{posting_id}/prepare/submit')
+    async def prepare_submit(request: Request, posting_id: int):
+        form = await request.form(max_fields=5)
+        app_context(posting_id)
+        reason = await run_in_threadpool(confirmed_submit, posting_id, str(form.get('digest') or ''), 'board')
+        if reason:
+            return render(request, 'prepare.html', status=409, **preparation_context(
+                posting_id, 'Nothing was submitted: the application changed after you confirmed. Review the live page and confirm again.'))
         return RedirectResponse(f'/job/{posting_id}/prepare', status_code=303)
 
     @app.post('/job/{posting_id}/browser/action')
