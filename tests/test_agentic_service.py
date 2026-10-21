@@ -726,3 +726,89 @@ def test_approved_auxiliary_call_with_extra_model_args_still_runs(world, monkeyp
     second = turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
                   approval_bindings=[i['binding'] for i in first['interactions']])
     assert second['status'] == 'complete' and second['deliverables'][0]['content'] == {'questions': ['synthetic']}, second
+
+
+def test_failed_started_activity_row_does_not_leak_the_lease(world):
+    import sqlite3
+    from pipeline.agentic.store import AgenticStore
+    conn, config, bundle, add = world; add(42)
+    AgenticStore(conn).ensure()
+    conn.execute("CREATE TRIGGER no_started BEFORE INSERT ON agentic_activity WHEN NEW.event='started' "
+                 "BEGIN SELECT RAISE(ABORT,'synthetic disk error'); END")
+    llm = LLM(transport=SyntheticGateway(bundle), keys=['synthetic'])
+    try:
+        run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm)
+    except sqlite3.Error:
+        pass
+    assert conn.execute("SELECT COUNT(*) FROM agentic_runs WHERE status='claimed' OR lease_until>0").fetchone()[0] == 0
+
+
+def test_store_failure_in_the_finish_still_releases_lease_and_batch_slot(world, monkeypatch):
+    import sqlite3
+    from pipeline.agentic.persistence import PersistenceAdapter
+    from pipeline.agentic.runtime import BatchBudget
+    conn, config, bundle, add = world; add(42)
+    def locked(*args, **kwargs):
+        raise sqlite3.OperationalError('database is locked')
+    monkeypatch.setattr(PersistenceAdapter, 'set_stage', locked)
+    from pipeline.agentic.service import _config, _make_batch
+    from pipeline.agentic.store import AgenticStore
+    store = AgenticStore(conn); store.ensure()
+    batch = _make_batch(store, _config(config))
+    llm = LLM(transport=SyntheticGateway(bundle), keys=['synthetic'])
+    with pytest.raises(sqlite3.OperationalError):
+        run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm, batch=batch)
+    assert conn.execute("SELECT COUNT(*) FROM agentic_runs WHERE status='claimed' OR lease_until>0").fetchone()[0] == 0
+    assert batch._state.active_jobs == 0
+
+
+def test_failed_first_checkpoint_does_not_leak_the_batch_slot(world):
+    from pipeline.agentic.runtime import BatchBudget
+    conn, config, bundle, add = world; add(42)
+    batch = BatchBudget('unregistered-batch', max_concurrency=1)  # the store refuses its checkpoint (unknown_batch)
+    llm = LLM(transport=SyntheticGateway(bundle), keys=['synthetic'])
+    run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm, batch=batch)
+    assert batch._state.active_jobs == 0
+    assert conn.execute("SELECT COUNT(*) FROM agentic_runs WHERE status='claimed' OR lease_until>0").fetchone()[0] == 0
+
+
+def test_one_crashing_job_does_not_abort_the_batch(world, monkeypatch):
+    import sqlite3
+    from pipeline.agentic import service
+    conn, config, bundle, add = world; add(42); add(43, 'Synthetic Beta')
+    real = service.run_agentic_job
+    def flaky(pid, *args, **kwargs):
+        if pid == 42:
+            raise sqlite3.OperationalError('database is locked')
+        return real(pid, *args, **kwargs)
+    monkeypatch.setattr(service, 'run_agentic_job', flaky)
+    summary = agentic_batch_run([42, 43], config, conn, evidence_bundle=bundle, llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']))
+    assert summary['ready'] == 1 and summary['skipped'] == 1, summary
+    assert summary['deferred'][0]['posting_id'] == 42 and summary['deferred'][0]['reason'] == 'job_crashed'
+
+
+def test_posting_the_model_keeps_answering_invalidly_stops_jumping_the_queue(world, monkeypatch):
+    """MODEL_RETRY jobs go first in every run; a posting that failed validation three runs running must wait."""
+    import time
+    from pipeline import store
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    store.ensure(conn); service.AgenticStore(conn).ensure()
+    for pid in (1, 2, 3):
+        add(pid)
+        store.admit(conn, pid, str(pid), {}, Stage.INGESTED)
+        conn.execute("INSERT INTO agentic_runs(run_key,posting_id,status,reason) VALUES(?,?,'held','model_invalid_response')",
+                     (f'{pid:064x}', pid))
+    # posting 2: three consecutive invalid-model finishes (a deadline discard resets the run's own failed-attempt count);
+    # posting 3: an outage between them, which is not the posting's fault
+    for pid, reasons in ((2, ['model_invalid_response'] * 3), (3, ['model_invalid_response', 'model_unavailable', 'model_invalid_response'])):
+        for reason in reasons:
+            conn.execute("INSERT INTO agentic_activity(run_key,posting_id,event,at,reason) VALUES(?,?,'finished',?,?)",
+                         (f'{pid:064x}', pid, time.time() - 600, reason))
+    conn.commit()
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
+    selected = []
+    monkeypatch.setattr(service, 'agentic_batch_run', lambda ids, *a, **k: selected.extend(ids) or {})
+    service.after_collect(conn, config, max_seconds=60)
+    assert 2 not in selected and set(selected) == {1, 3}, selected
