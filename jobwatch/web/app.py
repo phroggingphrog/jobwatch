@@ -60,7 +60,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     config = config or load_config()
     db_path = config.db_path
     reg = q.Registry(lambda: config)
-    drafts_root = apaths.drafts_dir()
 
     c0 = dbm.connect(db_path)                          # migrate once at start-up
     pstore.ensure(c0)                                  # the pipeline's tables (the board reads pipeline_state)
@@ -311,7 +310,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             act.set_notes(conn, posting_id, notes)
             return "Notes saved"
         if action == "draft":
-            act.start_draft(conn, db_path, posting_id, config=config)
+            act.start_draft(conn, config.db_path, posting_id, config=config)
             return "Drafting your CV and letter… this takes a few minutes"
         raise HTTPException(404, "Unknown action")
 
@@ -353,7 +352,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     # -- applications ------------------------------------------------------------------------------
     def kanban_ctx(conn) -> dict:
-        apps = q.applications(conn, drafts_root)
+        apps = q.applications(conn, apaths.drafts_dir())
         cols = [(s, q.STATE_LABEL[s], [a for a in apps if a["status"] == s]) for s in q.KANBAN]
         drafting = [a for a in apps if a["status"] == "drafting"]
         if drafting and cols:
@@ -1157,7 +1156,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     # -- files, health -----------------------------------------------------------------------------
     @app.get("/files/drafts/{path:path}")
     def draft_file(path: str):
-        root = drafts_root.resolve()
+        root = apaths.drafts_dir().resolve()            # the signed-in person's drafts, never the owner's
         target = (root / path).resolve()
         try:
             target.relative_to(root)

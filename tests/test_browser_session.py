@@ -118,6 +118,8 @@ def test_second_person_gets_their_own_profile_and_the_owners_stays_untouched(tmp
             friend_profile = (tmp_path / 'users' / 'friend' / 'browser' / 'sessions' / digest / 'profile')
             assert manager.sessions[('friend', 'shared-app')].profile == friend_profile
             assert manager.status('shared-app')['state'] == 'ready'
+            # work done in the browser thread runs as the person who asked for it (their DB and folders)
+            assert manager.with_page('shared-app', lambda page: users.current()) == 'friend'
             friend_cookies = friend_profile / 'Default' / 'Cookies'
             assert b'owner seek login' not in (friend_cookies.read_bytes() if friend_cookies.exists() else b'')
 
@@ -418,3 +420,27 @@ def test_owner_submit_is_detected_but_never_pressed_by_jobwatch(manager, tmp_pat
         assert result == expected and seen == ['GET', 'POST']
     finally:
         server.shutdown(); server.server_close()
+
+
+@pytest.mark.parametrize('text', ['Your application is incomplete. Please correct the errors below.',
+                                  'Your application is invalid'])
+def test_failed_submit_text_is_not_a_confirmation(text):
+    from jobwatch.web.browser_session import _CONFIRM_TEXT
+    assert not _CONFIRM_TEXT.search(text)
+
+
+@pytest.mark.parametrize('text', ['Thank you for applying', 'Your application is complete', 'Your application is in.',
+                                  'Application has been submitted'])
+def test_confirmation_text_is_recognised(text):
+    from jobwatch.web.browser_session import _CONFIRM_TEXT
+    assert _CONFIRM_TEXT.search(text)
+
+
+@pytest.mark.parametrize('path,confirmed', [('/apply/complete-profile', False), ('/careers/confirm-email', False),
+                                            ('/apply/your-details/complete', False), ('/apply/step/received-documents', False),
+                                            ('/apply/thank-you', True), ('/application/submitted', True),
+                                            ('/jobs/123/confirmation', True), ('/thankyou.html', True),
+                                            ('/apply/success/', True)])
+def test_confirmation_url_only_matches_a_final_confirmation_page(path, confirmed):
+    from jobwatch.web.browser_session import _CONFIRM_URL
+    assert bool(_CONFIRM_URL.search(path)) is confirmed

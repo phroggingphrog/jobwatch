@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import contextvars
 import importlib
 import json
 import logging
@@ -16,7 +17,7 @@ import uuid
 from datetime import UTC, datetime
 
 from .. import db as dbm
-from .. import ledger
+from .. import ledger, users
 from ..commands import state as cstate
 
 log = logging.getLogger("jobwatch.web")
@@ -97,7 +98,7 @@ def set_notes(conn, posting_id: int, notes: str, *, source: str = SOURCE) -> dic
 
 
 # -- drafting -------------------------------------------------------------------------------------
-_JOBS: dict[int, dict] = {}          # posting_id -> {state: running|done|error, error, started, actor}
+_JOBS: dict[tuple[str, int], dict] = {}   # (person, posting_id) -> {state: running|done|error, error, started, actor}
 _LOCK = threading.Lock()
 
 
@@ -107,7 +108,7 @@ def _chain():
 
 def draft_job(posting_id: int) -> dict | None:
     with _LOCK:
-        j = _JOBS.get(posting_id)
+        j = _JOBS.get((users.current(), posting_id))
         return dict(j) if j else None
 
 
@@ -121,8 +122,9 @@ def start_draft(conn, db_path, posting_id: int, *, config=None) -> dict:
     m = conn.execute("SELECT id FROM matches WHERE posting_id=?", (posting_id,)).fetchone()
     if m is None and not use_agentic:
         raise ActionError("Only matched jobs can be drafted (this job did not match a target arm).")
+    key = (users.current(), posting_id)
     with _LOCK:
-        j = _JOBS.get(posting_id)
+        j = _JOBS.get(key)
         if j and j["state"] == "running":
             return dict(j)
     chain = _chain() if not use_agentic else None
@@ -135,7 +137,7 @@ def start_draft(conn, db_path, posting_id: int, *, config=None) -> dict:
     job = {"state": "running", "error": None, "started": datetime.now(UTC).isoformat(timespec="seconds"),
            "actor": actor}
     with _LOCK:
-        _JOBS[posting_id] = job
+        _JOBS[key] = job
 
     def run():
         c = dbm.connect(db_path)
@@ -153,9 +155,10 @@ def start_draft(conn, db_path, posting_id: int, *, config=None) -> dict:
         finally:
             c.close()
         with _LOCK:
-            _JOBS[posting_id].update(res)
+            _JOBS[key].update(res)
 
-    threading.Thread(target=run, name=f"draft-{posting_id}", daemon=True).start()
+    ctx = contextvars.copy_context()        # the worker runs as the person who pressed Draft (their DB, profile, drafts)
+    threading.Thread(target=ctx.run, args=(run,), name=f"draft-{posting_id}", daemon=True).start()
     return dict(job)
 
 

@@ -5,8 +5,10 @@ and one Playwright thread. Snapshot attachments disconnect without closing it.
 """
 from __future__ import annotations
 
+import contextvars
 from concurrent.futures import Future
 from dataclasses import dataclass
+import functools
 import hashlib
 import ipaddress
 import math
@@ -25,8 +27,10 @@ from urllib.parse import urlsplit
 
 _CONFIRM_TEXT = re.compile(r"thank you for (applying|your application|submitting)|thanks for applying|"
     r"application (has been |was )?(submitted|received|sent)|(successfully|we've|we have) (submitted|received) your application|"
-    r"your application (is|has been) (complete|in)", re.I)
-_CONFIRM_URL = re.compile(r"(?:^|[/_.-])(thank-?you|confirm(ation|ed)?|success|submitted|received|complete(d)?)(?:$|[/_.-])", re.I)
+    r"your application (is|has been) (complete|in)\b", re.I)          # \b: "is incomplete" / "is invalid" are failures
+# Only the last path segment counts: a step such as /complete-profile or /confirm-email is not a confirmation page.
+_CONFIRM_URL = re.compile(r"(?:^|[/_.-])(thank-?you|confirmation|confirmed|success|submitted|received|completed)"
+                          r"(?:\.\w+)?/?$", re.I)
 
 
 class BrowserSessionError(ValueError):
@@ -489,6 +493,7 @@ class _Session:
 
     def submit(self, kind, callback):
         future = Future()
+        callback = functools.partial(contextvars.copy_context().run, callback)   # runs as the person who asked
         with self.lock:
             if self.state != 'ready':
                 raise BrowserSessionError('browser_session_not_ready')
