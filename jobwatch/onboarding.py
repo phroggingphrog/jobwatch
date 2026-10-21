@@ -124,8 +124,10 @@ def build_profile(cv_text: str, user: str, llm: LLM | None = None) -> tuple[dict
                            {"role": "user", "content": cv_text[:30000]}], json_mode=True)
     data = res.data if isinstance(res.data, dict) else {}
     questions = [str(q) for q in (data.pop("questions", None) or []) if str(q).strip()]
+    rights = str(data.get("work_rights") or "").strip()    # structured, so work_rights() never meets a bare string
     profile = {"version": 1, "candidate": {k: data.get(k, "") for k in
-                                           ("name", "headline", "email", "phone", "location", "work_rights")},
+                                           ("name", "headline", "email", "phone", "location")}
+                         | {"work_rights": {"statement": rights} if rights else {}},
                "level": data.get("level") or "entry",
                "education": data.get("education") or [], "roles": data.get("roles") or [],
                "skills": data.get("skills") or [],

@@ -940,3 +940,17 @@ def test_a_chat_submit_without_a_reviewed_fill_is_refused_not_offered(world, mon
                            {'answer': 'There is no reviewed fill to submit.'}])
     result = chat.dispatch(person=users.DEFAULT_USER, thread_id='submit-none', config=config, llm=llm, message='Submit 42')
     assert result['status'] == 'complete' and result['answer'] == 'There is no reviewed fill to submit.', result
+
+
+def test_collection_never_drafts_documents(world, monkeypatch):
+    """Collection only evaluates; document preparation needs an explicit later request."""
+    from pipeline import store
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    store.ensure(conn); add(1); store.admit(conn, 1, '1', {}, Stage.INGESTED); conn.commit()
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
+    ops = []
+    monkeypatch.setattr(service, 'run_agentic_job', lambda pid, cfg, conn, **kw: ops.append(kw.get('operation')) or Stage.READY)
+    service.after_collect(conn, config, max_seconds=600)    # >= MODEL_PASS_SECONDS or the batch defers everything
+    assert ops and set(ops) == {'evaluate'}

@@ -685,7 +685,9 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         # it and the fast timer was killed at systemd's 15 min limit).
         if max_seconds is not None:
             max_seconds = max(60, max_seconds - (time.monotonic() - started))
-        return agentic_batch_run(ids, config, conn, max_seconds=max_seconds, collector_run_id=collector_run_id)
+        # Collection only evaluates; documents are drafted on an explicit request, never as a side effect of a timer.
+        return agentic_batch_run(ids, config, conn, max_seconds=max_seconds, collector_run_id=collector_run_id,
+                                 operation='evaluate')
 
 
 MODEL_RETRY = ('model_unavailable', 'model_invalid_response', 'model_truncated_response', 'invalid_requirements')

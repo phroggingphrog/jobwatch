@@ -26,8 +26,11 @@ def _yaml(name: str) -> dict:
 
 
 def work_rights() -> dict:
-    """profile.yaml candidate.work_rights."""
-    return (_yaml("profile.yaml").get("candidate") or {}).get("work_rights") or {}
+    """profile.yaml candidate.work_rights, always a dict; a legacy string (old onboarding) is a statement with no limits."""
+    v = (_yaml("profile.yaml").get("candidate") or {}).get("work_rights") or {}
+    if isinstance(v, str):
+        return {"statement": v.strip()} if v.strip() else {}
+    return v if isinstance(v, dict) else {}
 
 
 def hours_limit_per_fortnight() -> float | None:
