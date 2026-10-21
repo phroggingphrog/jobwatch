@@ -69,6 +69,29 @@ content. Private responses use no-store. Idempotency keys are scoped to the thre
 reusing a key with different inputs returns 409. Only one active run per thread
 is admitted, and a person's queued work is bounded.
 
+## Profile intake and approval
+
+The person comes only from the bearer token; ids belonging to another person return 404. Uploads and
+proposals stay private and separate from the approved profile until confirmed. Nothing here prepares
+documents, contacts an employer or submits; confirmation only starts discovery within the scope shown.
+
+| Method and path | Scope | Result |
+|---|---|---|
+| `POST /api/agent/profile/uploads` | run | Multipart `file` + form `kind` (`cv`, `letter`, `evidence`; `.pdf .docx .txt .md`, 10 MiB). 201 `{upload_id,sha256,kind,bytes}`. Only route exempt from the 64 KiB cap; counted while streaming. |
+| `POST /api/agent/profile/proposals` | run | `{upload_ids,base_version}` -> 201 proposal (facts with basis and sources, open questions). |
+| `GET /api/agent/profile/proposals/{id}` | read | The proposal. |
+| `PATCH /api/agent/profile/proposals/{id}` | interact | `{expected_revision,edits}` (`add`, `set`, `remove`). |
+| `POST /api/agent/profile/proposals/{id}/answers` | interact | `{expected_revision,question_id,text}`. |
+| `GET /api/agent/profile/proposals/{id}/confirmation` | read | `proposal_digest`, `scope`, `scope_digest`, what it does and does not authorise. |
+| `POST /api/agent/profile/proposals/{id}/confirm` | approve | `{proposal_digest,scope_digest}` exactly as shown -> 201 `{version}`. Model text is never approval. |
+| `GET /api/agent/profile/`, `GET /api/agent/profile/versions` | read | Current approved version (`{"version":null}` if none); version list. |
+
+Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_first`, `proposal_not_draft`,
+`already_adopted`, `profile_edited_by_hand`. 413: `too_large`. 415: `unsupported_type`. 422:
+`no_extractable_text`, `invalid_edit`, `parse_failed`, `unreadable_document`, `nothing_to_adopt`. 404:
+`upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
+403: `person_required`. Capabilities include a `profile` object with the upload limits.
+
 ## Runtime and recovery
 
 One worker per data root owns a process file lock. It serializes paid runs and
