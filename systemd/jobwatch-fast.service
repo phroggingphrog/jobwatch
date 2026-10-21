@@ -5,6 +5,6 @@ After=network-online.target
 [Service]
 Type=oneshot
 WorkingDirectory=%h/apps/jobwatch
-ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch run --tier fast
+ExecStart=%h/apps/jobwatch/.venv/bin/jobwatch --user all run --tier fast
 TimeoutStartSec=15min
 Nice=10

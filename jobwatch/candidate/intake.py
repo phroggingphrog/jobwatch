@@ -500,10 +500,13 @@ def _values(facts, *sections: str) -> list[str]:
 
 def scope_for(person: str, proposal: Proposal, config) -> SearchScope:
     """What discovery may look for: confirmed career focus, else the work history (employment first), then skills."""
+    return _scope_of(person, _reconciled(proposal)[0], config)
+
+
+def _scope_of(person: str, facts: list[ProfileFact], config) -> SearchScope:
     from pipeline.agentic.service import _config
     with users.use(person):
         ceiling = _config(config)["batch_token_ceiling"]
-    facts, _ = _reconciled(proposal)
     basis = _values(facts, "career_focus") or list(dict.fromkeys(_values(facts, "experience") + _values(facts, "skill")))[:_SCOPE_ITEMS]
     return SearchScope(basis=tuple(basis), locations=tuple(_values(facts, "location")),
                        daily_assessments=DAILY_ASSESSMENTS, daily_token_ceiling=ceiling)
@@ -594,6 +597,19 @@ def _finish(person: str, cur: Proposal, pdir: Path, files: dict[str, str]) -> No
                 save_proposal(person, o.model_copy(update={"status": "superseded"}))
 
 
+def _refuse_hand_edits(pdir: Path, recorded: dict) -> None:
+    """Live profile/ files must still match the hashes the current version recorded."""
+    for name, sha in recorded.items():
+        try:
+            live = hashlib.sha256(read_regular_file(pdir / name, MAX_JSON_BYTES)).hexdigest()
+        except FileNotFoundError:
+            continue                                       # removed: nothing of the person's to overwrite
+        except (OSError, ValueError):
+            raise IntakeError("profile_edited_by_hand") from None
+        if live != sha:
+            raise IntakeError("profile_edited_by_hand")    # an unapproved hand edit: never silently overwritten
+
+
 def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest: str,
             actor: Literal["person"], config) -> int:
     """Approve the draft the person was shown. Returns the new version number.
@@ -629,15 +645,7 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         # hand-made files would change the evidence snapshot or be overwritten; adopt_existing brings them in
         recorded = last.get("file_sha256") or {}              # what the last version left in profile/, by hash
         mine = (_PROJECTED + tuple(recorded)) if nums else ()
-        for name, sha in recorded.items():
-            try:
-                live = hashlib.sha256(read_regular_file(pdir / name, MAX_JSON_BYTES)).hexdigest()
-            except FileNotFoundError:
-                continue                                       # removed: nothing of the person's to overwrite
-            except (OSError, ValueError):
-                raise IntakeError("profile_edited_by_hand") from None
-            if live != sha:
-                raise IntakeError("profile_edited_by_hand")    # an unapproved hand edit: never silently overwritten
+        _refuse_hand_edits(pdir, recorded)
         if any(os.path.lexists(pdir / name) for name in dict.fromkeys(_ALLOWED + _PROJECTED) if name not in mine):
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
@@ -722,3 +730,62 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
             shutil.rmtree(stage, ignore_errors=True)
             raise
     return 1
+
+
+def discovery_scope(person: str) -> SearchScope | None:
+    """The scope discovery may run within: only when the CURRENT version was confirmed with its scope shown
+    (scope + matching scope_digest). No version, an adopted version, or anything unreadable authorises nothing."""
+    try:
+        cur = current_version(person)
+        if not cur or not cur.get("scope") or not cur.get("scope_digest"):
+            return None
+        scope = SearchScope.model_validate(cur["scope"], strict=False)
+        return scope if _scope_digest(scope) == cur["scope_digest"] else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _current_for_scope(person: str) -> dict:
+    cur = current_version(person)
+    if cur is None:
+        raise IntakeError("adopt_first")
+    return cur
+
+
+def scope_confirmation(person: str, config) -> dict:
+    """What turning discovery on for the current version would allow: the scope and the tokens to send back."""
+    cur = _current_for_scope(person)
+    scope = _scope_of(person, [ProfileFact.model_validate(f) for f in cur.get("facts", [])], config)
+    return {"base_version": cur["version"], "scope": scope, "scope_digest": _scope_digest(scope),
+            "authorises": list(AUTHORISES), "does_not_authorise": list(DOES_NOT_AUTHORISE)}
+
+
+def confirm_scope(person: str, *, base_version: int, scope_digest: str, actor: Literal["person"], config) -> int:
+    """Approve the shown scope for the current version without changing its facts or files (an adopted version has
+    no facts, so reprojecting would wipe hand-made files). Writes the next version as an exact copy plus scope."""
+    if actor != "person":
+        raise IntakeError("person_required")
+    with users.use(person), _locked(person, "versions.lock"):
+        cur = _current_for_scope(person)
+        if cur["version"] != base_version:
+            raise IntakeError("proposal_changed")
+        _refuse_hand_edits(apaths.profile_dir(), cur.get("file_sha256") or {})
+        scope = _scope_of(person, [ProfileFact.model_validate(f) for f in cur.get("facts", [])], config)
+        if _scope_digest(scope) != scope_digest:
+            raise IntakeError("scope_changed")
+        if cur.get("scope_digest") == scope_digest:
+            return cur["version"]                           # already confirmed with exactly this scope
+        n = cur["version"] + 1
+        root = ensure_dir(_versions_root(person))
+        stage = root / (".staging-" + secrets.token_hex(8))
+        try:
+            shutil.copytree(root / str(cur["version"]), stage, symlinks=True)    # files, snapshot and hashes unchanged
+            approved = {**cur, "version": n, "base_version": cur["version"], "scope": scope.model_dump(mode="json"),
+                        "scope_digest": scope_digest, "scope_confirmed_only": True, "actor": "person",
+                        "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
+            os.rename(stage, root / str(n))
+        except BaseException:
+            shutil.rmtree(stage, ignore_errors=True)
+            raise
+    return n

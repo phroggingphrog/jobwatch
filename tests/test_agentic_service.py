@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import make_config
+from conftest import confirm_discovery, make_config
 from jobwatch import adtext, db, ledger
 from jobwatch.candidate.evidence import snapshot_evidence
 from jobwatch.llm import LLM
@@ -122,6 +122,7 @@ def world(tmp_path, monkeypatch):
     (profile / 'career_ops_profile.md').write_text('Pursue entry level accounting and finance practice in Melbourne.')
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(root)); monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(profile))
     config = make_config(tmp_path=tmp_path, settings={'pipeline': {'agentic': {'enabled': True, 'job_token_ceiling': 250_000}}})
+    confirm_discovery(config)       # discovery runs only for a person whose current profile was confirmed with its scope
     conn = db.connect(config.db_path)
     bundle = snapshot_evidence(profile)
 
@@ -954,3 +955,107 @@ def test_collection_never_drafts_documents(world, monkeypatch):
     monkeypatch.setattr(service, 'run_agentic_job', lambda pid, cfg, conn, **kw: ops.append(kw.get('operation')) or Stage.READY)
     service.after_collect(conn, config, max_seconds=600)    # >= MODEL_PASS_SECONDS or the batch defers everything
     assert ops and set(ops) == {'evaluate'}
+
+
+# --- discovery starts on confirmation, within the scope and budget shown
+def _reset_profile(users_mod):
+    import shutil
+    shutil.rmtree(users_mod.user_dir() / 'profile-versions', ignore_errors=True)
+
+
+def _seed(conn, add, n):
+    from pipeline import store
+    store.ensure(conn)
+    for pid in range(1, n + 1):
+        add(pid); store.admit(conn, pid, str(pid), {}, Stage.INGESTED)
+    conn.commit()
+
+
+def _finished(conn, posting_id, at, batch_id='b-old'):
+    AgenticStoreEnsure(conn)
+    conn.execute("INSERT INTO agentic_activity(run_key,posting_id,batch_id,event,at,reason) VALUES(?,?,?,?,?,?)",
+                 (f'k{posting_id}', posting_id, batch_id, 'finished', at, 'evaluation_complete')); conn.commit()
+
+
+def AgenticStoreEnsure(conn):
+    from pipeline.agentic.store import AgenticStore
+    AgenticStore(conn).ensure()
+
+
+def _stub_batch(monkeypatch, selected):
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
+    monkeypatch.setattr(service, 'agentic_batch_run', lambda ids, *a, **k: selected.extend(ids) or {'processed': len(ids)})
+
+
+def test_no_discovery_without_confirmed_profile(world, monkeypatch):
+    from jobwatch import users
+    from pipeline.agentic import service
+    from pipeline.nodes import ingest
+    conn, config, bundle, add = world
+    _reset_profile(users)
+    monkeypatch.setattr(ingest, 'run', lambda *a, **k: pytest.fail('collection ran without a confirmed profile'))
+    assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_profile'}
+
+
+def test_adopted_profile_alone_authorises_no_discovery(world, monkeypatch):
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import service
+    conn, config, bundle, add = world
+    _reset_profile(users)
+    intake.adopt_existing(users.current(), actor='person')
+    assert intake.discovery_scope(users.current()) is None
+    assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_profile'}
+
+
+def test_daily_assessment_cap_from_scope(world, monkeypatch):
+    import time
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import service
+    conn, config, bundle, add = world
+    _reset_profile(users); monkeypatch.setattr(intake, 'DAILY_ASSESSMENTS', 3); confirm_discovery(config)
+    _seed(conn, add, 6)
+    _finished(conn, 90, time.time())                # one job already evaluated today
+    selected = []
+    _stub_batch(monkeypatch, selected)
+    out = service.after_collect(conn, config, max_seconds=600)
+    assert len(selected) == 2                       # 3 a day minus the 1 already done
+    assert len(out['daily_budget_deferred']) == 4 and out['processed'] == 2
+
+
+def test_daily_token_ceiling_defers_the_rest(world, monkeypatch):
+    import time
+    from jobwatch import users
+    from pipeline.agentic import service
+    conn, config, bundle, add = world
+    config.settings['pipeline']['agentic']['batch_token_ceiling'] = 5000
+    _reset_profile(users); confirm_discovery(config)
+    _seed(conn, add, 3)
+    AgenticStoreEnsure(conn)
+    conn.execute("INSERT INTO agentic_batches(batch_id,token_ceiling,charged,deadline) VALUES('b-old',5000,5000,?)", (time.time(),)); conn.commit()
+    _finished(conn, 90, time.time())
+    selected = []
+    _stub_batch(monkeypatch, selected)
+    assert service.after_collect(conn, config, max_seconds=600) == {'deferred': 'daily_budget'}
+    assert selected == []
+
+
+def test_deferred_job_is_evaluated_next_day(world, monkeypatch):
+    import time
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import service
+    conn, config, bundle, add = world
+    _reset_profile(users); monkeypatch.setattr(intake, 'DAILY_ASSESSMENTS', 1); confirm_discovery(config)
+    _seed(conn, add, 2)
+    now = time.time()
+    _finished(conn, 90, now)
+    selected = []
+    _stub_batch(monkeypatch, selected)
+    assert service.after_collect(conn, config, max_seconds=600) == {'deferred': 'daily_budget'}
+    monkeypatch.setattr(service, '_now', lambda: now + 36 * 3600)
+    service.after_collect(conn, config, max_seconds=600)
+    assert selected == [1]                           # still queued, untouched, and now within the new day's cap

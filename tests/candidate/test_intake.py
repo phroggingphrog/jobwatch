@@ -729,3 +729,42 @@ def test_adopted_version_is_listed_and_symlinks_are_not_adopted(person):
     hand_made()
     intake.adopt_existing(person, actor='person')
     assert intake.versions(person)[0]['version'] == 1 and intake.current_version(person)['adopted_from_files'] is True
+
+
+# ----------------------------------------------------------------------------- turning discovery on for an adopted person
+def test_adopted_version_authorises_no_discovery_until_scope_is_confirmed(person):
+    hand_made()
+    assert intake.discovery_scope(person) is None                          # no version
+    intake.adopt_existing(person, actor='person')
+    assert intake.discovery_scope(person) is None                          # adopted: no scope
+    before = {n: (apaths.profile_dir() / n).read_bytes() for n in HAND}
+    shown = intake.scope_confirmation(person, CONFIG)
+    assert shown['base_version'] == 1 and shown['scope'].daily_token_ceiling == 1234
+    n = intake.confirm_scope(person, base_version=1, scope_digest=shown['scope_digest'], actor='person', config=CONFIG)
+    assert n == 2 and intake.discovery_scope(person) == shown['scope']
+    assert {k: (apaths.profile_dir() / k).read_bytes() for k in HAND} == before          # profile/ untouched
+    one, two = (json.loads((vdir(person, i) / 'approved.json').read_text()) for i in (1, 2))
+    for key in ('facts', 'file_sha256', 'evidence_bundle_hash', 'adopted_files'):
+        assert one[key] == two[key]
+    assert two['scope_digest'] == shown['scope_digest'] and two['base_version'] == 1 and two['actor'] == 'person'
+    for name, raw in before.items():
+        assert (vdir(person, 2) / name).read_bytes() == raw and (vdir(person, 2) / 'evidence' / name).read_bytes() == raw
+    assert intake.confirm_scope(person, base_version=2, scope_digest=shown['scope_digest'], actor='person', config=CONFIG) == 2
+
+
+def test_confirm_scope_refusals(person):
+    def refuse(code, **kw):
+        args = {'base_version': 1, 'scope_digest': digest, 'actor': 'person', 'config': CONFIG, **kw}
+        with pytest.raises(intake.IntakeError) as err:
+            intake.confirm_scope(person, **args)
+        assert err.value.code == code
+    digest = '0' * 64
+    refuse('adopt_first')
+    hand_made(); intake.adopt_existing(person, actor='person')
+    digest = intake.scope_confirmation(person, CONFIG)['scope_digest']
+    refuse('proposal_changed', base_version=3)
+    refuse('scope_changed', scope_digest='0' * 64)
+    refuse('person_required', actor='agent')
+    (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Edited\n')
+    refuse('profile_edited_by_hand')
+    assert intake.discovery_scope(person) is None and intake.current_version(person)['version'] == 1

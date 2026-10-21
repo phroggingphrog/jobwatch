@@ -68,6 +68,17 @@ def main(argv: list[str] | None = None) -> int:
     return rc
 
 
+def _discovery_on(cmd: str) -> bool:
+    """Discovery (collection and assessment) runs only for a person whose current profile was confirmed with its scope."""
+    from . import users
+    from .candidate import intake
+    who = users.current()
+    if intake.discovery_scope(who) is not None:
+        return True
+    print(f"{cmd}: skipped {who}: no_confirmed_profile (confirm the profile and its scope first)")
+    return False
+
+
 def _main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -128,6 +139,8 @@ def _main(argv: list[str]) -> int:
             problems += check_code()
         print("\n".join("- " + p for p in problems) if problems else "Profile and settings: all lines known and well formed.")
         return 1 if problems else 0
+    if args.cmd in ("read", "run") and not _discovery_on(args.cmd):
+        return 0
     if args.cmd == "read":
         # 2026-10-19 owner: "make the reader read more ads per run". The collect runs leave the reader ~4 min, so it
         # read 2-5 ads and skipped ~17 each time; this run is the reader alone with the whole 13 min.

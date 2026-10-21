@@ -84,6 +84,8 @@ documents, contacts an employer or submits; confirmation only starts discovery w
 | `POST /api/agent/profile/proposals/{id}/answers` | interact | `{expected_revision,question_id,text}`. |
 | `GET /api/agent/profile/proposals/{id}/confirmation` | read | `proposal_digest`, `scope`, `scope_digest`, what it does and does not authorise. |
 | `POST /api/agent/profile/proposals/{id}/confirm` | approve | `{proposal_digest,scope_digest}` exactly as shown -> 201 `{version}`. Model text is never approval. |
+| `GET /api/agent/profile/scope-confirmation` | read | For the current version (e.g. an adopted one with no scope): `base_version`, `scope`, `scope_digest`, what it does and does not authorise. `adopt_first` if there is no version. |
+| `POST /api/agent/profile/scope-confirm` | approve | `{base_version,scope_digest}` exactly as shown -> 201 `{version}`. Copies the current version's facts and files unchanged (never rewrites `profile/`) and adds the scope; refuses `proposal_changed`, `scope_changed`, `profile_edited_by_hand`, `adopt_first`. |
 | `GET /api/agent/profile/`, `GET /api/agent/profile/versions` | read | Current approved version (`{"version":null}` if none); version list. |
 
 Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_first`, `proposal_not_draft`,
@@ -91,6 +93,14 @@ Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_f
 `no_extractable_text`, `invalid_edit`, `parse_failed`, `unreadable_document`, `nothing_to_adopt`. 404:
 `upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
 403: `person_required`. 409 also `proposal_in_progress` (one paid parse per person at a time; 180 s deadline). Capabilities include a `profile` object with the upload limits.
+
+Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
+confirmed scope (`approved.json` has `scope` and `scope_digest`). A version made by `jobwatch profile adopt` has none, so
+it authorises nothing until `scope-confirm` (or `jobwatch --user <name> profile confirm-scope`, which prints the scope,
+`base_version` and digest, then confirms with `--base-version N --scope-digest D`). `jobwatch run` and `read` skip a person
+without one (`--user all` still runs everyone else) and `after_collect` returns `{"skipped":"no_confirmed_profile"}`.
+Each person-local day it evaluates at most `scope.daily_assessments` jobs and stops once the day's charged tokens reach
+`scope.daily_token_ceiling`; the rest stay queued for the next day (`{"deferred":"daily_budget"}`).
 
 ## Runtime and recovery
 

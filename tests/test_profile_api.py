@@ -195,3 +195,23 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
         assert first['r'].status_code == 201 and seen[0] is not None           # deadline passed to the LLM
         again = c.post(P + '/proposals', json={'upload_ids': [ids[RUN]], 'base_version': None}, headers=h())
         assert again.status_code == 201                                       # slot released in finally
+
+
+def test_scope_confirmation_turns_discovery_on_over_http(env):
+    from jobwatch.apply import paths as apaths
+    with users.use('fixture-a'):
+        apaths.profile_dir().mkdir(parents=True, exist_ok=True)
+        (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Synthetic\n')
+        (apaths.profile_dir() / 'master_resume.md').write_text('# Synthetic\n\nAccounts Assistant, 2021\n')
+        intake.adopt_existing('fixture-a', actor='person')
+    c = env
+    shown = c.get(P + '/scope-confirmation', headers=h()).json()
+    assert shown['base_version'] == 1 and shown['does_not_authorise']
+    body = {'base_version': 1, 'scope_digest': shown['scope_digest']}
+    assert c.post(P + '/scope-confirm', json=body, headers=h(RUN)).status_code == 403
+    assert c.post(P + '/scope-confirm', json={**body, 'scope_digest': '0' * 64}, headers=h(APPROVE)).json() == {'error': 'scope_changed'}
+    assert intake.discovery_scope('fixture-a') is None
+    r = c.post(P + '/scope-confirm', json=body, headers=h(APPROVE))
+    assert r.status_code == 201 and r.json() == {'version': 2}
+    assert intake.discovery_scope('fixture-a') is not None
+    assert c.get(P + '/scope-confirmation', headers=h(OTHER)).json() == {'error': 'adopt_first'}

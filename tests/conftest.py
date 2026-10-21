@@ -153,3 +153,23 @@ def _person_profile(tmp_path_factory, monkeypatch):
         "customer_service", "hospitality", "retail", "shop_floor", "engineering", "health", "education",
         "trades", "it", "sales_marketing", "other"]}}))
     monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(d))
+
+
+def confirm_discovery(config, person=None):
+    """Synthetic: turn discovery on for a person through the public intake API (adopt hand-made files, then confirm the
+    shown scope). Writes a minimal profile.yaml only when profile/ is empty."""
+    from jobwatch import users
+    from jobwatch.apply import paths as apaths
+    from jobwatch.candidate import intake
+    person = person or users.current()
+    with users.use(person):
+        pdir = apaths.profile_dir()
+        pdir.mkdir(parents=True, exist_ok=True)
+        if not any((pdir / n).exists() for n in ("cv.md", "master_resume.md")):
+            (pdir / "profile.yaml").write_text("candidate:\n  name: Synthetic\n")
+            (pdir / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")
+        if intake.current_version(person) is None:
+            intake.adopt_existing(person, actor="person")
+        shown = intake.scope_confirmation(person, config)
+        return intake.confirm_scope(person, base_version=shown["base_version"], scope_digest=shown["scope_digest"],
+                                    actor="person", config=config)

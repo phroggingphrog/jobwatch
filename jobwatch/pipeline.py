@@ -172,7 +172,11 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                 from pipeline.agentic import service as agentic
                 from .execution_mode import effective_mode
                 mode = effective_mode(config)
-                if mode == 'agentic':
+                from . import users
+                from .candidate import intake
+                if intake.discovery_scope(users.current()) is None:    # no tier assesses without a confirmed scope
+                    ai = {'skipped': 'no_confirmed_profile'}
+                elif mode == 'agentic':
                     ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier), collector_run_id=run_id)}
                 elif mode == 'pipeline':
                     ai = {"pipeline": graph.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))}
