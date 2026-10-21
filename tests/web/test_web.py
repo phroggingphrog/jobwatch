@@ -223,3 +223,21 @@ def test_draft_worker_runs_as_the_person_who_started_it(client, monkeypatch, tmp
     assert act.draft_job(pid) is None                  # the owner never sees the friend's draft job
     assert seen["user"] == "friend"
     assert seen["db"] == str(users.db_path("friend"))
+
+
+def test_board_times_use_the_persons_timezone(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+    from jobwatch import place
+    from jobwatch.apply import render
+    from jobwatch.web import queries as q
+    monkeypatch.setattr(place, "_candidate", render._candidate)       # the real profile reader, not the Melbourne stub
+    pdir = tmp_path / "profile"
+    pdir.mkdir()
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(pdir))
+    (pdir / "profile.yaml").write_text("candidate:\n  timezone: Australia/Perth\n")
+    noon = datetime(2026, 1, 15, 4, 0, tzinfo=UTC)                 # 12:00 in Perth, 15:00 in Melbourne
+    assert q.absolute(noon).endswith("12:00 PM AWST")
+    (pdir / "profile.yaml").write_text("candidate:\n  timezone: Australia/Melbourne\n")
+    import os, time
+    os.utime(pdir / "profile.yaml", ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))   # a profile edit is picked up
+    assert q.absolute(noon).endswith("3:00 PM AEDT")

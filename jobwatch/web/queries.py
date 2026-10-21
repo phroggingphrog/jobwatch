@@ -4,6 +4,7 @@ little Python; no writes here except the UI-only marks (web_views, saved_searche
 in `state`)."""
 from __future__ import annotations
 
+import functools
 import html
 import json
 import re
@@ -16,7 +17,25 @@ from zoneinfo import ZoneInfo
 
 from .. import db as dbm
 
-MEL = ZoneInfo("Australia/Melbourne")
+
+def _tz() -> ZoneInfo:
+    """The signed-in person's timezone (place.person_timezone), cached per person + profile.yaml version: absolute()
+    runs once per board row and the lookup reads the profile."""
+    from jobwatch import users
+    from jobwatch.apply.paths import profile_dir
+    try:
+        mtime = (profile_dir() / "profile.yaml").stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    return _tz_for(users.current(), str(profile_dir()), mtime)
+
+
+@functools.lru_cache(maxsize=64)
+def _tz_for(person: str, profile: str, mtime: int) -> ZoneInfo:
+    from jobwatch.place import person_timezone
+    return person_timezone()
+
+
 PAGE_SIZE = 30
 TABLE_PAGE_SIZE = 50
 
@@ -209,7 +228,7 @@ def absolute(value) -> str:
     dt = value if isinstance(value, datetime) else parse_ts(value)
     if dt is None:
         return ""
-    return dt.astimezone(MEL).strftime("%a %-d %b %Y, %-I:%M %p %Z")
+    return dt.astimezone(_tz()).strftime("%a %-d %b %Y, %-I:%M %p %Z")
 
 
 def days_since(value, now=None) -> int | None:
@@ -1448,13 +1467,14 @@ def nav_counts(conn) -> dict:
 def insights(conn, reg: Registry, now: datetime | None = None) -> dict:
     now = now or datetime.now(UTC)
     since30 = dbm.ts(now - timedelta(days=30))
-    # new matches per Melbourne day, last 30 days
+    # new matches per day in the person's timezone, last 30 days
+    tz = _tz()
     per_day = Counter()
     for (at,) in conn.execute("SELECT matched_at FROM matches WHERE matched_at>=?", (since30,)):
         dt = parse_ts(at)
         if dt:
-            per_day[dt.astimezone(MEL).date()] += 1
-    today = now.astimezone(MEL).date()
+            per_day[dt.astimezone(tz).date()] += 1
+    today = now.astimezone(tz).date()
     days = [(today - timedelta(days=i)) for i in range(29, -1, -1)]
     series = [(d, per_day.get(d, 0)) for d in days]
     by_arm = conn.execute("SELECT arm, arm_tier, COUNT(*) FROM matches GROUP BY arm ORDER BY 3 DESC").fetchall()
