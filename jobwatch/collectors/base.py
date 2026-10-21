@@ -30,6 +30,7 @@ class CollectorContext:
     reddit_posts: list[dict] = field(default_factory=list)   # filled by the reddit collector
     origins: set[str] = field(default_factory=set)           # employers/feeds actually fetched
     raw_count: int = 0                                       # rows seen before the AU gate
+    collected: list = field(default_factory=list)            # postings gathered so far: kept if the collector crashes
 
     def count_raw(self, n: int) -> None:
         self.raw_count += int(n or 0)
@@ -59,6 +60,7 @@ def run_per_employer(cfg: CollectorContext, provider: str,
                      fetch_one: Callable[[CollectorContext, dict], Iterable[Posting]]) -> list[Posting]:
     """Iterate the enabled employers for one provider; one failure never stops the rest."""
     results: list[Posting] = []
+    cfg.collected = results                      # shared with the context, so a later crash does not lose these
     for employer in cfg.employers_for(provider):
         if cfg.full(results):
             break

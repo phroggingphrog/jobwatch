@@ -123,6 +123,29 @@ def test_health_counts_consecutive_failures_and_recovers(tmp_path, fake):
     assert tuple(row) == (0, "ok")
 
 
+def test_a_collector_crash_keeps_what_it_had_already_collected(tmp_path, monkeypatch):
+    """Employer A is read, then employer B raises an error the per-employer catch does not cover: A's jobs are kept."""
+    from jobwatch.collectors.base import run_per_employer
+    good = postings()[:1]
+
+    def fetch_one(cfg, employer):
+        if employer["name"] == "B":
+            raise RuntimeError("unexpected shape")
+        return [Posting(**p.to_dict()) for p in good]
+
+    def collect(cfg, since=None):
+        cfg.employers_for = lambda provider: [{"name": "A"}, {"name": "B"}]
+        return run_per_employer(cfg, "fake", fetch_one)
+    module = types.SimpleNamespace(NAME="fake", collect=collect)
+    real_get = registry.get
+    monkeypatch.setattr(registry, "get", lambda name: module if name == "fake" else real_get(name))
+    monkeypatch.setattr(registry, "COLLECTORS", registry.COLLECTORS + ["fake"])
+    s = pipeline.run(cfg(tmp_path), "fast", dry_run=True, printer=lambda *_: None, now=NOON)
+    c = s["collectors"][0]
+    assert c["status"] != "ok" and any("RuntimeError" in e for e in c["errors"])
+    assert c["au_kept"] == 1 and c["new"] == 1          # employer A's posting was stored, not thrown away
+
+
 def test_only_and_unknown_collector(tmp_path):
     config = cfg(tmp_path)
     with pytest.raises(KeyError):
