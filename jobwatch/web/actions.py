@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import contextvars
+import functools
 import importlib
 import json
 import logging
@@ -158,7 +159,7 @@ def start_draft(conn, db_path, posting_id: int, *, config=None) -> dict:
             _JOBS[key].update(res)
 
     ctx = contextvars.copy_context()        # the worker runs as the person who pressed Draft (their DB, profile, drafts)
-    threading.Thread(target=ctx.run, args=(run,), name=f"draft-{posting_id}", daemon=True).start()
+    threading.Thread(target=functools.partial(ctx.run, run), name=f"draft-{posting_id}", daemon=True).start()
     return dict(job)
 
 
