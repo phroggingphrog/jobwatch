@@ -8,9 +8,14 @@
 
 **Tech Stack:** Python 3.12, FastAPI, pydantic v2 (`StrictFrozen` from `pipeline/agentic/contracts.py`), SQLite (`jobwatch/db.py` migration), pytest with synthetic transports (`tests/test_agentic_service.py` `SyntheticGateway`, `world`).
 
-**Spec:** [agreed backend brief](../specs/2026-10-21-agreed-backend-brief.md) (section A.3 "Preference ranking", "Cold start"; A.4 "Interaction and automation"; A.5 "feedback collection and selected-job document preparation"), [roadmap](2026-10-21-backend-roadmap.md) row 5, [cross-plan contract](2026-10-21-cross-plan-contract.md) "Phase 6 — Plan 5". Code references: [code map](reference/2026-10-21-codemap.md) section 5 and Shared (line numbers as of `ce9e342`; re-verify with grep, Plans 2–4 move them).
+**Spec:** [agreed backend brief](../specs/2026-10-21-agreed-backend-brief.md) (section A.3 "Preference ranking", "Cold start"; A.4 "Interaction and automation"; A.5 "feedback collection and selected-job document preparation"), [roadmap](2026-10-21-backend-roadmap.md) row 5, [cross-plan contract](2026-10-21-cross-plan-contract.md) "Phase 6 — Plan 5" and "Reconciled decisions" (binding; applied here, see "Contract reconciliation" at the end). Code references: [code map](reference/2026-10-21-codemap.md) section 5 and Shared (line numbers as of `ce9e342`; re-verify with grep, Plans 2–4 move them).
 
-**Depends on (merged before this plan runs):** Plan 2 (`jobwatch/candidate/policy.py`: `ExclusionRule`, `DecisionPolicy`, `policy_for`), Plan 3 (discovery pre-filter), Plan 4 (`ShortlistEntry`, tables `shortlist_entries` / `shortlist_impressions`, `build_shortlist`, `GET /api/agent/shortlist[/{posting_id}]`, `PreferenceStore.status()` gating of `ordering`). Names below marked "Plan N" are the contract's; locate them with grep before editing (`grep -rn "def build_shortlist\|class ExclusionRule\|def policy_for" jobwatch pipeline`).
+**Depends on (merged before this plan runs), with the exact names this plan consumes:**
+- Plan 2: `jobwatch/candidate/policy.py` (`ExclusionRule`, `DecisionPolicy`, `policy_for(person, *, approved=None) -> DecisionPolicy | None`, `exclusion_hit(policy, *, family: str | None, company: str, title: str, location_text: str, remote: bool, hours: str) -> ExclusionRule | None`; an `exclusion` fact whose value is `{"kind", "value"}` becomes an `ExclusionRule` with `source_fact_id`), `pipeline/agentic/service.py` (`decision_policy_mode(config) -> Literal['legacy', 'profile']`, `decision_policy_for(config)`, `gate_current(...)`).
+- Plan 3: `pipeline/agentic/discovery.py` (`enforce_exclusions(conn, config, *, person=None) -> list[int]`, a no-op unless the mode is `profile`).
+- Plan 4: `pipeline/agentic/shortlist.py` (`build_shortlist(conn, config) -> list[ShortlistEntry]`, `latest_entries(conn) -> list[ShortlistEntry]`, `load_entry(conn, posting_id) -> ShortlistEntry | None`), `pipeline/agentic/ranking.py` (`ShortlistEntry` with `entry_id`, `posting_id`, `run_key`, `profile_version`, `unresolved`), tables `shortlist_entries` / `shortlist_impressions`, `GET /api/agent/shortlist[/{posting_id}]`, `jobwatch/preference_service.py` (`pool(conn, config, *, statuses=('eligible',))`, `record_pick`), `PreferenceStore.status()` gating of `ordering`.
+
+Locate them with grep before editing (`grep -rn "def build_shortlist\|def latest_entries\|def enforce_exclusions\|class ExclusionRule\|def policy_for\|def exclusion_hit\|def decision_policy_mode" jobwatch pipeline`); if one is missing, stop and report the failed precondition (EXECUTING.md rule 1).
 
 `PY` below means `<venv>/bin/python`, a Python 3.12 virtualenv outside the repo (EXECUTING.md rule 3).
 
@@ -27,7 +32,8 @@
 - No service, timer or deployment is activated. No application is submitted and no employer is contacted.
 - Model output is never recorded as a person's choice or approval: every writer takes `actor: Literal['person']` fixed by the route, reachable only with `interact`/`approve` scope (never the `run` token the agent holds). No chat tool is added; skill files are untouched (`skill_version()` stays stable).
 - Schema changes are additive: new tables in the next `jobwatch/db.py` migration (not also lazily); no existing stored model or column changes; approved-version JSON gains only optional keys.
-- Run-key / re-evaluation rule (contract rule 1): nothing here may change `service._run_key` inputs. Confirming a rule must not re-key any posting (Task 5 test); if it does, follow the fallback in Task 5, never ship a silent paid re-run (jobs × three model roles).
+- Run-key / re-evaluation rule (contract rule 1 and decision 4): nothing here may change `service._run_key` inputs. Confirming a rule must not re-key any posting (Task 5 regression test). `DecisionPolicy` fields never enter `RunKey.config_hash` (Plan 2 tests it); if this plan's test nevertheless fails, Plan 2's contract was broken: stop and report it, never ship a silent paid re-run (jobs × three model roles).
+- Exclusion rules are enforced only when `pipeline.agentic.decision_policy` is `profile` (contract decision 3). In `legacy` mode a confirmed rule is stored and listed but the gate, the discovery pre-filter and the shortlist do not apply it; the confirmation response says so (`enforcement: 'inactive_legacy_gate'`).
 - Preference-file rule (contract rule 5): do not edit `jobwatch/preferences/{features,store,model}.py`, `fit_choice_model.R`, `choice_model.jags`. Use them through their public functions only.
 - Statistical operations stay explicit and versioned: expected information gain is a pure function of a stored fit; the cold-start rule is written down in the ADR, not fitted.
 
@@ -50,7 +56,7 @@
 | `jobwatch/candidate/rules.py` | Task 4: rule proposals, digest-bound confirmation, amendment versions. |
 | `jobwatch/candidate/intake.py`, `projection.py`, `pipeline/agentic/profile_api.py` | Tasks 4–5: new codes, carry-forward of rules, `/profile/rules` routes. |
 | `pipeline/agentic/selection.py`, `pipeline/agentic/api.py` | Task 6: binding, worker, `process()` branch. |
-| Plan 4's shortlist builder | Task 2: skip rejected postings. |
+| `pipeline/agentic/shortlist.py` (Plan 4) | Task 2: `build_shortlist` skips rejected postings (lazy import of `feedback`, which imports `shortlist`). |
 | `tests/test_feedback.py`, `test_feedback_api.py`, `test_rules_api.py`, `test_selection.py`, `test_feedback_prompts.py`, `tests/candidate/test_rules.py` | One per task area. |
 
 ---
@@ -77,21 +83,21 @@
 **Files:**
 - Modify: `jobwatch/db.py` (append one entry to `MIGRATIONS`, the next index after the last at execution time)
 - Create: `pipeline/agentic/feedback.py`
-- Modify: Plan 4's shortlist builder (`build_shortlist`): skip `feedback.rejected_posting_ids(conn)`
+- Modify: `pipeline/agentic/shortlist.py` (Plan 4) `build_shortlist`: skip `feedback.rejected_posting_ids(conn)` (import `feedback` inside the function; `feedback` imports `shortlist` at module level)
 - Test: `tests/test_feedback.py`
 
 **Interfaces:**
-- Consumes: Plan 4 `shortlist_entries(entry_id, posting_id, run_key, profile_version, created_at, …)`; `persistence.latest_result`.
+- Consumes: Plan 4 `shortlist.load_entry(conn, posting_id) -> ShortlistEntry | None` (fields `entry_id`, `run_key`, `profile_version`), `shortlist.latest_entries(conn)`, `shortlist.build_shortlist(conn, config)`; `persistence.latest_result`.
 - Produces (all in `feedback.py`):
   - `REASONS_VERSION = 'rejection-reasons-v1'`; `class Reason(StrictFrozen)`: `code, label: str`, `meaning: Literal['preference','eligibility','data_quality','neutral','unspecified']`, `rule_kind: Literal['family','employer','location','work_type'] | None`, `text_required: bool = False`.
   - `REJECTION_REASONS: dict[str, Reason]` with exactly: `not_this_kind_of_work` (preference, family), `not_this_employer` (preference, employer), `location_unsuitable` (preference, location), `hours_or_work_type` (preference, work_type), `pay_too_low` (preference), `level_too_high` (preference), `level_too_low` (preference), `seems_ineligible_for_me` (eligibility), `duplicate_or_already_seen` (neutral), `ad_looks_wrong` (data_quality), `other` (unspecified, `text_required=True`).
   - `class FeedbackError(ValueError)` with `.code` in `CODES`; `STATUS: dict[str,int]` = `person_required` 403, `invalid_reason` 422, `reason_text_required` 422, `invalid_request` 422, `posting_not_shortlisted` 404, `feedback_conflict` 409, `prompt_not_found` 404, `prompt_closed` 409, `comparison_stale` 409, `selection_changed` 409.
   - `class FeedbackEvent(StrictFrozen)`: `id: int, posting_id: int | None, entry_id: str | None, kind, reason_code: str | None, reason_text: str, meaning: str | None, actor: Literal['person'], source: Literal['api'], run_key: str | None, profile_version: int | None, request_id: str, prompt_id: str | None, detail: dict, created_at: str`.
   - `connection(config)` context manager: `jobwatch.db.connect(chat.job_database(config))` (migrates), closed on exit.
-  - `record_rejection(conn, person, posting_id: int, *, reason_code: str, reason_text: str, request_id: str, actor: str, source: str = 'api') -> FeedbackEvent`; `record_selection(conn, person, posting_id, *, request_id, actor, detail) -> FeedbackEvent`; `record_exclusion(conn, person, *, rule_id, kind, value, request_id, actor, source_event_id) -> FeedbackEvent`. Every recorder raises `FeedbackError('person_required')` unless `actor == 'person'`, resolves `entry_id/run_key/profile_version` from the newest `shortlist_entries` row for the posting (rejection and selection need one: else `posting_not_shortlisted`), is idempotent on `request_id`, and raises `feedback_conflict` when the same `request_id` arrives with different content.
+  - `record_rejection(conn, person, posting_id: int, *, reason_code: str, reason_text: str, request_id: str, actor: str, source: str = 'api') -> FeedbackEvent`; `record_selection(conn, person, posting_id, *, request_id, actor, detail) -> FeedbackEvent`; `record_exclusion(conn, person, *, rule_id, kind, value, request_id, actor, source_event_id) -> FeedbackEvent`. Every recorder raises `FeedbackError('person_required')` unless `actor == 'person'`, resolves `entry_id/run_key/profile_version` from `shortlist.load_entry(conn, posting_id)`, the posting's entry in the newest shortlist (rejection and selection need one: else `posting_not_shortlisted`), is idempotent on `request_id`, and raises `feedback_conflict` when the same `request_id` arrives with different content.
   - `suggest_rules(conn, posting_id: int, reason_code: str) -> list[dict]` → `[{'kind','value'}]` from the reason's `rule_kind` (employer = `postings.company`, location = `postings.location`, work_type = `postings.work_type`, family = the stored evaluation's `facts.role_family`); empty for any reason without a `rule_kind` or a blank value.
   - `rejected_posting_ids(conn) -> set[int]`; `list_events(conn, *, limit: int = 100) -> list[FeedbackEvent]` newest first.
-  - `_rebuild_shortlist(conn, config)`: the one seam that calls Plan 4's `build_shortlist`.
+  - `_rebuild_shortlist(conn, config) -> list[ShortlistEntry]`: the one seam that calls Plan 4's `shortlist.build_shortlist(conn, config)`.
 - Migration SQL: `feedback_events(id INTEGER PRIMARY KEY AUTOINCREMENT, posting_id INTEGER, entry_id TEXT, kind TEXT NOT NULL CHECK(kind IN ('reject','select','exclude','comparison','answer')), reason_code TEXT, reason_text TEXT NOT NULL DEFAULT '', meaning TEXT, reasons_version TEXT, actor TEXT NOT NULL CHECK(actor='person'), source TEXT NOT NULL, run_key TEXT, profile_version INTEGER, request_id TEXT NOT NULL UNIQUE, prompt_id TEXT, detail_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL)` with `BEFORE UPDATE`/`BEFORE DELETE` triggers `RAISE(ABORT,'immutable')` and an index on `(posting_id, kind)`; and `feedback_prompts(id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('comparison','question')), subject_json TEXT NOT NULL, basis TEXT NOT NULL, expected_gain REAL, set_id TEXT, profile_version INTEGER, created_at TEXT NOT NULL, closed_at TEXT, closed_reason TEXT CHECK(closed_reason IN ('answered','dismissed','stale')))`. No foreign key to `postings` (retention pruning deletes postings; a person's feedback must survive it).
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_feedback.py`. Fixture `shortlisted(world)`: `conn, config, bundle, add = world`; add postings 1–4 (distinct companies, e.g. `add(1, company='Alpha Pty Ltd')`); `agentic_batch_run([1,2,3,4], config, conn, evidence_bundle=bundle, llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']), operation='evaluate')`; `entries = _rebuild_shortlist(conn, config)`. Reuse Plan 4's shortlist fixture if it has one.
@@ -211,6 +217,9 @@ def test_duplicate_rule_is_refused_ignoring_case(confirmed):   # 'rule_exists'
 def test_unconfirmed_or_adopted_profiles_refuse_rules(person):   # no version and adopt_existing-only version -> profile_not_confirmed
 def test_a_later_full_confirmation_keeps_active_rules_and_drops_withdrawn_ones(confirmed, fake_llm):
 def test_a_rule_confirmed_during_an_open_draft_makes_that_draft_stale(confirmed):   # intake.confirm of the draft -> proposal_changed; version count unchanged
+def test_a_confirmed_rule_becomes_an_exclusion_rule_in_the_policy(confirmed):          # contract decision 6, consumed from Plan 2
+    # after confirm_rule(employer 'Acme Pty Ltd'): policy_for(p).exclusions == (ExclusionRule(rule_id='r1:employer', kind='employer', value='Acme Pty Ltd', source_fact_id='r1', actor='person'),)
+    # and 'exclusion:r1' is not among its open_questions
 def test_rules_are_private_to_the_person():   # intake/rules/ under each user_dir; modes 0600/0700; the other person sees none
 ```
   In `test_projection.py`: `test_rule_facts_project_to_not_wanted_text_only` — `project(approved)` with a `family` rule `retail` gives `not_wanted == ['retail']` and `excluded_families == []`.
@@ -221,19 +230,19 @@ def test_rules_are_private_to_the_person():   # intake/rules/ under each user_di
 ### Task 5: Rules API and immediate enforcement
 
 **Files:**
-- Modify: `pipeline/agentic/profile_api.py` (routes below), `pipeline/agentic/feedback.py` (`confirm_rule`), and only where a gap is proven by the tests: Plan 2's `jobwatch/candidate/policy.py` / `pipeline/agentic/gate.py` and Plan 3's pre-filter
+- Modify: `pipeline/agentic/profile_api.py` (routes below), `pipeline/agentic/feedback.py` (`confirm_rule`), and only where a gap is proven by the tests: Plan 2's `jobwatch/candidate/policy.py` / `pipeline/agentic/gate.py` and Plan 3's `pipeline/agentic/discovery.py` pre-filter
 - Test: `tests/test_rules_api.py`
 
 **Interfaces:**
-- Consumes: Task 4; Task 2 `record_exclusion`, `_rebuild_shortlist`; Plan 2 `policy_for(person)`, `ExclusionRule`, `decide(..., policy=...)`; Plan 3 pre-filter; `service.after_collect`.
+- Consumes: Task 4; Task 2 `record_exclusion`, `_rebuild_shortlist`; Plan 2 `policy_for(person)`, `ExclusionRule`, `exclusion_hit(policy, *, family, company, title, location_text, remote, hours)`, `service.decision_policy_mode(config)`, `service.gate_current`; Plan 3 `discovery.enforce_exclusions(conn, config, *, person=None) -> list[int]`; `service.after_collect`.
 - Produces:
   - `POST /api/agent/profile/rules` (scope `interact`) body `{op: 'add'|'withdraw' = 'add', kind?, value?, rule_id?, source_event_id?: int}` → 201 the confirmation dict of Task 4.
   - `GET /api/agent/profile/rules` (scope `read`) → `{'rules': active_rules, 'pending': pending_rules}`.
-  - `POST /api/agent/profile/rules/{rule_proposal_id}/confirm` (scope `approve`) body `{rule_digest}` → 201 `{'version', 'rule_id', 'op', 'shortlist_rebuilt': True}`.
-  - `feedback.confirm_rule(person, config, rule_proposal_id, *, rule_digest, actor) -> dict`: `rules.confirm_rule`, then `record_exclusion` (`request_id = 'rule:' + rule_proposal_id`, so a retry after a crash completes the remaining steps), then `_rebuild_shortlist`. Withdrawals record kind `exclude` with `detail {'op': 'withdraw'}`.
-  - Where Plan 2 has no equivalent, `jobwatch/candidate/policy.py::rule_violation(policy, *, title, company, location, work_type, family) -> ExclusionRule | None`, called by the gate and the pre-filter; if Plan 2 already matches rules, adapt the tests below to its function and add no second matcher.
+  - `POST /api/agent/profile/rules/{rule_proposal_id}/confirm` (scope `approve`) body `{rule_digest}` → 201 `{'version', 'rule_id', 'op', 'shortlist_rebuilt': True, 'enforcement': 'active' | 'inactive_legacy_gate', 'archived_by_prefilter': [posting ids]}` (`enforcement` is `active` when `service.decision_policy_mode(config) == 'profile'`, else `inactive_legacy_gate`).
+  - `feedback.confirm_rule(person, config, rule_proposal_id, *, rule_digest, actor) -> dict`: `rules.confirm_rule`, then `record_exclusion` (`request_id = 'rule:' + rule_proposal_id`, so a retry after a crash completes the remaining steps), then, in `profile` mode, `discovery.enforce_exclusions(conn, config)` (the ids it archived are returned as `archived_by_prefilter`), then `_rebuild_shortlist`. Withdrawals record kind `exclude` with `detail {'op': 'withdraw'}`; the postings the pre-filter archived under a withdrawn rule come back through Plan 3's `reconsider`.
+  - No new matcher: rule matching is Plan 2's `exclusion_hit`, called by the gate (via `gate_current`) and by Plan 3's pre-filter (contract decision 6).
 
-- [ ] **Step 1: Failing tests** in `tests/test_rules_api.py` (fixtures: `shortlisted` of Task 2 plus the HTTP harness of Task 3; a person confirmed with `conftest.confirm_discovery`):
+- [ ] **Step 1: Failing tests** in `tests/test_rules_api.py` (fixtures: `shortlisted` of Task 2 plus the HTTP harness of Task 3, with `pipeline.agentic.decision_policy: profile` in the test config except where a test says `legacy`; a person confirmed with `conftest.confirm_discovery`):
 
 ```python
 def test_rule_flow_over_http(api):   # POST rules -> confirmation; confirm with APPROVE -> 201 version+1; GET /profile/ shows it; GET rules lists it; withdraw flow
@@ -243,21 +252,24 @@ def test_a_rejection_alone_never_excludes(api):   # reject employer 'Alpha' with
 def test_confirmed_rule_removes_matching_shortlist_entries_at_once_without_a_model_call(api):
     # after confirm: GET /shortlist lacks Alpha's postings; spy llm_factory never called; agentic_runs rows unchanged
 def test_confirmed_rule_stops_new_postings_before_any_paid_call(world):
-    # add posting 5 for 'Alpha Pty Ltd'; service.after_collect with a counting transport -> posting 5 archived with the reason
-    # Plan 2 uses for rule exclusions ('policy_excluded' unless Plan 2 named another; use its string), transport saw 0 requests for it
+    # decision_policy 'profile'; add posting 5 for 'Alpha Pty Ltd'; service.after_collect with a counting transport -> posting 5 archived with reason
+    # 'excluded_by_rule' (Plan 3's pre-filter), transport saw 0 requests for it; a posting that reaches the gate instead is archived 'policy_excluded'
+def test_legacy_mode_stores_the_rule_but_says_it_is_not_enforced(api):
+    # decision_policy 'legacy' (default): confirm -> 201 with enforcement 'inactive_legacy_gate', archived_by_prefilter [], GET /shortlist still lists Alpha's postings; active_rules lists the rule
+def test_withdrawing_a_rule_brings_prefiltered_postings_back(world): ...   # profile mode: withdraw -> Plan 3 reconsider moves the 'excluded_by_rule' posting back to 'ingested'
 @pytest.mark.parametrize('rule,posting,blocked', [
     (('employer','Acme'), {'company': 'Acme Pty Ltd'}, True), (('employer','Acme'), {'company': 'Acmeville'}, False),
     (('title_term','sales'), {'title': 'Sales Assistant'}, True), (('title_term','sales'), {'title': 'Salesforce Administrator'}, False),
     (('location','Geelong'), {'location': 'Geelong VIC'}, True), (('location','Geelong'), {'location': 'Melbourne VIC'}, False),
     (('work_type','casual'), {'work_type': 'casual'}, True), (('work_type','casual'), {'work_type': 'FT'}, False),
     (('family','retail'), {'family': 'retail'}, True), (('family','retail'), {'family': 'accounting'}, False)])
-def test_each_rule_kind_matches_as_a_person_would_expect(rule, posting, blocked):   # employer/title: case-insensitive whole words
+def test_each_rule_kind_matches_as_a_person_would_expect(rule, posting, blocked):   # calls policy.exclusion_hit(policy_of(rule fact), family=..., company=..., title=..., location_text=..., remote=..., hours=...); employer/title: case-insensitive whole words; work_type casual maps to hours='casual'
 def test_confirming_a_rule_does_not_change_any_run_key(world):
-    # service._run_key for posting 1 before and after confirm_rule is identical (same bundle, policy_for(p) rebuilt)
+    # service._run_key for posting 1 before and after confirm_rule is identical (same bundle, policy_for(p) rebuilt); the contract's regression test (decision 4)
 ```
 
 - [ ] **Step 2: Run** `PY -m pytest -q -p no:cacheprovider tests/test_rules_api.py` → FAIL.
-- [ ] **Step 3: Implement** the routes and `confirm_rule`. Then run the enforcement tests and close only the gaps they show: (a) a rule kind the gate or the pre-filter does not enforce → add it at that existing seam, using `rule_violation`; (b) shortlist entries survive → fix `build_shortlist` to re-decide stored evaluations under `policy_for(person)` (database only). **Fallback for the run-key test:** if it fails because Plan 2 hashes `profile_version`, `exclusions`, `policy_hash` or `open_questions` into `RunKey.config_hash`, hash the policy through a `model_inputs()` that omits those four fields, written so a policy with no rules hashes byte-identically to today, and make the change apply only when `pipeline.agentic.exclusions_outside_run_key` is true; add that key to `_config()` output **only when true** so the default keeps every run key unchanged. With the flag off, the confirmation response carries `{'reevaluation': {'jobs': N, 'roles_per_job': 3}}` (N = non-archived postings with a stored evaluation) so the cost is shown before the person approves, and the executor records an Owner decision (below). Never merge a version that re-keys silently.
+- [ ] **Step 3: Implement** the routes and `confirm_rule`. Then run the enforcement tests and close only the gaps they show: (a) a rule kind the gate or the pre-filter does not enforce → fix it in Plan 2's `exclusion_hit` or at the existing call seam, never with a second matcher; (b) shortlist entries survive → fix `build_shortlist` to re-decide stored evaluations through `gate_current` with `decision_policy_for(config)` (database only). If the run-key test fails, Plan 2 hashed a `DecisionPolicy` field into `RunKey.config_hash`: that breaks contract decision 4, so stop and report it; do not add a flag or accept a paid re-run.
 - [ ] **Step 4: Run** `tests/test_rules_api.py tests/candidate tests/test_agentic_gate.py tests/test_agentic_service.py tests/test_profile_api.py` → PASS.
 - [ ] **Step 5: Commit** `feat: confirm exclusion rules over the API; gate, discovery and shortlist enforce them at once`.
 
@@ -269,7 +281,7 @@ def test_confirming_a_rule_does_not_change_any_run_key(world):
 - Test: `tests/test_selection.py`
 
 **Interfaces:**
-- Consumes: `chat._approval_binding`, `skill_version`, `job_connection`; `service.snapshot_inventory`, `service.agentic_batch_run`, `service._config`; `execution.require_route`, `APIStore.create_thread/enqueue`; Task 2 `record_selection`; Plan 4 newest `shortlist_entries` row per posting.
+- Consumes: `chat._approval_binding`, `skill_version`, `job_connection`; `service.snapshot_inventory`, `service.agentic_batch_run`, `service._config`; `execution.require_route`, `APIStore.create_thread/enqueue`; Task 2 `record_selection`; Plan 4 `shortlist.load_entry(conn, posting_id)` (the posting's entry in the newest shortlist).
 - Produces:
   - `MAX_SELECTION = 10`; `class SelectionError(ValueError)` with `.code` in `invalid_request` 422, `not_shortlisted` 404, `selection_changed` 409, `agentic_disabled` 409 (add to `feedback.STATUS`).
   - `build_selection(conn, config, posting_ids: list[int], expected_run_keys: dict[str, str]) -> dict` → `{'selection_id': sha256 of posting ids and run keys, 'posting_ids', 'bindings': [binding], 'entries': {str(pid): {'entry_id','run_key'}}}`. Requires `set(map(str, posting_ids)) == set(expected_run_keys)`, 1..`MAX_SELECTION` distinct ids, each with a shortlist entry whose `run_key` equals the expected key, equals the current `snapshot_inventory(...)[0]['run_key']`, and equals `_approval_binding('prepare_application', {'posting_id': pid}, cfg)['run_key']`.
@@ -307,7 +319,7 @@ def test_rejected_job_cannot_be_selected(api):   # reject posting 1, then select
 - Test: `tests/test_feedback_prompts.py`
 
 **Interfaces:**
-- Consumes: `preference_service.pool(conn, config) -> (identity, alternatives)` and `PreferenceStore` (`status`, `list_sets`, `create_set`), `model.transform_features`, `features.family_index, NAMES` (read-only); Plan 2 `policy_for(person).open_questions`; Plan 4 entries' `unresolved`. Two seams for tests: `_pool(conn, config)` and `_preference_store(conn)`.
+- Consumes: `preference_service.pool(conn, config) -> (identity, alternatives)` and `PreferenceStore` (`status`, `list_sets`, `create_set`), `model.transform_features`, `features.family_index, NAMES` (read-only); Plan 2 `policy_for(person).open_questions`; Plan 4 `shortlist.latest_entries(conn)` (each entry's `unresolved`). Two seams for tests: `_pool(conn, config)` and `_preference_store(conn)`.
 - Produces:
   - `PROMPTS_PER_WEEK = 3`, `MAX_OUTSTANDING = 1`, `QUESTION_COOLDOWN_DAYS = 30`; optional override `feedback.prompts_per_week` read from the settings **outside** `service._config()` (0 turns prompts off).
   - `class ComparisonOption(StrictFrozen)`: `posting_id: int, title: str, company: str, entry_id: str | None`. `class Comparison(StrictFrozen)`: `prompt_id: str, set_id: str, options: tuple[ComparisonOption, ...]` (3), `basis: Literal['information_gain','cold_start_disagreement']`, `expected_information_gain: float | None`, `ordering: Literal['provisional','personalised']`, `why: str`, `created_at: str`. `class TargetedQuestion(StrictFrozen)`: `prompt_id, text, source: Literal['open_question','shared_unresolved'], created_at`.
@@ -388,7 +400,7 @@ def test_prompts_make_no_model_call(api):   # spy untouched across the whole flo
 1. **Prompt rate.** Default: one open prompt, at most 3 issued per rolling 7 days, never required (`feedback.prompts_per_week` overrides; 0 disables).
 2. **Answers to targeted questions.** Default: recorded verbatim, no profile change. Making an answer a profile amendment needs a small digest-bound confirmation like rules; owner to say whether to add it.
 3. **Undoing a rejection.** Default: none; a rejection is permanent for that posting (the contract has no undo event kind). Owner to say if an `unreject` kind should be added.
-4. **Re-evaluation on rule confirmation.** Default: expected to cost nothing (rules are gate-level). Only if the Task 5 run-key test fails does the executor add `pipeline.agentic.exclusions_outside_run_key` (default off). Turning it on, or accepting a one-time paid re-run of N jobs × three model roles instead, is the owner's call.
+4. **Rule enforcement needs `pipeline.agentic.decision_policy: profile`.** Default: `legacy`, so a confirmed rule is stored and listed but not applied (the confirmation says `inactive_legacy_gate`). Switching to `profile` is Plan 2's owner decision; it costs no model call and moves no run key.
 5. **Chat parity.** Default: no feedback or selection chat tool (a model-callable writer of choices needs a gated human interrupt like `profile_confirm`); the API is the only writer.
 6. **Real posterior.** The information-gain path is verified only with synthetic fits; no valid owner fit exists in CI (no R/JAGS). Its behaviour on the owner's real fit is unverified until they have 20 train and 5 holdout answered sets.
 
@@ -405,11 +417,17 @@ Revert the merge commit. Left behind, all private to the person and harmless to 
 - Type consistency: `FeedbackEvent`, `Comparison`, `TargetedQuestion`, `Reason` are defined once (Tasks 2, 7) and used unchanged in 3, 5, 6, 8; recorder signatures match their call sites in Tasks 5, 6, 8; rule fact shape is identical in Tasks 4 and 5 and the ADR.
 - Limitations stated: board `hide`/`save` are not feedback events; no chat tools; answers do not change the profile; rejection is permanent; selection is not training data for the choice model; selection-bias correction is Plan 6b's.
 
-## Contract issues
+## Contract reconciliation
 
-1. Plan 2 must build an `ExclusionRule` from every `exclusion` fact whose value is `{"kind": <one of the five kinds>, "value": <text>}`, with `source_fact_id` = the fact id (the contract does not say how rules come from facts); plain-string exclusion facts stay Plan 2's to interpret.
-2. Plan 2 must keep `exclusions`, `profile_version`, `policy_hash` and `open_questions` out of `RunKey.config_hash`; otherwise every confirmed rule or amendment re-keys all postings (paid re-run). Task 5 tests this and carries a flag-gated fallback.
-3. `next_comparison(conn, person)` cannot build the pool without a config; this plan adds an optional third parameter `config=None` (callers of the two-argument form still work).
-4. Plan 4's `build_shortlist` must be database-only (no model call), re-decide stored evaluations under `policy_for(person)`, and expose per posting the newest `shortlist_entries` row with `entry_id`, `run_key`, `profile_version`, `created_at`; this plan adds the rejected-posting skip to it. Its module location is not in the contract (found by grep).
-5. Routes for feedback, selection and prompts live in `pipeline/agentic/feedback_api.py` rather than `shortlist_api.py` (same paths as the contract; module placement only); `/feedback/next`, `/feedback/comparisons/*/pick`, `/feedback/questions/*/answer`, `/feedback/prompts/*/dismiss`, `GET /feedback` and `GET /profile/rules` are additions.
-6. Contract says `feedback_events.actor` is `person`; `preference_picks.actor` is constrained to `owner` by the existing table and may not change (preference-file rule). Comparisons write `owner` there after the API's person check; the event log carries `person`.
+Reconciled decisions of the [cross-plan contract](2026-10-21-cross-plan-contract.md) that apply to this plan; all are applied above.
+
+- **3 Flag for the profile policy:** exclusion rules take effect immediately only with `pipeline.agentic.decision_policy: profile`; the confirmation response states `enforcement` (Task 5).
+- **4 Run key stays stable:** `DecisionPolicy` fields never enter `RunKey.config_hash`; Task 5 keeps the regression test `test_confirming_a_rule_does_not_change_any_run_key`, and the earlier flag-gated fallback is removed.
+- **6 Exclusion facts to rules:** a confirmed rule is an evidence-basis `exclusion` fact with value `{"kind", "value"}` and id `r<n>`, which Plan 2's `rules_from_fact` turns into an `ExclusionRule` with `source_fact_id` (Task 4 test `test_a_confirmed_rule_becomes_an_exclusion_rule_in_the_policy`); matching is Plan 2's `exclusion_hit`, and the discovery pre-filter is Plan 3's `enforce_exclusions` (Task 5).
+- **7 Relevance is stored:** `discovery.enforce_exclusions(conn, config, *, person=None)` is called after a rule is confirmed (Task 5).
+- **10 Ranking modules:** shortlist reads go through `shortlist.build_shortlist`, `latest_entries` and `load_entry`; feedback, selection and prompt routes live in `pipeline/agentic/feedback_api.py` (Tasks 2, 3, 6, 8).
+- **12 Preference features:** `preference_picks.actor` stays `'owner'` (the existing immutable table); comparisons write `owner` there after the API's person check, and the event log carries `person` (Task 8).
+- **14 Signature additions:** `next_comparison(conn, person, config=None)` (Task 7).
+- **15 Migrations:** `feedback_events` and `feedback_prompts` take the next free `MIGRATIONS` index at execution (Task 2).
+
+Routes `/feedback/next`, `/feedback/comparisons/*/pick`, `/feedback/questions/*/answer`, `/feedback/prompts/*/dismiss`, `GET /feedback` and `GET /profile/rules` are additions to the contract's list.

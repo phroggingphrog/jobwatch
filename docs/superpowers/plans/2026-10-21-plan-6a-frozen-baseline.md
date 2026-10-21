@@ -4,11 +4,11 @@
 
 **Goal:** Freeze the current pipeline's stored inputs and outputs (postings, evidence bundle, requirement judgments, holistic scores, gate routes, usage) into an immutable, per-person, hash-verified baseline that Plans 2-4 and Plan 6b replay and compare against, before any of them changes a decision.
 
-**Architecture:** One new module `pipeline/agentic/baseline.py` reads stored `agentic_artifacts` only (no model call, no DB write) and writes `<person>/baselines/<baseline_id>/` atomically (staging folder, then rename). `decide()` reads the live profile files, so the module copies those files into the baseline, recomputes every gate decision offline with the profile pinned to that copy (new `apply.paths.pin_profile_dir`), and records `GATE_VERSION`, a sha256 over the gate's source files. Cases that share an advert or an employer get one `group_id`; a deterministic tagger marks the six categories the brief requires; owner labels are written only by a human CLI command. Large shared artifacts (candidate analysis ~3 MB, reference ~7 MB) are stored once per baseline.
+**Architecture:** One new module `pipeline/agentic/baseline.py` reads stored `agentic_artifacts` only (no model call, no DB write) and writes `<person>/baselines/<baseline_id>/` atomically (staging folder, then rename). `decide()` reads the live profile files, so the module copies those files and the approved profile version (`approved.json`) into the baseline, recomputes every gate decision offline with the profile pinned to that copy (new `apply.paths.pin_profile_dir`), and records `GATE_VERSION`, a sha256 over the gate's source files and data (each file's hash is also kept in `Baseline.gate_dependencies`). When the profile policy path is active the frozen `DecisionPolicy` JSON is stored too, so later plans can rebuild the policy from the frozen version (`policy_for(person, approved=frozen_approved(baseline_id))`). Cases that share an advert or an employer get one `group_id`; a deterministic tagger marks the six categories the brief requires; owner labels are written only by a human CLI command through `write_label`. Large shared artifacts (candidate analysis ~3 MB, reference ~7 MB) are stored once per baseline.
 
 **Tech Stack:** Python 3.12, pydantic v2 (`StrictFrozen`), sqlite3 (read-only URI), argparse CLI extension (`register`/`handle`), pytest with the synthetic world from `tests/test_agentic_service.py`.
 
-**Spec:** [agreed backend brief](../specs/2026-10-21-agreed-backend-brief.md) (section A 3 "Preserve it as a comparison baseline", section A 5 "Compare the revised system with the current baseline using identical frozen inputs"), [roadmap](2026-10-21-backend-roadmap.md) row 6a, [cross-plan contract](2026-10-21-cross-plan-contract.md) "Phase 2 - Plan 6a", [code map](reference/2026-10-21-codemap.md) section 1.
+**Spec:** [agreed backend brief](../specs/2026-10-21-agreed-backend-brief.md) (section A 3 "Preserve it as a comparison baseline", section A 5 "Compare the revised system with the current baseline using identical frozen inputs"), [roadmap](2026-10-21-backend-roadmap.md) row 6a, [cross-plan contract](2026-10-21-cross-plan-contract.md) "Phase 2 - Plan 6a" and "Reconciled decisions" (binding; applied here, see "Contract reconciliation" at the end), [code map](reference/2026-10-21-codemap.md) section 1.
 
 ## Global Constraints
 
@@ -21,11 +21,11 @@
 - Per-person isolation: everything lives under `users.user_dir(person)/baselines/`, resolved from `users.current()`; a baseline id of another person is `baseline_not_found`.
 - Paid model calls only via approved routes (`require_route`, synthetic transports in tests). This plan makes no model call at all; freeze, load, replay-of-the-baseline-arm and label are offline, and tests patch `jobwatch.llm.LLM.chat_once` and `embed_once` to fail.
 - No service, timer or deployment activation; no application submission; no employer contact.
-- Model output is never recorded as a person's choice or approval: `OwnerLabel.actor` is `'owner'`, set only by `jobwatch/baseline_cli.py`; no API route, chat tool or MCP tool in this plan can write a label.
+- Model output is never recorded as a person's choice or approval: `OwnerLabel.actor` is `'owner'`, set only by the human CLIs (`jobwatch/baseline_cli.py` here, `jobwatch/evaluation_cli.py` in Plan 6b), which both refuse without a terminal and write through `write_label`; no API route, chat tool or MCP tool can write a label.
 - Schema changes additive: no `jobwatch/db.py` migration and no lazy table; new files only under `<person>/baselines/`. `AgenticEvaluation`, `RunKey`, `MatchingCase` and every stored artifact are untouched.
 - Run-key rule (contract rule 1): this plan changes none of `_config()`, `default_policy()`, `IMPLEMENTATION_VERSION`, `LOCATION_REFERENCE_HASH`, so no job is re-evaluated. Expected paid re-run cost: 0 jobs x 3 model roles. `pipeline/agentic/service.py` is not edited, and `GATE_VERSION` is never a `RunKey` input.
 - Preference-file rule (contract rule 5): nothing under `jobwatch/preferences/` is edited.
-- Gate unchanged: `pipeline/agentic/gate.py`, `pipeline/agentic/location.py`, `jobwatch/candidate/person.py` and `jobwatch/reader.py` (the files `GATE_VERSION` hashes) are not edited.
+- Gate unchanged: `pipeline/agentic/gate.py`, `pipeline/agentic/location.py`, `jobwatch/candidate/person.py`, `jobwatch/reader.py`, `jobwatch/candidate/contracts.py`, `jobwatch/candidate/policy.py` and the data files `pipeline/agentic/data/vic-geo.json`, `metro-localities.json` (the files `GATE_VERSION` hashes, contract decision 5) are not edited.
 - Private files 0600, directories 0700, written through `apply.paths.safe_write_bytes/ensure_dir`; profile files read through `candidate/_private_io.read_regular_file` (no symlinks followed).
 - A baseline holds copies of a person's profile and evidence. It never enters Git, a log, a hosted trace or a model prompt; CLI output prints ids and counts, never candidate text.
 - Python 3.12 virtualenv outside the repo: `uv venv --python 3.12 <scratch>/venv && uv pip install --python <scratch>/venv/bin/python -e '.[dev]'`. Test command: `<venv>/bin/python -m pytest -q -p no:cacheprovider <paths>`. Run one pytest process at a time; add `-o faulthandler_timeout=90` to diagnose a hang. Never run `playwright install`.
@@ -59,7 +59,8 @@ Layout written per baseline (all 0600 files, 0700 folders):
 ```
 <user_dir>/baselines/<baseline_id>/
   baseline.json            # Baseline; written last inside the staging folder
-  approved.json            # copy of intake.current_version(person) at freeze time
+  approved.json            # copy of intake.current_version(person) at freeze time (the pinned profile version)
+  decision_policy.json     # DecisionPolicy JSON built from approved.json; written only when the profile policy path is active (Plan 2 flag `profile`)
   profile/<file>           # copies of the profile files (PROFILE_FILES) at freeze time
   cases/<case_id>.json     # FrozenCase with the large fields replaced by blob_refs
   blobs/<sha256>.json      # candidate analysis, reference text, evidence contents; each stored once
@@ -70,12 +71,12 @@ Layout written per baseline (all 0600 files, 0700 folders):
 
 The executor does not block on these; the default applies meanwhile.
 
-1. **When to freeze the real baseline.** It must be frozen before Phase 3 (Plan 2) code is deployed, because gate changes silently re-apply to stored evaluations (code map 1.3.3). Default: the executor freezes nothing on real data. After merging this phase the owner runs `jobwatch --user <name> baseline freeze` once; `baseline show` reports `gate_state: pre_revision` when the gate source still equals `PRE_REVISION_GATE_VERSION`.
+1. **When to freeze the real baseline.** It must be frozen before Phase 3 (Plan 2) code is deployed, because gate changes silently re-apply to stored evaluations (code map 1.3.3). Default: the executor freezes nothing on real data. After merging this phase the owner runs `jobwatch --user <name> baseline freeze` once; `baseline show` reports `gate_state: pre_revision` when the gate source still equals `PRE_REVISION_GATE_VERSION`. The frozen `approved.json` is whatever `intake.current_version` is at that moment: a version adopted from the files has no facts or scope, so Plan 6b's revised arm (`policy_for(person, approved=...)`) reports `policy_unavailable` on such a baseline. If the owner wants the revised arm on the real baseline, re-confirm the profile through a proposal (Plan 1 flow) before freezing; the gate-route comparison itself needs no facts.
 2. **Owner labels.** Plan 6b can only report quality on cases the owner labels (`suitable`, `relevance 0-3`, `exclusion_violation`). Default: none; reports say `owner_labels_required`. Who labels, and how many, is the owner's call.
 3. **Tag heuristics** (task 3, also in the ADR) are selection aids for coverage of the six categories, not judgments. Default: as written; the owner can add tags per case through `baseline label --tag`.
 4. **Size.** Default `--limit 500`, hard cap 1000 (the cap of `evaluation._matching_cases`). Default: 500.
 5. **Backups.** `baselines/` holds candidate-bearing copies inside the person's folder and is covered by normal folder backups. Default: leave it there; no separate export.
-6. **GATE_VERSION source list** is the contract's four files; the extra gate dependencies are recorded beside it (contract issue 1). Default: as in this plan until the controller reconciles.
+6. **GATE_VERSION source list** is the reconciled list of contract decision 5 (gate, location, person, work-rights regex module, candidate contracts, candidate policy, the two location data files). Default: as in this plan. Note that edits to unrelated models in `jobwatch/candidate/contracts.py` also change `GATE_VERSION`; the per-file hashes in `Baseline.gate_dependencies` show which file moved.
 
 ---
 
@@ -88,11 +89,12 @@ The executor does not block on these; the default applies meanwhile.
 - [ ] **Step 1: Write the ADR** in the format of `docs/adr/0002-profile-intake-and-approval.md` (Date, Status `Accepted owner direction (backend brief of 2026-10-21); delivery has its own acceptance criteria`, Context, Decision, Consequences, Alternatives rejected, References: brief 3 and 5, INTENT.md "Preserve the inherited holistic score as a comparison baseline", code map section 1). Decision section must state each of these, in plain sentences:
   - A frozen baseline is an immutable per-person folder (layout above), created only by `freeze_baseline`, never edited; only `labels.jsonl` grows.
   - Inputs and outputs come from stored `snapshot`, `structural_inputs`, `evaluation`, `candidate`, `model_insights` artifacts of the newest run per posting that has both a snapshot and an evaluation; no model is called and no DB row is written.
-  - The gate route is not stored today and `decide()` reads the live profile, so the route is recomputed offline at freeze time under a pinned copy of the profile files; `GATE_VERSION` (sha256 over `gate.py`, `location.py`, `person.py`, `reader.py`) and the hashes of the other gate dependencies are recorded with it. Replays must use `pinned_profile`.
+  - The gate route is not stored today and `decide()` reads the live profile, so the route is recomputed offline at freeze time under a pinned copy of the profile files; `GATE_VERSION` (sha256 over `gate.py`, `location.py`, `person.py`, `reader.py` (the work-rights regexes), `candidate/contracts.py`, `candidate/policy.py` and the data files `vic-geo.json` and `metro-localities.json`) is recorded with it, and each file's hash is also listed in `Baseline.gate_dependencies`. Live routes are not stored today, so the version is recorded once per baseline, where all routes are recomputed together. Replays must use `pinned_profile`.
+  - The approved profile version is frozen too: `approved.json` is a copy of `intake.current_version(person)`, and when the profile policy path is active (Plan 2 flag `pipeline.agentic.decision_policy: profile`) `decision_policy.json` holds the `DecisionPolicy` built from it. A replay rebuilds the policy with `policy_for(person, approved=frozen_approved(baseline_id))`, never from the live version.
   - Environment variable pinning was rejected because `profile_dir()` ignores `JOBWATCH_PROFILE_DIR` for every person but the default one.
   - `group_id` unions cases by `content:<ad hash>`, `dedupe:<postings.dedupe_key>` and `employer:<normalised company>`; an empty employer never merges.
   - The six tags and their exact rules (copy the table from Task 3). State that they are heuristics, that no stored exclusion other than a family rule exists yet (`explicit_exclusion` is therefore `policy_excluded` only until Plans 2 and 5), and that owner tags are added through labels.
-  - Owner labels: `actor='owner'`, written by the CLI only, append-only, latest line per case wins, history kept; nothing is imputed.
+  - Owner labels: `actor='owner'`, written by a human CLI only (it refuses without a terminal), through `write_label`; append-only, latest line per case wins (`latest_labels`), history kept (`read_labels`); nothing is imputed.
   - What this does not establish: nothing about matching quality; a baseline is an input to Plan 6b.
   Consequences: disk use is a few MB per baseline thanks to blob sharing; any edit to a gate file changes `GATE_VERSION`; a freeze made after the gate was revised is flagged by `gate_state: revised`.
 - [ ] **Step 2: Append to `GLOSSARY.md`** four rows: `Frozen baseline` (immutable per-person snapshot of the pipeline's stored inputs and outputs, with gate routes recomputed under a pinned profile, used for like-for-like comparison), `Frozen case` (one posting's inputs, outputs, group, tags and usage inside a baseline), `Gate version` (sha256 over the gate's source files; changes by itself when the gate changes), `Owner label` (the owner's own suitability, relevance or exclusion judgment of a frozen case; never produced by a model).
@@ -180,9 +182,8 @@ git commit -m "feat: pin the profile folder and rebuild evidence bundles from st
 - Produces (names fixed by the contract unless marked *additive*):
   - `TAGS = ('previously_rejected', 'transferable_skills', 'unknown_facts', 'misleading_title', 'stretch', 'explicit_exclusion')`
   - `class FrozenCase(StrictFrozen)` with `model_config` allowing `model_`-prefixed field names: `case_id: str`, `posting_id: int`, `group_id: str`, `tags: tuple[str, ...]`, `snapshot: dict`, `structural_inputs: dict`, `evaluation: dict`, `candidate: dict | None`, `model_insights: dict | None`, `decision: dict`, `commute_km: float | None`, `usage: dict`; *additive:* `run_key: str`, `group_keys: tuple[str, ...] = ()`, `stored: dict = {}`, `blob_refs: dict[str, str] = {}`.
-  - `class Baseline(StrictFrozen)`: `baseline_id`, `created_at`, `git_commit`, `gate_version`, `implementation_version`, `matching_version`, `profile_version: int`, `profile_files_sha256: dict[str, str]`, `case_ids: tuple[str, ...]`; *additive:* `person: str`, `policy: dict`, `gate_dependencies: dict[str, str]`, `runtime_config_sha256: str`, `evidence_bundle_hash: str | None`, `approved_sha256: str`, `case_sha256: dict[str, str]`, `content_sha256: str`, `summary: dict`.
-  - `gate_sources() -> dict[str, str]`: dotted module name to sha256 of its `.py` bytes for `pipeline.agentic.gate`, `pipeline.agentic.location`, `jobwatch.candidate.person`, `jobwatch.reader` (path from `importlib.util.find_spec(name).origin` through the overridable `_module_path(name) -> Path`).
-  - `gate_dependencies() -> dict[str, str]` *additive*: the same shape for `jobwatch.candidate.contracts`, `jobwatch.candidate.policy` and the data files `pipeline.agentic/data/vic-geo.json`, `pipeline.agentic/data/metro-localities.json`.
+  - `class Baseline(StrictFrozen)`: `baseline_id`, `created_at`, `git_commit`, `gate_version`, `implementation_version`, `matching_version`, `profile_version: int`, `profile_files_sha256: dict[str, str]`, `case_ids: tuple[str, ...]`, `gate_dependencies: dict[str, str]` (= `gate_sources()` at freeze time, contract decision 5); *additive:* `person: str`, `policy: dict`, `runtime_config_sha256: str`, `evidence_bundle_hash: str | None`, `approved_sha256: str`, `decision_policy_sha256: str | None = None` (None when the policy path was not active), `case_sha256: dict[str, str]`, `content_sha256: str`, `summary: dict`.
+  - `gate_sources() -> dict[str, str]`: key to sha256 of the file bytes, for every file the live gate depends on: dotted module names `pipeline.agentic.gate`, `pipeline.agentic.location`, `jobwatch.candidate.person`, `jobwatch.reader` (the work-rights regex module), `jobwatch.candidate.contracts`, `jobwatch.candidate.policy` (included when its file exists), and the data files `pipeline.agentic/data/vic-geo.json`, `pipeline.agentic/data/metro-localities.json` (module paths from `importlib.util.find_spec(name).origin` through the overridable `_module_path(name) -> Path`).
   - `current_gate_version() -> str` = sha256 of `json.dumps(gate_sources(), sort_keys=True, separators=(',', ':'))`; `GATE_VERSION = current_gate_version()` at import; `PRE_REVISION_GATE_VERSION: str` *additive*, the literal value of `GATE_VERSION` at this release (Step 3).
   - `group_keys_for(posting: Mapping, ad_hash: str) -> tuple[str, ...]` *additive*: `content:<ad_hash>`; `dedupe:<postings.dedupe_key>` only when both the company and title parts of the key are non-empty; `employer:<_norm(company, _COMPANY_NOISE)>` only when non-empty.
   - `group_ids(keys: Mapping[str, Iterable[str]]) -> dict[str, str]` *additive*: union-find over shared keys; the id is `'group:' + sha256('\n'.join(sorted(all keys of the members)))[:32]` (at most 128 characters, independent of input order).
@@ -213,18 +214,20 @@ def test_tag_rules(kwargs, tag, expected):
 Rows (each `tag` asserted true and the near miss false): `previously_rejected`: `route='archive', reason='hard_gate'` true; `stored={'run_status': 'archived'}` true; `stored={'application_status': 'skipped'}` true; clean draft false. `transferable_skills`: `[('r1','high','partial')]` true; `[('r1','high','demonstrated')]` false. `unknown_facts`: `[('r1','high','unknown')]`, `[('r1','high','legacy_missing')]`, `uncertainties=('hours',)`, `location_fit='unknown'` true; clean false. `misleading_title`: `title='Junior Analyst', seniority='senior'` true; `title='Junior Analyst', min_years=3` true; `title='Senior Analyst', seniority='entry'` true; `title='Senior Analyst', seniority='senior'` false; `title='Analyst', seniority='mid'` false. `stretch`: `[('r1','high','partial'), ('r2','preferred','demonstrated')]` true; `[('r1','high','contradicted'), ('r2','preferred','demonstrated')]` false; `[('r1','preferred','partial'), ('r2','high','demonstrated')]` false; `[('r1','high','demonstrated')]` false. `explicit_exclusion`: `route='archive', reason='policy_excluded'` true; `reason='hard_gate'` false.
 
 ```python
-def test_gate_sources_are_the_four_contract_modules():
-    assert set(baseline.gate_sources()) == {'pipeline.agentic.gate', 'pipeline.agentic.location',
-                                            'jobwatch.candidate.person', 'jobwatch.reader'}
+def test_gate_sources_are_the_reconciled_gate_files():      # contract decision 5
+    assert set(baseline.gate_sources()) == {'pipeline.agentic.gate', 'pipeline.agentic.location', 'jobwatch.candidate.person',
+        'jobwatch.reader', 'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
+        'pipeline.agentic/data/vic-geo.json', 'pipeline.agentic/data/metro-localities.json'}
     assert re.fullmatch(r'[0-9a-f]{64}', baseline.GATE_VERSION) and baseline.GATE_VERSION == baseline.current_gate_version()
 
 def test_gate_version_changes_by_itself_when_a_gate_source_changes(tmp_path, monkeypatch):
     # copy gate.py to tmp_path, append one byte, monkeypatch baseline._module_path to return the copy for 'pipeline.agentic.gate'
     assert baseline.current_gate_version() != baseline.GATE_VERSION
 
-def test_gate_dependencies_list_the_extra_inputs():
-    assert set(baseline.gate_dependencies()) == {'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
-        'pipeline.agentic/data/vic-geo.json', 'pipeline.agentic/data/metro-localities.json'}
+def test_a_changed_data_file_or_policy_module_changes_the_gate_version(tmp_path, monkeypatch):
+    # copy vic-geo.json (key 'pipeline.agentic/data/vic-geo.json') and jobwatch/candidate/policy.py to tmp_path with one byte appended,
+    # point baseline._module_path / the data-file resolver at the copies, one at a time
+    assert baseline.current_gate_version() != baseline.GATE_VERSION     # in both cases
 
 def test_pre_revision_gate_version_is_a_digest():
     assert re.fullmatch(r'[0-9a-f]{64}', baseline.PRE_REVISION_GATE_VERSION)
@@ -273,14 +276,17 @@ git commit -m "feat: frozen baseline models, gate version, grouping and tags"
   - `load_baseline(baseline_id: str) -> tuple[Baseline, list[FrozenCase]]` (cases sorted by `posting_id`; large fields inflated, each blob read once per call so cases share one object)
   - `list_baselines() -> list[Baseline]` (oldest first; ignores folders without `baseline.json` and dot-folders)
   - `pinned_profile(baseline_id: str) -> ContextManager[Path]`: verifies `profile/` against `Baseline.profile_files_sha256`, then `pin_profile_dir(<baseline>/profile)`.
-  - `decide_frozen(snapshot: dict, evaluation: dict, *, commute_km: float | None) -> dict`: rebuilds the bundle with `bundle_from_contents` from `snapshot['contents']`, calls `decide(AgenticEvaluation, ad_text=snapshot['full_ad'], title=snapshot['posting']['title'], policy=default_policy(), captured_complete=snapshot['text_kind'] == 'full', expected_run_key=RunKey(snapshot['run_key']), evidence_bundle=bundle, commute_km=None if commute_km is None else round(commute_km))` and returns `AgenticGateDecision.model_dump(mode='json')`; on failure `{'error': 'evidence_snapshot_invalid' | 'invalid_gate_input' | 'decision_unavailable'}`. Reproducible only inside `pinned_profile`; Plan 6b calls it for the revised arm.
+  - `frozen_approved(baseline_id: str) -> dict`: the baseline's `approved.json` payload, verified against `Baseline.approved_sha256` (`baseline_corrupt` on mismatch); this is what Plan 2's `policy_for(person, approved=...)` and Plan 6b's revised arm take as the pinned profile version.
+  - `frozen_decision_policy(baseline_id: str) -> dict | None`: the stored `DecisionPolicy` JSON (verified against `Baseline.decision_policy_sha256`), or None when the policy path was not active at freeze time; the caller validates it with `DecisionPolicy.model_validate` (this module never imports Plan 2's types).
+  - `decide_frozen(snapshot: dict, evaluation: dict, *, commute_km: float | None, decision_policy: object | None = None) -> dict`: rebuilds the bundle with `bundle_from_contents` from `snapshot['contents']`, calls `decide(AgenticEvaluation, ad_text=snapshot['full_ad'], title=snapshot['posting']['title'], policy=default_policy(), captured_complete=snapshot['text_kind'] == 'full', expected_run_key=RunKey(snapshot['run_key']), evidence_bundle=bundle, commute_km=None if commute_km is None else round(commute_km))` and returns `AgenticGateDecision.model_dump(mode='json')`; on failure `{'error': 'evidence_snapshot_invalid' | 'invalid_gate_input' | 'decision_unavailable'}`. `decision_policy` is None in this phase (the pre-revision gate); when it is not None it is passed on as `decision_policy=` together with `company=snapshot['posting']['company']`, keywords that exist once Plan 2 has merged. Plan 2 switches the call to `service.gate_current`. Reproducible only inside `pinned_profile`; the baseline arm of Plan 6b reads the stored `decision`, and the revised arm calls `gate_current`, not this function.
+  - `_active_decision_policy(config, approved: dict) -> object | None` (module-level seam, overridable in tests): returns None unless `jobwatch.candidate.policy.policy_for` exists and `pipeline.agentic.service.decision_policy_mode(config) == 'profile'` (both arrive with Plan 2, so it always returns None in this phase); otherwise `policy_for(users.current(), approved=approved)` (a `DecisionPolicy` or None). `freeze_baseline` stores `.model_dump(mode='json')` of a non-None result as `decision_policy.json`.
   - Error codes (`AgenticError(code)`): `invalid_limit`, `no_profile_version`, `no_cases`, `baseline_exists`, `baseline_not_found`, `baseline_corrupt`, `invalid_baseline_id` (id must match `^bl-\d{8}T\d{6}Z-[0-9a-f]{8}$`).
   - Helpers fixed by tests: `_utcnow() -> str` (ISO seconds, UTC), `_git_commit(root: Path | None = None) -> str` (`git rev-parse HEAD`, 5 s timeout, no shell, `'unknown'` on any failure). Every file in the staging folder is written through the module-level name `safe_write_bytes`.
 
 **Algorithm of `freeze_baseline`:**
 1. `limit` int 1..1000 and `posting_ids` (if given) a list of at most 1000 positive ints, else `invalid_limit`. `person = users.current()`; `intake.current_version(person)` is None → `no_profile_version`.
 2. Select: from `agentic_runs` (table missing → `no_cases`) take, per posting, the newest run (highest `generation`, then `rowid`) that has both a `snapshot` and an `evaluation` row in `agentic_artifacts`; postings with runs but none such are counted in `summary['skipped']['no_evaluation']`; requested `posting_ids` without any run count as `no_run`. Order by chosen run `rowid` descending, keep `limit`, then sort by `posting_id`. Zero cases → `no_cases`.
-3. Create `baselines/.staging-<hex>`; copy each present `PROFILE_FILES` entry into `profile/` (read with `candidate._private_io.read_profile_source`; `cv.md` symlink alias is stored under its canonical name; unreadable → `AgenticError('profile_unreadable')`), write `approved.json` (canonical JSON of the current version). Under `pin_profile_dir(staging/'profile')`: `policy = default_policy().model_dump(mode='json')`, `evidence_bundle_hash` from `snapshot_evidence(staging/'profile')` (None if it raises `CandidateError`), then per case: read artifacts with `_read_artifact` (a hash or JSON failure is skipped and counted `artifact_invalid`; an evaluation failing `validate_model_payload(AgenticEvaluation, ...)` is counted `evaluation_invalid`); `commute_km = km_from_home(posting['location'] or '')` as float or None; `decision = decide_frozen(...)`; `stored = {'run_status','run_reason','generation','stage','stage_reason','application_status'}` from `agentic_runs`, `pipeline_state` and `applications` (missing tables give None); `usage = {'charged_tokens': BudgetCheckpoint.job_charged or None, 'actual_tokens': None, 'latency_seconds': sum of finished.at - started.at over agentic_activity pairs for the run key, or None}`.
+3. Create `baselines/.staging-<hex>`; copy each present `PROFILE_FILES` entry into `profile/` (read with `candidate._private_io.read_profile_source`; `cv.md` symlink alias is stored under its canonical name; unreadable → `AgenticError('profile_unreadable')`), write `approved.json` (canonical JSON of the current version), then `decision_policy = _active_decision_policy(config, approved)` and, when not None, `decision_policy.json` (canonical JSON; its sha256 goes to `Baseline.decision_policy_sha256`). Under `pin_profile_dir(staging/'profile')`: `policy = default_policy().model_dump(mode='json')`, `evidence_bundle_hash` from `snapshot_evidence(staging/'profile')` (None if it raises `CandidateError`), then per case: read artifacts with `_read_artifact` (a hash or JSON failure is skipped and counted `artifact_invalid`; an evaluation failing `validate_model_payload(AgenticEvaluation, ...)` is counted `evaluation_invalid`); `commute_km = km_from_home(posting['location'] or '')` as float or None; `decision = decide_frozen(..., decision_policy=<the object `_active_decision_policy` returned, else None>)`; `stored = {'run_status','run_reason','generation','stage','stage_reason','application_status'}` from `agentic_runs`, `pipeline_state` and `applications` (missing tables give None); `usage = {'charged_tokens': BudgetCheckpoint.job_charged or None, 'actual_tokens': None, 'latency_seconds': sum of finished.at - started.at over agentic_activity pairs for the run key, or None}`.
 4. Group keys from `group_keys_for(posting_row, ad_hash)`, then `group_ids`; build each `FrozenCase` (`case_id = f'c-{posting_id}-{run_key[:8]}'`, `tags = tag_case(case)`).
 5. Write blobs (`blobs/<sha256 of file bytes>.json`) for `candidate`, `structural_inputs['reference_utf8']` and `snapshot['contents']`, replacing them in the case file by `None`, `None` and `{}` with `blob_refs` naming `'candidate'`, `'structural_inputs.reference_utf8'`, `'snapshot.contents'`; write each case file (canonical JSON, sorted keys) and record its sha256.
 6. `summary = {'cases', 'skipped': {...}, 'routes': {draft, archive, hold, error}, 'tags': {tag: n for every TAGS entry}, 'groups', 'largest_group', 'evidence_mismatch' (cases whose `run_key.evidence_hash` differs from `evidence_bundle_hash`), 'decision_errors'}`. `content_sha256 = digest({'cases': case_sha256, 'profile': profile_files_sha256, 'approved': approved_sha256})`; `baseline_id = 'bl-' + created_at as %Y%m%dT%H%M%SZ + '-' + content_sha256[:8]`; `runtime_config_sha256 = digest(service._config(config))`; write `baseline.json` last; `os.rename` the staging folder to `baselines/<id>` (exists → `baseline_exists`). Any exception removes the staging folder.
@@ -328,6 +334,23 @@ def test_commute_is_measured_from_the_frozen_home(world):
     # profile.yaml candidate.location 'Brunswick, VIC' at freeze: case.commute_km == 5.0 for posting location 'Melbourne VIC';
     # live profile later changed to 'Geelong, VIC': km_from_home('Melbourne VIC') != 5 live, == 5 inside pinned_profile
 
+def test_the_pinned_profile_version_is_frozen_with_the_baseline(frozen):      # contract decision 1
+    b = freeze_baseline(ro, config)
+    approved = baseline.frozen_approved(b.baseline_id)
+    assert approved == intake.current_version(users.current()) and b.decision_policy_sha256 is None
+    assert baseline.frozen_decision_policy(b.baseline_id) is None and not (baseline_dir / 'decision_policy.json').exists()
+    # a later intake version does not change what frozen_approved returns; a flipped byte in approved.json -> 'baseline_corrupt'
+
+def test_the_decision_policy_is_frozen_only_when_the_policy_path_is_active(frozen, monkeypatch):
+    class Fake:                                    # stands in for Plan 2's DecisionPolicy
+        def model_dump(self, mode='json'): return {'profile_version': 2, 'policy_hash': 'f' * 64}
+    monkeypatch.setattr(baseline, '_active_decision_policy', lambda config, approved: Fake())
+    seen = []
+    monkeypatch.setattr(baseline, 'decide_frozen', lambda *a, decision_policy=None, **k: seen.append(decision_policy) or {'route': 'draft', 'reason': 'eligible'})
+    b = freeze_baseline(ro, config)
+    assert baseline.frozen_decision_policy(b.baseline_id) == {'profile_version': 2, 'policy_hash': 'f' * 64}
+    assert b.decision_policy_sha256 and seen and all(isinstance(p, Fake) for p in seen)
+
 def test_decide_frozen_reports_an_unbuildable_snapshot(frozen):
     assert decide_frozen({**case.snapshot, 'contents': {}}, case.evaluation, commute_km=None) == {'error': 'evidence_snapshot_invalid'}
 
@@ -354,7 +377,7 @@ def test_git_commit_is_unknown_outside_a_checkout(tmp_path):
     assert baseline._git_commit(tmp_path) == 'unknown'
 ```
 
-- [ ] **Step 2: Run to verify they fail** — `<venv>/bin/python -m pytest -q -p no:cacheprovider tests/test_baseline.py -k "freeze or tampered or decision or commute or failed or per_person or limit or git or shared or skipped or unbuildable"` → FAIL (`AttributeError: freeze_baseline`).
+- [ ] **Step 2: Run to verify they fail** — `<venv>/bin/python -m pytest -q -p no:cacheprovider tests/test_baseline.py -k "freeze or tampered or decision or commute or failed or per_person or limit or git or shared or skipped or unbuildable or pinned"` → FAIL (`AttributeError: freeze_baseline`).
 - [ ] **Step 3: Implement** the signatures and the algorithm above. Reading is read-only: no `AgenticStore.ensure`, no `PersistenceAdapter`, no `dbm.connect`. Inflation uses a per-call `dict[str, Any]` blob cache. `Baseline.git_commit = _git_commit()`.
 - [ ] **Step 4: Run** `tests/test_baseline.py tests/test_agentic_gate.py tests/test_agentic_matching.py` → PASS (each freeze test runs a three-job synthetic batch, about 15 s).
 - [ ] **Step 5: Commit**
@@ -374,8 +397,11 @@ git commit -m "feat: freeze the stored pipeline inputs and outputs into a verifi
 - Consumes: Task 4 (`load_baseline`, baseline folder layout), `apply.paths.safe_write_bytes`.
 - Produces:
   - `class OwnerLabel(StrictFrozen)`: `case_id: str`, `actor: Literal['owner']`, `suitable: bool | None = None`, `relevance: int | None = Field(default=None, ge=0, le=3)`, `exclusion_violation: bool | None = None`, `note: str = Field(default='', max_length=2000)`, `labelled_at: str`; *additive:* `tags: tuple[str, ...] = ()` (owner-added, each in `TAGS`).
-  - `label_case(baseline_id: str, case_id: str, *, actor: Literal['owner'], suitable: bool | None = None, relevance: int | None = None, exclusion_violation: bool | None = None, note: str = '', tags: tuple[str, ...] = ()) -> OwnerLabel`: appends one JSON line to `labels.jsonl` (read, append, rewrite through `safe_write_bytes`, under an `fcntl` lock on `labels.lock`); `labelled_at = _utcnow()`. Errors: `owner_required` (actor is not `'owner'`), `baseline_not_found`, `unknown_case` (no `cases/<case_id>.json`), `empty_label` (no judgment field and no tag), `invalid_tag`, `invalid_label` (relevance outside 0-3 or note too long).
-  - `load_labels(baseline_id: str) -> dict[str, OwnerLabel]` (latest line per case; absent file is `{}`; nothing is imputed), `label_history(baseline_id: str) -> list[OwnerLabel]` (append order), `effective_tags(case: FrozenCase, labels: Mapping[str, OwnerLabel]) -> tuple[str, ...]` (union of `case.tags` and the label's tags, in `TAGS` order).
+  - `write_label(baseline_id: str, label: OwnerLabel) -> None` (contract decision 13; human CLI only): appends one JSON line to `labels.jsonl` (read, append, rewrite through `safe_write_bytes`, under an `fcntl` lock on `labels.lock`). Errors: `baseline_not_found`, `unknown_case` (no `cases/<case_id>.json`), `owner_required` (`label.actor != 'owner'`).
+  - `read_labels(baseline_id: str) -> list[OwnerLabel]` (contract decision 13): every line in append order; absent file is `[]`; nothing is imputed; a malformed line or a line whose actor is not `'owner'` raises `AgenticError('labels_invalid')` rather than being skipped.
+  - `latest_labels(labels: Iterable[OwnerLabel]) -> dict[str, OwnerLabel]`: the last label per `case_id` (pure; Plan 6b and `effective_tags` use it).
+  - `label_case(baseline_id: str, case_id: str, *, actor: Literal['owner'], suitable: bool | None = None, relevance: int | None = None, exclusion_violation: bool | None = None, note: str = '', tags: tuple[str, ...] = ()) -> OwnerLabel`: the validating builder the CLIs call; builds the `OwnerLabel` with `labelled_at = _utcnow()` and passes it to `write_label`. Errors: `owner_required` (actor is not `'owner'`), `empty_label` (no judgment field and no tag), `invalid_tag`, `invalid_label` (relevance outside 0-3 or note too long), plus `write_label`'s.
+  - `effective_tags(case: FrozenCase, labels: Mapping[str, OwnerLabel]) -> tuple[str, ...]` (union of `case.tags` and the label's tags, in `TAGS` order).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -384,13 +410,22 @@ def test_label_requires_the_owner_actor(frozen):
     for actor in ('agent', 'person', '', None):
         with pytest.raises(AgenticError, match='owner_required'):
             label_case(bid, case_id, actor=actor, suitable=True)
-    assert load_labels(bid) == {}
+    assert read_labels(bid) == []
 
 def test_label_is_private_append_only_and_latest_wins(frozen):
     first = label_case(bid, cid, actor='owner', suitable=False, note='first')
     second = label_case(bid, cid, actor='owner', suitable=True, relevance=3, exclusion_violation=False)
-    assert load_labels(bid)[cid] == second and label_history(bid) == [first, second]
+    assert read_labels(bid) == [first, second] and latest_labels(read_labels(bid))[cid] == second
     # labels.jsonl mode 0o600; baseline.json and every case file byte-for-byte unchanged by labelling
+
+def test_write_label_appends_a_prebuilt_owner_label_and_refuses_other_actors(frozen):   # contract decision 13
+    write_label(bid, OwnerLabel(case_id=cid, actor='owner', suitable=True, labelled_at='2026-10-21T00:00:00Z'))
+    assert read_labels(bid)[0].suitable is True
+    with pytest.raises(AgenticError, match='unknown_case'): write_label(bid, OwnerLabel(case_id='c-nope', actor='owner', suitable=True, labelled_at='t'))
+    with pytest.raises(ValidationError): OwnerLabel(case_id=cid, actor='person', suitable=True, labelled_at='t')
+
+def test_a_malformed_label_line_is_an_error_not_a_skip(frozen):         # append '{not json' to labels.jsonl
+    with pytest.raises(AgenticError, match='labels_invalid'): read_labels(bid)
 
 @pytest.mark.parametrize('kwargs, code', [({'relevance': 4}, 'invalid_label'), ({'relevance': -1}, 'invalid_label'),
     ({}, 'empty_label'), ({'tags': ('not_a_tag',)}, 'invalid_tag'), ({'note': 'x' * 2001, 'suitable': True}, 'invalid_label')])
@@ -400,15 +435,16 @@ def test_unknown_case_and_unknown_baseline_are_refused(frozen):   # 'unknown_cas
 
 def test_owner_tags_extend_the_deterministic_tags(frozen):
     label_case(bid, cid, actor='owner', tags=('misleading_title',))
-    assert 'misleading_title' in effective_tags(case, load_labels(bid))
+    assert 'misleading_title' in effective_tags(case, latest_labels(read_labels(bid)))
 
 def test_label_writer_is_not_reachable_from_agent_surfaces():
     for name in ('api', 'chat', 'profile_api', 'mcp_server', 'deepagents_runtime', 'api_store'):
         text = (ROOT / 'pipeline' / 'agentic' / f'{name}.py').read_text()
-        assert 'pipeline.agentic.baseline' not in text and 'from .baseline' not in text and 'label_case' not in text
+        assert 'pipeline.agentic.baseline' not in text and 'from .baseline' not in text
+        assert 'label_case' not in text and 'write_label' not in text
 ```
 
-- [ ] **Step 2: Run to verify they fail** — `<venv>/bin/python -m pytest -q -p no:cacheprovider tests/test_baseline.py -k label` → FAIL (`AttributeError: label_case`).
+- [ ] **Step 2: Run to verify they fail** — `<venv>/bin/python -m pytest -q -p no:cacheprovider tests/test_baseline.py -k label` → FAIL (`AttributeError: label_case`; `write_label`, `read_labels`, `latest_labels` missing).
 - [ ] **Step 3: Implement** the signatures above; `content_sha256` does not cover `labels.jsonl` (labels are the only mutable part).
 - [ ] **Step 4: Run** `tests/test_baseline.py` → PASS.
 - [ ] **Step 5: Commit**
@@ -431,7 +467,7 @@ git commit -m "feat: owner labels for frozen cases, written only by the owner"
   - `baseline freeze [--limit N] [--posting-id ID ...]`: opens the person's DB read-only (`sqlite3.connect(f'file:{path}?mode=ro', uri=True)`, `row_factory = sqlite3.Row`), prints `froze <baseline_id>: <n> cases, <m> skipped`; when `current_gate_version() != PRE_REVISION_GATE_VERSION` it also prints to stderr `warning: the gate source differs from the pre-revision release; this baseline captures the revised gate`.
   - `baseline list`: one line per baseline `<id>  <created_at>  cases=<n>  profile_version=<v>  gate=<pre_revision|revised>`; none prints `no baselines`.
   - `baseline show <id> [--cases]`: JSON with the `Baseline` fields except `case_sha256`, plus `labels: {'labelled': n, 'unlabelled': m}`, `gate_state` (`pre_revision` when `gate_version == PRE_REVISION_GATE_VERSION`, else `revised`), `gate_changed_since_freeze` (`gate_version != current_gate_version()`), `missing_tags` (tags with zero cases); `--cases` appends one line per case `<case_id> <posting_id> <route>/<reason> <tags>`. No candidate text is printed.
-  - `baseline label <id> <case_id> [--suitable yes|no|unsure] [--relevance 0..3] [--exclusion-violation yes|no|unsure] [--note TEXT] [--tag TAG ...]`: calls `label_case(..., actor='owner')` (running the command is the owner's own act), prints `labelled <case_id>`; `unsure` is `None`.
+  - `baseline label <id> <case_id> [--suitable yes|no|unsure] [--relevance 0..3] [--exclusion-violation yes|no|unsure] [--note TEXT] [--tag TAG ...]`: refuses with `human_required` (stderr, exit 1, nothing written) unless `sys.stdin.isatty()`, so an agent running shell commands cannot label; otherwise calls `label_case(..., actor='owner')` (running the command at a terminal is the owner's own act), prints `labelled <case_id>`; `unsure` is `None`. `baseline show` counts labelled cases with `latest_labels(read_labels(id))`.
   - Any `AgenticError` prints its code to stderr and returns 1; other `OSError`/`ValueError`/`sqlite3.Error` print `baseline_operation_unavailable` and return 1.
 
 - [ ] **Step 1: Write the failing tests** (`from baseline_support import frozen, world  # noqa: F401`; `cli.main([...])` with `capsys`; `monkeypatch.setenv('JOBWATCH_DB', str(frozen.config.db_path))` so the CLI opens the world's database)
@@ -443,6 +479,7 @@ def test_cli_end_to_end(frozen, capsys):
     run(['baseline', 'show', bid, '--cases'])                         -> JSON: summary['cases'] == 2, labels == {'labelled': 0, 'unlabelled': 2},
                                                                          gate_state == 'pre_revision', gate_changed_since_freeze is False,
                                                                          set(missing_tags) <= set(TAGS); two case lines
+    monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)           # the owner at a terminal
     run(['baseline', 'label', bid, cid, '--suitable', 'yes', '--relevance', '3', '--tag', 'stretch'])  -> 'labelled <cid>'
     run(['baseline', 'show', bid])                                    -> labels == {'labelled': 1, 'unlabelled': 1}
     # when env JOBWATCH_PRINT_TRANSCRIPT=1 each command and its output is also printed with capsys.disabled()
@@ -454,10 +491,15 @@ def test_freeze_warns_when_the_gate_source_changed(frozen, capsys, monkeypatch):
 def test_cli_errors_print_the_code_and_exit_one(tmp_path, monkeypatch, capsys):
     # friend with no profile: cli.main(['--user','friend','baseline','freeze']) == 1, 'no_profile_version' in err, out == ''
     # cli.main(['baseline','show','../x']) == 1 with 'invalid_baseline_id'
-    # cli.main(['baseline','label', bid, cid, '--relevance', '9']) == 1 with 'invalid_label'
+    # with stdin a terminal: cli.main(['baseline','label', bid, cid, '--relevance', '9']) == 1 with 'invalid_label'
 
-def test_label_command_is_the_only_label_caller():
-    # grep jobwatch/ and pipeline/ python sources: 'label_case(' appears only in baseline.py and baseline_cli.py
+def test_label_command_refuses_without_a_terminal(frozen, capsys, monkeypatch):
+    monkeypatch.setattr(sys.stdin, 'isatty', lambda: False)
+    # cli.main(['baseline','label', bid, cid, '--suitable', 'yes']) == 1, 'human_required' in err, read_labels(bid) == []
+
+def test_label_commands_are_the_only_label_writers():
+    # grep jobwatch/ and pipeline/ python sources: 'label_case(' and 'write_label(' appear only in pipeline/agentic/baseline.py,
+    # jobwatch/baseline_cli.py and (added by Plan 6b) jobwatch/evaluation_cli.py
 ```
 
 - [ ] **Step 2: Run to verify they fail** — `<venv>/bin/python -m pytest -q -p no:cacheprovider tests/test_cli_baseline.py` → FAIL (`error: argument cmd: invalid choice: 'baseline'`).
@@ -476,7 +518,7 @@ git commit -m "feat: jobwatch baseline freeze, list, show and label"
 - Create: `docs/examples/frozen-baseline.md`
 - Modify: `README.md` (CLI list and a "Frozen baseline" subsection after "Profile workflow"), `pipeline/agentic/MATCHING.md` (one paragraph under "Remaining experiment before policy promotion": freeze the inputs first with `jobwatch baseline freeze`, group duplicates/employers by `group_id`, labels are the owner's, no numbers changed), `pipeline/agentic/CHAT.md` ("Backup, release and undo": `baselines/` is candidate-bearing, not exposed through the API, included in folder backups)
 
-- [ ] **Step 1: Prove the plan left the frozen surfaces alone.** Run `git diff --stat origin/main -- pipeline/agentic/gate.py pipeline/agentic/location.py jobwatch/candidate/person.py jobwatch/reader.py pipeline/agentic/service.py jobwatch/preferences` → no output. Run `<venv>/bin/python -c "from pipeline.agentic.baseline import GATE_VERSION as g, PRE_REVISION_GATE_VERSION as p; assert g == p, 'a gate source changed'"` → exits 0. If either fails, revert the offending edit; this plan must not change a decision.
+- [ ] **Step 1: Prove the plan left the frozen surfaces alone.** Run `git diff --stat origin/main -- pipeline/agentic/gate.py pipeline/agentic/location.py jobwatch/candidate/person.py jobwatch/reader.py jobwatch/candidate/contracts.py jobwatch/candidate/policy.py pipeline/agentic/data pipeline/agentic/service.py jobwatch/preferences` → no output. Run `<venv>/bin/python -c "from pipeline.agentic.baseline import GATE_VERSION as g, PRE_REVISION_GATE_VERSION as p; assert g == p, 'a gate source changed'"` → exits 0. If either fails, revert the offending edit; this plan must not change a decision.
 - [ ] **Step 2: Run the full suite** once: `<venv>/bin/python -m pytest -q -p no:cacheprovider -o faulthandler_timeout=90` (about 20 minutes, nothing else running). If collection errors come from `tests/apply/test_prefill*.py` or `test_prepare.py` because the `browser` extra is missing, install it with `uv pip install --python <venv>/bin/python -e '.[dev,browser]'` (never `playwright install`). Record the exact pass/skip/fail line. A failure must be shown to also fail on `origin/main` before it is called pre-existing.
 - [ ] **Step 3: Capture the example.** Run `JOBWATCH_PRINT_TRANSCRIPT=1 <venv>/bin/python -m pytest -q -p no:cacheprovider -s tests/test_cli_baseline.py::test_cli_end_to_end` and write `docs/examples/frozen-baseline.md` from that output: the `freeze`, `list`, `show --cases`, `label` and second `show` commands with their real output (ids shortened to eight characters and an ellipsis, as in `docs/examples/profile-intake.md`), a note that the data is invented and no model was called, when to freeze (before Plan 2 is deployed), how `gate_state` reads, and the undo (`rm -rf <user_dir>/baselines/<id>`).
 - [ ] **Step 4: Update README, MATCHING.md and CHAT.md** as listed. Do not change any figure in MATCHING.md (the "2,594 passed" line is updated only from an actual run; if Step 2's count differs, say so in the PR and leave the figure).
@@ -495,12 +537,16 @@ Revert the merge commit. The phase creates no database table and no migration. T
 
 - **Spec coverage:** frozen identical inputs and outputs (tasks 3-4); the six required categories (task 3 tags + `missing_tags` in task 6); duplicate advert and related employer grouping (task 3); holistic score and gate route kept as the baseline (task 4: `evaluation.global_score`, recomputed `decision`, `stored`); gate version and pinned profile (tasks 2-4); owner labels with missing ones explicit (task 5); cost and latency inputs (`usage`, task 4); private data handling and isolation (constraints, tasks 4-5); ADR, glossary, example and rollback (tasks 1, 7). Splits, metrics and reports are Plan 6b by design.
 - **Step scan:** every code step names its signature, file and the tests that pin it; `freeze_baseline` is the only step with an algorithm, given as numbered decisions.
-- **Type consistency:** `FrozenCase`, `Baseline`, `OwnerLabel`, `GATE_VERSION`, `tag_case`, `group_ids`, `pin_profile_dir`, `bundle_from_contents`, `decide_frozen`, `pinned_profile`, `label_case` are spelled identically in every task and in the contract; additive fields are marked.
+- **Type consistency:** `FrozenCase`, `Baseline`, `OwnerLabel`, `GATE_VERSION`, `tag_case`, `group_ids`, `pin_profile_dir`, `bundle_from_contents`, `decide_frozen`, `pinned_profile`, `frozen_approved`, `read_labels`, `write_label`, `label_case` are spelled identically in every task and in the contract; additive fields are marked.
 - **Review Focus:** all five lines have a named test (tasks 3, 4, 5).
 - **Proportion:** tests assert behaviour; only the freeze algorithm and the tag table are spelled out because tests alone do not determine them.
 
-## Contract issues
+## Contract reconciliation
 
-1. `GATE_VERSION` as defined hashes four files, but `decide()` also depends on `jobwatch/candidate/contracts.py` (`KNOWN_FAMILIES`, `canonicalize_family`, `excluded_families`), `jobwatch/candidate/policy.py` (`default_policy`) and the data files `pipeline/agentic/data/vic-geo.json` and `metro-localities.json`. This plan keeps `GATE_VERSION` exactly as in the contract and records the extra hashes in `Baseline.gate_dependencies`; proposed change: add them to the contract's definition (Plan 2 will extend `candidate/policy.py` anyway).
-2. Rule 2 says the gate version is "stored with every recorded route". Live routes are not stored today and recording one per run would need a schema change; this plan stores `gate_version` once per baseline, where every route is recomputed together. Proposed: read the rule as "every baseline route".
-3. `pinned_profile` pins the profile folder only. Plan 2's `policy_for(person)` reads `intake.current_version(person)`, which a profile pin does not cover; the baseline folder therefore keeps `approved.json`, and Plan 2 must make `policy_for` (and `decide_frozen`) accept a pinned approved version, otherwise a replay would use the live approved facts.
+Reconciled decisions of the [cross-plan contract](2026-10-21-cross-plan-contract.md) that apply to this plan; all are applied above.
+
+- **1 Pinned profile version:** the baseline keeps `approved.json` (`frozen_approved`) and, when the policy path is active, `decision_policy.json` (`frozen_decision_policy`); Plan 2's `policy_for(person, *, approved=None)` takes the frozen payload. Active in Tasks 1, 4.
+- **5 Gate version:** `GATE_VERSION` hashes the extended file list (`gate_sources()`), each file's hash is also in `Baseline.gate_dependencies`, and the version is recorded once per baseline because live routes are not stored. Active in Tasks 1, 3, 4, 7.
+- **13 Labels and usage:** this plan owns `read_labels(baseline_id) -> list[OwnerLabel]`, `write_label(baseline_id, label)` (human CLI only, refuses without a terminal), the `FrozenCase.usage` keys `charged_tokens`, `actual_tokens`, `latency_seconds`, and `evidence.bundle_from_contents`. Active in Tasks 2, 4, 5, 6.
+- **2 One live gate call:** `decide_frozen` calls `decide` directly in this phase because `gate_current` does not exist yet; Plan 2 switches it to `gate_current`.
+- **15 Migrations:** this plan adds none.
