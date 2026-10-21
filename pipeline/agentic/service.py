@@ -43,7 +43,7 @@ RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
 MIN_READ_SECONDS = 20   # less than this left in the batch: do not start another job (a Seek page read needs 7-15 s)
-IMPLEMENTATION_VERSION = 'deepagents-0.7.23-company-skills-20261021'
+IMPLEMENTATION_VERSION = 'deepagents-0.7.23-evidence-matching-20261021'
 
 
 def settings(config) -> dict:

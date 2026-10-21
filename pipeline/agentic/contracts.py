@@ -18,7 +18,7 @@ import math
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from jobwatch.candidate.contracts import digest
 from pipeline.schemas import JobFacts
@@ -243,17 +243,50 @@ class AgenticGateDecision(StrictFrozen):
         return float(value)
 
 
+class EvidenceJudgment(StrictFrozen):
+    """A model judgment, not a calibrated probability or an eligibility decision."""
+    status: Literal["demonstrated", "partial", "unknown", "contradicted", "not_applicable"]
+    rationale: str = Field(min_length=1, max_length=2000)
+    reviewed_evidence_ids: tuple[str, ...] = Field(max_length=100)
+    contradiction_evidence: tuple[SourceCitation, ...] = Field(default=(), max_length=10, repr=False)
+    open_question: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def _contradiction_proof(self):
+        if bool(self.contradiction_evidence) != (self.status == "contradicted"):
+            raise ValueError("contradiction needs explicit primary evidence")
+        if self.status in {"partial", "unknown", "contradicted"} and not self.open_question.strip():
+            raise ValueError("unresolved judgment needs a question for review")
+        if len(self.reviewed_evidence_ids) != len(set(self.reviewed_evidence_ids)):
+            raise ValueError("duplicate reviewed evidence")
+        return self
+
+
 class RequirementMatch(StrictFrozen):
     requirement_id: str = Field(min_length=1, max_length=64)
     match: Literal["strong", "partial", "missing", "not_applicable"]
     evidence: tuple[SourceCitation, ...]
     risk: str = Field(default="", max_length=4000)
     mitigation: str = Field(default="", max_length=4000)
+    # Absent on historical evaluations; never infer a richer judgment on read.
+    judgment: EvidenceJudgment | None = None
+
+    @model_serializer(mode="wrap")
+    def _historical_payload(self, handler):
+        result = handler(self)
+        if self.judgment is None:
+            result.pop("judgment", None)
+        return result
 
     @model_validator(mode="after")
     def _strong_cited(self):
         if self.match == "strong" and not self.evidence:
             raise ValueError("strong match needs citation")
+        if self.judgment is not None:
+            expected = {"demonstrated": "strong", "partial": "partial", "unknown": "missing",
+                        "contradicted": "missing", "not_applicable": "not_applicable"}
+            if self.match != expected[self.judgment.status]:
+                raise ValueError("judgment disagrees with compatibility match")
         return self
 
 
@@ -287,6 +320,16 @@ class AgenticEvaluation(StrictFrozen):
     research_available: bool
     report: dict[str, str]
     screening_questions: tuple[str, ...] = Field(max_length=30)
+    # Private retrieval/model provenance, saved in the existing evaluation artifact.
+    # No default migration or new interpretation of historical evaluations.
+    matching_diagnostics: dict[str, Any] | None = Field(default=None, repr=False)
+
+    @model_serializer(mode="wrap")
+    def _historical_payload(self, handler):
+        result = handler(self)
+        if self.matching_diagnostics is None:
+            result.pop("matching_diagnostics", None)
+        return result
 
     @model_validator(mode="before")
     @classmethod

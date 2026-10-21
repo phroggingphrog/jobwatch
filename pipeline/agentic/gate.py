@@ -243,6 +243,10 @@ def decide(
                 raise ValueError
             for match in evaluation.matches:
                 verify_candidate_citations(match.evidence, evidence_bundle)
+                if match.judgment is not None:
+                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
+                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
+                        raise ValueError
         except Exception:
             return _hold(evaluation, "verification_required")
 
