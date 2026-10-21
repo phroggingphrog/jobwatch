@@ -22,7 +22,11 @@ def fetch_one(cfg: CollectorContext, employer: dict):
     if text is None:                       # 304: unchanged since last poll
         return []
     cfg.count_raw(text.count("<item>") + text.count("<item "))
-    return parse_successfactors(text, employer, source=NAME)
+    try:
+        return parse_successfactors(text, employer, source=NAME)
+    except Exception:
+        cfg.state_set(f"http_cache:{url}", {})      # unread items must not be answered with 304 next time
+        raise
 
 
 def collect(cfg: CollectorContext, since=None) -> list[Posting]:

@@ -13,10 +13,9 @@ import re
 
 import feedparser
 
-from ..http import HttpError
 from ..models import Posting, html_to_text, is_australian, iso
 from . import ats_pageup
-from .base import CollectorContext
+from .base import SOURCE_ERRORS, CollectorContext
 
 NAME = "rss"
 
@@ -142,6 +141,6 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
                 items = parse_generic(text, feed)
             results += items
             cfg.origins.add(f"rss:{feed['name']}")
-        except (HttpError, ValueError) as exc:
+        except SOURCE_ERRORS as exc:
             cfg.error(feed.get("name", feed["url"]), exc)
     return results[: cfg.limit] if cfg.limit else results

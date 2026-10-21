@@ -4,12 +4,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
+from xml.etree.ElementTree import ParseError
 
 from ..config import Config
 from ..http import Fetcher, HttpError
 from ..models import Posting
 
 log = logging.getLogger("jobwatch.collectors")
+
+# One employer/feed failing (HTTP, bad payload shape, malformed XML) must not lose the others.
+SOURCE_ERRORS = (HttpError, ValueError, KeyError, TypeError, AttributeError, IndexError, ParseError)
 
 
 @dataclass
@@ -66,7 +70,7 @@ def run_per_employer(cfg: CollectorContext, provider: str,
                 if cfg.full(results):
                     break
             cfg.origins.add(f"{provider}:{name}")
-        except (HttpError, ValueError, KeyError, TypeError) as exc:
+        except SOURCE_ERRORS as exc:
             cfg.error(name, exc)
     return results
 
