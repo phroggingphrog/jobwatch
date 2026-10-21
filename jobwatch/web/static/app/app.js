@@ -12,10 +12,14 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function icon(n) { return '<svg class="ph-icon" aria-hidden="true" focusable="false"><use href="#lucide-' + n + '"/></svg>'; }
   function api(path, body) {
-    var opt = body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+    var opt = body === undefined ? { headers: { accept: "application/json" } }
+      : { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify(body) };
     return fetch(path, opt).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (d) {
-        if (!r.ok) throw new Error(d.error || d.detail || ("Request failed (" + r.status + ")"));
+      var json = (r.headers.get("content-type") || "").indexOf("json") >= 0;
+      return r.json().catch(function () { return null; }).then(function (d) {
+        if (!r.ok) throw new Error(r.status === 401 ? "Your session ended. Reload to sign in again." : (d && (d.error || d.detail)) || ("Request failed (" + r.status + ")"));
+        /* a redirect to the login page (or any HTML) is not a success */
+        if (r.redirected || !json || d === null) throw new Error("Your session ended. Reload to sign in again.");
         return d;
       });
     });

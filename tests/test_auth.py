@@ -14,6 +14,10 @@ def client(tmp_path, monkeypatch):
     app = FastAPI()
     install_auth(app)
 
+    @app.get("/api/ping")
+    def ping():
+        return {"ok": True}
+
     @app.get("/")
     def home():
         return {"user": users.current()}
@@ -43,3 +47,9 @@ def test_auth(client, tmp_path):
                     follow_redirects=False)
     assert r.status_code == 303 and (tmp_path / "users" / "newbie" / "profile").is_dir()
     assert client.get("/").json() == {"user": "newbie"}
+
+
+def test_api_paths_get_json_401_not_login_redirect(client):
+    # fetch() sends Accept */*: a 303 to /login would be followed to 200 HTML and read as success
+    r = client.get("/api/ping", headers={"accept": "*/*"}, follow_redirects=False)
+    assert r.status_code == 401 and r.json() == {"error": "sign in required"}
