@@ -32,6 +32,9 @@ class SyntheticGateway:
         self.citation = {'source_id': item.source_file, 'content_hash': item.source_hash, 'quote': item.quote}
 
     def __call__(self, url, headers, body, timeout):
+        if url.endswith('/embeddings'):
+            return 200, {'data': [{'index': i, 'embedding': [1.0, 0.0]} for i in range(len(body['input']))],
+                         'usage': {'prompt_tokens': 20, 'total_tokens': 20}}
         system = body['messages'][0]['content']
         context = json.loads(body['messages'][1]['content'])
         registry = json.loads(system.split('JSON response): ', 1)[1])
@@ -61,6 +64,19 @@ class SyntheticGateway:
                         'screening_questions': []}, 'location_fit': 'melbourne',
                     'location_evidence': {'source_id': 'ad', 'content_hash': h, 'quote': 'based in Melbourne'},
                     'legitimacy': 'verified', 'uncertainties': []}
+        elif terminal == 'complete_requirement_matches':
+            if initial:
+                tool, args = 'search_candidate_evidence', {'requirement_id': 'r1'}
+            else:
+                args = {'requirements_hash': context['requirements_hash'], 'matches': [{
+                    'requirement_id': 'r1', 'match': 'strong', 'evidence': [self.citation],
+                    'judgment': {'status': 'demonstrated', 'rationale': 'Synthetic source demonstrates ledger reconciliation.',
+                        'reviewed_evidence_ids': [self.bundle.items[0].id], 'contradiction_evidence': [], 'open_question': ''}}]}
+        elif terminal == 'submit_company_brief':
+            assert 'career_profile' not in context
+            args = {'desired_skills': [{'label': 'Supplier reconciliation', 'importance': 'required',
+                       'quote': 'Reconcile supplier ledgers'}],
+                    'duties_and_attractions': [], 'company_facts': [], 'uncertainties': ['Public sources unavailable.']}
         elif terminal == 'complete_job_assessment':
             if initial:
                 tool, args = 'read_candidate_evidence', {'evidence_ids': [self.bundle.items[0].id]}
@@ -74,6 +90,7 @@ class SyntheticGateway:
                         for name in ('cv_match', 'north_star', 'compensation', 'culture', 'red_flags')},
                     'report': {key: 'Synthetic evidence supports reconciliation; compensation remains unknown.' for key in 'ABCDEFG'}}
         elif terminal == 'submit_draft':
+            assert context['company_research']['researcher_status'] == 'complete'
             if initial:
                 tool = 'read_job_ad'
             else:
@@ -139,7 +156,8 @@ def world(tmp_path, monkeypatch):
     return conn, config, bundle, add
 
 
-def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
+@pytest.mark.parametrize('embedding_model', [None, 'openrouter/qwen/qwen3-embedding-8b'])
+def test_native_api_prepares_existing_pipeline_package(world, monkeypatch, embedding_model):
     """Authenticated HTTP -> real graph -> existing pipeline -> verified PDF download."""
     import time
     from fastapi.testclient import TestClient
@@ -151,6 +169,7 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
     from datetime import datetime, timezone
 
     conn, config, bundle, add = world
+    config.settings['pipeline']['agentic']['embedding_model'] = embedding_model
     text = add(42)
     def observation(posting, *, deadline):
         return PostingObservation(posting_id=posting['id'], url_hash=content_hash(canonical_url(posting['url']).encode()),
@@ -161,6 +180,8 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
     synthetic = SyntheticGateway(bundle)
     conversation_calls = []
     def transport(url, headers, body, timeout):
+        if url.endswith('/embeddings'):
+            return synthetic(url, headers, body, timeout)
         if body['messages'][-1]['content'].startswith('Allowed tool schemas: '):
             value = {'tool':'prepare_application','arguments':{'posting_id':42}} if len(conversation_calls) % 2 == 0 else {'answer':'Check the saved operation outcome; final Submit remains human.'}
             conversation_calls.append(value)
@@ -195,6 +216,9 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch):
             if artifact['kind']!='form_map':assert response.content.startswith(b'%PDF')
         assert finished['result']['usage']['model_calls']>1
         assert conn.execute("SELECT COUNT(*) FROM agentic_packages WHERE phase='complete'").fetchone()[0]==1
+        saved = latest_result(conn, 42)['evaluation']
+        assert saved['matches'][0]['judgment']['status'] == 'demonstrated'
+        assert saved['matching_diagnostics']['dense_retrieval'] == ('active' if embedding_model else 'not_configured')
         calls_before = len(synthetic.calls)
         assert run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm,
                                operation='evaluate') == Stage.READY

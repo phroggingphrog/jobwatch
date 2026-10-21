@@ -233,9 +233,11 @@ def _build(person, conn, config, llm, selected, saver, store):
                 scope.outcomes.append(outcome)
             return outcome
         # Recheck every configured role: existing source permits arbitrary model ids.
-        for key, value in _config(config).items():
-            if key.endswith('_model'):
-                _route(llm, value)
+        cfg = _config(config)
+        for key in ('worker_model', 'evaluator_model', 'reviewer_model', 'answer_model'):
+            _route(llm, cfg[key])
+        if cfg['embedding_model'] is not None:
+            invocation.require_route(llm, cfg['embedding_model'], embedding=True)
         with job_connection(config, write=True) as jobs:
             approved = scope.approvals.get((tool_name, posting_id)) if scope else None
             if approved is None:

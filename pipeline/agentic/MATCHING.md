@@ -158,11 +158,39 @@ eventual callback probability or qualification score. No arbitrary time cutoff
 turns silence into failure. A calibrated time-to-event model with an explicit
 observation horizon remains future work.
 
-A separately approved Jev/local comparison, live route activation, blind owner labels
-and job-domain benchmark remain tracked in issue #6. No legacy candidate-bearing
-Jev/vector calls were re-enabled. No application test suite or live-model experiment
-has been run. A synthetic in-memory outcome discrepancy was reproduced before
-correction; runtime/budget and quality evidence is still required for release.
+A separately approved Jev/local comparison, blind owner labels and a job-domain
+benchmark remain tracked in issue #6. No legacy candidate-bearing Jev/vector calls
+were re-enabled. The native synthetic acceptance path now exercises both lexical
+and Qwen-configured retrieval through actual graphs, human approval/resume,
+focused judgments, company brief, writer, reviewer, saved PDFs, downloads and
+idempotent reuse. Model responses in that path are deterministic fixtures; it
+proves backend mechanics, not real-model writing or matching accuracy.
+
+One separately authorized real Qwen gateway request used three synthetic passages:
+it returned three 4,096-dimensional vectors, with related cosine 0.7136 versus
+unrelated cosine 0.1847. No real candidate records were sent. This establishes that
+the selected embedding endpoint answered, not job-domain retrieval accuracy.
+
+## Automated verification
+
+`.github/workflows/backend.yml` runs the native pipeline, graph/runtime, evidence
+matcher, contract/gate, preference and censored-outcome checks on pushes and pull
+requests. Manual `workflow_dispatch` is supported; outdated runs for the same
+branch/PR are cancelled. CI uses synthetic data and injected transports, with no
+gateway secrets, employer requests or private artifacts uploaded.
+
+The end-to-end check also guards the dispatch regression where the optional
+embedding model was incorrectly validated as a chat model. Both unset embeddings
+and the explicitly approved Qwen route must reach a complete saved package.
+Focused checks cover Qwen instructions/paid-route isolation, invalid vectors and
+retained charges, blinded packets, absent labels, snapshot mismatches and split
+leakage. Historical evaluator fixtures now target the focused judgment stage for
+bounded corrections instead of accidentally sending a summary to that stage.
+
+Automation does not merge or deploy on a synthetic green result. Full release
+regression, independent acceptance audit, reviewed matching examples and a real
+quality comparison remain release evidence. Missing human labels stays explicit;
+no automated model answer is recorded as an owner's label or approval.
 
 Undo: revert the evidence-matching source commit and retain private artifacts.
 Restore a matching code/skills release for old conversations. Do not delete history.
