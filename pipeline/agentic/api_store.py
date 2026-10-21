@@ -196,7 +196,7 @@ class APIStore:
         with self.transaction():
             row = self.raw_run(ident)
             interactions = (result or {}).get('interactions', [])
-            state = ('cancelled' if error == 'cancelled' else
+            state = ('cancelled' if error == 'cancelled' else 'interrupted' if error == 'worker_interrupted' else
                      'deferred' if error == 'person_busy' else 'failed') if error else 'completed'
             if interactions and not error:
                 if len(interactions) > 8 or any(x['type'] not in ('question', 'approval') for x in interactions):

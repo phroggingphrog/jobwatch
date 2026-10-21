@@ -750,3 +750,104 @@ def test_retry_of_a_fresh_approval_resume_still_works_and_clears_cancel_flag(tmp
         store.retry(resume)
         row = store.raw_run(resume)
         assert row['state'] == 'queued' and row['cancel_requested'] == 0  # an explicit retry supersedes the old cancel
+
+
+def test_graceful_shutdown_leaves_inflight_run_interrupted_and_retryable(tmp_path, monkeypatch):
+    import threading
+    import time
+    from fastapi.testclient import TestClient
+    from pipeline.agentic.api import create_api, Principal
+    from pipeline.agentic.api_store import APIStore
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    key = 'fixture-run-' + 'a' * 40
+    started = threading.Event()
+
+    def dispatcher(*, execution, **kw):  # a long run that polls cancellation like the real graph
+        started.set()
+        while True:
+            execution.check()
+            time.sleep(0.01)
+    app = create_api(credentials={key: Principal('fixture-a')}, config={'agentic': {'enabled': False}}, dispatcher=dispatcher)
+    headers = {'Authorization': 'Bearer ' + key, 'Idempotency-Key': 'shutdown'}
+    with TestClient(app) as client:
+        thread = client.post('/api/agent/threads', headers=headers).json()['id']
+        ident = client.post('/api/agent/threads/' + thread + '/runs', json={'message': 'Long'}, headers=headers).json()['id']
+        assert started.wait(10)
+    # server stopped with the run in flight: that is an unclean stop (retryable), not a user cancellation
+    with APIStore('fixture-a') as store:
+        row = store.raw_run(ident)
+        assert row['state'] == 'interrupted' and row['error'] == 'worker_interrupted', row
+        store.retry(ident)
+        assert store.raw_run(ident)['state'] == 'queued'
+
+
+def test_user_cancel_still_finishes_cancelled(tmp_path, monkeypatch):
+    import threading
+    import time
+    from fastapi.testclient import TestClient
+    from pipeline.agentic.api import create_api, Principal
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    key = 'fixture-run-' + 'a' * 40
+    started = threading.Event()
+
+    def dispatcher(*, execution, **kw):
+        started.set()
+        while True:
+            execution.check()
+            time.sleep(0.01)
+    app = create_api(credentials={key: Principal('fixture-a')}, config={'agentic': {'enabled': False}}, dispatcher=dispatcher)
+    headers = {'Authorization': 'Bearer ' + key, 'Idempotency-Key': 'cancel'}
+    with TestClient(app) as client:
+        thread = client.post('/api/agent/threads', headers=headers).json()['id']
+        ident = client.post('/api/agent/threads/' + thread + '/runs', json={'message': 'Long'}, headers=headers).json()['id']
+        assert started.wait(10)
+        assert client.post('/api/agent/runs/' + ident + '/cancel', headers=headers).status_code == 202
+        deadline = time.monotonic() + 10
+        while client.get('/api/agent/runs/' + ident, headers=headers).json()['state'] in ('queued', 'running'):
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+        assert client.get('/api/agent/runs/' + ident, headers=headers).json()['state'] == 'cancelled'
+
+
+def test_event_stream_never_ends_without_the_terminal_event(tmp_path, monkeypatch):
+    """The worker may commit the final events and the terminal state between the stream's two reads."""
+    from fastapi.testclient import TestClient
+    from pipeline.agentic.api import create_api, Principal
+    from pipeline.agentic.api_store import APIStore
+    from pipeline.agentic.chat import skill_version
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    key = 'fixture-run-' + 'a' * 40
+    app = create_api(credentials={key: Principal('fixture-a')}, config={'agentic': {'enabled': False}},
+                     dispatcher=lambda **kw: {'answer': 'unused'})
+    headers = {'Authorization': 'Bearer ' + key}
+    state = {'depth': 0, 'skip': 1, 'done': False}
+    original = {name: getattr(APIStore, name) for name in ('events', 'raw_run')}
+
+    def hooked(name, finalize):
+        def wrapper(self, *args, **kwargs):
+            state['depth'] += 1
+            try:
+                out = original[name](self, *args, **kwargs)
+            finally:
+                state['depth'] -= 1
+            if state['depth'] == 0 and not state['done']:
+                if state['skip']:  # the endpoint's own existence check before the stream starts
+                    state['skip'] -= 1 if name == 'raw_run' else 0
+                else:
+                    state['done'] = True
+                    finalize()  # the worker commits between the stream's first and second read
+            return out
+        return wrapper
+    with TestClient(app) as client:
+        with APIStore('fixture-a') as store:
+            thread = store.create_thread(skill_version())['id']
+            ident = store.enqueue(thread, {'message': 'Stream'}, 'stream')
+            assert store.claim_next()['id'] == ident
+
+        def finalize():
+            with APIStore('fixture-a') as store:
+                store.finish(ident, {'answer': 'Done'})
+        for name in original:
+            monkeypatch.setattr(APIStore, name, hooked(name, finalize))
+        text = client.get('/api/agent/runs/' + ident + '/events', headers=headers).text
+    assert state['done'] and 'event: completed' in text, text
