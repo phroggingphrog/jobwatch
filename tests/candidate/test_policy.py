@@ -62,7 +62,12 @@ def test_work_rights_come_from_approved_facts():
     assert p.work_rights['hours_limit_per_fortnight'] == 48 and p.work_rights['full_time_programs_ok'] is True
 
 @pytest.mark.parametrize('text,expect', [('Australian citizen', True), ('Permanent resident of Australia', True),
-                                         ('I am not an Australian citizen', False), ('Working holiday visa', None)])
+                                         ('I am not an Australian citizen', False), ('Working holiday visa', None),
+                                         ('Not yet an Australian citizen', None),
+                                         ('I am not currently an Australian citizen', None),
+                                         ('Neither an Australian citizen nor a permanent resident', None),
+                                         ('Applying for permanent resident status, currently on a student visa', None),
+                                         ('Will become a permanent resident next year', None)])
 def test_citizen_or_pr_detection(text, expect):
     assert policy_of(fact('work_rights', text)).work_rights.get('citizen_or_pr') is expect
 
@@ -176,6 +181,12 @@ def test_remote_and_regions_rules():
     p = policy_of(fact('location', 'Melbourne or Sydney'), fact('preference', 'Australia-wide is fine'))
     assert p.regions == ()
     assert policy_of(fact('location', 'Melbourne or Sydney')).regions == ('NSW', 'VIC')
+
+
+def test_a_refusal_of_remote_work_is_not_read_as_remote_ok():
+    for text in ('I do not want remote work', 'Remote work is not an option for me', "I'm not interested in remote jobs",
+                 'avoid remote roles'):
+        assert policy_of(fact('preference', text)).remote_ok is False, text
 
 
 def test_describe_modes(monkeypatch):

@@ -11,7 +11,8 @@ from pipeline.agentic.location import commute_km_for, location_verdict, regions_
 @pytest.mark.parametrize('text,expect', [
     ('Sydney NSW', {'NSW'}), ('Parramatta, New South Wales', {'NSW'}), ('Melbourne, VIC; Sydney, NSW', {'VIC', 'NSW'}),
     ('Box Hill campus', {'VIC'}), ('Richmond NSW', {'NSW'}), ('Perth WA', {'WA'}), ('Remote, Australia wide', set()),
-    ('Level 3, 1 Example St', set())])
+    ('Level 3, 1 Example St', set()), ('Sydney Road, Brunswick VIC', {'VIC'}), ('Victoria Street, Sydney NSW', {'NSW'}),
+    ('Adelaide Street, Brisbane QLD', {'QLD'}), ('Victoria Street, Melbourne', {'VIC'})])
 def test_regions_named(text, expect):
     assert regions_named(text) == frozenset(expect)
 

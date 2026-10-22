@@ -149,6 +149,16 @@ _LEVEL_OF = {"entry": "entry", "graduate": "entry", "intern": "entry", "trainee"
 _NEG_WORDS = frozenset({"no", "not", "never", "avoid", "without"})
 
 
+# A negated, pending or aspirational word before a citizenship or residence claim makes it no claim.
+_PENDING = re.compile(r"\b(?:not|no|non|never|neither|nor|yet|applying|applied|pending|will|become|becoming|hope|hoping|"
+                      r"aim|aiming)\b|n['\u2019]t\b", re.I)
+
+
+def _affirmed(pattern: re.Pattern, text: str) -> bool:
+    """True when the pattern matches with no negation, pending or aspirational word in the four words before it."""
+    return any(not _PENDING.search(" ".join(text[:m.start()].split()[-4:])) for m in pattern.finditer(text))
+
+
 def _clauses(text: str) -> list[str]:
     """Sentences: split on ';', newlines and a full stop that is not a decimal point."""
     return [c for c in re.split(r"(?:[;\n]+|\.(?!\d))", text) if c.strip()]
@@ -260,7 +270,10 @@ def build_policy(approved: dict) -> DecisionPolicy:
             anywhere = anywhere or wide
             if out:
                 ruled_out.append(_fact_code(f))
-        remote_yes = remote_yes or bool(_REMOTE_YES.search(text))
+        for sentence in _clauses(text):    # a remote mention in a negated sentence is a refusal
+            if _REMOTE_YES.search(sentence):
+                remote_no = remote_no or bool(_NEGATION.search(sentence))
+                remote_yes = remote_yes or not _NEGATION.search(sentence)
         remote_no = remote_no or bool(_REMOTE_NO.search(text))
         if isinstance(v, dict) and isinstance(v.get("remote_ok"), bool):
             explicit_remote = v["remote_ok"] if explicit_remote is None else (explicit_remote and v["remote_ok"])
@@ -292,7 +305,7 @@ def build_policy(approved: dict) -> DecisionPolicy:
         text = _text(v)
         if _CITIZEN_NO.search(text):
             citizen = False
-        elif _CITIZEN_YES.search(text) and citizen is None:
+        elif _affirmed(_CITIZEN_YES, text) and citizen is None:
             citizen = True
     if citizen is not None:
         work_rights["citizen_or_pr"] = citizen

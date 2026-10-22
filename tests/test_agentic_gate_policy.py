@@ -180,6 +180,12 @@ def test_unemployment_does_not_override_exclusion(evaluation, policy):
     assert outcome(evaluation, AD, policy, dp) == ("archive", "policy_excluded")
 
 
+def test_a_family_rule_holds_an_ad_the_evaluator_could_not_place(evaluation, policy):
+    ev = evaluation.model_copy(update={"facts": evaluation.facts.model_copy(update={"role_family": "unknown"})})
+    assert outcome(ev, AD, policy, policy_of(_rule("family", "accounting"))) == ("hold", "insufficient_evidence")
+    assert outcome(ev, AD, policy, policy_of(VIC)) == ("draft", "eligible")   # no family rule: nothing to hold for
+
+
 def test_allowed_families_and_live_exclusions_are_not_consulted_on_the_policy_path(evaluation, policy):
     only_acc = TargetPolicy(version="t", allowed_families=("accounting",))
     ev = evaluation.model_copy(update={"facts": evaluation.facts.model_copy(update={"role_family": "engineering"})})

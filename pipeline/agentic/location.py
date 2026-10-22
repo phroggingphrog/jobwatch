@@ -205,6 +205,9 @@ CAPITALS: dict[str, str] = {'sydney': 'NSW', 'melbourne': 'VIC', 'brisbane': 'QL
                             'hobart': 'TAS', 'canberra': 'ACT', 'darwin': 'NT'}
 _CAPITAL_WORD = re.compile(r'\b(' + '|'.join(CAPITALS) + r')\b', re.I)
 _REMOTE_WORDS = re.compile(r'\b(?:remote|work from home|anywhere in australia)\b', re.I)
+# "Sydney Road" or "Victoria Street" names a street, not a place: those words are dropped before places are looked for.
+_STREET_NAME = re.compile(r"\b[A-Z][a-z]+\s+(?i:street|st|road|rd|avenue|ave|lane|drive|dr|terrace|parade|boulevard|"
+                          r"highway|hwy|way|place|court|crescent)\b\.?")
 
 
 def regions_named(text: str) -> frozenset[str]:
@@ -213,7 +216,7 @@ def regions_named(text: str) -> frozenset[str]:
     Only when the text names no state does a Victorian place from the bundled data count as VIC, so a state
     named in the text always wins over place data ("Richmond NSW" is NSW, never VIC)."""
     from jobwatch.place import STATES
-    text = ' '.join((text or '').split())
+    text = _STREET_NAME.sub(' ', ' '.join((text or '').split()))
     found = {code for code, name in STATES.items()
              if re.search(rf'(?-i:\b{code}\b)', text) or re.search(rf'\b{re.escape(name)}\b', text, re.I)}
     found |= {CAPITALS[m.group(1).lower()] for m in _CAPITAL_WORD.finditer(text)}

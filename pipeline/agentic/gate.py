@@ -404,6 +404,9 @@ def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, comp
         if not _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok):
             if hours_excessive or facts.hours == "full_time_only":
                 return _archive(evaluation, "hard_gate")
+    # (8) a family rule cannot be checked against an ad the evaluator could not place in a family
+    if canonicalize_family(facts.role_family) == "unknown" and any(r.kind == "family" for r in dp.exclusions):
+        return _hold(evaluation, "insufficient_evidence")
     return None
 
 

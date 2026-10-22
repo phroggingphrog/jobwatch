@@ -244,13 +244,13 @@ def test_run_filters_the_jev_knockouts_through_the_policy(world, monkeypatch):
 
 
 def test_commute_comes_from_the_policy_home(monkeypatch):
-    monkeypatch.setattr('pipeline.agentic.location._profile_home', lambda: 'brunswick')   # the owner's profile suburb
+    monkeypatch.setattr('pipeline.agentic.location._profile_home', lambda: 'box hill')   # a neutral Victorian suburb
     homed = policy_of(fact('location', 'I live in Box Hill, VIC'))
     homeless = policy_of(fact('experience', 'x'))
     assert homed.home['place'] == 'Box Hill, VIC' and homeless.home is None
     assert service.commute_km_of(homed, 'Carlton VIC') == commute_km_for('Box Hill, VIC', 'Carlton VIC')
     assert type(service.commute_km_of(homed, 'Carlton VIC')) is int
-    assert km_from_home('Carlton VIC') is not None                                   # the owner lives in Brunswick
+    assert km_from_home('Carlton VIC') is not None
     assert service.commute_km_of(homeless, 'Carlton VIC') is None                   # no home -> no distance, whatever the owner
     assert service.commute_km_of(None, 'Carlton VIC') == km_from_home('Carlton VIC')
     assert service.commute_km_of(None, None) == km_from_home('')
