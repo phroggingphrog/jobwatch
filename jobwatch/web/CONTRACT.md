@@ -20,8 +20,8 @@ citizen_only, clearance), `SENIORITY_TEXT`, `AD_KIND_LABEL` (agency, talent_pool
 "" when neither), `score_label(v)` (Strong match 4.5+, Good match 4.0+, Decent match 3.5+, Recommend against), `score_class(v)` (fit-hi 4.0+, fit-mid 3.5+, fit-lo),
 `SCORE_FLOORS` (3.5, 4.0, 4.5), `SCORE_FLOOR_LABEL`, and the code-to-words dicts `HOURS_TEXT, WORK_MODE_TEXT, LOCATION_TEXT, IMPORTANCE_TEXT, TIER_TEXT, TIER_WHY,
 MATCH_TEXT, REC_TEXT, LEGIT_TEXT` and the list `DIM_LABEL [(key,label)]` (cv_match, north_star, comp, culture, red_flags). `HIDE_REASONS` is, in order: sponsored_ad, not_a_real_job,
-needs_citizen_or_pr, needs_unrestricted_rights ("Needs unrestricted work rights"), full_time_only ("Full-time only: not possible while studying"), out_of_area
-("Outside Melbourne, not remote"), too_senior, low_fit; `hide_sentence` gives "full-time only, not possible while studying" and "outside Melbourne, not remote" for running text.
+needs_citizen_or_pr, needs_unrestricted_rights ("Needs unrestricted work rights"), full_time_only ("Full-time only: does not fit your hours"), out_of_area
+("Outside your search area, not remote"), too_senior, low_fit; `hide_sentence` gives "full-time only, which does not fit your hours" and "outside your search area, not remote" for running text.
 `BLOCKING_RIGHTS` now includes `unrestricted_work_rights`.
 Every context also has: `request`, `nav` (`{inbox, applications, sources_bad}` ints, or `{}` on error pages), `now`, `path`.
 

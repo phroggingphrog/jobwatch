@@ -117,6 +117,23 @@ Not verified or not available yet:
 
 Walk-through with real output (invented data, no model called): [docs/examples/frozen-baseline.md](docs/examples/frozen-baseline.md).
 
+### Decision policy
+
+`pipeline.agentic.decision_policy` in `config/jobwatch.yaml` chooses the gate: `legacy` (the default, the fixed rules) or `profile` (the person's confirmed profile). `legacy` changes nothing. The flag is not part of a run key, so switching it never re-keys a stored evaluation. Switching to `profile` re-decides stored held and archived evaluations with no model call, and each decision is recorded in the `gate_decisions` table (written only in `profile` mode).
+
+With `profile`, the gate reads only the approved facts of the confirmed version:
+
+- **Strategy.** A stated career focus gives `career_focus`. Unemployed with no contrary status gives `employment_first`, so a low career-alignment score does not reject an employment-first opportunity. Anything else is `balanced`.
+- **Exclusions are rules only when structured.** An exclusion becomes a rule only as a `{kind, value}` fact, with kind `family`, `employer`, `title_term`, `location` or `work_type`. Free text is never a rule. It stays prompt text and is listed as the open question `exclusion:<fact_id>` until the person gives it a kind.
+- **Work rights, hours, level and commute** are read from the approved facts by a documented deterministic grammar. Wording the grammar does not recognise becomes an open question, not a rule.
+- **Missing facts** that change a decision are open questions (for example `location`). An ad whose location cannot be resolved holds rather than archives.
+
+To see the policy and its open questions: `GET /api/agent/profile/policy` (scope `read`) returns `policy`, `mode`, `enabled`, `open_questions` (each `{code, question, why}`) and `reason` when there is no policy. The chat agent's read-only `profile_policy` tool returns the same. Neither writes anything.
+
+Limits: distance uses place data for Victoria only. Other states resolve by state name, state code or capital city, and an unresolved location holds. The product remains Australia-only. Collection pre-filters, `_target_first`, near-duplicate embeddings, the `north_star < 3` score gate and the preference-model families are unchanged. A person with no confirmed version that carries these facts stays on the legacy gate even when the flag is `profile`.
+
+Undo: set `decision_policy: legacy`, which restores the current gate immediately with no revert. To remove the table, run `DROP TABLE IF EXISTS gate_decisions` on the person's database. Walk-through with real output (invented data, no model called): [docs/examples/decision-policy.md](docs/examples/decision-policy.md).
+
 ## Config files (`config/`)
 
 | File | What it holds |
