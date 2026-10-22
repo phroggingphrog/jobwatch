@@ -1,5 +1,10 @@
 # Cross-plan contract for phases 2–7
 
+> **Phase 5 supersession:** the owner-approved
+> [2026-10-22 execution plan](2026-10-22-phase-5-execution.md) replaces conflicting
+> Phase 5 requirements below. See the explicit [override](#phase-5-override-owner-approved-2026-10-22).
+> Earlier phase contracts remain historical background unless separately changed.
+
 Each roadmap plan is written and executed separately, so the names one plan produces and the next consumes
 are fixed here. A plan may add internals freely; it may not rename, retype or drop anything below without a
 ruling recorded in its own ledger and an edit to this file in the same pull request.
@@ -197,3 +202,27 @@ These override the interface list below where they differ. Each plan has been ed
 - Reports under `users.user_dir(person)/reports/<report_id>.{json,md}` with code and data hashes; no candidate quotes
   in aggregates.
 - CI: full suite on push/PR in `.github/workflows/backend.yml`, R/JAGS installed for the sampler test.
+
+## Phase 5 override (owner-approved 2026-10-22)
+
+For ranking and explained shortlists, the binding source is
+[the Phase 5 execution plan](2026-10-22-phase-5-execution.md), which supersedes
+conflicting Phase 5 details in this historical cross-plan contract and the
+original [Plan 4](2026-10-21-plan-4-ranking-shortlist.md). This override does not
+rewrite earlier phases' unrelated contracts.
+
+- Ranking uses evidence coverage and labels as defined in the execution plan.
+  Scores are advisory evidence and no former score-policy flag or legacy score
+  gate participates in ranking.
+- All preference feature and family priors are neutral zero. Salary remains
+  missing unless the ad supplies hours that support conversion; there is no
+  assumed 38-hour week or other fixed weekly-hours basis.
+- Migration is an explicit owner-confirmed operation that preserves original
+  records, selected answers (including none), and train/holdout assignments.
+  Changed or unverifiable records are skipped; no automatic migration or fit
+  occurs.
+- Transferable evidence comes only from frozen facts already matched to evidence.
+  Word overlap or profile inference alone never proves a skill.
+- Phase 5 source implementation is available on the current branch. Full-suite
+  verification and review/PR remain pending; the change is not merged, and no
+  release checks are claimed.

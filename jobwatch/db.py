@@ -368,6 +368,29 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX discovery_spend_at ON discovery_spend(at);
     """,
+    # Versioned explained shortlist snapshots; all records stay per person.
+    """
+    CREATE TABLE shortlists (
+        shortlist_id TEXT PRIMARY KEY, person TEXT NOT NULL, built_at TEXT NOT NULL,
+        profile_version INTEGER NOT NULL, ordering TEXT NOT NULL,
+        rules_version TEXT NOT NULL, fit_id TEXT, content_hash TEXT NOT NULL,
+        input_hash TEXT NOT NULL, summary_json TEXT NOT NULL
+    );
+    CREATE INDEX shortlists_person ON shortlists(person,built_at);
+    CREATE TABLE shortlist_entries (
+        entry_id TEXT PRIMARY KEY, shortlist_id TEXT NOT NULL REFERENCES shortlists(shortlist_id),
+        posting_id INTEGER NOT NULL, rank INTEGER NOT NULL, label TEXT NOT NULL,
+        payload_json TEXT NOT NULL, UNIQUE(shortlist_id,posting_id)
+    );
+    CREATE INDEX shortlist_rank ON shortlist_entries(shortlist_id,rank);
+    CREATE TABLE shortlist_impressions (
+        id INTEGER PRIMARY KEY, shortlist_id TEXT NOT NULL REFERENCES shortlists(shortlist_id),
+        entry_id TEXT NOT NULL REFERENCES shortlist_entries(entry_id), posting_id INTEGER NOT NULL,
+        rank INTEGER NOT NULL, ordering TEXT NOT NULL, probability REAL,
+        shown_at TEXT NOT NULL, surface TEXT NOT NULL, shown_day TEXT NOT NULL,
+        UNIQUE(entry_id,surface,shown_day)
+    );
+    """,
 ]
 
 

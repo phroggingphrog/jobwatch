@@ -129,15 +129,7 @@ def interval(values):
 
 def predict_set(store, alternatives, context_hash):
     alternatives=validate_alternatives(alternatives)
-    status=store.status(context_hash)
-    if status['status']!='valid':
-        raise PreferenceError('valid_current_fit_required')
-    fit=status['fit']
-    if fit.get('origin')!='owner' or fit.get('context_hash')!=context_hash or fit.get('profile_hash')!=alternatives[0]['profile_hash']:
-        raise PreferenceError('invalid_fit_provenance')
-    draws=fit.get('draws',{}); beta=draws.get('beta',[]); alpha=draws.get('alpha',[])
-    if not beta or len(beta)!=len(alpha) or any(len(b)!=len(NAMES)*2 for b in beta) or any(len(a)!=len(FAMILIES) for a in alpha) or any(not math.isfinite(v) for row in beta+alpha for v in row):
-        raise PreferenceError('invalid_posterior')
+    fit, beta, alpha = _current_posterior(store, alternatives, context_hash)
     x=[transform_features(a['features'],fit['preprocessing']) for a in alternatives]
     probabilities=[[] for _ in range(4)]; utilities=[[] for _ in range(3)]
     contributions=[[[] for _ in range(len(NAMES)*2)] for _ in range(3)]
@@ -159,3 +151,56 @@ def predict_set(store, alternatives, context_hash):
     return {'fit_id':fit['id'],'context_hash':context_hash,'alternatives':predictions,
             'ranking':[p['posting_id'] for p in sorted(predictions,key=lambda p:p['choice_probability']['mean'],reverse=True)],
             'none_probability':interval(probabilities[3]),'meaning':'Probability of an owner choice within this displayed set; not hiring or eligibility probability.'}
+
+
+def _current_posterior(store, alternatives, context_hash):
+    """Both prediction APIs require the same genuine, current accepted posterior."""
+    status = store.status(context_hash)
+    if status['status'] != 'valid':
+        raise PreferenceError('valid_current_fit_required')
+    fit = status.get('fit')
+    if not isinstance(fit, dict) or fit.get('origin') != 'owner' or fit.get('context_hash') != context_hash or fit.get('profile_hash') != alternatives[0]['profile_hash']:
+        raise PreferenceError('invalid_fit_provenance')
+    try:
+        if not isinstance(fit.get('id'), str) or not fit['id']:
+            raise ValueError
+        draws = fit['draws']
+        beta, alpha = draws['beta'], draws['alpha']
+        if not isinstance(beta, list) or not isinstance(alpha, list) or not 1 <= len(beta) <= 4000 or len(beta) != len(alpha):
+            raise ValueError
+        if any(not isinstance(row, list) or len(row) != width or any(type(v) not in (int, float) or not math.isfinite(v) for v in row) for rows, width in ((beta, len(NAMES)*2), (alpha, len(FAMILIES))) for row in rows):
+            raise ValueError
+        transform = fit['preprocessing']
+        if transform.get('names', list(NAMES)) != list(NAMES):
+            raise ValueError
+        for key in ('centers', 'scales', 'missing_rates'):
+            values = transform[key]
+            if not isinstance(values, list) or len(values) != len(NAMES) or any(type(v) not in (int, float) or not math.isfinite(v) for v in values):
+                raise ValueError
+        if any(v <= 0 for v in transform['scales']) or any(not 0 <= v <= 1 for v in transform['missing_rates']):
+            raise ValueError
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
+        raise PreferenceError('invalid_posterior') from None
+    return fit, beta, alpha
+
+
+def predict_utilities(store, alternatives, context_hash):
+    """Posterior utilities for 1–100 jobs, independent of the displayed choice set.
+
+    Utilities are preference scores, never choice, eligibility or hiring
+    probabilities. Only predict_set defines probabilities for a three-job choice.
+    """
+    alternatives = validate_alternatives(alternatives, size=None)
+    fit, beta, alpha = _current_posterior(store, alternatives, context_hash)
+    predictions = []
+    for alt in alternatives:
+        x = transform_features(alt['features'], fit['preprocessing'])
+        family = family_index(alt['family'])-1
+        values = [a[family]+sum(b[k]*v for k,v in enumerate(x)) for b,a in zip(beta,alpha)]
+        if any(not math.isfinite(v) for v in values):
+            raise PreferenceError('invalid_posterior')
+        predictions.append({'posting_id':alt['posting_id'], 'utility':interval(values),
+                            'missing_features':[name for name in NAMES if alt['features'][name] is None]})
+    return {'fit_id':fit['id'], 'context_hash':context_hash, 'alternatives':predictions,
+            'ranking':[p['posting_id'] for p in sorted(predictions, key=lambda p:(-p['utility']['mean'],p['posting_id']))],
+            'meaning':'Posterior preference utility; not a choice, eligibility or hiring probability.'}

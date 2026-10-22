@@ -1,5 +1,12 @@
 # Plan 4: Ranking and explained shortlist — Implementation Plan
 
+> **Superseded for Phase 5.** The owner-approved [Phase 5 execution plan](2026-10-22-phase-5-execution.md)
+> is the binding design. This file is retained as historical background only;
+> its score-policy flags, nonzero preference priors, fixed-hour salary conversions,
+> feature assumptions and word-overlap transfer rule are not current requirements.
+> Phase 5 source implementation is available on the current branch; full-suite
+> verification and review/PR remain pending. It is not merged or released.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn stored requirement judgments into a ranked, explained shortlist (stronger match / stretch / needs clarification) that works from the first day with documented provisional rules, demote the holistic 1–5 score from the sole exclusion to a comparison baseline behind a flag, and improve the existing R/JAGS preference model (wider families, filled factual features, held jobs in the pool) with an explicit re-featurisation migration.

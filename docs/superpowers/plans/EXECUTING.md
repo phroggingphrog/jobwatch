@@ -13,12 +13,23 @@ self-contained implementation plan in this folder. The spec every plan argues fr
 | 2 | 6a Frozen baseline | `2026-10-21-plan-6a-frozen-baseline.md` | Phase 1 merged |
 | 3 | 2 Decision policy from the profile | `2026-10-21-plan-2-decision-policy.md` | Phase 2 merged |
 | 4 | 3 Field and job discovery | `2026-10-21-plan-3-discovery.md` | Phase 3 merged |
-| 5 | 4 Ranking and explained shortlist | `2026-10-21-plan-4-ranking-shortlist.md` | Phase 4 merged |
+| 5 | 4 Ranking and explained shortlist | `2026-10-22-phase-5-execution.md` | Phase 4 merged |
 | 6 | 5 Feedback and selection | `2026-10-21-plan-5-feedback-selection.md` | Phase 5 merged |
 | 7 | 6b Evaluation and monitoring | `2026-10-21-plan-6b-evaluation.md` | Phase 6 merged |
 
 Run one phase per session, in order. A phase starts from `main` only after the previous phase's pull
 request is merged; check `git log origin/main` for that phase's merge before starting.
+
+**Phase 5 local status:** source implementation is available on
+`codex/phase-5-explained-shortlist`; independent source review is complete.
+The [verification report](../../audits/2026-10-22-shortlist-release.md) records
+3653 passed, 11 skipped and one intermittent browser failure in the full run,
+followed by a passing browser-module rerun. PR integration and deployment remain
+separate. For this local
+execution, follow the owner-approved [Phase 5 plan](2026-10-22-phase-5-execution.md):
+the parent owns integration and commits, workers do not run the full suite, and
+the parent runs the release suite once the source is stable. This phase-specific
+workflow remains the local override to the generic launch prompt below.
 
 ## Launch prompt
 

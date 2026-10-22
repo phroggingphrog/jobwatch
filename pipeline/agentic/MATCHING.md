@@ -5,7 +5,7 @@ Shared collection and API operations call `evaluate_job`. The current sequence i
 1. Extract requirements/facts from the complete ad without candidate evidence.
 2. Retrieve and judge primary evidence against each frozen requirement.
 3. Summarize the frozen evidence judgments with preferences and model context.
-4. Apply the existing deterministic eligibility and holistic-score policy.
+4. Apply canonical eligibility using the person's confirmed policy. Holistic scores remain comparison data and are advisory; they do not decide personal fit.
 
 ## Retrieval and focused judgments
 
@@ -64,7 +64,7 @@ create approval, or automatically become employer screening questions.
 The holistic summary receives the frozen matches and cannot replace them. Ability
 is assessed before preferences, company context, occupation similarity or callback
 history. Typed output and exact quotes establish traceability, not semantic truth.
-There is no claim of calibrated confidence or hiring probability.
+Confirmed profile policy and canonical eligibility apply across active and retained assessment paths. Holistic scores are advisory comparison data. There is no claim of calibrated confidence or hiring probability.
 
 ## Field and job discovery
 
@@ -72,9 +72,9 @@ Field hypotheses and posting relevance are available behind the discovery
 flags, with relevance defaulting to `shadow`; no posting is archived for a
 relevance `no` until `pipeline.agentic.relevance: on`. The `similar_at` (0.60)
 and `duplicate_cosine` (0.95) thresholds are uncalibrated design values. The
-retrieval currently uses embeddings without a lexical hybrid, and Seek, Jora and
-JobSpy use only the first planned location. No matching-accuracy claim is made;
-real-model behaviour and Qwen cosine ranges remain unverified.
+retrieval currently uses embeddings without a lexical hybrid. Supported collector
+searches rotate query/location pairs within request caps. No matching-accuracy
+claim is made; live model behaviour and Qwen cosine ranges remain unverified.
 
 ## Storage and compatibility
 
@@ -90,9 +90,10 @@ an old evaluation/package. No database migration or evidence rewrite is required
 
 The previous matcher is frozen in source at
 `ce160598d49a0464e30380a057dd0a677980de3c`. This is a source reference, **not a
-recorded benchmark**. The 1–5 summary and existing score/eligibility thresholds
-remain unchanged; new prompts can still change decisions. An automatic paid shadow
-runner is not implemented, and this branch is not promoted or deployed.
+recorded benchmark**. The 1–5 summary remains available for comparison, while
+canonical eligibility—not a holistic score threshold—determines whether a job may
+proceed. An automatic paid shadow runner is not implemented, and source merge does
+not establish deployment.
 
 Both extraction, focused judgments and summary share the existing evaluator
 turn/token/deadline budget and paid gateway checks. The added pass costs model
@@ -127,14 +128,14 @@ the WAL-mode database has not been tested against a live one, so the owner's fir
 freeze must confirm it opens. No figure in this document changed. See
 [docs/examples/frozen-baseline.md](../../docs/examples/frozen-baseline.md).
 
-The gate also has a policy path, selected by `pipeline.agentic.decision_policy: profile`
-(default `legacy`). With `profile` it takes the structured exclusion rules, the location, commute and level
-limits and the missing-fact questions from the person's confirmed profile. It also derives
-a strategy, which the gate does not read yet. It records each decision in `gate_decisions`. The flag is outside the run key, so existing evaluations keep their
-keys. The owner's labels, the baseline and the figures above are unchanged; the policy
-path has not been compared with the legacy gate on real postings, so it makes no
-matching-quality claim. Its behaviour is described in the README's decision policy
-section and [docs/examples/decision-policy.md](../../docs/examples/decision-policy.md).
+The canonical policy reads structured exclusions, location, commute, level limits
+and relevant open questions from the person's confirmed profile. The historical
+`legacy` setting aliases the canonical profile path; no fixed personal-policy
+fallback remains. The profile supplies search strategy, but strategy does not
+replace eligibility. Policy changes stay outside the run key and add no paid work.
+The owner's labels, baseline and figures above do not establish matching quality.
+Policy behavior is described in the README's decision policy section and
+[docs/examples/decision-policy.md](../../docs/examples/decision-policy.md).
 
 ## Offline comparison tools
 
@@ -172,14 +173,22 @@ returns `owner_holdout_labels_required`, never PASS.
 
 ## Preferences and observed outcomes
 
-Choice features v2 add missingness/source metadata and snapshot commute rings
-(<5 km, 5–10 km inclusive, >10 km), using straight-line distance, not travel time.
-Remote-accessible evaluations use no commute ring. Full-work-rights wording is an
-ad feature, not a candidate visa fact. Unknown seniority stays missing; historical
-evaluations without uncertainty metadata do not gain invented certainty. Pay,
-candidate years, flexibility, automation and visa-welcoming features stay missing
-until supported. Old fits become stale through versioned context; no training or
-synthetic owner labels are generated.
+The current preference feature set uses canonical role families and neutral
+zero-mean feature priors. Missing features stay missing; a model fit or feature
+value is advisory evidence of choices, not eligibility. Confirmed profile changes
+invalidate old choices and fits through versioned context. No automatic refit or
+synthetic owner label is generated.
+
+Phase 5's accepted design adds an explicit, owner-confirmed migration for
+historical choices. It preserves original records, chosen option (including none),
+and train/holdout assignments; changed or unverifiable records are skipped. It
+introduces no automatic migration or refit. The design uses zero priors for every
+taste feature and family, leaves pay missing unless the ad states explicit hours
+for conversion, and never assumes a fixed weekly-hours basis. Other factual
+features are included only when their recorded sources support them. See
+[ADR 0007](../../docs/adr/0007-ranking-and-explained-shortlist.md) and
+[ranking rules](../../docs/ranking-rules.md); source implementation is available
+on the Phase 5 branch, while full-suite verification and review/PR remain pending.
 
 Callback and readiness calculations share one observation classifier. Unsubmitted
 rejected drafts are excluded; submitted cases without an explicit callback or
@@ -191,7 +200,7 @@ turns silence into failure. A calibrated time-to-event model with an explicit
 observation horizon remains future work.
 
 A separately approved Jev/local comparison, blind owner labels and a job-domain
-benchmark remain tracked in issue #6. No legacy candidate-bearing Jev/vector calls
+benchmark remain tracked in [issue #6](https://github.com/phroggingphrog/jobwatch/issues/6). No legacy candidate-bearing Jev/vector calls
 were re-enabled. The native synthetic acceptance path now exercises both lexical
 and Qwen-configured retrieval through actual graphs, human approval/resume,
 focused judgments, company brief, writer, reviewer, saved PDFs, downloads and

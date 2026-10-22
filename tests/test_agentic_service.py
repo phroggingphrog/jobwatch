@@ -1040,7 +1040,8 @@ def test_daily_token_ceiling_defers_the_rest(world, monkeypatch):
     _finished(conn, 90, time.time())
     selected = []
     _stub_batch(monkeypatch, selected)
-    assert service.after_collect(conn, config, max_seconds=600) == {'deferred': 'daily_budget'}
+    result = service.after_collect(conn, config, max_seconds=600)
+    assert result['deferred'] == 'daily_budget' and 'shortlist' in result
     assert selected == []
 
 
@@ -1056,7 +1057,8 @@ def test_deferred_job_is_evaluated_next_day(world, monkeypatch):
     _finished(conn, 90, now)
     selected = []
     _stub_batch(monkeypatch, selected)
-    assert service.after_collect(conn, config, max_seconds=600) == {'deferred': 'daily_budget'}
+    result = service.after_collect(conn, config, max_seconds=600)
+    assert result['deferred'] == 'daily_budget' and 'shortlist' in result
     monkeypatch.setattr(service, '_now', lambda: now + 36 * 3600)
     service.after_collect(conn, config, max_seconds=600)
     assert selected == [1]                           # still queued, untouched, and now within the new day's cap
@@ -1110,7 +1112,8 @@ def test_a_spent_day_does_no_collection(world, monkeypatch):
     _reset_profile(users); monkeypatch.setattr(intake, 'DAILY_ASSESSMENTS', 1); confirm_discovery(config)
     _finished(conn, 90, time.time())
     monkeypatch.setattr(ingest, 'run', lambda *a, **k: pytest.fail('fetched on a spent day'))
-    assert service.after_collect(conn, config, max_seconds=600) == {'deferred': 'daily_budget'}
+    result = service.after_collect(conn, config, max_seconds=600)
+    assert result['deferred'] == 'daily_budget' and 'shortlist' in result
 
 
 # --- guided profile onboarding in the chat agent

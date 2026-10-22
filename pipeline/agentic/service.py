@@ -721,6 +721,55 @@ def _local_midnight(now):
     return datetime.fromtimestamp(now, person_timezone()).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 
+def _evaluation_current(conn, posting_id, captured, key, decision_policy):
+    """Skip paid reassessment only for unchanged completed inputs and fresh liveness."""
+    result = latest_result(conn, posting_id, parse=frozenset({'evaluation','candidate'}))
+    if not result or result.get('reason') != 'evaluation_complete' or result.get('run_key') != key.value:
+        return False
+    if not observation_current(latest_observation(conn, posting_id),posting_id=posting_id,
+            url=captured[0]['url'],ad_hash=key.ad_hash):
+        return False
+    recorded = decision_log.latest(conn,key.value)
+    return decision_policy is None or bool(recorded and recorded['policy_hash']==decision_policy.policy_hash)
+
+
+def _without_completed(conn, config, pending):
+    """Load shared inputs once; uncertainty about reuse always keeps work queued."""
+    try:
+        cfg,policy = _config(config),default_policy()
+        bundle = snapshot_evidence(profile_dir())
+        verify_evidence_snapshot(bundle)
+        inputs = load_inputs(bundle,cfg)
+        structural = analyse_candidate(bundle,*inputs,policy)
+        dp = decision_policy_for(config)
+        result = []
+        for pid in pending:
+            captured = _capture(conn,pid)
+            if captured is None:
+                result.append(pid)
+                continue
+            key = _run_key(pid,captured,bundle,policy,cfg,inputs,structural)
+            if not _evaluation_current(conn,pid,captured,key,dp):
+                result.append(pid)
+            if len(result)>=200:
+                break
+        return result
+    except Exception:
+        return pending[:200]
+
+
+def _refresh_shortlist(conn, config):
+    try:
+        from pipeline.agentic import shortlist
+        entries = shortlist.build_shortlist(conn,config)
+        header = shortlist._latest(conn)
+        return {'shortlist': {'shortlist_id':header['shortlist_id'] if header else None,
+            'entries':len(entries),'ordering':entries[0].ordering if entries else 'provisional'}}
+    except Exception as exc:
+        log.info('shortlist refresh: %s',type(exc).__name__)
+        return {'shortlist': {'error':'shortlist_failed'}}
+
+
 def after_collect(conn, config, max_seconds=None, collector_run_id=None):
     if not enabled(config):
         return {'skipped': 'disabled'}
@@ -736,7 +785,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
     jobs, tokens = _spent_today(conn, _local_midnight(_now()))
     room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
     if room <= 0 or left <= 0:
-        return {'deferred': 'daily_budget'}
+        return {'deferred': 'daily_budget', **_refresh_shortlist(conn,config)}
     started = time.monotonic()
     from contextlib import ExitStack
     from pipeline.agentic import discovery
@@ -779,15 +828,16 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         for pid, stage in conn.execute('SELECT posting_id,stage FROM pipeline_state WHERE stage<>? '
                                        'ORDER BY updated_at,posting_id', (str(Stage.ARCHIVED),)):
             if stage != str(Stage.READY):
-                if len(pending) < 200: pending.append(pid)
+                pending.append(pid)
             elif len(refresh) < 20:
                 captured = _capture(conn, pid)
                 if captured and not observation_current(latest_observation(conn, pid), posting_id=pid,
                         url=captured[0]['url'], ad_hash=content_hash(captured[1].encode())):
                     refresh.append(pid)
-            if len(pending) == 200 and len(refresh) == 20: break
         AgenticStore(conn).ensure()
         pending = [pid for pid in unseen[:25] + pending if not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
+        if pending:
+            pending = _without_completed(conn,config,pending)[:200]
         if discovery_cfg['ordering'] == 'legacy':
             pending = _target_first(conn, config, pending)
         elif discovery_context is not None:
@@ -821,7 +871,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         if excluded:
             details['excluded_by_rule'] = len(excluded)
         if room <= 0 or left <= 0:
-            return {'deferred': 'daily_budget', **details}
+            return {'deferred': 'daily_budget', **details, **_refresh_shortlist(conn,config)}
         extra = {}
         if ids[:room] and left < cfg['batch_token_ceiling']:        # this run's own ceiling is what is left of the day's
             ident = 'agentic-' + uuid.uuid4().hex
@@ -832,6 +882,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         out = agentic_batch_run(ids[:room], config, conn, max_seconds=max_seconds, collector_run_id=collector_run_id,
                                 operation='evaluate', **extra)
         out.update(details)
+        out.update(_refresh_shortlist(conn,config))
         return {**out, 'daily_budget_deferred': cut} if cut else out
 
 

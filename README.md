@@ -10,8 +10,8 @@ The current delivery focus is the native agent API and backend. Read
 and agent guidance.
 
 The [profile-preference audit](docs/audits/2026-10-22-profile-preferences.md)
-records remaining inherited assumptions in final gates, collectors and models.
-Profile-driven location admission does not mean those separate repairs are done.
+records the source repairs made after its original findings and the evidence
+limits that remain. It does not establish live recommendation quality or deployment.
 
 ## Features
 
@@ -114,16 +114,13 @@ public datasets are hash-verified under `<data>/reference/<dataset>/<version>/`
 stored under `<person>/discovery/`. Embeddings use the approved paid Qwen route
 through OmniRoute and count against the confirmed scope's token budget.
 
-Discovery flags live under `pipeline.agentic` and default to preserving current
-collection and archive behaviour: `search_plan: false`, `relevance: shadow`,
-`dedupe: legacy` and `ordering: legacy`. In `shadow`, relevance judgments are
-stored and no posting is archived for relevance. With no cached hypotheses or
-plan, shadow screening makes no model or embedding call; `refresh` is the first
-paid step under defaults. If `search_plan: true`, collection can refresh a
-missing plan automatically. `relevance: on` archives a `no` judgment as `not_relevant`;
-`uncertain` continues. Profile exclusion pre-filtering requires
-`pipeline.agentic.decision_policy: profile` and archives matches as
-`excluded_by_rule`.
+Discovery settings live under `pipeline.agentic`. The confirmed profile is the
+canonical source for regional admission, eligibility and personal exclusions;
+missing or unresolved facts remain unknown. Search plans rotate supported
+query/location pairs within each collector's request caps. Relevance can run in
+`shadow` mode, which stores judgments without archiving postings, or `on`, which
+archives a current `no` judgment; `uncertain` continues. These controls do not
+replace canonical eligibility.
 
 Inspect the configured flags and current state with
 `python -m pipeline.agentic.discovery status --user <name>`; status is
@@ -139,8 +136,8 @@ read-only `GET /api/agent/discovery/fields`, `/plan` and
 The thresholds `similar_at: 0.60` and `duplicate_cosine: 0.95` are uncalibrated;
 there is no matching-accuracy claim. Relevance uses embeddings and, below the
 similarity threshold, a bounded model extraction; there is no lexical hybrid.
-Seek, Jora and JobSpy currently search only the first location in the plan.
-Nothing here establishes deployment or real-model behaviour.
+Collector scope is bounded by request caps. Nothing here establishes deployment
+or live model behaviour.
 
 Undo by removing the discovery keys under `pipeline.agentic` and the
 `pipeline.discovery` tuning block (or set `relevance: off` to stop shadow
@@ -170,20 +167,39 @@ Walk-through with real output (invented data, no model called): [docs/examples/f
 
 ### Decision policy
 
-`pipeline.agentic.decision_policy` in `config/jobwatch.yaml` chooses the gate: `legacy` (the default, the fixed rules) or `profile` (the person's confirmed profile). `legacy` changes nothing. The flag is not part of a run key, so switching it never re-keys a stored evaluation. Switching to `profile` re-decides stored held and archived evaluations with no model call, and each decision is recorded in the `gate_decisions` table (written only in `profile` mode).
+The canonical gate reads the person's confirmed profile. A historical `legacy`
+setting is treated as `profile`; no fixed personal-policy fallback is active.
+The flag is not part of a run key, so policy changes do not trigger paid model
+work. Current source keeps holistic scores as advisory comparison data; they do
+not exclude a job. Stored evaluations are re-decided through canonical policy
+before downstream use.
 
 With `profile`, the gate reads only the approved facts of the confirmed version:
 
-- **Strategy.** A stated career focus gives `career_focus`. Unemployed with no contrary status gives `employment_first`. Anything else is `balanced`. The strategy is derived and shown in the policy, but the gate does not read it yet: the `north_star < 3` score gate still applies to every strategy.
+- **Strategy.** A stated career focus gives `career_focus`. Unemployed with no contrary status gives `employment_first`. Anything else is `balanced`. Strategy guides explanations and ranking; it does not turn missing information into a personal preference.
 - **Exclusions are rules only when structured.** An exclusion becomes a rule only as a `{kind, value}` fact, with kind `family`, `employer`, `title_term`, `location` or `work_type`. Free text is never a rule. It stays prompt text and is listed as the open question `exclusion:<fact_id>` until the person gives it a kind.
 - **Work rights, hours, level and commute** are read from the approved facts by a documented deterministic grammar. The grammar asks only about missing sections and about locations and exclusions it cannot read. A work-rights, hours, level or commute statement it cannot read is ignored without a question and appears only in the policy JSON. A commute limit with no recognised home is not applied.
 - **Missing facts** that change a decision are open questions (for example `location`). An ad whose location cannot be resolved holds rather than archives.
 
 To see the policy and its open questions: `GET /api/agent/profile/policy` (scope `read`) returns `policy`, `mode`, `enabled`, `open_questions` (each `{code, question, why}`) and `reason` when there is no policy. The chat agent's read-only `profile_policy` tool returns the same. Neither writes anything.
 
-Limits: distance uses place data for Victoria only. Other states resolve by state name, state code or capital city, and an unresolved location holds. The product remains Australia-only. Collection pre-filters, `_target_first`, near-duplicate embeddings, the `north_star < 3` score gate and the preference-model families are unchanged. A person with no confirmed version that carries these facts stays on the legacy gate even when the flag is `profile`.
+Limits: distance uses place data for Victoria only. Other states resolve by state name, state code or capital city, and an unresolved location holds. The product remains Australia-only. Confirmed policy and canonical eligibility are shared across the active and retained assessment paths.
 
-Undo: set `decision_policy: legacy`, which restores the legacy gate for new decisions with no revert. A job that `profile` archived as `policy_excluded` stays archived under `legacy`. To remove the table, run `DROP TABLE IF EXISTS gate_decisions` on the person's database. Walk-through with real output (invented data, no model called): [docs/examples/decision-policy.md](docs/examples/decision-policy.md).
+Undo source behavior by reverting the relevant source change; do not treat the historical `legacy` alias as a rollback switch. Profile decisions and records remain per person. Walk-through with invented output (no model called): [docs/examples/decision-policy.md](docs/examples/decision-policy.md).
+
+### Ranking and explained shortlist
+
+Phase 5 implements importance-weighted evidence coverage,
+three explanation labels, deterministic provisional ordering, and optional
+within-label personalised ordering from valid owner-choice fits. Unknown facts
+remain questions; transferable evidence requires a frozen evidence-matched fact,
+not word overlap alone. Priors are neutral, and historical choices move only
+through an explicit migration that preserves originals and split assignments.
+The design is recorded in [ADR 0007](docs/adr/0007-ranking-and-explained-shortlist.md)
+and [ranking rules](docs/ranking-rules.md). The independently reviewed source and
+[verification results](docs/audits/2026-10-22-shortlist-release.md) are on the
+Phase 5 branch; the complete run has one intermittent browser-test failure.
+Merge and deployment remain separate operations.
 
 ## Config files (`config/`)
 
