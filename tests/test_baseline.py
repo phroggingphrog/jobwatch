@@ -353,6 +353,7 @@ def test_the_pinned_profile_version_is_frozen_with_the_baseline(frozen):      # 
 
 def test_the_decision_policy_is_frozen_only_when_the_policy_path_is_active(frozen, monkeypatch):
     class Fake:                                    # stands in for Plan 2's DecisionPolicy
+        home = None                                # the freeze measures the commute from the policy's home
         def model_dump(self, mode='json'): return {'profile_version': 2, 'policy_hash': 'f' * 64}
     monkeypatch.setattr(baseline, '_active_decision_policy', lambda config, approved: Fake())
     seen = []
@@ -704,3 +705,87 @@ def test_label_writer_is_not_reachable_from_agent_surfaces():
         text = (ROOT / 'pipeline' / 'agentic' / f'{name}.py').read_text()
         assert 'pipeline.agentic.baseline' not in text and 'from .baseline' not in text
         assert 'label_case' not in text and 'write_label' not in text
+
+
+# --------------------------------------------------------------------------- the one live gate call (decision policy, Task 6)
+
+def test_decide_frozen_goes_through_gate_current(frozen, monkeypatch):                    # contract decision 2
+    from pipeline.agentic import service
+    from pipeline.agentic.contracts import AgenticEvaluation, RunKey
+    from pipeline.agentic.gate import decide
+    from pipeline.agentic.runtime import validate_model_payload
+    from jobwatch.candidate.evidence import bundle_from_contents
+    from jobwatch.candidate.policy import default_policy
+    b = baseline.freeze_baseline(frozen.ro, frozen.config)
+    _, (case, *_) = baseline.load_baseline(b.baseline_id)
+    seen = []
+    real = service.gate_current
+    monkeypatch.setattr(service, 'gate_current', lambda *a, **k: seen.append((a, k)) or real(*a, **k))
+    with baseline.pinned_profile(b.baseline_id):
+        got = baseline.decide_frozen(case.snapshot, case.evaluation, commute_km=None)
+        # the call as it was written before the switch: the gate itself, with no decision policy
+        before = decide(validate_model_payload(AgenticEvaluation, case.evaluation), ad_text=case.snapshot['full_ad'],
+                        title=case.snapshot['posting']['title'], policy=default_policy(), captured_complete=True,
+                        expected_run_key=RunKey.model_validate(case.snapshot['run_key']),
+                        evidence_bundle=bundle_from_contents({n: t.encode() for n, t in case.snapshot['contents'].items()}),
+                        commute_km=None).model_dump(mode='json')
+    assert len(seen) == 1
+    _, kwargs = seen[0]
+    assert kwargs['decision_policy'] is None and kwargs['posting'] == {
+        'title': case.snapshot['posting']['title'], 'company': case.snapshot['posting']['company'],
+        'location': case.snapshot['posting']['location']}
+    assert kwargs['commute_km'] is None and kwargs['ad_text'] == case.snapshot['full_ad']
+    assert got == before and 'error' not in got
+
+
+def test_freeze_stores_the_decision_policy_when_the_profile_path_is_active(frozen, monkeypatch):
+    from jobwatch.candidate.policy import policy_for
+    from pipeline.agentic import service
+    legacy = baseline.freeze_baseline(frozen.ro, frozen.config)
+    assert legacy.decision_policy_sha256 is None and baseline.frozen_decision_policy(legacy.baseline_id) is None
+    assert not (_dir(legacy.baseline_id) / 'decision_policy.json').exists()
+    settings = frozen.config.settings['pipeline']['agentic']
+    settings['decision_policy'] = 'profile'
+    seen = []
+    real = service.gate_current
+    monkeypatch.setattr(service, 'gate_current', lambda *a, **k: seen.append(k['decision_policy']) or real(*a, **k))
+    b = baseline.freeze_baseline(frozen.ro, frozen.config)
+    expected = policy_for(users.current(), approved=baseline.frozen_approved(b.baseline_id))
+    assert expected is not None
+    assert baseline.frozen_decision_policy(b.baseline_id) == expected.model_dump(mode='json')
+    assert b.decision_policy_sha256
+    assert seen and all(p == expected for p in seen)                                  # the decisions are gate_current's
+    _, cases = baseline.load_baseline(b.baseline_id)
+    with baseline.pinned_profile(b.baseline_id):
+        for case in cases:
+            assert case.decision == baseline.decide_frozen(case.snapshot, case.evaluation, commute_km=case.commute_km,
+                                                           decision_policy=expected)
+
+
+def test_profile_mode_freeze_measures_the_commute_from_the_policy_home(world, monkeypatch):    # contract decision 2
+    from pipeline.agentic.location import commute_km_for
+    from tests.candidate.policy_fixtures import fact, policy_of
+    conn, config, bundle, add = world
+    add(42)
+    conn.execute("UPDATE postings SET location='Carlton VIC' WHERE id=42")
+    conn.commit()
+    agentic_batch_run([42], config, conn, evidence_bundle=bundle,
+                      llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']), operation='evaluate')
+    conn.commit()
+    import sqlite3
+    ro = sqlite3.connect(f'file:{config.db_path}?mode=ro', uri=True)
+    ro.row_factory = sqlite3.Row
+    config.settings['pipeline']['agentic']['decision_policy'] = 'profile'
+    homed = policy_of(fact('location', 'I live in Box Hill, VIC'))
+    homeless = policy_of(fact('experience', 'x'))
+    monkeypatch.setattr(baseline, '_active_decision_policy', lambda cfg, approved: homed)
+    b = baseline.freeze_baseline(ro, config)
+    _, (case,) = baseline.load_baseline(b.baseline_id)
+    expected = commute_km_for('Box Hill, VIC', 'Carlton VIC')
+    assert case.snapshot['posting']['location'] == 'Carlton VIC'
+    assert type(expected) is int and case.commute_km == float(expected)
+    monkeypatch.setattr(baseline, '_active_decision_policy', lambda cfg, approved: homeless)
+    other = baseline.freeze_baseline(ro, config)
+    _, (case,) = baseline.load_baseline(other.baseline_id)
+    assert case.commute_km is None
+    ro.close()

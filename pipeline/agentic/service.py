@@ -9,9 +9,10 @@ import threading
 from pathlib import Path
 import time
 import uuid
-from typing import Any
+from collections.abc import Mapping
+from typing import Any, Literal
 
-from jobwatch import adtext
+from jobwatch import adtext, users
 from jobwatch.apply.paths import profile_dir
 from jobwatch.candidate.analysis import analyse_candidate
 from jobwatch.candidate.inputs import load_inputs
@@ -19,18 +20,19 @@ from jobwatch.candidate.assessment import (CandidateAssessment, assessment_run_k
                                           validate_assessment)
 from jobwatch.candidate.contracts import TargetPolicy, content_hash, digest
 from jobwatch.candidate.evidence import career_profile_text, snapshot_evidence, verify_evidence_snapshot
-from jobwatch.candidate.policy import default_policy
+from jobwatch.candidate.policy import DecisionPolicy, default_policy, policy_for
 from jobwatch.llm import LLM
 from jobwatch.openrouter_extras import (KNOCKOUT_REASONS, extras_settings, jev_screen, rank_by_target,
                                        same_vacancy, vectors)
 from pipeline import store as pipeline_store
 from pipeline.schemas import Stage
-from pipeline.agentic.contracts import AgenticError, AgenticEvaluation, DraftProposal, PackageManifest, ReviewVerdict, RunKey
+from pipeline.agentic.contracts import (AgenticError, AgenticEvaluation, AgenticGateDecision, DraftProposal,
+                                        PackageManifest, ReviewVerdict, RunKey)
 from pipeline.agentic.evaluator import evaluate_job
 from pipeline.agentic.gate import decide
-from pipeline.agentic.location import LOCATION_REFERENCE_HASH, km_from_home
+from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, km_from_home
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
-from pipeline.agentic import jev_skills
+from pipeline.agentic import decision_log, jev_skills
 from pipeline.agentic.forms import build_form_map
 from pipeline.agentic.persistence import PersistenceAdapter, latest_result
 from pipeline.agentic.runtime import BatchBudget, JobBudget, validate_model_payload
@@ -97,6 +99,61 @@ def _config(config):
     if any(values[k] <= 0 for k in ('job_token_ceiling', 'batch_token_ceiling', 'job_seconds', 'batch_seconds')):
         raise AgenticError('invalid_configuration')
     return values
+
+
+def decision_policy_mode(config) -> Literal['legacy', 'profile']:
+    """Which gate decides: `legacy` (the fixed rules) or `profile` (the person's confirmed profile).
+
+    Read here and nowhere in `_config()`, so the flag never enters a RunKey or the runtime-config hash."""
+    mode = agentic_settings(config).get('decision_policy', 'legacy')
+    if type(mode) is not str or mode not in ('legacy', 'profile'):
+        raise AgenticError('invalid_configuration')
+    return mode
+
+
+def decision_policy_for(config) -> DecisionPolicy | None:
+    """The current person's decision policy, or None when the mode is `legacy` or no profile is confirmed
+    (the legacy gate then runs)."""
+    if decision_policy_mode(config) != 'profile':
+        return None
+    return policy_for(users.current())
+
+
+def commute_km_of(decision_policy: DecisionPolicy | None, location: str | None) -> int | None:
+    """The one commute definition, for the evaluator input and the gate: the policy's home when there is a policy
+    (no home: no distance), otherwise the legacy distance from the person's profile suburb."""
+    if decision_policy is None:
+        return km_from_home(location or '')
+    home = decision_policy.home['place'] if decision_policy.home else None
+    return commute_km_for(home, location or '')
+
+
+def gate_current(evaluation: AgenticEvaluation, *, posting: Mapping[str, Any], ad_text: str,
+                 decision_policy: DecisionPolicy | None, policy: TargetPolicy, captured_complete: bool = True,
+                 expected_run_key: RunKey | None = None, evidence_bundle=None,
+                 commute_km: int | None = None) -> AgenticGateDecision:
+    """The single place the live gate is called. `commute_km=None` means: derive it from the posting location."""
+    if commute_km is None:
+        commute_km = commute_km_of(decision_policy, posting.get('location'))
+    return decide(evaluation, ad_text=ad_text, title=posting['title'], policy=policy,
+                  decision_policy=decision_policy, company=str(posting.get('company') or ''), captured_complete=captured_complete,
+                  expected_run_key=expected_run_key, evidence_bundle=evidence_bundle, commute_km=commute_km)
+
+
+_SENIORITY_RANK = {'entry': 0, 'junior': 1, 'mid': 2, 'senior': 3}
+
+
+def applicable_knockouts(dp: DecisionPolicy | None) -> frozenset[str]:
+    """The Jev knock-out questions that apply to this person. No policy: both, as before."""
+    if dp is None:
+        return frozenset(KNOCKOUT_REASONS)
+    out = set()
+    ranks = [_SENIORITY_RANK[level] for level in dp.seniority if level in _SENIORITY_RANK]
+    if ranks and max(ranks) <= _SENIORITY_RANK['junior']:
+        out.add('five_years')
+    if dp.work_rights.get('citizen_or_pr') is not True:
+        out.add('citizen_or_pr')
+    return frozenset(out)
 
 
 def _draft_limits(config):
@@ -306,6 +363,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         skip('agentic_disabled')
         return None
     cfg, pol = _config(config), policy or default_policy()
+    dp = decision_policy_for(config)
     draft_limits = _draft_limits(config)
     invocation_id = batch.batch_id if batch is not None else 'agentic-' + uuid.uuid4().hex
     if _invocation_deadline is None:
@@ -333,7 +391,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     # Rule archives are re-checked against today's gate on the saved evaluation (no new model call), so an owner
     # rule change applies to jobs already judged (2026-10-12: Morrows kept its old 4.0 verdict after the 3.5 ruling).
     if (previous and previous['run_key'] == key.value and previous['status'] == 'archived'
-            and previous['reason'] not in {'posting_closed', 'score_below_threshold', 'hard_gate'}):
+            and previous['reason'] not in {'posting_closed', 'score_below_threshold', 'hard_gate',
+                                           *(('policy_excluded',) if dp is not None else ())}):
         return Stage.ARCHIVED
     # Lease outlasts the whole bounded role execution, including PDF and journaling.
     claim = store.claim(key, 'agentic-' + uuid.uuid4().hex, cfg['job_seconds'] + 180)
@@ -408,8 +467,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         # None means Jev was not reached; the job then runs exactly as before.
         screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
         extras = extras_settings(config)
+        applicable = applicable_knockouts(dp)
         knockout = next((KNOCKOUT_REASONS[q] for q, at in extras['knockout_at'].items()
-                         if screen is not None and screen.get(q, 0) >= float(at)), None)
+                         if q in applicable and screen is not None and screen.get(q, 0) >= float(at)), None)
         if text_kind != 'full':
             reason = 'insufficient_evidence'
         elif screen is not None and screen['injection'] >= float(extras['jev_hold_at']):
@@ -450,11 +510,13 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             evaluation = validate_model_payload(AgenticEvaluation, saved_evaluation) if saved_evaluation is not None else evaluate_job(
                 key, ad_text, budget, llm, evidence_bundle=bundle, candidate_analysis=candidate,
                 model=cfg['evaluator_model'], research=_research(posting, budget, cfg),
-                commute_km=km_from_home(posting.get('location') or ''), model_insights=models,
+                commute_km=commute_km_of(dp, posting.get('location')), model_insights=models,
                 embedding_model=cfg['embedding_model'])
-            decision = decide(evaluation, ad_text=ad_text, title=posting['title'], policy=pol,
-                              captured_complete=text_kind == 'full', expected_run_key=key, evidence_bundle=bundle,
-                              commute_km=km_from_home(posting.get('location') or ''))
+            decision = gate_current(evaluation, posting=posting, ad_text=ad_text, decision_policy=dp, policy=pol,
+                                    captured_complete=text_kind == 'full', expected_run_key=key,
+                                    evidence_bundle=bundle)
+            if dp is not None:
+                decision_log.record(conn, key.value, dp, decision)
             adapter.save_artifact(claim, 'evaluation', evaluation.model_dump(mode='json'))
             # Jev skills (owner 2026-10-12, career facts only): a second-opinion fit score and a requirement map
             # for the board and the writer. Failures only mean they are missing.

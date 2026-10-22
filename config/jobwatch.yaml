@@ -53,4 +53,5 @@ pipeline:
     research_enabled: true  # existing local SearXNG; public employer/job facts only
     max_batch_jobs: 20
     concurrency: 2
+    # decision_policy: legacy   # legacy (default) keeps the fixed gate; profile gates on the person's confirmed profile
 

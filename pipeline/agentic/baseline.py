@@ -38,7 +38,6 @@ from jobwatch.candidate.policy import default_policy
 from jobwatch.dedupe import _COMPANY_NOISE, _norm
 
 from .contracts import AgenticError, AgenticEvaluation, RunKey, StrictFrozen, parse_budget_checkpoint_json
-from .gate import decide
 from .location import km_from_home
 from .persistence import _read_artifact
 from .runtime import validate_model_payload
@@ -461,17 +460,20 @@ def decide_frozen(snapshot: dict, evaluation: dict, *, commute_km: float | None,
     try:
         checked = validate_model_payload(AgenticEvaluation, evaluation)
         run_key = RunKey.model_validate(snapshot['run_key'])
-        ad_text, title = snapshot['full_ad'], snapshot['posting']['title']
+        ad_text = snapshot['full_ad']
         complete = snapshot['text_kind'] == 'full'
-        extra = {}
-        if decision_policy is not None:
-            extra = {'decision_policy': decision_policy, 'company': snapshot['posting']['company']}
+        posting = snapshot['posting']
+        title, location = posting['title'], posting.get('location')
+        company = posting['company'] if decision_policy is not None else posting.get('company')
     except Exception:  # noqa: BLE001 - any malformed stored input is the same fixed answer
         return {'error': 'invalid_gate_input'}
+    from . import service
     try:
-        decision = decide(checked, ad_text=ad_text, title=title, policy=default_policy(), captured_complete=complete,
-                          expected_run_key=run_key, evidence_bundle=bundle,
-                          commute_km=None if commute_km is None else round(commute_km), **extra)
+        decision = service.gate_current(
+            checked, posting={'title': title, 'company': company, 'location': location}, ad_text=ad_text,
+            decision_policy=decision_policy, policy=default_policy(), captured_complete=complete,
+            expected_run_key=run_key, evidence_bundle=bundle,
+            commute_km=None if commute_km is None else round(commute_km))
     except AgenticError as exc:
         return {'error': 'invalid_gate_input' if exc.code == 'invalid_gate_input' else 'decision_unavailable'}
     except Exception:  # noqa: BLE001 - a stored case the gate cannot judge is reported, never raised
@@ -642,7 +644,11 @@ def _prepare_case(conn: sqlite3.Connection, run: tuple, staging: Path, decision_
     except AgenticError:
         return 'evaluation_invalid'
     posting = snapshot['posting']
-    km = km_from_home(posting['location'] or '')
+    if decision_policy is not None:      # one commute definition: the policy's home, as the live run measures it
+        from . import service
+        km = service.commute_km_of(decision_policy, posting['location'])
+    else:
+        km = km_from_home(posting['location'] or '')
     commute_km = None if km is None else float(km)
     decision = decide_frozen(snapshot, raw_evaluation, commute_km=commute_km, decision_policy=decision_policy)
     cursor = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,))
