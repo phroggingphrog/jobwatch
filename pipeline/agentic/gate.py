@@ -179,7 +179,7 @@ _CITIZEN_LABELS = frozenset({"citizen_only", "citizen_or_pr", "unrestricted_work
 
 
 _NEGATED = re.compile(r"\b(?:no|not|without|none|never)\b|n['\u2019]t\b", re.I)
-_REQUIRED = re.compile(r"\b(?:required|requirement|requires|must|mandatory|essential|needed|hold|obtain|obtained)\b", re.I)
+_REQUIRED = re.compile(r"\b(?:required|requirement|requires|must|mandatory|essential|need(?:ed|s)?|prerequisite|compulsory|necessary|hold|obtain|obtained|subject\s+to)\b", re.I)
 
 
 def _rights_rule(ad_text: str, title: str) -> str | None:

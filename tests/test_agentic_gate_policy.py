@@ -477,6 +477,11 @@ def test_full_time_exempt_takes_both_values_or_neither():
     ("Vetting of vendors is part of the role.", ("draft", "eligible")),
     ("Candidates must hold a baseline clearance.", ("archive", "hard_gate")),
     ("Baseline security clearance required.", ("archive", "hard_gate")),
+    ("You will need NV1 clearance.", ("archive", "hard_gate")),
+    ("Clearance is a prerequisite for this role.", ("archive", "hard_gate")),
+    ("Baseline clearance is compulsory.", ("archive", "hard_gate")),
+    ("Applicants will be subject to a security clearance.", ("archive", "hard_gate")),
+    ("No security clearance is needed.", ("draft", "eligible")),
 ])
 def test_a_clearance_archives_a_citizen_only_as_a_negation_free_requirement(evaluation, policy, sentence, expect):
     ad = f"Graduate accounting analyst based in Melbourne VIC. {sentence}"
