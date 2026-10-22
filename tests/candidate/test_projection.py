@@ -58,6 +58,14 @@ def test_unknown_and_inference_never_reach_files():
     assert 'Secret guess' not in ''.join(out.values()) and 'Never retail' not in ''.join(out.values())
 
 
+def test_structured_family_exclusion_reaches_the_legacy_files():
+    out = yaml.safe_load(projection.project(approved(
+        F(1, 'exclusion', {'kind': 'family', 'value': 'accounting'}, actor='person'),
+        F(2, 'exclusion', {'kind': 'family', 'value': 'Retail'}, actor='person')))['interests_and_criteria.yaml'])
+    t = out['target_roles']
+    assert t['excluded_families'] == ['accounting', 'retail'] and t['not_wanted'] == ['accounting', 'Retail']
+
+
 def test_interests_target_roles_and_exclusions():
     out = yaml.safe_load(projection.project(approved(
         F(1, 'career_focus', 'Accounts officer', actor='person'), F(2, 'career_focus', 'Payroll', sources=[(1, 'Payroll')]),
