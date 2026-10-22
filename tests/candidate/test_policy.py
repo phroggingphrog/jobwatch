@@ -1,8 +1,12 @@
 """Decision policy and search strategy derived from a confirmed profile (synthetic data only)."""
 import pytest
+from pydantic import ValidationError
 
 from jobwatch.candidate import intake
-from jobwatch.candidate.policy import DecisionPolicy, describe, exclusion_hit, policy_for, rules_from_fact, strategy_for
+from jobwatch.candidate.contracts import KNOWN_FAMILIES, MINIMUM_EXCLUDED_CODES, TargetPolicy, digest
+from jobwatch.candidate.policy import (DecisionPolicy, default_policy, describe, exclusion_hit, policy_for, profile_target_policy,
+                                       rules_from_fact, strategy_for)
+from tests.test_agentic_service import world  # noqa: F401  (world is a fixture)
 
 from .policy_fixtures import approved, fact, policy_of
 
@@ -314,3 +318,84 @@ def test_not_near_a_place_with_no_home_gives_no_region():
 def test_home_state_ignores_a_not_near_tail(text):
     p = policy_of(fact('location', text))
     assert p.home['state'] == 'VIC' and p.home['place'] == 'Box Hill VIC' and p.regions == ('VIC',)
+
+
+# ----------------------------------------------------------------------------- built-in excluded codes are a parameter
+# Both literals were recorded from a run of the unmodified code (before require_minimum_excluded_codes existed):
+#   digest(default_policy().model_dump(mode='json'))                       -> PINNED_DEFAULT_POLICY_DIGEST
+#   service._run_key(42, capture, bundle, default_policy(), cfg, inputs)   -> PINNED_DEFAULT_RUN_KEY (synthetic world, posting 42)
+PINNED_DEFAULT_POLICY_DIGEST = '42863f98ea5a76eac285d186c501bc9fc7c1c865f1e2200698a216b9409c5a90'
+PINNED_DEFAULT_RUN_KEY = {
+    'posting_id': 42,
+    'ad_hash': '6a0ef7f9cd759ac44697456e44aa2993280c7b5995ac046c74a43f2b4aaaa2b9',
+    'evidence_hash': 'e6955150e8f1870037c9bfa3ed39625b48f5bdee1adec0096107f671db704297',
+    'rubric_version': 'career-ops-v1',
+    'config_hash': '7ad3ec7bc7535f12faedfb7bf6097822514568d03c7c9936c45619ab1edb515f',
+    'candidate_hash': '84be033aff69ab506d631bc5a3d274705eea669a65fd01bbea815435f70f49bd',
+}
+
+
+def test_default_policy_json_and_hash_are_unchanged(tmp_path, monkeypatch):
+    monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(tmp_path))     # no person file: the default families are every known family
+    dumped = default_policy().model_dump(mode='json')
+    assert 'require_minimum_excluded_codes' not in dumped and dumped['excluded_codes'] == ['431111', '541211']
+    assert digest(dumped) == PINNED_DEFAULT_POLICY_DIGEST
+
+
+def test_minimum_excluded_codes_stay_the_legacy_default_and_stay_immutable_there():
+    assert MINIMUM_EXCLUDED_CODES == ('431111', '541211') and TargetPolicy(version='v1', allowed_families=('accounting',)).excluded_codes == MINIMUM_EXCLUDED_CODES
+    with pytest.raises(ValidationError):
+        TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('999999',))
+    with pytest.raises(ValidationError):
+        TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('431111',), require_minimum_excluded_codes=True)
+
+
+def test_dropping_the_minimum_needs_the_explicit_flag_and_still_checks_the_codes():
+    p = TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('999999',), require_minimum_excluded_codes=False)
+    assert p.excluded_codes == ('999999',) and p.model_dump(mode='json')['require_minimum_excluded_codes'] is False
+    with pytest.raises(ValidationError):
+        TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('99',), require_minimum_excluded_codes=False)
+    assert TargetPolicy.model_validate(p.model_dump(mode='json')) == p        # the flag survives a round trip
+
+
+def test_profile_target_policy_is_person_independent_and_drops_the_minimum():
+    p = profile_target_policy()
+    assert p.excluded_codes == () and p.allowed_families == KNOWN_FAMILIES and p.model_dump(mode='json')['require_minimum_excluded_codes'] is False
+    assert p.version == 'profile-neutral-v1'
+    assert p == profile_target_policy()                             # no profile read: identical for every person
+
+
+def _person_who_excludes(tmp_path, monkeypatch, name, *families):
+    """A synthetic profile dir whose interests file lists `families` as excluded_families, made the current profile."""
+    d = tmp_path / name
+    d.mkdir()
+    (d / 'interests_and_criteria.yaml').write_text('target_roles:\n  excluded_families: [' + ', '.join(families) + ']\n')
+    monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(d))
+
+
+def test_profile_target_policy_builds_for_a_person_who_excludes_a_family_and_is_equal_across_people(tmp_path, monkeypatch):
+    _person_who_excludes(tmp_path, monkeypatch, 'one', 'retail', 'hospitality')
+    first = profile_target_policy()
+    _person_who_excludes(tmp_path, monkeypatch, 'two', 'engineering')
+    second = profile_target_policy()
+    assert first.allowed_families == KNOWN_FAMILIES and 'retail' in first.allowed_families
+    assert first == second and first.model_dump(mode='json') == second.model_dump(mode='json')
+
+
+def test_a_default_policy_still_rejects_a_family_the_person_excludes(tmp_path, monkeypatch):
+    _person_who_excludes(tmp_path, monkeypatch, 'three', 'retail')
+    with pytest.raises(ValidationError, match='not_wanted'):
+        TargetPolicy(version='v1', allowed_families=('accounting', 'retail'))
+    with pytest.raises(ValidationError, match='not_wanted'):
+        TargetPolicy(version='v1', allowed_families=('accounting', 'Retail'), require_minimum_excluded_codes=True)
+    assert 'retail' not in default_policy().allowed_families           # the default projection still drops it
+
+
+def test_run_key_for_the_default_policy_is_unchanged(world):
+    from pipeline.agentic import service
+    conn, config, bundle, add = world
+    add(42)
+    cfg = service._config(config)
+    inputs = service.load_inputs(bundle, cfg)
+    key = service._run_key(42, service._capture(conn, 42), bundle, default_policy(), cfg, inputs)
+    assert key.model_dump(mode='json') == PINNED_DEFAULT_RUN_KEY

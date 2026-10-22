@@ -18,6 +18,14 @@ def default_policy() -> TargetPolicy:
     return TargetPolicy(version="owner-targets-v1", allowed_families=default_allowed_families())
 
 
+def profile_target_policy() -> TargetPolicy:
+    """The person-independent target projection for the profile-driven decision policy: every known family, no
+    built-in occupation-code exclusions, and no demand for the legacy minimum. It names no person and reads no
+    profile file; the person's own exclusions come from the confirmed profile (see DecisionPolicy)."""
+    return TargetPolicy(version="profile-neutral-v1", allowed_families=KNOWN_FAMILIES, excluded_codes=(),
+                        require_minimum_excluded_codes=False)
+
+
 # ----------------------------------------------------------------------------- decision policy from the confirmed profile
 # Only evidence-basis facts count. A fact the person confirmed in {"kind", "value"} form becomes an exclusion rule;
 # free text stays prompt text and becomes an open question. Every function here is pure and total on odd input.
