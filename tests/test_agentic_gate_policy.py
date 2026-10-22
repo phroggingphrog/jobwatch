@@ -466,3 +466,18 @@ def test_full_time_exempt_takes_both_values_or_neither():
         with pytest.raises(TypeError):
             gate._full_time_exempt("Graduate Accountant", "Full-time.", **kwargs)
     assert gate._full_time_exempt("Graduate Accountant", "Full-time.", limit=40, ft_ok=True) is True
+
+
+@pytest.mark.parametrize("sentence,expect", [
+    ("No security clearance is required.", ("draft", "eligible")),
+    ("Baseline security clearance not required.", ("draft", "eligible")),
+    ("Join our solar team working on PV systems.", ("draft", "eligible")),
+    ("Our team will establish baseline metrics.", ("draft", "eligible")),
+    ("Customs clearance experience is useful.", ("draft", "eligible")),
+    ("Vetting of vendors is part of the role.", ("draft", "eligible")),
+    ("Candidates must hold a baseline clearance.", ("archive", "hard_gate")),
+    ("Baseline security clearance required.", ("archive", "hard_gate")),
+])
+def test_a_clearance_archives_a_citizen_only_as_a_negation_free_requirement(evaluation, policy, sentence, expect):
+    ad = f"Graduate accounting analyst based in Melbourne VIC. {sentence}"
+    assert outcome(job(evaluation, ad), ad, policy, policy_of(rights(citizen_or_pr=True))) == expect

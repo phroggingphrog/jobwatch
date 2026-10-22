@@ -178,13 +178,20 @@ _CLEARANCE = re.compile(r"clearance|vetting|\bNV\s*-?\s*[12]\b|baseline|AGSVA|to
 _CITIZEN_LABELS = frozenset({"citizen_only", "citizen_or_pr", "unrestricted_work_rights"})
 
 
+_NEGATED = re.compile(r"\b(?:no|not|without|none|never)\b|n['\u2019]t\b", re.I)
+_REQUIRED = re.compile(r"\b(?:required|requirement|requires|must|mandatory|essential|needed|hold|obtain|obtained)\b", re.I)
+
+
 def _rights_rule(ad_text: str, title: str) -> str | None:
-    """For a citizen or permanent resident: the first sentence of the title or the ad that names a security clearance
-    or vetting level. Each sentence is checked on its own, so a clearance is found wherever it appears and however
-    many citizenship sentences surround it; a plain citizenship demand is met and never counts."""
-    for part in (title, ad_text):
+    """For a citizen or permanent resident: the first sentence that demands a security clearance or vetting level.
+    Each sentence is checked on its own, so a clearance is found however many citizenship sentences surround it, and
+    a plain citizenship demand is met and never counts. A negated sentence ("No security clearance is required") is
+    skipped. A clearance named in the title is itself a requirement; in the ad text the sentence must also say it is
+    required, so "establish baseline metrics", "customs clearance" or "vetting of vendors" do not archive."""
+    for part, needs_requirement in ((title, False), (ad_text, True)):
         for sentence in re.split(r"(?<=[.!?;])\s+|\n+", part or ""):
-            if _CLEARANCE.search(sentence):
+            if (_CLEARANCE.search(sentence) and not _NEGATED.search(sentence)
+                    and (not needs_requirement or _REQUIRED.search(sentence))):
                 return sentence
     return None
 
