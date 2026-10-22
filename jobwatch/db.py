@@ -431,6 +431,12 @@ MIGRATIONS: list[str] = [
     CREATE TRIGGER selection_no_delete BEFORE DELETE ON selection_requests
         BEGIN SELECT RAISE(ABORT,'immutable'); END;
     """,
+    """
+    ALTER TABLE selection_requests ADD COLUMN result_json TEXT;
+    CREATE TRIGGER selection_result_immutable BEFORE UPDATE OF result_json ON selection_requests
+        WHEN OLD.result_json IS NOT NULL AND NEW.result_json IS NOT OLD.result_json
+        BEGIN SELECT RAISE(ABORT,'immutable'); END;
+    """,
 ]
 
 

@@ -28,9 +28,12 @@ def prepared(world,monkeypatch):
     return conn,config,entry,model
 
 
-def test_model_rejection_waits_for_exact_human_confirmation(prepared):
+@pytest.mark.parametrize('include_text',[True,False])
+def test_model_rejection_waits_for_exact_human_confirmation(prepared,include_text):
     conn,config,entry,model=prepared
     args=dict(posting_id=42,expected_entry_id=entry.entry_id,reason_code='not_this_employer',reason_text='My reason')
+    if not include_text:
+        args.pop('reason_text')
     llm=model([dict(tool='reject_posting',arguments=args)])
     pending=chat.dispatch(person=users.current(),thread_id='feedback',message='Reject42: My reason',config=config,llm=llm)
     assert pending['status']=='interrupted'
@@ -42,7 +45,7 @@ def test_model_rejection_waits_for_exact_human_confirmation(prepared):
         approval_bindings=[pending['interactions'][0]['binding']],config=config,llm=llm)
     assert result['status']=='complete'
     event=conn.execute('SELECT source,kind,reason_text FROM feedback_events').fetchone()
-    assert tuple(event)==('chat','reject','My reason')
+    assert tuple(event)==('chat','reject','My reason' if include_text else '')
     assert shortlist.load_entry(conn,42,config=config) is None
 
 
@@ -71,3 +74,16 @@ def test_model_generated_question_answer_cannot_become_human_feedback(prepared):
         chat.dispatch(person=users.current(),thread_id='answer',decisions=[{'type':'approve'}],human_decision=True,
             approval_bindings=[pending['interactions'][0]['binding']],config=config,llm=llm)
     assert conn.execute("SELECT count(*) FROM feedback_events WHERE kind='answer'").fetchone()[0]==0
+
+
+def test_chat_exclusion_proposal_with_omitted_defaults_uses_exact_human_binding(prepared):
+    from jobwatch.candidate import rules
+    conn,config,entry,model=prepared
+    llm=model([dict(tool='propose_exclusion',arguments={'kind':'employer','value':'Example Employer'})])
+    pending=chat.dispatch(person=users.current(),thread_id='rule-defaults',message='Exclude Example Employer',config=config,llm=llm)
+    result=chat.dispatch(person=users.current(),thread_id='rule-defaults',decisions=[{'type':'approve'}],human_decision=True,
+        approval_bindings=[pending['interactions'][0]['binding']],config=config,llm=llm)
+    assert result['status']=='complete'
+    proposed=rules.listing()['pending']
+    assert len(proposed)==1 and proposed[0]['payload']['value']=='Example Employer'
+    assert not any(r['value']=='Example Employer' for r in rules.listing()['rules'])

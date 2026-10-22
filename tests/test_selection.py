@@ -90,3 +90,64 @@ def test_recovery_accepts_its_own_progress_but_refuses_changed_ranking_context(f
     frozen.config.settings['pipeline']['agentic']['relevance']='on'
     with pytest.raises(selection.SelectionError,match='inputs_changed'):
         selection._manifest(frozen.conn,frozen.config,row)
+
+
+def test_completed_selection_republishes_same_result_after_api_crash_without_preparing_again(frozen,monkeypatch):
+    from types import SimpleNamespace
+    from jobwatch import model_choice
+    row=selection.request(frozen.conn,frozen.config,**payload(frozen),request_id='completion-crash',actor='person')
+    selection.dispatch_pending(frozen.conn,frozen.config)
+    row=selection.status(frozen.conn,row['id'])
+    with APIStore(users.current()) as store:
+        store.claim_next()
+    calls=[]
+    def prepare(*args,**kwargs):
+        calls.append(kwargs['batch_id'])
+        return dict(processed=0,deferred=[])
+    monkeypatch.setattr('pipeline.agentic.service.agentic_batch_run',prepare)
+    llm=SimpleNamespace(base_url=model_choice.SERVER_URL)
+    original=selection.execute(frozen.conn,frozen.config,row['id'],row['input_hash'],row['run_id'],llm=llm)
+    with APIStore(users.current()) as store:
+        store.recover(); store.retry(row['run_id']); store.claim_next()
+    recovered=selection.execute(frozen.conn,frozen.config,row['id'],row['input_hash'],row['run_id'],
+        llm_factory=lambda:pytest.fail('completed recovery must not initialize a model client'))
+    assert recovered==original
+    assert calls==['selection-'+row['id']]
+
+
+@pytest.mark.parametrize('crash',[False,True])
+def test_cancelled_run_is_reconciled_after_generic_cancel_or_cross_store_crash(frozen,monkeypatch,crash):
+    row=selection.request(frozen.conn,frozen.config,**payload(frozen),request_id='cancel-recovery',actor='person')
+    selection.dispatch_pending(frozen.conn,frozen.config)
+    row=selection.status(frozen.conn,row['id'])
+    if crash:
+        original=APIStore.cancel
+        def interrupt(store,ident):
+            original(store,ident)
+            raise OSError('synthetic cross-store interruption')
+        monkeypatch.setattr(APIStore,'cancel',interrupt)
+        with pytest.raises(OSError):
+            selection.cancel(frozen.conn,row['id'],actor='person')
+    else:
+        with APIStore(users.current()) as store:
+            store.cancel(row['run_id'])
+    selection.reconcile(frozen.conn)
+    assert selection.status(frozen.conn,row['id'])['state']=='cancelled'
+    assert selection.dispatch_pending(frozen.conn,frozen.config)==0
+
+
+def test_reconciliation_reaches_cancelled_work_behind_interrupted_requests(frozen):
+    data=payload(frozen)
+    rows=[selection.request(frozen.conn,frozen.config,**data,request_id='fair-'+str(i),actor='person') for i in range(11)]
+    selection.dispatch_pending(frozen.conn,frozen.config)
+    selection.dispatch_pending(frozen.conn,frozen.config)
+    with APIStore(users.current()) as store:
+        for row in rows[:-1]:
+            queued=selection.status(frozen.conn,row['id'])
+            store.conn.execute("UPDATE api_runs SET state='interrupted' WHERE id=?",(queued['run_id'],))
+        store.conn.commit()
+        last=selection.status(frozen.conn,rows[-1]['id'])
+        store.cancel(last['run_id'])
+    selection.reconcile(frozen.conn,limit=10)
+    selection.reconcile(frozen.conn,limit=10)
+    assert selection.status(frozen.conn,last['id'])['state']=='cancelled'

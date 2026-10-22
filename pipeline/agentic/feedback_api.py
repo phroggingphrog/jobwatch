@@ -174,7 +174,15 @@ def mount(app,require,get_config):
     @app.get('/api/agent/prompts/next')
     def outstanding_prompt(principal=Depends(read)):
         with jobs(principal) as (conn,config):
-            return {'prompt':prompts.outstanding_prompt(conn)}
+            current=prompts.outstanding_prompt(conn)
+            if current:
+                try:
+                    valid=prompts._is_current(prompts._get(conn,current['prompt_id']),prompts._snapshot(conn,config))
+                except (ValueError,OSError):
+                    valid=False
+                if not valid:
+                    return {'prompt':None,'reason':'stale'}
+            return {'prompt':current,'reason':None}
 
     @app.get('/api/agent/prompts')
     def prompt_history(principal=Depends(read)):

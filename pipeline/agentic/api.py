@@ -115,13 +115,12 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 execution.check()
                 if is_selection:
                     from pipeline.agentic import selection, execution as invocation
-                    from pipeline.agentic.service import configured_llm
                     from jobwatch.execution_mode import effective_mode
                     if effective_mode(cfg)=='off':
                         raise RuntimeErrorSafe('execution_disabled')
                     with invocation.use(execution), job_connection(cfg,write=True) as jobs:
                         result=selection.execute(jobs,cfg,payload['selection_id'],payload['manifest_hash'],row['id'],
-                            llm=llm_factory(person) if llm_factory else configured_llm(cfg))
+                            llm_factory=(lambda:llm_factory(person)) if llm_factory else None)
                 else:
                     result = dispatcher(person=person, thread_id=row['thread_id'], config=cfg,
                         llm=llm_factory(person) if llm_factory else None, execution=execution,
@@ -178,6 +177,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                         with job_connection(cfg,write=True) as jobs:
                             if jobs.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
                                 from pipeline.agentic import selection
+                                selection.reconcile(jobs)
                                 selection.dispatch_pending(jobs,cfg)
                 with APIStore(person) as store:
                     row = store.claim_next()
@@ -376,7 +376,15 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     def cancel(run_id: str, principal=Depends(write)):
         with APIStore(principal.person) as store:
             store.cancel(run_id)
-            return store.public_run(run_id)
+            result=store.public_run(run_id)
+        with users.use(principal.person):
+            cfg=get_config(principal.person)
+            if job_database(cfg).exists():
+                with job_connection(cfg,write=True) as jobs:
+                    if jobs.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
+                        from pipeline.agentic import selection
+                        selection.reconcile(jobs,run_id=run_id)
+        return result
 
     @app.post('/api/agent/runs/{run_id}/retry', status_code=202)
     def retry(run_id: str, principal=Depends(write)):

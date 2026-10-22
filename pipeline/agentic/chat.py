@@ -120,8 +120,17 @@ GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_intervi
          'pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
 
 
-def _identity(args):
+def _tool_arguments(name,args):
+    if name=='propose_exclusion':
+        return dict({'op':'add','kind':None,'value':None,'rule_id':None},**args)
+    if name=='reject_posting':
+        return dict({'reason_text':''},**args)
+    return args
+
+
+def _identity(args, name=None):
     """What an approval is keyed by: the posting, the application or the profile draft the call names."""
+    args=_tool_arguments(name,args)
     return args.get('posting_id', args.get('application_id', args.get('proposal_id',
         args.get('prompt_id',args.get('selection_id',hashlib.sha256(json.dumps(args,sort_keys=True).encode()).hexdigest())))))
 
@@ -845,7 +854,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                 name, args = binding['operation'], binding['arguments']
                                 if binding != _approval_binding(name, args, cfg):
                                     raise RuntimeErrorSafe('approval_inputs_changed')
-                                identity = _identity(args)
+                                identity = _identity(args,name)
                                 execution.approvals[(name, identity)] = binding
                     if decisions is not None and not pending and not (recover and same_invocation):
                         raise RuntimeErrorSafe('no_pending_approval')
@@ -864,7 +873,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                 if decision['type'] == 'approve':
                                     args = next(a['args'] for value in [i.value for i in pending]
                                                 for a in value['action_requests'] if a['name'] == item['operation'])
-                                    identity = _identity(args)
+                                    identity = _identity(args,item['operation'])
                                     execution.approvals[(item['operation'], identity)] = item['binding']
                             elif decision.get('type') != 'respond' or type(decision.get('message')) is not str:
                                 raise RuntimeErrorSafe('invalid_decisions')

@@ -95,8 +95,10 @@ def apply(name,args,config,*,binding):
 def tools(config,scope,identity,approval_binding):
     def write(name,args):
         args={k:v for k,v in args.items() if k!='write'}
-        binding=scope.approvals.get((name,identity(args))) if scope else None
-        if binding is None or binding!=approval_binding(name,binding['arguments'],config):
+        from pipeline.agentic.chat import _tool_arguments
+        binding=scope.approvals.get((name,identity(args,name))) if scope else None
+        if (binding is None or _tool_arguments(name,args)!=_tool_arguments(name,binding['arguments'])
+                or binding!=approval_binding(name,binding['arguments'],config)):
             raise RuntimeErrorSafe('approval_inputs_changed')
         if name=='answer_question' and not any(args['text'] in text for text in scope.human_texts):
             raise RuntimeErrorSafe('not_person_words')

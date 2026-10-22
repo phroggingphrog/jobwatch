@@ -84,3 +84,16 @@ def test_native_selection_persists_pending_identity_retry_and_cancellation(froze
         assert api.post(path+'/cancel',headers=headers()).json()['state']=='cancelled'
     finally:
         api.close()
+
+
+def test_current_prompt_get_reports_stale_without_writing_or_offering_old_profile_questions(client,frozen,monkeypatch):
+    shown=client.post('/api/agent/prompts/next',headers=headers()).json()['prompt']
+    assert shown is not None
+    from jobwatch.candidate import intake
+    approved=intake.current_version(users.current())
+    monkeypatch.setattr(intake,'current_version',lambda person:{**approved,'confirmed_at':'2099-01-01'})
+    before=frozen.conn.total_changes
+    response=client.get('/api/agent/prompts/next',headers=headers())
+    assert response.status_code==200,response.text
+    assert response.json()=={'prompt':None,'reason':'stale'}
+    assert frozen.conn.total_changes==before

@@ -29,6 +29,8 @@ def status(conn,ident):
         raise SelectionError('not_found')
     names=[v[1] for v in conn.execute('PRAGMA table_info(selection_requests)')]
     result=dict(zip(names,row))
+    result['result']=json.loads(result.pop('result_json')) if result.get('result_json') else None
+    result.pop('result_json',None)
     manifest=json.loads(result.pop('manifest_json'))
     result.update(posting_ids=manifest['request']['posting_ids'],authorises='preparation_only')
     return result
@@ -96,7 +98,8 @@ def request(conn,config,*,posting_ids,expected_entry_ids,expected_run_keys,reque
             return status(conn,previous[0])
         manifest=preview(conn,config,**payload)
         ident,stamp=uuid.uuid4().hex,_now()
-        conn.execute('INSERT INTO selection_requests VALUES(?,?,?,?,?,?,?,?,?,?)',
+        conn.execute('INSERT INTO selection_requests '
+            '(id,person,request_key,input_hash,manifest_json,state,run_id,error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
             (ident,users.current(),request_id,digest(manifest),json.dumps(manifest,sort_keys=True),
              'pending_dispatch',None,None,stamp,stamp))
         for entry in manifest['entries']:
@@ -186,22 +189,33 @@ def cancel(conn,ident,*,actor):
     return status(conn,ident)
 
 
-def execute(conn,config,ident,manifest_hash,run_id,*,llm):
+def execute(conn,config,ident,manifest_hash,run_id,*,llm=None,llm_factory=None):
     """Called only by authenticated worker, with the persisted queue identity."""
     from pipeline.agentic import execution
     with intake._locked(users.current(),'preparation.lock'):
         row=status(conn,ident)
-        if row['run_id']!=run_id or row['input_hash']!=manifest_hash or row['state'] not in ('queued','running'):
+        if row['run_id']!=run_id or row['input_hash']!=manifest_hash:
+            raise SelectionError('selection_not_queued')
+        if row['state']=='completed' and row['result'] is not None:
+            return row['result']
+        if row['state'] not in ('queued','running'):
             raise SelectionError('selection_not_queued')
         manifest=_manifest(conn,config,row)
         cfg=service._config(config)
+        llm=llm or (llm_factory() if llm_factory else service.configured_llm(config))
         for name in ('worker_model','evaluator_model','reviewer_model','answer_model'):
             execution.require_route(llm,cfg[name])
         if cfg['embedding_model'] is not None:
             execution.require_route(llm,cfg['embedding_model'],embedding=True)
-        conn.execute("UPDATE selection_requests SET state='running',updated_at=? WHERE person=? AND id=?",(_now(),users.current(),ident))
-        conn.commit()
         active=execution.current()
+        if active:
+            active.check()
+        changed=conn.execute("UPDATE selection_requests SET state='running',updated_at=? WHERE person=? AND id=? AND state IN ('queued','running')",
+                             (_now(),users.current(),ident)).rowcount
+        if not changed:
+            conn.rollback()
+            raise SelectionError('selection_not_queued')
+        conn.commit()
         summary=service.agentic_batch_run(manifest['request']['posting_ids'],config,conn,
             batch_id='selection-'+ident,expected_run_keys={int(k):v for k,v in manifest['request']['expected_run_keys'].items()},
             max_seconds=max(0,active.deadline-time.monotonic()) if active else None,
@@ -216,10 +230,13 @@ def execute(conn,config,ident,manifest_hash,run_id,*,llm):
                 result=latest_result(conn,pid,parse=frozenset())
                 outcomes.append(dict(posting_id=pid,run_key=result['run_key'] if result else None,
                                      status=result['status'] if result else 'deferred',reason=result['reason'] if result else 'not_run'))
-        conn.execute("UPDATE selection_requests SET state='completed',updated_at=? WHERE person=? AND id=? AND state='running'",
-                     (_now(),users.current(),ident)); conn.commit()
-        return dict(status='complete',selection_id=ident,summary=summary,
-                    outcomes=outcomes)
+        result=dict(status='complete',selection_id=ident,summary=summary,outcomes=outcomes)
+        completed=conn.execute("UPDATE selection_requests SET state='completed',result_json=?,updated_at=? WHERE person=? AND id=? AND state='running'",
+                              (json.dumps(result,sort_keys=True,allow_nan=False),_now(),users.current(),ident)).rowcount
+        conn.commit()
+        if not completed:
+            raise SelectionError('selection_not_queued')
+        return result
 
 
 def finish_error(conn,ident,code):
@@ -230,3 +247,40 @@ def finish_error(conn,ident,code):
     conn.execute("UPDATE selection_requests SET state=?,error=?,updated_at=? WHERE person=? AND id=? AND state IN ('queued','running')",
                  (state,code,_now(),users.current(),ident))
     conn.commit()
+
+
+def reconcile(conn, *, limit=10, run_id=None):
+    """Recover terminal queue/cancellation commits independently of dispatch."""
+    if type(limit) is not int or not 1<=limit<=500 or conn.in_transaction:
+        raise SelectionError('invalid_request')
+    sql="SELECT id,run_id FROM selection_requests WHERE person=? AND run_id IS NOT NULL AND state IN ('queued','running')"
+    args=[users.current()]
+    if run_id is not None:
+        if not isinstance(run_id,str) or not run_id:
+            raise SelectionError('invalid_request')
+        sql+=' AND run_id=?'; args.append(run_id)
+    rows=conn.execute(sql+' ORDER BY updated_at,id LIMIT ?',(*args,limit)).fetchall()
+    changed=0
+    if not rows:
+        return changed
+    # APIStore reads occur before taking a jobs write transaction. A cancelled
+    # run is terminal; an interrupted run retains the existing approval/budgets.
+    with APIStore(users.current()) as store:
+        terminal=[]
+        for ident,run_id in rows:
+            try:
+                run=store.raw_run(run_id)
+            except KeyError:
+                continue
+            if run['state'] in ('cancelled','failed','completed'):
+                terminal.append((ident,run['state'],run['error']))
+    with conn:
+        # Rotate inspected nonterminal rows too, so interrupted older work cannot
+        # indefinitely hide a later terminal queue commit from this bounded scan.
+        for ident,_ in rows:
+            conn.execute("UPDATE selection_requests SET updated_at=? WHERE person=? AND id=? AND state IN ('queued','running')",
+                         (_now(),users.current(),ident))
+        for ident,state,error in terminal:
+            changed+=conn.execute("UPDATE selection_requests SET state=?,error=?,updated_at=? WHERE person=? AND id=? AND state IN ('queued','running')",
+                                  (state,error,_now(),users.current(),ident)).rowcount
+    return changed
