@@ -214,7 +214,9 @@ labels, missing-label-aware metrics and bounded development monitoring through
 ordering. Paid evaluation and local fitting require explicit flags and remain
 separate from activation. See [the command example](docs/examples/evaluation-monitoring.md)
 and [backend contract](pipeline/agentic/CHAT.md#frozen-evaluation-and-bounded-monitoring-phase-7).
-Release verification and independent review are recorded before merge; no real
+The [Phase 7 verification](docs/audits/2026-10-23-evaluation-monitoring.md) records
+3804 passed, 11 skipped, resolved independent review, real synthetic sampler checks
+and the installed-database access incident. Source delivery is PR #25; no real
 blind-quality study or deployment is claimed.
 
 ## Config files (`config/`)

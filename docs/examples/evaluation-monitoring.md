@@ -1,6 +1,6 @@
 # Frozen evaluation and monitoring — illustrative command walkthrough
 
-This walkthrough documents the Phase 7 CLI shape and privacy boundary. IDs, case counts, hashes, labels, and output snippets are invented examples; they are not captured command output and contain no candidate or advertisement data. Phase 6 is merged in PR #24. Phase 7 review and required full local checks are pending. No live baseline, holdout access, paid replay, or fit is represented here.
+This walkthrough documents the Phase 7 CLI shape and privacy boundary. IDs, case counts, hashes, labels, and output snippets are invented examples; they are not captured command output and contain no candidate or advertisement data. Phase 6 is merged in PR #24. Phase 7 required local checks and independent review passed; source delivery is PR #25. No live baseline, holdout access, paid replay, or fit is represented here.
 
 Use the selected person's runtime files and existing frozen records. Do not copy candidate facts, preferences, job ads, or label notes into this repository. Use the owner's normal approved model route only for a separately authorized paid evaluation, with a token budget in the command.
 
@@ -109,4 +109,4 @@ A partial or bounded replay is explicitly `partial_replay`; it cannot support a 
 
 Undo a source release by reverting its reviewed source changes. Preserve baseline inputs, labels, split, holdout access log, replay results, fits and reports as historical evidence. Do not erase them as part of source rollback.
 
-This example describes CLI source behavior, not a completed Phase 7 release. Required full checks and independent review are pending; no live records or operations have been used. Synthetic examples demonstrate shapes only, not recommendation quality or deployment.
+This illustrative example describes CLI source behavior. The [release evidence](../audits/2026-10-23-evaluation-monitoring.md) records **3804 passed, 11 skipped**, two real synthetic R/JAGS checks and resolved independent review. It also discloses the smoke-harness installed-database access incident; no claim of zero installed-state access is made. Synthetic examples demonstrate shapes, not recommendation quality or deployment.

@@ -1,5 +1,14 @@
 # Cross-plan contract for phases 2–7
 
+> **Phase 6/7 supersession (2026-10-23):** the owner-approved
+> [remaining-roadmap plan](2026-10-23-finish-backend-roadmap.md) and current
+> [backend contract](../../../pipeline/agentic/CHAT.md) replace conflicting historical
+> interfaces and no-rekey/inactive-legacy assumptions below. Confirmed profile
+> amendments change complete input identities. Evaluation pins configuration and
+> per-case relevance, uses current canonical functions, and requires no hosted CI.
+> Historical plans remain background; CI stays disabled and optional.
+
+
 > **Phase 5 supersession:** the owner-approved
 > [2026-10-22 execution plan](2026-10-22-phase-5-execution.md) replaces conflicting
 > Phase 5 requirements below. See the explicit [override](#phase-5-override-owner-approved-2026-10-22).

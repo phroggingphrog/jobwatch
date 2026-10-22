@@ -2,11 +2,11 @@
 
 Date: 2026-10-23
 
-Status: Accepted owner direction and Phase 7 implementation in review; full local checks and review are pending. This records the boundary and intended source behavior, not release completion.
+Status: Implemented, locally verified and independently reviewed; delivered in PR #25. See [the release evidence](../audits/2026-10-23-evaluation-monitoring.md) for actual results and the verification incident.
 
 ## Context
 
-Phase 7 (#22) adds a reproducible comparison of the canonical Jobwatch gate and provisional ranking over frozen inputs. The comparison needs human judgments, a held-out group split, and monitoring without turning an offline diagnostic into a live model run or a claim of recommendation quality. Phase 6 was merged in PR #24; Phase 7 review and the required full checks remain outstanding.
+Phase 7 (#22) adds a reproducible comparison of the canonical Jobwatch gate and provisional ranking over frozen inputs. The comparison needs human judgments, a held-out group split, and monitoring without turning an offline diagnostic into a live model run or a claim of recommendation quality. Phase 6 was merged in PR #24; Phase 7 local release checks and independent review passed.
 
 ## Decision
 
@@ -25,7 +25,7 @@ The CLI shape is `jobwatch --user <person> evaluate ...`. The baseline and all f
 
 Evaluation is reproducible against pinned inputs, but the current gate and ordering are still provisional. A split protects related cases from leakage; it does not make the frozen sample representative. Sparse or partial labels remain visibly insufficient. Evaluation reports can be shared for review without exporting the underlying text, but IDs and hashes still identify a private artifact and remain in the person's protected area.
 
-Phase 7 source implementation is under review. No real-person baseline has been frozen, no holdout has been accessed, no paid replay or fit has been run, and no production fit, service, timer, or deployment has been activated. Source and synthetic checks alone do not establish runtime behavior or recommendation quality.
+Phase 7 source and synthetic workflow checks are complete. No real-person baseline or holdout study, live paid replay/fitting, production fit activation, service, timer or deployment is claimed. The release evidence discloses an extra smoke harness opening the installed database before isolation and its unknown schema delta. Synthetic checks establish observed test behavior, not live runtime quality or recommendation quality.
 
 ## Release and undo
 

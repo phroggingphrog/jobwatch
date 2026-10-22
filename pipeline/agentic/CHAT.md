@@ -590,3 +590,10 @@ during rollback. See [ADR 0009](../../docs/adr/0009-frozen-evaluation-and-monito
 and [the command example](../../docs/examples/evaluation-monitoring.md). This tooling
 supports a later real blind study; synthetic checks do not establish measured
 recommendation quality or deployment.
+
+
+Phase 7 [source verification](../../docs/audits/2026-10-23-evaluation-monitoring.md)
+records the full local suite (3804 passed, 11 skipped), independent review and real
+synthetic sampler checks. It discloses a temporary smoke-harness installed-database
+access and unknown schema delta; source completion is not a no-live-access certificate
+or a claim of deployment or measured recommendation quality.
