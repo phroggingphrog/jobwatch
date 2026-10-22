@@ -76,10 +76,10 @@ def _full_time_exempt(title: str, ad_text: str, *, limit=_LIVE, ft_ok=_LIVE) -> 
     (work_rights.hours_limit_per_fortnight) does not bite. Not allowed unless the person says so.
     `limit` and `ft_ok` are the person's values, resolved once by `decide`; the policy path always passes them, so
     only a bare two-argument call reads the live profile."""
+    if (limit is _LIVE) != (ft_ok is _LIVE):
+        raise TypeError("_full_time_exempt takes both limit and ft_ok, or neither")
     if limit is _LIVE:
-        limit = hours_limit_per_fortnight()
-    if ft_ok is _LIVE:
-        ft_ok = full_time_programs_ok()
+        limit, ft_ok = hours_limit_per_fortnight(), full_time_programs_ok()
     if limit is None or not ft_ok:
         return False
     if re.search(r"\b(?:graduate|vacation(?:er|ers)?|vacationer)\b", title, re.I):
@@ -178,20 +178,14 @@ _CLEARANCE = re.compile(r"clearance|vetting|\bNV\s*-?\s*[12]\b|baseline|AGSVA|to
 _CITIZEN_LABELS = frozenset({"citizen_only", "citizen_or_pr", "unrestricted_work_rights"})
 
 
-def _rights_rule(ad_text: str, title: str, citizen_ok: bool) -> str | None:
-    """The ad's own citizenship/PR/clearance/unrestricted-rights sentence, found by rule. For a citizen or permanent
-    resident only a clearance sentence counts: a plain citizenship demand is met, so look past it for a clearance."""
-    for backstop in (rights_backstop, unrestricted_backstop):
-        text = ad_text
-        for _ in range(8):
-            sentence = backstop(text, title)
-            if sentence is None:
-                break
-            if not citizen_ok or _CLEARANCE.search(sentence):
+def _rights_rule(ad_text: str, title: str) -> str | None:
+    """For a citizen or permanent resident: the first sentence of the title or the ad that names a security clearance
+    or vetting level. Each sentence is checked on its own, so a clearance is found wherever it appears and however
+    many citizenship sentences surround it; a plain citizenship demand is met and never counts."""
+    for part in (title, ad_text):
+        for sentence in re.split(r"(?<=[.!?;])\s+|\n+", part or ""):
+            if _CLEARANCE.search(sentence):
                 return sentence
-            if sentence not in text:
-                break
-            text = text.replace(sentence, " ", 1)
     return None
 
 
@@ -211,7 +205,7 @@ def _rights_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, *,
     quote_blocking = quote_verified and blocking_quote(rights.quote)
     if citizen_ok:
         quote_blocking = quote_blocking and _CLEARANCE.search(rights.quote) is not None
-        rule = _rights_rule(ad_text, title, True)
+        rule = _rights_rule(ad_text, title)
     else:
         rule = rights_backstop(ad_text, title) or unrestricted_backstop(ad_text, title)
     if quote_blocking or rule:

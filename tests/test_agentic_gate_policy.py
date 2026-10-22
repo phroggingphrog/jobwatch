@@ -222,6 +222,7 @@ def rights(**value):
 
 def stated(*levels):
     """A policy whose person states these levels (the policy reads 'mid' only as 'mid-level')."""
+    # A person who writes only "mid" gets no stated level, because the policy reads "mid-level" only.
     words = ["mid-level" if level == "mid" else level for level in levels]
     return policy_of(fact("preference", {"seniority": words})) if levels else policy_of(PLAIN)
 
@@ -438,3 +439,30 @@ def test_hours_signals_take_the_limit_from_the_caller():
     assert gate._hours_signals("Part-time, 20 hours per week.", 48) == (True, False)
     assert gate._hours_signals("Full-time, 38 hours per week.", None) == (False, False)
     assert gate._hours_signals("Full-time role.", 40) == (False, True)
+
+
+def test_a_clearance_sentence_archives_a_citizen_wherever_it_appears(evaluation, policy):
+    citizen = policy_of(rights(citizen_or_pr=True))
+    many = " ".join(["Australian citizens only."] * 9)
+    ad = f"Graduate accounting analyst based in Melbourne VIC. {many} Baseline security clearance required."
+    assert outcome(job(evaluation, ad), ad, policy, citizen) == ("archive", "hard_gate")
+    # A citizenship phrase in the title does not hide a clearance in the body.
+    body = "Graduate accounting analyst based in Melbourne VIC. Baseline security clearance required."
+    assert outcome(job(evaluation, body), body, policy, citizen,
+                   title="Australian citizens only analyst") == ("archive", "hard_gate")
+    # A clearance in the title archives too.
+    plain = "Graduate accounting analyst based in Melbourne VIC."
+    assert outcome(job(evaluation, plain), plain, policy, citizen,
+                   title="Analyst, NV1 clearance") == ("archive", "hard_gate")
+    # Citizenship alone, in the title or the body, is met.
+    assert outcome(job(evaluation, plain), plain, policy, citizen,
+                   title="Australian citizens only analyst") == ("draft", "eligible")
+    assert outcome(job(evaluation, ad.replace("Baseline security clearance required.", "")),
+                   ad.replace("Baseline security clearance required.", ""), policy, citizen) == ("draft", "eligible")
+
+
+def test_full_time_exempt_takes_both_values_or_neither():
+    for kwargs in ({"limit": 40}, {"ft_ok": True}):
+        with pytest.raises(TypeError):
+            gate._full_time_exempt("Graduate Accountant", "Full-time.", **kwargs)
+    assert gate._full_time_exempt("Graduate Accountant", "Full-time.", limit=40, ft_ok=True) is True
