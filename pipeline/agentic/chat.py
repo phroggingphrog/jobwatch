@@ -572,6 +572,13 @@ def _build(person, conn, config, llm, selected, saver, store):
             return {'status': 'no_draft', 'approved_version': current['version'] if current else None}
 
     @tool
+    def profile_policy() -> dict:
+        """Show the person's decision policy built from their confirmed profile and the questions still open. Read only: it records nothing."""
+        from jobwatch.candidate import policy
+        from pipeline.agentic import service
+        return policy.describe(person, mode=service.decision_policy_mode(config))
+
+    @tool
     def profile_answer(question_id: str, text: str) -> dict:
         """Record the person's answer to an open question. text must be the person's own words from their latest message, copied
         faithfully; never invent, infer or paraphrase a fact, and never answer for them."""
@@ -646,7 +653,7 @@ def _build(person, conn, config, llm, selected, saver, store):
                                  _permissions=permissions)],
         tools=[run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup, submit_application,
                submit_status, find_jobs, application_status, source_health, ask_human,
-               profile_start, profile_status, profile_answer, profile_correct, profile_confirmation, profile_confirm],
+               profile_start, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
                       'ask_human': {'allowed_decisions': ['respond']}},
         subagents=[{'name': 'career-reader', 'description': 'Inspect full saved job ads and existing run/defer outcomes.',

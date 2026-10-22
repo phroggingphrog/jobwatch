@@ -33,7 +33,7 @@ Fields:
   any Australian Public Service (APS) / Commonwealth role; clearance = security clearance or vetting (baseline,
   NV1, NV2); unrestricted_work_rights = unrestricted / permanent work rights required; valid_work_rights = "the right
   to work in Australia", "only open to Australian residents", "or hold a valid visa", "legally entitled to work"
-  (a student-visa holder living in Australia meets these); none_stated = nothing about it.
+  (a candidate who holds any current Australian work visa meets these); none_stated = nothing about it.
   A sentence that also admits visa holders is valid_work_rights, never a block.
 - screening_questions: questions the advert says applicants must answer (empty list when none)."""
 

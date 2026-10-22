@@ -448,8 +448,8 @@ def test_bad_report_json_never_breaks_a_page(v3):
 def test_hide_reason_labels_keep_the_old_ones_and_add_the_new():
     labels = dict(q.HIDE_REASONS)
     assert labels["needs_unrestricted_rights"] == "Needs unrestricted work rights"
-    assert labels["full_time_only"] == "Full-time only: not possible while studying"
-    assert labels["out_of_area"] == "Outside Melbourne, not remote"
+    assert labels["full_time_only"] == "Full-time only: does not fit your hours"
+    assert labels["out_of_area"] == "Outside your search area, not remote"
     for old, text in (("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real vacancy"),
                       ("needs_citizen_or_pr", "Needs citizenship or PR"), ("too_senior", "Too senior"), ("low_fit", "Not a fit")):
         assert labels[old] == text
@@ -548,7 +548,7 @@ def test_csv_score_archetype_recommendation_and_filters(v3):
     only = body(v3, "/table.csv?minscore=4.5")
     assert "Alpha Accounts" in only and "Gamma Data" not in only
     assert "Customer Service" in body(v3, "/table.csv?arch=Customer+Service+(client-facing)")
-    assert "Hidden: full-time only, not possible while studying" in body(v3, "/table.csv?ai=hide&why=full_time_only")
+    assert "Hidden: full-time only, which does not fit your hours" in body(v3, "/table.csv?ai=hide&why=full_time_only")
 
 
 # -- security: every report field is escaped ---------------------------------------------------------------------------------------------

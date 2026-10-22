@@ -197,3 +197,76 @@ def km_from_home(location_text: str, home: str | None = None) -> int | None:
     if place not in VIC_PLACES or home not in VIC_PLACES:
         return None
     return round(_km(VIC_PLACES[home], VIC_PLACES[place]))
+
+
+# --- Person-independent region and commute evidence (decision policy from the confirmed profile) ---
+# These helpers take the regions and home place as arguments; none reads a person's profile or assumes a home state.
+CAPITALS: dict[str, str] = {'sydney': 'NSW', 'melbourne': 'VIC', 'brisbane': 'QLD', 'perth': 'WA', 'adelaide': 'SA',
+                            'hobart': 'TAS', 'canberra': 'ACT', 'darwin': 'NT'}
+_CAPITAL_WORD = re.compile(r'\b(' + '|'.join(CAPITALS) + r')\b', re.I)
+_REMOTE_WORDS = re.compile(r'\b(?:remote|work from home|anywhere in australia)\b', re.I)
+# "Sydney Road" or "Victoria Street" names a street, not a place: those words are dropped before places are looked for.
+_STREET_NAME = re.compile(r"\b[A-Z][a-z]+\s+(?i:street|st|road|rd|avenue|ave|lane|drive|dr|terrace|parade|boulevard|"
+                          r"highway|hwy|way|place|court|crescent)\b\.?")
+
+
+def regions_named(text: str) -> frozenset[str]:
+    """State codes the text names: a state code (upper case word), a full state name or a capital city.
+
+    Only when the text names no state does a Victorian place from the bundled data count as VIC, so a state
+    named in the text always wins over place data ("Richmond NSW" is NSW, never VIC)."""
+    from jobwatch.place import STATES
+    text = _STREET_NAME.sub(' ', ' '.join((text or '').split()))
+    found = {code for code, name in STATES.items()
+             if re.search(rf'(?-i:\b{code}\b)', text) or re.search(rf'\b{re.escape(name)}\b', text, re.I)}
+    found |= {CAPITALS[m.group(1).lower()] for m in _CAPITAL_WORD.finditer(text)}
+    if not found and victorian_place(text) is not None:
+        found.add('VIC')
+    return frozenset(found)
+
+
+def location_verdict(quote: str, regions: frozenset[str], *, remote_fit: bool, remote_ok: bool | None):
+    """'in', 'outside', 'remote' or 'unknown' for a cited location against the regions the person accepts.
+
+    No regions given: no area filter ('in'). A named region in `regions` is 'in' (alternatives such as
+    "Melbourne VIC or Sydney NSW" count). Named regions all outside are 'outside', unless the role is a fit
+    for remote work, the quote says so and remote work is not ruled out. No region named: 'remote' on remote
+    words when the role fits remote work, else 'unknown'."""
+    if not regions:
+        return 'in'
+    named = regions_named(quote)
+    remote = remote_fit and bool(_REMOTE_WORDS.search(quote or ''))
+    if named & regions:
+        return 'in'
+    if named:
+        return 'remote' if remote and remote_ok is not False else 'outside'
+    return 'remote' if remote else 'unknown'
+
+
+def _names_other_state(text: str) -> bool:
+    """Conservative commute guard: True when the text may name a state other than Victoria.
+
+    Matches non-VIC state codes case-insensitively with optional dots ("nsw", "N.S.W.") and full state names,
+    on top of regions_named. Ordinary words that equal a code ("act") also match: withholding a distance on
+    ambiguous text is the accepted failure mode. regions_named itself stays case-sensitive."""
+    from jobwatch.place import STATES
+    text = ' '.join((text or '').split())
+    if regions_named(text) - {'VIC'}:
+        return True
+    return any(re.search(r'(?<![A-Za-z])' + r'\.?'.join(code) + r'\.?(?![A-Za-z])', text, re.I)
+               or re.search(rf'\b{re.escape(name)}\b', text, re.I)
+               for code, name in STATES.items() if code != 'VIC')
+
+
+def commute_km_for(home_place: str | None, location_text: str) -> int | None:
+    """Straight-line km between two Victorian places, or None.
+
+    Documented limit: distance data exists for Victoria only, so a home or a job place outside it has no
+    distance, and neither does any text that names another state ("Richmond NSW" is not the Victorian Richmond)."""
+    home_text, place_text = home_place or '', location_text or ''
+    if _names_other_state(home_text) or _names_other_state(place_text):
+        return None
+    home, place = victorian_place(home_text), victorian_place(place_text)
+    if home not in VIC_PLACES or place not in VIC_PLACES:
+        return None
+    return round(_km(VIC_PLACES[home], VIC_PLACES[place]))

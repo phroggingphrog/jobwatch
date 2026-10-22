@@ -86,12 +86,24 @@ documents, contacts an employer or submits; confirmation only starts discovery w
 | `GET /api/agent/profile/proposals/{id}/confirmation` | read | `proposal_digest`, `scope`, `scope_digest`, what it does and does not authorise. |
 | `POST /api/agent/profile/proposals/{id}/confirm` | approve | `{proposal_digest,scope_digest}` exactly as shown -> 201 `{version}`. Model text is never approval. |
 | `GET /api/agent/profile/`, `GET /api/agent/profile/versions` | read | Current approved version (`{"version":null}` if none); version list. |
+| `GET /api/agent/profile/policy` | read | The decision policy built from the latest confirmed profile, read only (nothing is written, no model is called): `{policy, mode, enabled, open_questions}`. `policy` is the policy JSON (`profile_version`, `strategy`, `focus`, `exclusions`, `home`, `max_commute_km`, `remote_ok`, `work_rights`, `seniority`, `regions`, `open_questions`, `policy_hash`); `mode` is `legacy` or `profile` and `enabled` is `mode == "profile"`. `open_questions` is a list of `{code, question, why}`. With no confirmed profile: `policy` is `null`, `open_questions` is `[]` and `reason` is `no_confirmed_profile`. |
 
 Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_first`, `proposal_not_draft`,
 `already_adopted`, `profile_edited_by_hand`, `profile_incomplete`. 413: `too_large`. 415: `unsupported_type`. 422:
 `no_extractable_text`, `invalid_edit`, `parse_failed`, `unreadable_document`, `nothing_to_adopt`. 404:
 `upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
 403: `person_required`, and `gateway_not_allowed` / `model_not_allowed` when the gateway or the person's reader model is not an approved paid route (every parse path checks it before any text is sent). 409 also `proposal_in_progress` (one paid parse per person at a time, shared by the API and the chat tools; 180 s deadline) and `proposal_parsing` (confirm or add uploads while the documents are still being read). Capabilities include a `profile` object with the upload limits.
+
+### Decision policy from the confirmed profile
+
+The policy is derived from the person's latest confirmed profile and nothing else. Only an evidence-basis fact in the
+`{"kind", "value"}` form becomes a rule; free text never becomes a rule and is listed as an open question instead
+(`exclusion:<fact id>`: "Is '<value>' an employer, a kind of work, a place, a job family or a title word? Until you say, it
+is not applied as a rule."). The standing questions (`employment_status`, `work_rights`, `location`, `career_focus`) use the
+same wording as the intake questions. The flag `agentic.decision_policy` is `legacy` (the default: the fixed rules decide) or
+`profile` (the confirmed profile decides); any other value is `invalid_configuration`. `GET /api/agent/profile/policy` and the
+chat tool `profile_policy()` return the same dictionary for the server-bound person and only read: neither writes a fact, a
+rule, a label or an approval, and `profile_policy` is not a gated tool.
 
 ### Guided onboarding in the chat agent
 
@@ -101,7 +113,7 @@ person stated wins over a parsed fact in a one-answer section (employment status
 focus), questions already answered stay closed, and the revision increments (a client holding the old revision gets
 `proposal_changed` and re-reads). A failed parse sets `parse_error` and the conversation continues with the answers.
 Tools (identity is bound by the server, never an argument): `profile_start(upload_ids, use_existing_files)` (the
-person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_answer`,
+person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_policy` (read only), `profile_answer`,
 `profile_correct` (both record only the person's own words from their latest message; the prompt forbids inventing
 or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
 when there is nothing to search for) and `profile_confirm`. `profile_confirm` is a gated tool: the human approval is

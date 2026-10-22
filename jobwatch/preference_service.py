@@ -2,7 +2,6 @@
 from __future__ import annotations
 from pipeline.agentic import service
 from pipeline.agentic.contracts import AgenticEvaluation
-from pipeline.agentic.gate import decide
 from pipeline.agentic.runtime import validate_model_payload
 from pipeline.agentic.persistence import latest_result
 from jobwatch.preferences import PreferenceStore, PreferenceError, alternative_from_evaluation, context_hash
@@ -10,6 +9,7 @@ from jobwatch.preferences import PreferenceStore, PreferenceError, alternative_f
 
 def pool(conn, config):
     cfg, policy = service._config(config), service.default_policy()
+    dp = service.decision_policy_for(config)
     bundle = service.snapshot_evidence(service.profile_dir())
     service.verify_evidence_snapshot(bundle)
     inputs = service.load_inputs(bundle, cfg)
@@ -36,8 +36,9 @@ def pool(conn, config):
             continue
         try:
             ev = validate_model_payload(AgenticEvaluation, result['evaluation'])
-            gate = decide(ev, ad_text=captured[1], title=captured[0]['title'], policy=policy,
-                          captured_complete=True, expected_run_key=key, evidence_bundle=bundle)
+            gate = service.gate_current(ev, posting=captured[0], ad_text=captured[1], decision_policy=dp,
+                                        policy=policy, captured_complete=True, expected_run_key=key,
+                                        evidence_bundle=bundle)
             alternatives.append(alternative_from_evaluation(ev, title=captured[0]['title'],
                 company=captured[0]['company'], profile_hash=bundle.bundle_hash, gate=gate))
         except ValueError:

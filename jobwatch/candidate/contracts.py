@@ -5,7 +5,7 @@ import json
 import math
 import re
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 HEX_64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 SIX_DIGIT_PATTERN = re.compile(r"^\d{6}$")
@@ -575,6 +575,16 @@ class TargetPolicy(StrictFrozen):
     version: str
     allowed_families: tuple[str, ...] = Field(default_factory=default_allowed_families)
     excluded_codes: tuple[str, ...] = MINIMUM_EXCLUDED_CODES
+    # True (the legacy default) demands MINIMUM_EXCLUDED_CODES in excluded_codes. It is omitted from the serialised
+    # form while True so every existing policy JSON, digest and run key stays byte-identical.
+    require_minimum_excluded_codes: bool = True
+
+    @model_serializer(mode="wrap")
+    def _omit_historical_default(self, handler):
+        data = handler(self)
+        if self.require_minimum_excluded_codes is True:
+            data.pop("require_minimum_excluded_codes", None)
+        return data
 
     @field_validator("version")
     @classmethod
@@ -595,8 +605,6 @@ class TargetPolicy(StrictFrozen):
         for f in canon:
             if not f:
                 raise ValueError("family cannot be empty")
-            if f in excluded_families():
-                raise ValueError("family is in the person's not_wanted families")
         return canon
 
     @field_validator("excluded_codes", mode="before")
@@ -612,10 +620,20 @@ class TargetPolicy(StrictFrozen):
         for c in v:
             if not SIX_DIGIT_PATTERN.match(c):
                 raise ValueError("excluded code must be six digits")
-        for min_code in MINIMUM_EXCLUDED_CODES:
-            if min_code not in v:
-                raise ValueError("immutable minimum excluded code cannot be removed")
         return tuple(dict.fromkeys(v))
+
+    @model_validator(mode="after")
+    def _validate_minimum_excluded_codes(self):
+        if self.require_minimum_excluded_codes:
+            # The person-file family check applies only to the legacy policy; the neutral variant reads no person file.
+            banned = excluded_families()
+            for f in self.allowed_families:
+                if f in banned:
+                    raise ValueError("family is in the person's not_wanted families")
+            for min_code in MINIMUM_EXCLUDED_CODES:
+                if min_code not in self.excluded_codes:
+                    raise ValueError("immutable minimum excluded code cannot be removed")
+        return self
 
 
 class OccupationFit(StrictFrozen):

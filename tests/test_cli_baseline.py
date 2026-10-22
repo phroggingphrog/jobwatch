@@ -10,6 +10,9 @@ from jobwatch import cli, users
 from pipeline.agentic import baseline
 
 REPO = Path(__file__).resolve().parents[1]
+# The decision-policy gate differs from the pre-revision release, so a freeze says so on stderr.
+WARNING = ('warning: the gate source differs from the pre-revision release; '
+           'this baseline captures the revised gate\n')
 _FROZE = re.compile(r'^froze (bl-\d{8}T\d{6}Z-[0-9a-f]{8}): (\d+) cases, (\d+) skipped$')
 
 
@@ -35,7 +38,7 @@ def _use_world(frozen, monkeypatch):
 def test_cli_end_to_end(frozen, capsys, monkeypatch):
     _use_world(frozen, monkeypatch)
     rc, out, err = run(['baseline', 'freeze', '--limit', '2'], capsys)
-    assert rc == 0 and err == ''
+    assert rc == 0 and err == WARNING
     match = _FROZE.match(out.strip())
     assert match and match.group(2) == '2' and match.group(3) == '0'
     bid = match.group(1)
@@ -44,7 +47,7 @@ def test_cli_end_to_end(frozen, capsys, monkeypatch):
     lines = out.strip().splitlines()
     assert rc == 0 and len(lines) == 1
     assert lines[0].startswith(bid) and 'cases=2' in lines[0]
-    assert 'profile_version=2' in lines[0] and 'gate=pre_revision' in lines[0]
+    assert 'profile_version=2' in lines[0] and 'gate=revised' in lines[0]
 
     rc, out, _ = run(['baseline', 'show', bid, '--cases'], capsys)
     assert rc == 0
@@ -54,7 +57,7 @@ def test_cli_end_to_end(frozen, capsys, monkeypatch):
     case_lines = text[end + 1:]
     assert shown['summary']['cases'] == 2
     assert shown['labels'] == {'labelled': 0, 'unlabelled': 2}
-    assert shown['gate_state'] == 'pre_revision' and shown['gate_changed_since_freeze'] is False
+    assert shown['gate_state'] == 'revised' and shown['gate_changed_since_freeze'] is False
     assert set(shown['missing_tags']) <= set(baseline.TAGS)
     assert 'case_sha256' not in shown
     assert len(case_lines) == 2

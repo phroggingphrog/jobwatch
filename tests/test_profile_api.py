@@ -320,3 +320,89 @@ def test_parse_over_http_refuses_a_gateway_that_is_not_the_local_one(env):
     c.fake.base_url = 'https://example.invalid/v1'
     r = c.post(P + '/proposals', json={'upload_ids': [up], 'base_version': None}, headers=h())
     assert r.status_code == 403 and r.json() == {'error': 'gateway_not_allowed'} and not c.fake.calls
+
+
+def confirm_profile(c, adds=()):
+    """Confirm the synthetic proposal (experience fact, plus any {section, value} the person adds) as fixture-a's next version."""
+    prop = proposal(c)
+    pid = prop['id']
+    if adds:
+        edits = [{'op': 'add', 'section': s, 'value': v} for s, v in adds]
+        r = c.patch(f'{P}/proposals/{pid}', json={'expected_revision': prop['revision'], 'edits': edits}, headers=h(APPROVE))
+        assert r.status_code == 200, r.text
+    conf = c.get(f'{P}/proposals/{pid}/confirmation', headers=h()).json()
+    r = c.post(f'{P}/proposals/{pid}/confirm', json={k: conf[k] for k in ('proposal_digest', 'scope_digest')}, headers=h(APPROVE))
+    assert r.status_code == 201, r.text
+    return r.json()['version']
+
+
+def test_policy_endpoint_without_a_profile(env):
+    got = env.get(P + '/policy', headers=h()).json()
+    assert got == {'policy': None, 'mode': 'legacy', 'enabled': False, 'open_questions': [], 'reason': 'no_confirmed_profile'}
+
+
+def test_policy_endpoint_after_confirmation_lists_open_questions(env):
+    assert confirm_profile(env) == 1
+    got = env.get(P + '/policy', headers=h()).json()
+    assert set(got) == {'policy', 'mode', 'enabled', 'open_questions'}
+    assert got['policy']['profile_version'] == 1 and got['policy']['strategy'] == 'balanced'
+    assert got['mode'] == 'legacy' and got['enabled'] is False
+    assert {'employment_status', 'location'} <= {q['code'] for q in got['open_questions']}
+    assert all(q['question'] and q['why'] for q in got['open_questions'])
+    standing = {q['code']: (q['question'], q['why']) for q in got['open_questions'] if not q['code'].startswith('exclusion:')}
+    assert all(standing[code] == intake._ASK_TEXT[code] for code in standing)
+
+
+def test_policy_endpoint_asks_about_an_exclusion_it_cannot_apply(env):
+    confirm_profile(env, adds=[('exclusion', 'Gambling')])
+    got = env.get(P + '/policy', headers=h()).json()
+    asked = [q for q in got['open_questions'] if q['code'].startswith('exclusion:')]
+    assert len(asked) == 1
+    assert asked[0]['question'] == ("Is 'Gambling' an employer, a kind of work, a place, a job family or a title word? "
+                                    "Until you say, it is not applied as a rule.")
+    assert asked[0]['why'] and got['policy']['exclusions'] == []
+
+
+def test_policy_is_per_person(env):
+    confirm_profile(env)
+    assert env.get(P + '/policy', headers=h()).json()['policy']['profile_version'] == 1
+    other = env.get(P + '/policy', headers=h(OTHER)).json()
+    assert other == {'policy': None, 'mode': 'legacy', 'enabled': False, 'open_questions': [], 'reason': 'no_confirmed_profile'}
+
+
+def test_policy_endpoint_needs_read_scope_only(tmp_path, monkeypatch):
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    users.create_user_dirs('fixture-a')
+    reader, no_read = 'fixture-read-' + 'd' * 40, 'fixture-noread-' + 'e' * 40
+    credentials = {reader: Principal('fixture-a', frozenset({'read'})), no_read: Principal('fixture-a', frozenset({'run', 'interact', 'approve'}))}
+    with TestClient(create_api(credentials=credentials, config={'agentic': {'enabled': False}})) as c:
+        assert c.get(P + '/policy', headers=h(reader)).status_code == 200
+        assert c.get(P + '/policy', headers=h(no_read)).status_code == 403
+        assert c.get(P + '/policy').status_code == 401
+        assert c.post(P + '/policy', headers=h(reader)).status_code == 405
+
+
+def test_policy_mode_mirrors_the_flag(tmp_path, monkeypatch):
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    users.create_user_dirs('fixture-a')
+    for flag, enabled in (('profile', True), ('legacy', False)):
+        config = {'agentic': {'enabled': False, 'decision_policy': flag}}
+        with TestClient(create_api(credentials={RUN: Principal('fixture-a')}, config=config)) as c:
+            got = c.get(P + '/policy', headers=h()).json()
+            assert got['mode'] == flag and got['enabled'] is enabled and got['policy'] is None
+
+
+def test_policy_reads_write_nothing_and_call_no_model(env):
+    confirm_profile(env)
+    calls = len(env.fake.calls)
+    base = users.user_dir('fixture-a')
+    before = sorted((str(p.relative_to(base)), p.stat().st_mtime_ns, p.stat().st_size) for p in base.rglob('*') if p.is_file())
+    for _ in range(2):
+        assert env.get(P + '/policy', headers=h()).status_code == 200
+    after = sorted((str(p.relative_to(base)), p.stat().st_mtime_ns, p.stat().st_size) for p in base.rglob('*') if p.is_file())
+    assert after == before and len(env.fake.calls) == calls
+
+
+def test_the_policy_chat_tool_is_read_only_and_not_gated():
+    from pipeline.agentic import chat
+    assert 'profile_policy' not in chat.GATED

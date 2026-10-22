@@ -8,8 +8,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from jobwatch import users
-from jobwatch.candidate import intake
+from jobwatch.candidate import intake, policy
 from jobwatch.candidate.intake import IntakeError
+from pipeline.agentic import service
 
 PREFIX = '/api/agent/profile'
 UPLOAD_PATH = PREFIX + '/uploads'
@@ -127,3 +128,9 @@ def mount(app, require, get_config, llm_factory):
     @app.get(PREFIX + '/versions')
     def versions(principal=Depends(read)):
         return {'versions': call(principal.person, intake.versions)}
+
+    @app.get(PREFIX + '/policy')
+    def decision_policy(principal=Depends(read)):
+        # Read-only: the decision policy built from the latest confirmed profile, and what is still open. Writes nothing.
+        mode = service.decision_policy_mode(get_config(principal.person))
+        return call(principal.person, policy.describe, mode=mode)

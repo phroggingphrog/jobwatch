@@ -5,9 +5,10 @@ import hashlib
 import re
 
 from jobwatch.candidate.contracts import TargetPolicy, canonicalize_family, excluded_families
+from jobwatch.candidate.policy import DecisionPolicy, exclusion_hit
 from jobwatch.candidate.person import full_time_programs_ok, hours_limit_per_fortnight
 from jobwatch.reader import blocking_quote, rights_backstop, unrestricted_backstop
-from pipeline.agentic.location import cited_victoria_location
+from pipeline.agentic.location import CAPITALS, cited_victoria_location, location_verdict, regions_named
 from pipeline.agentic.contracts import (
     AgenticError, AgenticEvaluation, AgenticGateDecision, RunKey, SourceCitation,
 )
@@ -66,11 +67,20 @@ def _is_program(title: str, ad_text: str, claimed: bool) -> bool:
                           r"\b(?:internship|intern program|vacation program|vacation programme|cadetship|cadet program)\b", sample))
 
 
-def _full_time_exempt(title: str, ad_text: str) -> bool:
+_LIVE = object()   # "read the live profile": only a call that passes neither value (the legacy path's old call shape)
+
+
+def _full_time_exempt(title: str, ad_text: str, *, limit=_LIVE, ft_ok=_LIVE) -> bool:
     """Graduate and vacation roles may be full-time when the person's profile allows it
     (work_rights.full_time_programs_ok): they start after study or run in a uni break, so the person's hours limit
-    (work_rights.hours_limit_per_fortnight) does not bite. Not allowed unless the person says so."""
-    if hours_limit_per_fortnight() is None or not full_time_programs_ok():
+    (work_rights.hours_limit_per_fortnight) does not bite. Not allowed unless the person says so.
+    `limit` and `ft_ok` are the person's values, resolved once by `decide`; the policy path always passes them, so
+    only a bare two-argument call reads the live profile."""
+    if (limit is _LIVE) != (ft_ok is _LIVE):
+        raise TypeError("_full_time_exempt takes both limit and ft_ok, or neither")
+    if limit is _LIVE:
+        limit, ft_ok = hours_limit_per_fortnight(), full_time_programs_ok()
+    if limit is None or not ft_ok:
         return False
     if re.search(r"\b(?:graduate|vacation(?:er|ers)?|vacationer)\b", title, re.I):
         return True
@@ -107,10 +117,9 @@ def _general_work_rights(requirement) -> bool:
         r"citizen|permanent[ _-]resid|\bPR\b|clearance|baseline|NV1|NV2", text, re.I)
 
 
-def _hours_signals(ad_text: str) -> tuple[bool, bool]:
+def _hours_signals(ad_text: str, limit: float | None) -> tuple[bool, bool]:
     """Return (supports compatible hours, requires more than half the person's fortnight limit per week).
-    No limit set: nothing is excessive."""
-    limit = hours_limit_per_fortnight()
+    No limit set: nothing is excessive. The limit is the person's, passed in; this reads no profile."""
     weekly = limit / 2 if limit else None
     compatible = bool(re.search(r"\b(?:part[ -]time|casual|job[ -]share)\b", ad_text, re.I))
     excessive = False
@@ -126,7 +135,12 @@ def _hours_signals(ad_text: str) -> tuple[bool, bool]:
     return compatible, weekly is not None and (excessive or (full_time and not compatible))
 
 
-def _entry_signals(title: str, ad_text: str) -> tuple[bool, bool]:
+ENTRY_MAX_YEARS = 2   # an ad asking for this many years or more is not an entry-level role
+
+
+def _level_signals(title: str, ad_text: str) -> tuple[bool, bool, int | None]:
+    """(entry evidenced, senior title or wording, the most years of experience the ad requires or None).
+    Years the ad calls preferred, desirable, a bonus or optional do not count."""
     sample = title + "\n" + ad_text
     entry_term = r"(?:entry[ -]level|junior|graduate|intern(?:ship)?|trainee|cadet(?:ship)?)"
     entry_matches = re.finditer(
@@ -148,108 +162,45 @@ def _entry_signals(title: str, ad_text: str) -> tuple[bool, bool]:
         r"^\s*(?:senior|lead|principal)\s+\w+|"
         r"\b(?:senior|lead|principal)\s+\w+\s+(?:role|position)\b", ad_text, re.I,
     ))
+    years: int | None = None
     for match in re.finditer(
         r"\b(?:at least\s+|minimum(?:\s+of)?\s+)?(\d{1,2})(?:\s*[-–]\s*\d{1,2})?\s*\+?\s*years?['’]?\s+"
         r"(?:of\s+)?(?:relevant\s+|professional\s+|industry\s+|commercial\s+)?experience\b", ad_text, re.I,
     ):
         tail = ad_text[match.end():match.end()+40]
-        if int(match.group(1)) >= 2 and not re.match(r"\s*(?:is\s+)?(?:preferred|desirable|a bonus|optional)", tail, re.I):
-            senior = True
-    return entry, senior
+        if not re.match(r"\s*(?:is\s+)?(?:preferred|desirable|a bonus|optional)", tail, re.I):
+            years = max(years or 0, int(match.group(1)))
+    return entry, senior, years
 
 
-def decide(
-    evaluation: AgenticEvaluation,
-    *,
-    ad_text: str,
-    title: str = "",
-    policy: TargetPolicy,
-    captured_complete: bool = True,
-    expected_run_key: RunKey | None = None,
-    evidence_bundle=None,
-    commute_km: int | None = None,
-) -> AgenticGateDecision:
-    """Validate and route an evaluation using deterministic checks only.
+# What a citizen or permanent resident is still stopped by: a security clearance or vetting level.
+_CLEARANCE = re.compile(r"clearance|vetting|\bNV\s*-?\s*[12]\b|baseline|AGSVA|top secret|\bPV\b", re.I)
+_CITIZEN_LABELS = frozenset({"citizen_only", "citizen_or_pr", "unrestricted_work_rights"})
 
-    Public errors intentionally carry only fixed codes; malformed nested inputs never leak
-    validation payloads or source text.
-    """
-    valid = True
-    try:
-        if type(evaluation) is not AgenticEvaluation or type(policy) is not TargetPolicy:
-            valid = False
-        else:
-            evaluation = AgenticEvaluation.model_validate(evaluation.model_dump())
-            policy = TargetPolicy.model_validate(policy.model_dump())
-            if expected_run_key is not None:
-                if type(expected_run_key) is not RunKey:
-                    valid = False
-                else:
-                    expected_run_key = RunKey.model_validate(expected_run_key.model_dump())
-        if type(ad_text) is not str or type(title) is not str or type(captured_complete) is not bool:
-            valid = False
-    except Exception:
-        valid = False
-    if not valid:
-        raise AgenticError("invalid_gate_input") from None
 
-    if not captured_complete or not ad_text:
-        return _hold(evaluation, "insufficient_evidence")
+_NEGATED = re.compile(r"\b(?:no|not|without|none|never)\b|n['\u2019]t\b", re.I)
+_REQUIRED = re.compile(r"\b(?:required|requirement|requires|must|mandatory|essential|need(?:ed|s)?|prerequisite|compulsory|necessary|hold|obtain|obtained|subject\s+to)\b", re.I)
 
-    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
-    if ad_hash != evaluation.run_key.ad_hash or ad_hash != evaluation.requirements.ad_hash:
-        return _hold(evaluation, "verification_required")
-    if expected_run_key is not None and expected_run_key != evaluation.run_key:
-        return _hold(evaluation, "verification_required")
 
-    for requirement in evaluation.requirements.requirements:
-        if requirement.jd_signal and not _verified(requirement.jd_signal, ad_text, ad_hash):
-            return _hold(evaluation, "verification_required")
-    requirements = {r.id: r for r in evaluation.requirements.requirements}
-    unverified_blocker = False
-    for match in evaluation.matches:
-        if any(c.source_id not in {"master_resume.md", "cv.md", "profile.yaml"} for c in match.evidence):
-            return _hold(evaluation, "verification_required")
-        if match.match == "partial" and not match.evidence:
-            return _hold(evaluation, "verification_required")
-        if match.match in {"missing", "not_applicable"} and match.evidence:
-            return _hold(evaluation, "verification_required")
-        if match.match == "not_applicable" and requirements[match.requirement_id].importance in {"critical", "high"}:
-            return _hold(evaluation, "verification_required")
-        if requirements[match.requirement_id].blocker and match.match != "strong":
-            # "missing" means not demonstrated, not proven incompatible.
-            # Preserve confirmed policy exclusions below before holding unknowns.
-            if _logistics(requirements[match.requirement_id], _full_time_exempt(title, ad_text)):
-                # Logistics are not candidate gaps (2026-10-12: Sol marked "application documents", "location" and
-                # "full time" as blockers on Morrows). Jobwatch writes the CV and letter itself, and location and
-                # hours have their own rules below; graduate/vacation roles may bypass the hours limit (see _full_time_exempt).
-                continue
-            if (match.match == "partial" and match.evidence and _full_time_exempt(title, ad_text)
-                    and _general_work_rights(requirements[match.requirement_id])):
-                # Graduate/vacation roles bypass the visa hours limit when the profile says so, so a general right-to-work
-                # requirement met only "partially" by the person's visa does not hold them. Citizenship, PR and
-                # clearance demands are hard-gated elsewhere and never reach this line as a pass.
-                continue
-            unverified_blocker = True
-    missing_candidate_evidence = bool(evaluation.matches) and not any(
-        m.match in {"strong", "partial"} and m.evidence for m in evaluation.matches
-    )
-    if evidence_bundle is not None:
-        try:
-            from jobwatch.candidate.evidence import verify_evidence_snapshot
-            from jobwatch.candidate.assessment import verify_candidate_citations
-            verify_evidence_snapshot(evidence_bundle)
-            if evidence_bundle.bundle_hash != evaluation.run_key.evidence_hash:
-                raise ValueError
-            for match in evaluation.matches:
-                verify_candidate_citations(match.evidence, evidence_bundle)
-                if match.judgment is not None:
-                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
-                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
-                        raise ValueError
-        except Exception:
-            return _hold(evaluation, "verification_required")
+def _rights_rule(ad_text: str, title: str) -> str | None:
+    """For a citizen or permanent resident: the first sentence that demands a security clearance or vetting level.
+    Each sentence is checked on its own, so a clearance is found however many citizenship sentences surround it, and
+    a plain citizenship demand is met and never counts. A negated sentence ("No security clearance is required") is
+    skipped. A clearance named in the title is itself a requirement; in the ad text the sentence must also say it is
+    required, so "establish baseline metrics", "customs clearance" or "vetting of vendors" do not archive."""
+    for part, needs_requirement in ((title, False), (ad_text, True)):
+        for sentence in re.split(r"(?<=[.!?;])\s+|\n+", part or ""):
+            if (_CLEARANCE.search(sentence) and not _NEGATED.search(sentence)
+                    and (not needs_requirement or _REQUIRED.search(sentence))):
+                return sentence
+    return None
 
+
+def _rights_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, *,
+                   citizen_ok: bool = False) -> AgenticGateDecision | None:
+    """The person-independent checks: a real job, and the ad's work-rights wording.
+    `citizen_ok` is set by the policy path when the person is an Australian citizen or permanent resident: then
+    a citizenship, PR or unrestricted-rights demand is met and only a security clearance still stops the job."""
     facts = evaluation.facts
     if not facts.real_job:
         return _archive(evaluation, "hard_gate")
@@ -259,16 +210,28 @@ def decide(
     if (rights.quote and not quote_verified) or (rights.requirement != "none_stated" and not rights.quote):
         return _hold(evaluation, "verification_required")
     quote_blocking = quote_verified and blocking_quote(rights.quote)
-    rule = rights_backstop(ad_text, title) or unrestricted_backstop(ad_text, title)
+    if citizen_ok:
+        quote_blocking = quote_blocking and _CLEARANCE.search(rights.quote) is not None
+        rule = _rights_rule(ad_text, title)
+    else:
+        rule = rights_backstop(ad_text, title) or unrestricted_backstop(ad_text, title)
     if quote_blocking or rule:
         return _archive(evaluation, "hard_gate")
-    if rights.requirement in {"citizen_only", "citizen_or_pr", "clearance", "unrestricted_work_rights"}:
+    if rights.requirement in ({"clearance"} if citizen_ok else _CITIZEN_LABELS | {"clearance"}):
         return _hold(evaluation, "verification_required")
-    if rights.quote and blocking_quote(rights.quote):
+    if rights.quote and blocking_quote(rights.quote) and not (citizen_ok and not _CLEARANCE.search(rights.quote)):
         return _hold(evaluation, "verification_required")
     if re.search(r"\b(?:requires? sponsorship|sponsorship required|sponsored applicants only)\b", ad_text, re.I):
         return _archive(evaluation, "hard_gate")
+    return None
 
+
+def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, policy: TargetPolicy,
+                          commute_km: int | None, *, hours_limit: float | None,
+                          ft_ok: bool) -> AgenticGateDecision | None:
+    # legacy baseline; delete after the owner switches the policy flag to profile
+    facts = evaluation.facts
+    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
     # The person's region is Victoria: - any cited Victorian place is in scope, regional included.
     if evaluation.location_fit == "outside" and not (
             _verified(evaluation.location_evidence, ad_text, ad_hash)
@@ -317,12 +280,12 @@ def decide(
         return _archive(evaluation, "policy_excluded")
 
     program = _is_program(title, ad_text, facts.program)
-    entry_evidenced, senior_evidenced = _entry_signals(title, ad_text)
-    if senior_evidenced:
+    entry_evidenced, senior_title, years = _level_signals(title, ad_text)
+    if senior_title or (years or 0) >= ENTRY_MAX_YEARS:
         return _archive(evaluation, "hard_gate")
     if facts.seniority in {"mid", "senior"}:
         return _archive(evaluation, "hard_gate")
-    if facts.min_years is not None and facts.min_years >= 2:
+    if facts.min_years is not None and facts.min_years >= ENTRY_MAX_YEARS:
         return _archive(evaluation, "hard_gate")
     # Owner 2026-10-19: an ad that does not say entry/junior/graduate passes when it asks for under 2 years and is not
     # senior (both archived above); the card says "level not stated".
@@ -330,15 +293,241 @@ def decide(
                                          f"{title}\n{ad_text}", re.I):
         return _hold(evaluation, "insufficient_evidence")  # the ad says it is NOT entry level
 
-    _, hours_excessive = _hours_signals(ad_text)
-    ft_exempt = _full_time_exempt(title, ad_text)
-    if hours_limit_per_fortnight() is not None:  # no limit set: hours never archive a job
+    _, hours_excessive = _hours_signals(ad_text, hours_limit)
+    ft_exempt = _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok)
+    if hours_limit is not None:  # no limit set: hours never archive a job
         if hours_excessive and not ft_exempt:
             return _archive(evaluation, "hard_gate")
         if facts.hours == "full_time_only" and not ft_exempt:
             return _archive(evaluation, "hard_gate")
     # Owner 2026-10-19: an ad that does not state its hours is shown as Good with a "check the hours fit"
     # note (queries._ai_from_agentic), not held. Hours that are stated and too many are still archived above.
+    return None
+
+
+_REMOTE_QUOTE = re.compile(r"\b(?:remote|work from home|anywhere in Australia)\b", re.I)
+_AUSTRALIA_QUOTE = re.compile(r"\b(?:Australia|Australian|worldwide|globally)\b", re.I)
+
+
+_RANK = {"entry": 0, "junior": 1, "mid": 2, "senior": 3}
+
+
+def _policy_hours(dp: DecisionPolicy) -> tuple[float | None, bool]:
+    """(hours limit per fortnight, graduate programs allowed) as the person's policy states them; None = no limit."""
+    raw = dp.work_rights.get("hours_limit_per_fortnight")
+    limit = float(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and 0 < raw < float("inf") else None
+    return limit, dp.work_rights.get("full_time_programs_ok") is True
+
+
+def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, company: str,
+                   dp: DecisionPolicy, commute_km: int | None, *, hours_limit: float | None,
+                   ft_ok: bool) -> AgenticGateDecision | None:
+    """Exclusions, location, commute, level and hours from the person's confirmed decision policy.
+
+    Reads no profile file and no Victoria constant: the regions, the commute limit, the exclusion rules, the levels the
+    person wants and their hours limit all come from `dp`. The stored location_fit values 'melbourne' and 'outside'
+    are ignored; only 'remote_accessible' and the verified quote matter. TargetPolicy.allowed_families is not
+    consulted. A person who states no level or no hours limit is not held to one."""
+    facts = evaluation.facts
+    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
+    verified = _verified(evaluation.location_evidence, ad_text, ad_hash)
+    quote = evaluation.location_evidence.quote if verified else ""
+    remote_fit = evaluation.location_fit == "remote_accessible"
+
+    # (1) exclusion rules
+    if exclusion_hit(dp, family=canonicalize_family(facts.role_family), company=company, title=title,
+                     location_text=quote, remote=remote_fit, hours=facts.hours) is not None:
+        return _archive(evaluation, "policy_excluded")
+
+    # (2) location, only when the policy has a place to hold the job to
+    regions = frozenset(dp.regions)
+    verdict = None
+    if regions or dp.max_commute_km is not None or any(r.kind == "location" for r in dp.exclusions):
+        if not verified:
+            return _hold(evaluation, "insufficient_evidence")
+        verdict = location_verdict(quote, regions, remote_fit=remote_fit, remote_ok=dp.remote_ok)
+        if verdict == "outside":
+            return _archive(evaluation, "hard_gate")
+        if verdict == "unknown":
+            # A national program where the candidate nominates their office is open to the person's office.
+            nominate_office = (evaluation.location_fit == "unknown" and _is_program(title, ad_text, facts.program)
+                               and re.search(r"\bnominate\b[^.\n]{0,40}\b(?:office|location|city)\b", quote, re.I))
+            if not nominate_office:
+                return _hold(evaluation, "insufficient_evidence")
+
+    # (3) the product is Australia-only
+    if re.search(r"\b(?:US|USA|United States|UK|United Kingdom|Canada|New Zealand)\s+(?:residents?\s+)?only\b|"
+                 r"\bmust\s+(?:be\s+)?(?:based|reside|live)\s+in\s+(?:the\s+)?"
+                 r"(?:US|USA|United States|UK|United Kingdom|Canada|New Zealand)\b", ad_text, re.I):
+        return _archive(evaluation, "hard_gate")
+
+    # A remote role must establish Australia (or one of the person's regions): "Remote - Europe" is held.
+    if (verdict in {"in", "remote"} and remote_fit and _REMOTE_QUOTE.search(quote)
+            and not _AUSTRALIA_QUOTE.search(quote) and not regions_named(quote) & regions):
+        return _hold(evaluation, "insufficient_evidence")
+
+    # (4) on-site in a capital outside the person's regions
+    others = [name for name, state in CAPITALS.items() if state not in regions]
+    if regions and others:
+        names = "|".join(others)
+        keyword = r"(?:onsite|on-site|office|attendance|based)"
+        pattern = (rf"\b(?:based|located|work|onsite|on-site|office)\b[^.\n]{{0,100}}\b(?:{names})\b[^.\n]{{0,60}}\b{keyword}\b|"
+                   rf"\b(?:{names})\b[^.\n]{{0,60}}\b{keyword}\b")
+        for match in re.finditer(pattern, ad_text, re.I):
+            if not regions_named(match.group(0)) & regions:
+                return _archive(evaluation, "hard_gate")
+
+    # (5) commute: no default distance, the limit is the person's own
+    # A remote-accessible role is not archived on distance unless the person rules remote work out.
+    remote_ad = remote_fit and dp.remote_ok is not False and _REMOTE_QUOTE.search(quote) is not None
+    if (dp.max_commute_km is not None and commute_km is not None and commute_km > dp.max_commute_km
+            and verdict != "remote" and not remote_ad):
+        return _archive(evaluation, "hard_gate")
+
+    # (6) level, only when the person states the levels they want
+    ranks = [_RANK[level] for level in dp.seniority if level in _RANK]
+    if ranks:
+        entry_evidenced, senior_title, years = _level_signals(title, ad_text)
+        ad_rank = _RANK["senior"] if senior_title else _RANK.get(facts.seniority, -1)
+        if ad_rank > max(ranks):
+            return _archive(evaluation, "hard_gate")
+        if max(ranks) <= _RANK["junior"]:
+            if (facts.min_years is not None and facts.min_years >= ENTRY_MAX_YEARS) or (years or 0) >= ENTRY_MAX_YEARS:
+                return _archive(evaluation, "hard_gate")
+            if not entry_evidenced and re.search(r"\bnot\b[^.]{0,40}\b(?:entry|junior)|rather than an? (?:entry|junior)",
+                                                f"{title}\n{ad_text}", re.I):
+                return _hold(evaluation, "insufficient_evidence")  # the ad says it is NOT entry level
+
+    # (7) hours, only when the person states a limit
+    if hours_limit is not None:
+        _, hours_excessive = _hours_signals(ad_text, hours_limit)
+        if not _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok):
+            if hours_excessive or facts.hours == "full_time_only":
+                return _archive(evaluation, "hard_gate")
+    # (8) a family rule cannot be checked against an ad the evaluator could not place in a family
+    if canonicalize_family(facts.role_family) == "unknown" and any(r.kind == "family" for r in dp.exclusions):
+        return _hold(evaluation, "insufficient_evidence")
+    return None
+
+
+def decide(
+    evaluation: AgenticEvaluation,
+    *,
+    ad_text: str,
+    title: str = "",
+    policy: TargetPolicy,
+    captured_complete: bool = True,
+    expected_run_key: RunKey | None = None,
+    evidence_bundle=None,
+    commute_km: int | None = None,
+    decision_policy: DecisionPolicy | None = None,
+    company: str = "",
+) -> AgenticGateDecision:
+    """Validate and route an evaluation using deterministic checks only.
+
+    Public errors intentionally carry only fixed codes; malformed nested inputs never leak
+    validation payloads or source text.
+    """
+    valid = True
+    try:
+        if type(evaluation) is not AgenticEvaluation or type(policy) is not TargetPolicy:
+            valid = False
+        else:
+            evaluation = AgenticEvaluation.model_validate(evaluation.model_dump())
+            policy = TargetPolicy.model_validate(policy.model_dump())
+            if expected_run_key is not None:
+                if type(expected_run_key) is not RunKey:
+                    valid = False
+                else:
+                    expected_run_key = RunKey.model_validate(expected_run_key.model_dump())
+        if decision_policy is not None:
+            if type(decision_policy) is not DecisionPolicy:
+                valid = False
+            else:
+                decision_policy = DecisionPolicy.model_validate(decision_policy.model_dump())
+        if (type(ad_text) is not str or type(title) is not str or type(company) is not str
+                or type(captured_complete) is not bool):
+            valid = False
+    except Exception:
+        valid = False
+    if not valid:
+        raise AgenticError("invalid_gate_input") from None
+
+    if not captured_complete or not ad_text:
+        return _hold(evaluation, "insufficient_evidence")
+
+    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
+    if ad_hash != evaluation.run_key.ad_hash or ad_hash != evaluation.requirements.ad_hash:
+        return _hold(evaluation, "verification_required")
+    if expected_run_key is not None and expected_run_key != evaluation.run_key:
+        return _hold(evaluation, "verification_required")
+
+    for requirement in evaluation.requirements.requirements:
+        if requirement.jd_signal and not _verified(requirement.jd_signal, ad_text, ad_hash):
+            return _hold(evaluation, "verification_required")
+    requirements = {r.id: r for r in evaluation.requirements.requirements}
+    # The person's hours limit and graduate-program allowance, resolved once. The policy path takes them from the
+    # policy and reads no profile file; only the legacy path reads the live profile.
+    if decision_policy is None:
+        hours_limit, ft_ok = hours_limit_per_fortnight(), full_time_programs_ok()
+    else:
+        hours_limit, ft_ok = _policy_hours(decision_policy)
+    unverified_blocker = False
+    for match in evaluation.matches:
+        if any(c.source_id not in {"master_resume.md", "cv.md", "profile.yaml"} for c in match.evidence):
+            return _hold(evaluation, "verification_required")
+        if match.match == "partial" and not match.evidence:
+            return _hold(evaluation, "verification_required")
+        if match.match in {"missing", "not_applicable"} and match.evidence:
+            return _hold(evaluation, "verification_required")
+        if match.match == "not_applicable" and requirements[match.requirement_id].importance in {"critical", "high"}:
+            return _hold(evaluation, "verification_required")
+        if requirements[match.requirement_id].blocker and match.match != "strong":
+            # "missing" means not demonstrated, not proven incompatible.
+            # Preserve confirmed policy exclusions below before holding unknowns.
+            exempt = _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok)
+            if _logistics(requirements[match.requirement_id], exempt):
+                # Logistics are not candidate gaps (2026-10-12: Sol marked "application documents", "location" and
+                # "full time" as blockers on Morrows). Jobwatch writes the CV and letter itself, and location and
+                # hours have their own rules below; graduate/vacation roles may bypass the hours limit (see _full_time_exempt).
+                continue
+            if (match.match == "partial" and match.evidence and exempt
+                    and _general_work_rights(requirements[match.requirement_id])):
+                # Graduate/vacation roles bypass the visa hours limit when the profile says so, so a general right-to-work
+                # requirement met only "partially" by the person's visa does not hold them. Citizenship, PR and
+                # clearance demands are hard-gated elsewhere and never reach this line as a pass.
+                continue
+            unverified_blocker = True
+    missing_candidate_evidence = bool(evaluation.matches) and not any(
+        m.match in {"strong", "partial"} and m.evidence for m in evaluation.matches
+    )
+    if evidence_bundle is not None:
+        try:
+            from jobwatch.candidate.evidence import verify_evidence_snapshot
+            from jobwatch.candidate.assessment import verify_candidate_citations
+            verify_evidence_snapshot(evidence_bundle)
+            if evidence_bundle.bundle_hash != evaluation.run_key.evidence_hash:
+                raise ValueError
+            for match in evaluation.matches:
+                verify_candidate_citations(match.evidence, evidence_bundle)
+                if match.judgment is not None:
+                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
+                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
+                        raise ValueError
+        except Exception:
+            return _hold(evaluation, "verification_required")
+
+    citizen_ok = decision_policy is not None and decision_policy.work_rights.get("citizen_or_pr") is True
+    early = _rights_checks(evaluation, ad_text, title, citizen_ok=citizen_ok)
+    if early is None and decision_policy is None:
+        early = _legacy_person_checks(evaluation, ad_text, title, policy, commute_km,
+                                      hours_limit=hours_limit, ft_ok=ft_ok)
+    elif early is None:
+        early = _policy_checks(evaluation, ad_text, title, company, decision_policy, commute_km,
+                               hours_limit=hours_limit, ft_ok=ft_ok)
+    if early is not None:
+        return early
+
 
     if unverified_blocker or missing_candidate_evidence:
         return _hold(evaluation, "insufficient_evidence")

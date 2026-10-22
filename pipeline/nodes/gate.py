@@ -1,7 +1,7 @@
 """Node 4: quality gate and routing. Plain code; the order of the checks is fixed.
 
 Legal and owner rules come first (they are absolute, whatever the score), then the score threshold:
-  not a real job -> archive | work rights that exclude a student-visa holder (quote checked in the ad) -> archive |
+  not a real job -> archive | work rights that exclude this candidate (quote checked in the ad) -> archive |
   a NOT WANTED family -> archive | senior or 4+ years -> archive | full-time only and not a program -> archive |
   score < threshold (3.8) -> archive | otherwise -> drafting.
 A rights claim the ad's words do not back, or a word rule that contradicts the model's reading of the same sentence,
