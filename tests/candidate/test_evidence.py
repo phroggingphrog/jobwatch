@@ -7,6 +7,7 @@ import pytest
 
 from jobwatch.candidate.contracts import CandidateError
 from jobwatch.candidate.evidence import (
+    bundle_from_contents,
     snapshot_evidence,
     validate_annotation,
     verify_evidence_snapshot,
@@ -354,3 +355,16 @@ def test_a_phone_number_with_year_like_digit_groups_is_still_contact_data():
     from jobwatch.candidate.evidence import _contact
     assert _contact({"text": "Phone +44 20 1999 2010 anytime"})
     assert not _contact({"text": "Analyst, Acme Pty Ltd 2019 - 2021"}) and not _contact({"text": "2019-2021"})
+
+
+def test_bundle_from_contents_equals_snapshot_evidence(tmp_path: Path) -> None:
+    expected = snapshot_evidence(write_cv(tmp_path, "# Fictional\n\n## Skills\n- Reconciled ledgers\n"))
+    assert bundle_from_contents(dict(expected.contents)) == expected
+    verify_evidence_snapshot(bundle_from_contents(dict(expected.contents)))
+
+
+def test_bundle_from_contents_refuses_unknown_names_and_empty_contents() -> None:
+    with pytest.raises(CandidateError, match="source_invalid"):
+        bundle_from_contents({"notes.txt": b"x"})
+    with pytest.raises(CandidateError):
+        bundle_from_contents({})

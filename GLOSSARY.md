@@ -28,3 +28,7 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Profile version | An immutable `profile-versions/<n>/` record of one confirmation or adoption, with its evidence snapshots. |
 | Fact basis | Whether a proposed fact is `evidence`, `inference` or `unknown`; a CV gap alone never establishes unemployment. |
 | Search scope | The confirmed basis, locations, daily assessments and daily token ceiling within which discovery and assessment may run. |
+| Frozen baseline | An immutable per-person snapshot of the pipeline's stored inputs and outputs, with gate routes recomputed under a pinned profile, used for like-for-like comparison. |
+| Frozen case | One posting's inputs, outputs, group, tags and usage inside a baseline. |
+| Gate version | A sha256 over the gate's source files; it changes by itself when the gate changes. |
+| Owner label | The owner's own suitability, relevance or exclusion judgment of a frozen case; never produced by a model. |

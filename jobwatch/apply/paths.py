@@ -9,8 +9,11 @@ Overrides (settings.env or environment): JOBWATCH_DATA_DIR, JOBWATCH_PROFILE_DIR
 """
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import os
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 DEFAULT_DATA_DIR = "~/.local/share/jobwatch"  # override: JOBWATCH_DATA_DIR in settings.env
@@ -20,6 +23,25 @@ class ProfileWriteError(PermissionError):
     """Raised when code tries to write inside the user layer (profile/)."""
 
 
+_pinned_profile: contextvars.ContextVar[Path | None] = contextvars.ContextVar("jobwatch_pinned_profile", default=None)
+
+
+@contextlib.contextmanager
+def pin_profile_dir(path: str | Path) -> Iterator[Path]:
+    """Make profile_dir() return `path` for the block, ahead of any environment or person logic.
+
+    A context variable: synchronous code only, and threads started inside the block do not inherit it. The pinned
+    folder is the profile folder for guard_write too, so it is read-only to code while pinned. Pins nest."""
+    folder = Path(path)
+    if not folder.is_absolute() or not folder.is_dir():
+        raise ValueError(f"pinned profile folder must be an existing absolute directory: {folder.name}")
+    token = _pinned_profile.set(folder)
+    try:
+        yield folder
+    finally:
+        _pinned_profile.reset(token)
+
+
 def data_dir() -> Path:
     from .. import users  # multi-person: the signed-in person's folder
     return users.user_dir()
@@ -27,7 +49,11 @@ def data_dir() -> Path:
 
 def profile_dir() -> Path:
     """The signed-in person's profile folder. JOBWATCH_PROFILE_DIR may move only the main user's folder; every other
-    person always gets their own (a server-wide setting once pointed everyone at the owner's profile, 2026-10-20)."""
+    person always gets their own (a server-wide setting once pointed everyone at the owner's profile, 2026-10-20).
+    Inside pin_profile_dir() the pinned folder wins over both."""
+    pinned = _pinned_profile.get()
+    if pinned is not None:
+        return pinned
     from .. import users
     from ..settings import get
     env = get("JOBWATCH_PROFILE_DIR") if users.current() == users.DEFAULT_USER else ""

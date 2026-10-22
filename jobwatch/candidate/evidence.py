@@ -135,6 +135,11 @@ def snapshot_evidence(root: Path) -> EvidenceBundle:
             if canonical_name in contents and contents[canonical_name] != raw:
                 raise _error("source_changed")
             contents[canonical_name] = raw
+    return bundle_from_contents(contents)
+
+
+def bundle_from_contents(contents: dict[str, bytes]) -> EvidenceBundle:
+    """Build the evidence bundle from stored source bytes (names must be in _ALLOWED); unbuildable contents are source_invalid."""
     failure = None
     bundle = None
     try:

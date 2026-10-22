@@ -226,6 +226,15 @@ state while the agent service is stopped, keep the pre-restore file, and restore
 matching code/skills alongside it. There is no automatic deletion of checkpoints,
 interactions or artifacts; archive backups before adopting a retention policy.
 
+`<user_dir>/baselines/` holds frozen evaluation baselines made by
+`jobwatch --user <name> baseline freeze`. It is candidate-bearing (copied profile files,
+evidence, adverts and the owner's labels), so keep it private, never commit or upload it,
+and note that it is included when the person's folder is backed up. It is not exposed
+through the API, the chat tools or MCP, and a freeze calls no model and writes no database
+row. Undo with `rm -rf <user_dir>/baselines/<baseline_id>` (or the whole `baselines`
+folder); nothing else reads these folders. See
+[docs/examples/frozen-baseline.md](../../docs/examples/frozen-baseline.md).
+
 `deploy/jobwatch-agent.service` is an optional user-service installation template.
 Install/restart only as a release action after configuring private credentials.
 It is not installed or activated by importing the API. Run from a clean locked

@@ -73,6 +73,10 @@ jobwatch run --tier fast|slow|all [--dry-run] [--only <collector>] [--limit N]
 jobwatch digest [--dry-run]         # weekly Reddit chatter themes + posting/match stats
 jobwatch health                     # last status, count, failures and latency per collector
 jobwatch init-db                    # create or migrate the DB (idempotent)
+jobwatch --user <name> baseline freeze [--limit N] [--posting-id ID]   # freeze stored inputs and outputs (no model call, no DB write)
+jobwatch --user <name> baseline list                                    # this person's frozen baselines
+jobwatch --user <name> baseline show <baseline_id> [--cases]            # record, label counts, gate state
+jobwatch --user <name> baseline label <baseline_id> <case_id> ...       # the owner's label, at a terminal only
 ```
 
 - `--dry-run` still writes postings and matches, but leaves new matches `queued` (nothing is published), so the next live run publishes them as `board`. For tests, point `JOBWATCH_DB` at a scratch file.
@@ -95,6 +99,23 @@ Discovery runs only for a person whose current profile is confirmed, with a conf
 Existing installs: discovery stays off until a confirmed profile exists. `jobwatch --user <name> profile adopt` turns your current `profile/` files into version 1, which protects them from being overwritten and keeps them in the history; it authorises no discovery. To turn discovery on, onboard on top of that version: let the chat agent guide you (it can read your existing files through `profile_start` with `use_existing_files`) or start a proposal with `base_version` set to the current version, then confirm the scope shown. A scope with nothing to search for is refused (`profile_incomplete`).
 
 Confirmation does not authorise document preparation, employer messages or submission; those keep their own approvals, and Submit stays on the owner-confirmed path. Walk-through with real requests and responses: [docs/examples/profile-intake.md](docs/examples/profile-intake.md).
+
+### Frozen baseline
+
+`jobwatch --user <name> baseline freeze` records the stored inputs and outputs of the newest evaluated run of each posting, the gate version, and the approved profile and profile files as they stand at freeze time (`summary.evidence_mismatch` counts runs made on other evidence), so a later matcher or gate can be compared on identical inputs. The recommended point to freeze is before Plan 2 (the revised decision policy) is deployed. A freeze never calls a model, writes no database row and opens the database read-only. Its files live under `<user_dir>/baselines/<baseline_id>/`, private to that person. Duplicate adverts and related employers share a `group_id`, so a comparison can keep them on one side of a split. `list` and `show` print the record and counts, never candidate text; `show` reports `gate_state` (`pre_revision` or `revised`) and whether the gate has changed since the freeze. `label` records the owner's own judgment and works only at a terminal; an agent running shell commands is refused. No numbers in MATCHING.md changed.
+
+Undo: `rm -rf <user_dir>/baselines/<baseline_id>` removes one baseline (`rm -rf <user_dir>/baselines` removes all). Nothing else reads them and nothing else was changed.
+
+Not verified or not available yet:
+
+- The freeze has never been run on a real person's data.
+- The database uses WAL journal mode (`jobwatch/db.py`) and the freeze opens it read-only (`mode=ro`). That has not been tested against a live WAL database; the owner's first real freeze must confirm that it opens.
+- Labels are absent until the owner adds them.
+- Tags are heuristics, not judgments.
+- `explicit_exclusion` is limited to the family rules until Plans 2 and 5.
+- Replays of the old gate need the baseline's `pinned_profile`.
+
+Walk-through with real output (invented data, no model called): [docs/examples/frozen-baseline.md](docs/examples/frozen-baseline.md).
 
 ## Config files (`config/`)
 
