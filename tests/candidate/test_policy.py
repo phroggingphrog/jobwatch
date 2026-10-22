@@ -294,3 +294,23 @@ def test_not_far_from_a_place_describes_the_area_and_asks_nothing(text):
 def test_not_far_from_the_city_names_no_region_and_keeps_the_location_question():
     p = policy_of(fact('location', 'not far from the city', fid='nf2'))
     assert p.regions == () and 'location' in p.open_questions and 'exclusion:nf2' not in p.open_questions
+
+
+@pytest.mark.parametrize('text,asks', [('Box Hill VIC not near Sydney', True), ('Box Hill VIC not near the city', False),
+                                       ('Box Hill VIC not close to the station', False), ('Melbourne not near the beach', False),
+                                       ('Box Hill VIC, not near Sydney', True), ('I live in Box Hill VIC. Not near Sydney', True)])
+def test_not_near_and_not_close_are_clause_boundaries(text, asks):
+    p = policy_of(fact('location', text, fid='nn'))
+    assert p.regions == ('VIC',) and ('exclusion:nn' in p.open_questions) is asks
+
+
+def test_not_near_a_place_with_no_home_gives_no_region():
+    p = policy_of(fact('location', 'Not near Sydney', fid='nn2'))
+    assert p.regions == () and 'exclusion:nn2' in p.open_questions
+
+
+@pytest.mark.parametrize('text', ['I live in Box Hill VIC not near Sydney', 'I live in Box Hill VIC, not near Sydney',
+                                  'I live in Box Hill VIC not close to the station'])
+def test_home_state_ignores_a_not_near_tail(text):
+    p = policy_of(fact('location', text))
+    assert p.home['state'] == 'VIC' and p.home['place'] == 'Box Hill VIC' and p.regions == ('VIC',)

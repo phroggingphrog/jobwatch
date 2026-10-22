@@ -124,9 +124,9 @@ _REMOTE_NO = re.compile(r"\bno\s+remote\b|\bnot\s+remote\b|\bon-?site\s+only\b|\
 _NEGATION = re.compile(r"\b(?:no|not|never|avoid|without|except|excluding|outside)\b|n['\u2019]t\b", re.I)
 _NOT_FAR = re.compile(r"\bnot\s+(?:too\s+|very\s+|that\s+)?far\b", re.I)    # "not far from X" says where the person is
 _EXCEPT = re.compile(r"\s+(?:except|excluding|other\s+than)\s+", re.I)
-_PART_SPLIT = re.compile(r",|\s+but\s+|\s+and\s+", re.I)
+_PART_SPLIT = re.compile(r",|\s+(?=not\s+(?:near|close)\b)|\s+but\s+|\s+and\s+", re.I)    # "not near X" starts a new part
 _HOME = re.compile(r"(?:\blive[sd]?\s+in|\bbased\s+in|\breside[sd]?\s+in|\bhome\s*:)\s*(.+?)"
-                   r"(?=\s*;|\s*\.(?:\s|$)|\s+and\s+|\s+but\s+|$)", re.I | re.S)
+                   r"(?=\s*;|\s*\.(?:\s|$)|\s+and\s+|\s+but\s+|\s*,?\s*not\s+(?:near|close)\b|$)", re.I | re.S)
 _KM = re.compile(r"(\d+(?:\.\d+)?)\s*(?:km|kilomet\w+)", re.I)
 _COMMUTE_WORDS = re.compile(r"\bcommute|\btravel|\bwithin\b|\bfrom\s+home\b", re.I)
 _CITIZEN_NO = re.compile(r"\b(?:not|non|never|no)[\s-]+(?:an?\s+)?(?:australian\s+)?(?:citizen|permanent\s+resident|(?-i:PR))\b", re.I)
