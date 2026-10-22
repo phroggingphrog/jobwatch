@@ -33,6 +33,14 @@ def test_commute_km_for_uses_victorian_data_only():
     assert commute_km_for('Box Hill, VIC', 'Richmond NSW') is None
 
 
+@pytest.mark.parametrize('other', ['Richmond NSW', 'Victoria Street, Richmond NSW', 'Melbourne Rd, Richmond NSW',
+                                   'Richmond nsw', 'Richmond N.S.W.', 'Richmond New South Wales'])
+def test_commute_km_for_withholds_distance_when_another_state_is_named(other):
+    assert commute_km_for('Box Hill, VIC', other) is None
+    assert commute_km_for(other, 'Carlton VIC') is None
+    assert 5 <= commute_km_for('Box Hill, VIC', 'Carlton VIC') <= 20
+
+
 def test_existing_location_reference_hash_is_unchanged():
     assert location.LOCATION_REFERENCE_HASH == hashlib.sha256(
         files('pipeline.agentic').joinpath('data/metro-localities.json').read_bytes()).hexdigest()

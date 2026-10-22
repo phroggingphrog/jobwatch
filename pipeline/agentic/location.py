@@ -240,15 +240,30 @@ def location_verdict(quote: str, regions: frozenset[str], *, remote_fit: bool, r
     return 'remote' if remote else 'unknown'
 
 
+def _names_other_state(text: str) -> bool:
+    """Conservative commute guard: True when the text may name a state other than Victoria.
+
+    Matches non-VIC state codes case-insensitively with optional dots ("nsw", "N.S.W.") and full state names,
+    on top of regions_named. Ordinary words that equal a code ("act") also match: withholding a distance on
+    ambiguous text is the accepted failure mode. regions_named itself stays case-sensitive."""
+    from jobwatch.place import STATES
+    text = ' '.join((text or '').split())
+    if regions_named(text) - {'VIC'}:
+        return True
+    return any(re.search(r'(?<![A-Za-z])' + r'\.?'.join(code) + r'\.?(?![A-Za-z])', text, re.I)
+               or re.search(rf'\b{re.escape(name)}\b', text, re.I)
+               for code, name in STATES.items() if code != 'VIC')
+
+
 def commute_km_for(home_place: str | None, location_text: str) -> int | None:
     """Straight-line km between two Victorian places, or None.
 
-    Documented limit: distance data exists for Victoria only, so a home or a job place outside it (or one
-    that names another state) has no distance."""
-    home = victorian_place(home_place or '')
-    place = victorian_place(location_text or '')
+    Documented limit: distance data exists for Victoria only, so a home or a job place outside it has no
+    distance, and neither does any text that names another state ("Richmond NSW" is not the Victorian Richmond)."""
+    home_text, place_text = home_place or '', location_text or ''
+    if _names_other_state(home_text) or _names_other_state(place_text):
+        return None
+    home, place = victorian_place(home_text), victorian_place(place_text)
     if home not in VIC_PLACES or place not in VIC_PLACES:
         return None
-    if any('VIC' not in regions_named(t) for t in (home_place or '', location_text or '') if regions_named(t)):
-        return None  # "Richmond NSW" is not the Victorian Richmond
     return round(_km(VIC_PLACES[home], VIC_PLACES[place]))
