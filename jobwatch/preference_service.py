@@ -21,7 +21,7 @@ def preference_context(*, bundle, policy, cfg, structural):
     from jobwatch.candidate import intake
     from jobwatch.candidate.contracts import digest
     approved = intake.current_version(users.current())
-    return context_hash(bundle.bundle_hash, policy.model_dump(mode='json'), cfg,
+    return context_hash(users.current(), bundle.bundle_hash, policy.model_dump(mode='json'), cfg,
                         structural.run_key, service.RUBRIC_VERSION, service.IMPLEMENTATION_VERSION,
                         digest(approved) if approved else None)
 

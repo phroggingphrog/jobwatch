@@ -189,6 +189,11 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch, embed
             return 200, {'choices':[{'message':{'content':json.dumps(value)}}], 'usage':{'prompt_tokens':11,'completion_tokens':7}}
         return synthetic(url, headers, body, timeout)
     llm = LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    # Phase 6 preparation selects a current evaluated shortlist entry. Evaluation
+    # is a separate operation; approval cannot turn an unseen ad into a selection.
+    agentic_batch_run([42],config,conn,evidence_bundle=bundle,llm=llm,operation='evaluate')
+    from pipeline.agentic import shortlist
+    shortlist.build_shortlist(conn,config)
     run_key, approve_key = 'synthetic-run-' + 'x'*40, 'synthetic-approve-' + 'y'*40
     app = create_api(config=config, llm_factory=lambda person:llm, credentials={
         run_key: Principal(users.DEFAULT_USER), approve_key: Principal(users.DEFAULT_USER, frozenset({'read','interact','approve'}))})
@@ -200,6 +205,15 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch, embed
             if result['state'] not in ('queued','running'):return result
             time.sleep(.03)
         pytest.fail('Synthetic native pipeline did not finish')
+    def selected_run(client, result):
+        ident=result['result']['outcomes'][0]['selection_id']
+        deadline=time.monotonic()+45
+        while time.monotonic()<deadline:
+            selected=client.get('/api/agent/selections/'+ident,headers=headers).json()
+            if selected['run_id']:
+                return wait(client,selected['run_id'])
+            time.sleep(.03)
+        pytest.fail('Synthetic selection was not dispatched')
     with TestClient(app) as client:
         thread=client.post('/api/agent/threads',headers=headers).json()['id']
         created=client.post('/api/agent/threads/'+thread+'/runs',headers=headers,json={'message':'Prepare job 42'}).json()
@@ -209,6 +223,8 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch, embed
             headers={'Authorization':'Bearer '+approve_key},json={'decision':'approve'}).json()
         finished=wait(client,resumed['run_id'])
         assert finished['state']=='completed',finished
+        assert finished['result']['outcomes'][0]['status']=='selected',finished
+        finished=selected_run(client,finished)
         assert finished['result']['outcomes'][0]['status']=='ready',finished
         assert {a['kind'] for a in finished['artifacts']}=={'cv','letter','form_map'}
         for artifact in finished['artifacts']:
@@ -228,12 +244,13 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch, embed
         def busy(*args, _skip_reasons, **kwargs):
             _skip_reasons.append({'posting_id': 42, 'reason': 'lease_conflict', 'next_eligible_at': 123.0})
         monkeypatch.setattr('pipeline.agentic.service.run_agentic_job', busy)
+        client.post('/api/agent/shortlist/refresh',headers=headers)
         again=client.post('/api/agent/threads/'+thread+'/runs', headers={**headers,'Idempotency-Key':'busy-42'},
                           json={'message':'Prepare job 42 again'}).json()
         pending=wait(client,again['id'])
         resumed=client.post('/api/agent/interactions/'+pending['interactions'][0]['id']+'/responses',
             headers={'Authorization':'Bearer '+approve_key},json={'decision':'approve'}).json()
-        deferred=wait(client,resumed['run_id'])['result']['outcomes'][0]
+        deferred=selected_run(client,wait(client,resumed['run_id']))['result']['outcomes'][0]
         assert deferred['status']=='deferred' and deferred['reason']=='lease_conflict', deferred
         assert deferred['next_eligible_at']==123.0
         print('NATIVE PACKAGE: authenticated approval -> cited evaluation -> CV/letter PDFs + form map; one immutable package, no Submit.')

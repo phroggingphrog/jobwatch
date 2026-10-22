@@ -116,18 +116,29 @@ def job_connection(config, *, write=False):
 
 
 GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview', 'draft_followup', 'submit_application',
-         'profile_confirm')
+         'profile_confirm','reject_posting','restore_posting','propose_exclusion','confirm_exclusion',
+         'pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
 
 
 def _identity(args):
     """What an approval is keyed by: the posting, the application or the profile draft the call names."""
-    return args.get('posting_id', args.get('application_id', args.get('proposal_id')))
+    return args.get('posting_id', args.get('application_id', args.get('proposal_id',
+        args.get('prompt_id',args.get('selection_id',hashlib.sha256(json.dumps(args,sort_keys=True).encode()).hexdigest())))))
 
 
 def _approval_binding(name, args, config):
     """Bind an approval to actual evidence/config, not an LLM description."""
     from pipeline.agentic.service import enabled, snapshot_inventory
     value = {'tool': name, 'arguments': args, 'skills': skill_version(), 'enabled': enabled(config)}
+    from pipeline.agentic import feedback_chat
+    if name in feedback_chat.WRITES or (name in feedback_chat.PREPARATION and enabled(config)):
+        try:
+            subject=feedback_chat.preview(name,args,config)
+        except (ValueError,KeyError) as exc:
+            raise AgenticError('snapshot_changed') from None
+        value['snapshot']=subject
+        digest=hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
+        return dict(digest=digest,run_key=digest,operation=name,arguments=args,subject=subject)
     if name == 'profile_confirm':
         # Bound to the exact draft and scope the person is shown (jobwatch.candidate.intake), nothing the model wrote.
         from jobwatch.candidate import intake
@@ -246,6 +257,7 @@ class _PrivateBoundary(AgentMiddleware):
 
 
 def _build(person, conn, config, llm, selected, saver, store):
+    from pipeline.agentic import feedback_chat
     scope = invocation.current()
     model = ConversationModel(transport=llm, selected=selected, cache=False,
         counter={'calls': 0, 'deadline': scope.deadline if scope else time.monotonic() + 900,
@@ -279,6 +291,15 @@ def _build(person, conn, config, llm, selected, saver, store):
             if scope:
                 scope.outcomes.append(outcome)
             return outcome
+        if operation=='prepare':
+            from pipeline.agentic import feedback_chat
+            approved=scope.approvals.get((tool_name,posting_id)) if scope else None
+            if approved is None or approved!=_approval_binding(tool_name,approved['arguments'],config):
+                raise RuntimeErrorSafe('approval_inputs_changed')
+            selected=feedback_chat.apply(tool_name,{'posting_id':posting_id},config,binding=approved)
+            outcome=dict(posting_id=posting_id,status='selected',selection_id=selected['id'],run_id=selected['run_id'],reason='preparation_queued')
+            scope.outcomes.append(outcome)
+            return selected
         # Recheck every configured role: existing source permits arbitrary model ids.
         cfg = _config(config)
         for key in ('worker_model', 'evaluator_model', 'reviewer_model', 'answer_model'):
@@ -651,7 +672,8 @@ def _build(person, conn, config, llm, selected, saver, store):
         permissions=permissions, middleware=[TodoListMiddleware(), boundary,
             FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
                                  _permissions=permissions)],
-        tools=[run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup, submit_application,
+        tools=[*feedback_chat.tools(config,scope,_identity,_approval_binding),
+               run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup, submit_application,
                submit_status, find_jobs, application_status, source_health, ask_human,
                profile_start, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},

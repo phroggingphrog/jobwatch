@@ -38,7 +38,7 @@ def _focus_hypotheses(approved, fields):
     return {h.id for h in fields if facts.intersection(h.supporting_facts)}
 
 
-def _pin(conn, config):
+def _pin(conn, config, *, preparation=False):
     """Cheap exact-input fence: no occupational analysis, fetching or schema writes."""
     approved = intake.current_version(users.current())
     bundle = service.snapshot_evidence(service.profile_dir())
@@ -65,6 +65,8 @@ def _pin(conn, config):
         result = latest_result(conn,pid,parse=frozenset({'evaluation','candidate'}))
         if result:
             result.pop('candidate',None)  # verified above; its immutable hash already fences identity
+            if preparation:
+                result={k:result.get(k) for k in ('run_key','evaluation')}
         live = bool(captured and service.observation_current(service.latest_observation(conn,pid),
             posting_id=pid,url=captured[0]['url'],ad_hash=content_hash(captured[1].encode())))
         catalog.append((pid,posting,content_hash(captured[1].encode()) if captured else None,
@@ -82,7 +84,7 @@ def _pin(conn, config):
         implementation=service.IMPLEMENTATION_VERSION,rubric=service.RUBRIC_VERSION,
         structural=STRUCTURAL_VERSION,matching=MATCHING_VERSION,
         location=service.LOCATION_REFERENCE_HASH,gate=current_gate_version(),
-        response_readiness=response_time_readiness(conn),
+        response_readiness=None if preparation else response_time_readiness(conn),
         rules=content_hash(Path(ranking.__file__).read_bytes()),versions=versions(),
         catalog=catalog,preferences=preferences,relevance=relevance,
         dismissals=feedback.dismissal_state_hash(conn),
