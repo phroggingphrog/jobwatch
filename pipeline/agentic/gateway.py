@@ -10,6 +10,11 @@ from langchain_core.embeddings import Embeddings
 from pipeline.agentic import execution
 from pipeline.agentic.runtime import RuntimeErrorSafe, _json_bytes
 
+QUERY_INSTRUCTIONS = {
+    'requirement': 'Given a job requirement, retrieve candidate career evidence demonstrating relevant skills or experience.',
+    'field_from_evidence': "Given a statement of a person's work experience or skills, retrieve the occupations whose duties and required skills it relates to.",
+}
+
 
 class PaidGatewayEmbeddings(Embeddings):
     """LangChain interface with the same private route, identity and job budgets."""
@@ -21,10 +26,12 @@ class PaidGatewayEmbeddings(Embeddings):
     def embed_query(self, text):
         return self.embed_queries([text])[0]
 
-    def embed_queries(self, texts):
+    def embed_queries(self, texts, kind='requirement'):
+        if kind not in QUERY_INSTRUCTIONS:
+            raise RuntimeErrorSafe('invalid_request')
         # Qwen's official retrieval format: instruct queries, leave documents plain.
         if self.model == execution.QWEN_EMBEDDING_MODEL:
-            instruction = 'Given a job requirement, retrieve candidate career evidence demonstrating relevant skills or experience.'
+            instruction = QUERY_INSTRUCTIONS[kind]
             texts = [f'Instruct: {instruction}\nQuery:{text}' for text in texts]
         return self.embed_documents(texts)
 

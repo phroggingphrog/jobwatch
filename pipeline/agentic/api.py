@@ -27,7 +27,7 @@ from jobwatch.execution_mode import effective_mode
 from pipeline.agentic.api_store import APIStore, Conflict, encoded
 from pipeline.agentic.chat import dispatch, skill_version, job_database, job_connection
 from pipeline.agentic.execution import Execution
-from pipeline.agentic import profile_api
+from pipeline.agentic import profile_api, discovery_api
 from pipeline.agentic.persistence import _read_artifact
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
@@ -256,6 +256,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         return JSONResponse({'error': 'service_unavailable'}, status_code=503)
 
     profile_api.mount(app, require, get_config, llm_factory)
+    discovery_api.mount(app, require, get_config)
 
     @app.get('/health')
     def health():
@@ -273,6 +274,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         return dict(schema_version=1, execution_mode=effective_mode(get_config(principal.person)),
                     skill_version=skill_version(), protocol='native-http',
                     human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes),
+                    discovery=dict(read_only=True, flags=discovery_api.flags(get_config(principal.person))),
                     profile=dict(upload_max_bytes=intake.MAX_UPLOAD_BYTES, kinds=list(intake.KINDS),
                                  extensions=list(intake.EXTENSIONS)))
 

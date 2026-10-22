@@ -105,6 +105,51 @@ same wording as the intake questions. The flag `agentic.decision_policy` is `leg
 chat tool `profile_policy()` return the same dictionary for the server-bound person and only read: neither writes a fact, a
 rule, a label or an approval, and `profile_policy` is not a gated tool.
 
+### Field and job discovery
+
+This screen requires a complete saved advert but uses bounded text: at most four
+1,500-character embedding windows with 150-character overlap, and the first
+12,000 characters for relevance extraction. Semantic dedupe shares these vectors.
+It is separate from canonical full-ad assessment and does not establish complete
+passage coverage for long adverts.
+
+Field hypotheses compare approved profile evidence with public, versioned
+occupation references. They are search hypotheses, never qualification proof.
+The shared public references live under `<data>/reference/<dataset>/<version>/`;
+person-specific hypotheses and plans live under `<person>/discovery/`. Embedding
+calls use the configured Qwen embedding model through the approved paid
+OmniRoute route and are charged to the confirmed scope's budget.
+
+| Read-only route (read scope) | Result |
+|---|---|
+| `GET /api/agent/discovery/fields` | Cached hypotheses and status (`ready` or `not_computed`); this route does not call a model. |
+| `GET /api/agent/discovery/plan` | Cached search plan, status and discovery flags. |
+| `GET /api/agent/discovery/postings/{posting_id}/relevance` | Latest stored relevance judgment, mode and time; 404 `not_found` when none exists. |
+
+Discovery flags are `pipeline.agentic.search_plan` (default `false`),
+`pipeline.agentic.relevance` (`off | shadow | on`, default `shadow`),
+`pipeline.agentic.dedupe` (`legacy | semantic`, default `legacy`) and
+`pipeline.agentic.ordering` (`legacy | hypotheses`, default `legacy`). Shadow
+judgments archive nothing; screening makes no model or embedding call until
+fields and a plan have been refreshed. `relevance: on` archives a verified `no`
+as `not_relevant`; `uncertain` proceeds. The exclusion pre-filter archives as
+`excluded_by_rule` only when `pipeline.agentic.decision_policy: profile` is
+enabled. Semantic dedupe and hypothesis ordering use the approved embedding
+route. The tuning defaults are `pipeline.discovery.similar_at: 0.60`,
+`duplicate_cosine: 0.95`, `screen_per_run: 40`, `reconsider_per_run: 20`,
+`embedding_token_ceiling: 2000000`, `screen_token_ceiling: 300000`, and
+`relevance_model: null` (the configured evaluator model).
+
+The explicit operator commands are `python -m pipeline.agentic.discovery
+refresh --user NAME`, `python -m pipeline.agentic.discovery status --user
+NAME`, and `python -m pipeline.agentic.discovery restore --user NAME`.
+`status` is read-only; `refresh` computes and caches the current profile's
+hypotheses and plan and may make paid embedding calls. With `search_plan: true`,
+collection can refresh a missing plan automatically. Seek, Jora and JobSpy
+currently use only the first planned location. The similarity thresholds are
+uncalibrated, there is no lexical hybrid, and these routes do not establish
+matching accuracy or deployment.
+
 ### Guided onboarding in the chat agent
 
 The chat agent guides a new person through the same draft instead of waiting for a finished parse. Answers given

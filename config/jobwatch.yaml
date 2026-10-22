@@ -54,4 +54,18 @@ pipeline:
     max_batch_jobs: 20
     concurrency: 2
     # decision_policy: legacy   # legacy (default) keeps the fixed gate; profile gates on the person's confirmed profile
+    # Field and job discovery: defaults below preserve the legacy search/archive behaviour.
+    # search_plan: false
+    # relevance: shadow       # off | shadow | on; shadow stores judgments but archives nothing
+    # dedupe: legacy          # legacy | semantic
+    # ordering: legacy        # legacy | hypotheses
+  # Discovery tuning defaults. The similarity thresholds are uncalibrated.
+  # discovery:
+  #   similar_at: 0.60
+  #   duplicate_cosine: 0.95
+  #   screen_per_run: 40
+  #   reconsider_per_run: 20
+  #   embedding_token_ceiling: 2000000
+  #   screen_token_ceiling: 300000
+  #   relevance_model: null   # default to the configured evaluator model
 

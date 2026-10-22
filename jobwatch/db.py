@@ -348,6 +348,26 @@ MIGRATIONS: list[str] = [
         COALESCE(posted_at, first_seen_at), '+30 days') WHERE expires_at IS NULL;
     CREATE INDEX IF NOT EXISTS ix_postings_expiry ON postings(closed_at, expires_at);
     """,
+    # Private discovery vectors, judgments and counted paid work.
+    """
+    CREATE TABLE text_embeddings (
+        key TEXT NOT NULL, model TEXT NOT NULL, dims INTEGER NOT NULL,
+        vector BLOB NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(key, model)
+    );
+    CREATE TABLE posting_relevance (
+        posting_id INTEGER NOT NULL REFERENCES postings(id) ON DELETE CASCADE,
+        ad_hash TEXT NOT NULL, plan_hash TEXT NOT NULL,
+        relevant TEXT NOT NULL CHECK(relevant IN ('yes','no','uncertain')),
+        method TEXT NOT NULL, similarity REAL NOT NULL, mode TEXT NOT NULL,
+        judgment_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(posting_id, ad_hash, plan_hash)
+    );
+    CREATE TABLE discovery_spend (
+        id INTEGER PRIMARY KEY, at REAL NOT NULL, purpose TEXT NOT NULL,
+        charged_tokens INTEGER NOT NULL
+    );
+    CREATE INDEX discovery_spend_at ON discovery_spend(at);
+    """,
 ]
 
 

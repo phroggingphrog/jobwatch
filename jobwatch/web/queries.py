@@ -69,7 +69,9 @@ HIDE_REASONS = [("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real
                 ("engineering_it", "Other field: software, engineering or IT"),
                 ("health_care_teaching", "Other field: health, care or teaching"),
                 ("trades_manual", "Other field: trades or manual work"),
-                ("other_field", "Other field: a different profession")]
+                ("other_field", "Other field: a different profession"),
+                ("not_relevant", "Not relevant to your fields"),
+                ("excluded_by_rule", "Excluded by your rule")]
 NOT_TARGET_KEYS = frozenset(k for k, _ in HIDE_REASONS[HIDE_REASONS.index(("low_fit", "Not a fit")) + 1:])
 HIDE_LABEL = {**dict(HIDE_REASONS), "not_target": "Not a target role (not sorted yet)", "other": "Other reason",
               "duplicate": "Same ad as another job",
@@ -693,6 +695,7 @@ def ai_from_row(r: dict) -> dict | None:
 # pipeline has not judged yet (ingested / extracted / scored) keeps the reader's review, or waits.
 PL_SHOW = ("draft_queued", "drafted", "ready")
 PL_HIDE_REASON = {"not_a_real_job": "not_a_real_job", "sponsored_ad": "sponsored_ad", "too_senior": "too_senior",
+                  "not_relevant": "not_relevant", "excluded_by_rule": "excluded_by_rule",
                   "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
                   "work_rights:citizen_or_pr": "needs_citizen_or_pr", "work_rights:citizen_only": "needs_citizen_or_pr",
                   "work_rights:clearance": "needs_citizen_or_pr",

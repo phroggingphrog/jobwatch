@@ -40,6 +40,9 @@ class Decision:
 
 class Rules:
     def __init__(self, rules: dict, employers: list[dict] | None = None):
+        from . import users
+        from .candidate.policy import policy_for
+        self.profile_policy = policy_for(users.current())
         self.arms = [
             Arm(id=a["id"], tier=a.get("tier", "core"), anzsco=str(a.get("anzsco", "")),
                 keywords=[(k, _phrase(k)) for k in a.get("keywords", []) if str(k).strip()],
@@ -118,6 +121,9 @@ class Rules:
         return bool(self.arm_hits(title)) and not self.seniority_hit(title) and not self.off_target_hit(title)
 
     def location_rule(self, p: Posting) -> str | None:
+        if self.profile_policy is not None:
+            from .discovery_gate import profile_location_rule
+            return profile_location_rule(p, self.profile_policy)
         text = p.location or ""
         if p.state == "VIC" or any(x.search(text) for x in self.vic):
             return "melbourne_vic"

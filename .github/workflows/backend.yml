@@ -38,6 +38,9 @@ jobs:
           tests/test_profile_pin.py
           tests/test_baseline.py
           tests/test_cli_baseline.py
+          tests/occupations
+          tests/test_discovery_api.py
+          tests/test_profile_location_prefilter.py
           tests/preferences/test_core.py
           tests/test_preference_service.py
           tests/outcomes/test_out_callback.py

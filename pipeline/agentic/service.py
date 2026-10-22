@@ -708,7 +708,8 @@ def _spent_today(conn, scope_day_start):
                         (scope_day_start,)).fetchone()[0]
     tokens = conn.execute("SELECT COALESCE(SUM(charged),0) FROM agentic_batches WHERE batch_id IN "
                           "(SELECT DISTINCT batch_id FROM agentic_activity WHERE at>=?)", (scope_day_start,)).fetchone()[0]
-    return jobs, tokens
+    from jobwatch.occupations.embeddings import discovery_tokens_since
+    return jobs, tokens + discovery_tokens_since(conn, scope_day_start)
 
 
 def _local_midnight(now):
@@ -734,13 +735,33 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
     if room <= 0 or left <= 0:
         return {'deferred': 'daily_budget'}
     started = time.monotonic()
-    with adtext.review_lock(adtext.lock_path(config)) as acquired:
+    from contextlib import ExitStack
+    from pipeline.agentic import discovery
+    with adtext.review_lock(adtext.lock_path(config)) as acquired, ExitStack() as discovery_stack:
         if not acquired:
             return {'skipped': 'busy'}
         from pipeline.nodes import ingest
         # Collection/ad capture is deterministic and may fetch public full ads.
         ingest.run(conn, config, limit=200, fetch_budget=25)
-        _near_duplicates(conn, config)
+        discovery_cfg = discovery.settings(config)
+        excluded = discovery.enforce_exclusions(conn, config)
+        discovery.reconsider(conn, config)
+        discovery_context = None
+        if discovery_cfg['dedupe'] == 'semantic' or discovery_cfg['ordering'] == 'hypotheses':
+            try:
+                discovery_context = discovery_stack.enter_context(discovery.context_for(conn, config,
+                    seconds=min(300., max(0.001, max_seconds - (time.monotonic() - started))) if max_seconds is not None else 300.))
+            except Exception as exc:
+                log.info('discovery context: %s', type(exc).__name__)
+        if discovery_cfg['dedupe'] == 'legacy':
+            _near_duplicates(conn, config)
+        elif discovery_context is not None:
+            try:
+                discovery.semantic_duplicates(conn, config, context=discovery_context)
+            except Exception as exc:
+                log.info('discovery dedupe: %s', type(exc).__name__)
+        rel = discovery.screen_step(conn, config, context=discovery_context,
+            seconds=min(300., max(0.001, max_seconds - (time.monotonic() - started))) if max_seconds is not None else 300.)
         # Reserve space for both unfinished work and public READY refreshes.
         # Each successful attempt updates pipeline_state.updated_at, rotating the
         # queues so an old held job or a large READY backlog cannot starve either.
@@ -764,7 +785,13 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
             if len(pending) == 200 and len(refresh) == 20: break
         AgenticStore(conn).ensure()
         pending = [pid for pid in unseen[:25] + pending if not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
-        pending = _target_first(conn, config, pending)
+        if discovery_cfg['ordering'] == 'legacy':
+            pending = _target_first(conn, config, pending)
+        elif discovery_context is not None:
+            try:
+                pending = discovery.order_pending(conn, config, pending, context=discovery_context)
+            except Exception as exc:
+                log.info('discovery ordering: %s', type(exc).__name__)
         # A posting whose last run only refreshed its ad text (snapshot_changed) needs just the second pass; without
         # this it went to the back of the queue every time and 7029 never got its judgement.
         again = [pid for pid in pending if (conn.execute('SELECT reason FROM agentic_runs WHERE posting_id=? '
@@ -783,6 +810,15 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         if max_seconds is not None:
             max_seconds = max(60, max_seconds - (time.monotonic() - started))
         store = AgenticStore(conn)
+        jobs, tokens = _spent_today(conn, _local_midnight(_now()))
+        room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
+        details = {}
+        if rel:
+            details['relevance'] = rel
+        if excluded:
+            details['excluded_by_rule'] = len(excluded)
+        if room <= 0 or left <= 0:
+            return {'deferred': 'daily_budget', **details}
         extra = {}
         if ids[:room] and left < cfg['batch_token_ceiling']:        # this run's own ceiling is what is left of the day's
             ident = 'agentic-' + uuid.uuid4().hex
@@ -792,6 +828,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         # Collection only evaluates; documents are drafted on an explicit request, never as a side effect of a timer.
         out = agentic_batch_run(ids[:room], config, conn, max_seconds=max_seconds, collector_run_id=collector_run_id,
                                 operation='evaluate', **extra)
+        out.update(details)
         return {**out, 'daily_budget_deferred': cut} if cut else out
 
 
