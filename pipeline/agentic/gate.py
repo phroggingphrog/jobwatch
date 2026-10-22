@@ -262,6 +262,10 @@ def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: st
     return None
 
 
+_REMOTE_QUOTE = re.compile(r"\b(?:remote|work from home|anywhere in Australia)\b", re.I)
+_AUSTRALIA_QUOTE = re.compile(r"\b(?:Australia|Australian|worldwide|anywhere|globally)\b", re.I)
+
+
 def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, company: str,
                    dp: DecisionPolicy, commute_km: int | None) -> AgenticGateDecision | None:
     """Exclusions, location and commute from the person's confirmed decision policy.
@@ -302,6 +306,11 @@ def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, comp
                  r"(?:US|USA|United States|UK|United Kingdom|Canada|New Zealand)\b", ad_text, re.I):
         return _archive(evaluation, "hard_gate")
 
+    # A remote role must establish Australia (or one of the person's regions): "Remote - Europe" is held.
+    if (verdict in {"in", "remote"} and remote_fit and _REMOTE_QUOTE.search(quote)
+            and not _AUSTRALIA_QUOTE.search(quote) and not regions_named(quote) & regions):
+        return _hold(evaluation, "insufficient_evidence")
+
     # (4) on-site in a capital outside the person's regions
     others = [name for name, state in CAPITALS.items() if state not in regions]
     if regions and others:
@@ -314,8 +323,10 @@ def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, comp
                 return _archive(evaluation, "hard_gate")
 
     # (5) commute: no default distance, the limit is the person's own
+    # A remote-accessible role is not archived on distance unless the person rules remote work out.
+    remote_ad = remote_fit and dp.remote_ok is not False and _REMOTE_QUOTE.search(quote) is not None
     if (dp.max_commute_km is not None and commute_km is not None and commute_km > dp.max_commute_km
-            and verdict != "remote"):
+            and verdict != "remote" and not remote_ad):
         return _archive(evaluation, "hard_gate")
     return None
 

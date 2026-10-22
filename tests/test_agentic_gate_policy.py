@@ -112,6 +112,29 @@ def test_commute_limit_comes_only_from_the_policy(evaluation, policy):
     assert outcome(remote, REMOTE_AD, policy, dp30, commute_km=40) == ("draft", "eligible")
 
 
+def test_remote_ad_is_not_archived_on_distance(evaluation, policy):
+    limit = fact("constraint", "no more than 30 km commute")
+    remote = retarget(evaluation, REMOTE_AD, "remote within Australia", location_fit="remote_accessible")
+    assert outcome(remote, REMOTE_AD, policy, policy_of(limit), commute_km=40) == ("draft", "eligible")   # no regions
+    ad = "Graduate accounting analyst. Remote, Melbourne VIC." + RIGHTS
+    named = retarget(evaluation, ad, "Remote, Melbourne VIC", location_fit="remote_accessible")
+    assert outcome(named, ad, policy, policy_of(limit, VIC), commute_km=40) == ("draft", "eligible")
+    # The person rules remote work out: distance applies again.
+    assert outcome(named, ad, policy, policy_of(limit, VIC, fact("preference", "no remote")),
+                   commute_km=40) == ("archive", "hard_gate")
+    # A job that is not remote keeps the distance rule.
+    assert outcome(evaluation, AD, policy, policy_of(limit, VIC), commute_km=40) == ("archive", "hard_gate")
+
+
+def test_remote_ad_must_establish_australia(evaluation, policy):
+    europe_ad = "Graduate accounting analyst. Remote - Europe." + RIGHTS
+    europe = retarget(evaluation, europe_ad, "Remote - Europe", location_fit="remote_accessible")
+    assert outcome(europe, europe_ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    wide_ad = "Graduate accounting analyst. Remote, Australia wide." + RIGHTS
+    wide = retarget(evaluation, wide_ad, "Remote, Australia wide", location_fit="remote_accessible")
+    assert outcome(wide, wide_ad, policy, policy_of(VIC)) == ("draft", "eligible")
+
+
 def _rule(kind, value):
     return fact("exclusion", {"kind": kind, "value": value})
 
