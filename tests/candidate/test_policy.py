@@ -282,3 +282,15 @@ def test_not_far_from_the_city_keeps_the_home_region_and_asks_nothing():
 def test_australia_wide_except_a_place_asks():
     p = policy_of(fact('location', 'Australia-wide except Geelong', fid='n12'))
     assert p.regions == () and 'exclusion:n12' in p.open_questions and 'location' not in p.open_questions
+
+
+@pytest.mark.parametrize('text', ['Box Hill VIC not far from Melbourne', 'I live in Box Hill VIC, not far from Melbourne',
+                                  'Box Hill VIC, not far from Box Hill station'])
+def test_not_far_from_a_place_describes_the_area_and_asks_nothing(text):
+    p = policy_of(fact('location', text, fid='nf'))
+    assert p.regions == ('VIC',) and not any(q.startswith('exclusion:') for q in p.open_questions)
+
+
+def test_not_far_from_the_city_names_no_region_and_keeps_the_location_question():
+    p = policy_of(fact('location', 'not far from the city', fid='nf2'))
+    assert p.regions == () and 'location' in p.open_questions and 'exclusion:nf2' not in p.open_questions

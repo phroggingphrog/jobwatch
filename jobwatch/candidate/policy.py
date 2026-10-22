@@ -122,7 +122,7 @@ _AUSTRALIA_WIDE = re.compile(r"\b(?:australia[- ]?wide|nationwide|anywhere\s+in\
 _REMOTE_YES = re.compile(r"\bremote\b|\bwork(?:ing)?\s+from\s+home\b|\bwfh\b", re.I)
 _REMOTE_NO = re.compile(r"\bno\s+remote\b|\bnot\s+remote\b|\bon-?site\s+only\b|\bin-?person\s+only\b", re.I)
 _NEGATION = re.compile(r"\b(?:no|not|never|avoid|without|except|excluding|outside)\b|n['\u2019]t\b", re.I)
-_NOT_FAR = re.compile(r"\bnot\s+(?:too\s+|very\s+|that\s+)?(?:far|near|close)\b", re.I)    # "not far from the city" names no exclusion
+_NOT_FAR = re.compile(r"\bnot\s+(?:too\s+|very\s+|that\s+)?far\b", re.I)    # "not far from X" says where the person is
 _EXCEPT = re.compile(r"\s+(?:except|excluding|other\s+than)\s+", re.I)
 _PART_SPLIT = re.compile(r",|\s+but\s+|\s+and\s+", re.I)
 _HOME = re.compile(r"(?:\blive[sd]?\s+in|\bbased\s+in|\breside[sd]?\s+in|\bhome\s*:)\s*(.+?)"
@@ -147,14 +147,9 @@ def _clauses(text: str) -> list[str]:
 
 
 def _negated(part: str) -> bool:
-    """A negation word rules the part out. "not far/near/close" is only filler when no place follows it:
-    "not far from the city" names no exclusion, "not near Sydney" does."""
-    from pipeline.agentic.location import regions_named
-
-    def filler(m: re.Match) -> str:
-        return m.group(0) if regions_named(part[m.end():]) else " "
-
-    return bool(_NEGATION.search(_NOT_FAR.sub(filler, part)))
+    """A negation word rules the part out, except "not far", which describes where the person is (any place after it
+    is welcome). "not near" and "not close" are negations like any other, so "not near Sydney" rules Sydney out."""
+    return bool(_NEGATION.search(_NOT_FAR.sub(" ", part)))
 
 
 def _places_in(text: str) -> tuple[set[str], bool, bool]:
