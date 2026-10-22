@@ -8,7 +8,7 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Posting | A saved job opening identified by a posting ID. Its full ad is evidence to inspect. |
 | Canonical evidence | Approved source material supporting personal claims; model memory is not a substitute. |
 | Thread | A person's durable conversation and its LangGraph checkpoints. |
-| API run | One admitted conversation invocation, identified independently from a job attempt. |
+| API run | One admitted backend invocation, such as a conversation turn or selected-job preparation batch, independent from a job attempt. |
 | Job attempt | Canonical processing of a posting against captured inputs, identified by its run key. |
 | Interaction | A pending human question or approval, bound to the relevant checkpoint and inputs. |
 | Approval | A trusted human decision permitting the specified work; only a `submit_application` approval of an exact reviewed fill authorizes final Submit. |
@@ -21,6 +21,12 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Personalised ordering | A valid preference model's ordering within label tiers, using only a complete set of current per-posting utilities. |
 | Score policy | Ranking design in which holistic and career-alignment scores are advisory comparison data and do not exclude or order shortlist candidates. |
 | Impression | A record that a shortlist entry was shown at a rank and surface; it is exposure data, not an owner choice. |
+| Feedback history | The immutable record of a person's responses, reasons and displayed context; different kinds of feedback retain distinct meanings. |
+| Rejection | A person's dismissal of one posting, without excluding other postings or changing eligibility. |
+| Restoration | A later response lifting a posting rejection while preserving its reason and requiring current eligibility. |
+| Comparison choice | A genuine human answer among three displayed eligible jobs and none; it is distinct from an impression, rejection or selection. |
+| Prompt | One bounded request for a human comparison choice or missing fact, tied to the context the person sees. |
+| Selection | A person's approval to prepare specified current jobs; it authorizes preparation only and can remain pending dispatch. |
 | READY | A current package has met the authoritative eligibility, factual and document gates. |
 | Held / archived | Saved domain outcomes explaining why a job has stopped or been excluded. |
 | Deferred | Work was not admitted or could not proceed now; report the reason and next eligible time when known. |
@@ -29,7 +35,7 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Submit | The final application action: the owner's own click, or Jobwatch pressing it for an owner-confirmed, unchanged fill. |
 | Company research | The saved ad's explicit skills/duties plus cited public employer context; inferences stay labelled and cannot introduce mandatory requirements. |
 | Structural proximity | A 60/40 activity-coverage/cosine measure; not a qualification or hiring probability. |
-| Preference prediction | A validated owner-choice probability within an already answered set of three eligible jobs plus none. |
+| Preference prediction | A validated human-choice model's probability within a displayed set of three eligible jobs plus none; it is not hiring probability or exposure propensity. |
 | Callback estimate | Historical Beta-Binomial callback rate and uncertainty, distinct from a forecast for a particular job. |
 | Proposal | A private, parsed draft of a person's profile facts and open questions, revised by the person; not authoritative until confirmed. |
 | Approved profile | The facts and search scope the person confirmed, stored as a profile version and projected into `profile/`. |
@@ -45,7 +51,7 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Exclusion rule | A confirmed `{"kind", "value"}` exclusion that the gate enforces and that carries its `source_fact_id`; a free-text exclusion is not one until the person names its kind. |
 | Eligibility constraint | A work-rights or hours limit the person stated and confirmed, kept as a genuine constraint apart from preferences. |
 | Open question | A fact the policy needs but does not have as `evidence`, such as `exclusion:<fact_id>`; it is asked, never answered by the agent. |
-| Policy flag | `pipeline.agentic.decision_policy`, with values `legacy` (default) and `profile`, choosing the legacy checks or the confirmed-profile policy. |
+| Policy flag | A compatibility setting whose `legacy` and `profile` spellings both use canonical confirmed-profile policy. |
 | Field hypothesis | A related occupation found by semantic retrieval from approved facts, used as a search hypothesis; never proof of qualification. |
 | Reference dataset | Public, versioned, hash-verified occupation data under `<data>/reference/`. |
 | Search plan | The queries and locations collectors use, derived from field hypotheses and the decision policy. |

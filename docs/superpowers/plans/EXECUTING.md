@@ -1,89 +1,50 @@
-# Executing the roadmap phases with agents
+# Executing the remaining backend roadmap
 
-This file is for an executor agent (or the person launching one) running one phase of the
-[backend roadmap](2026-10-21-backend-roadmap.md) unattended in a cloud session. Each phase has a
-self-contained implementation plan in this folder. The spec every plan argues from is
-[the agreed backend brief](../specs/2026-10-21-agreed-backend-brief.md).
+The owner-approved [remaining-roadmap plan](2026-10-23-finish-backend-roadmap.md)
+supersedes older launch prompts and conflicting phase-plan assumptions. Reuse the
+repository setup and work locally on `codex/` branches; the owner explicitly
+rejected running another setup workflow for this repository.
 
-## Phases
+## Release order
 
-| Phase | Roadmap plan | Plan file | Starts when |
-|---|---|---|---|
-| 1 | 1 (with 0) Profile intake and approval | [2026-10-21-plan-1-profile-intake.md](2026-10-21-plan-1-profile-intake.md) | done |
-| 2 | 6a Frozen baseline | `2026-10-21-plan-6a-frozen-baseline.md` | Phase 1 merged |
-| 3 | 2 Decision policy from the profile | `2026-10-21-plan-2-decision-policy.md` | Phase 2 merged |
-| 4 | 3 Field and job discovery | `2026-10-21-plan-3-discovery.md` | Phase 3 merged |
-| 5 | 4 Ranking and explained shortlist | `2026-10-22-phase-5-execution.md` | Phase 4 merged |
-| 6 | 5 Feedback and selection | `2026-10-21-plan-5-feedback-selection.md` | Phase 5 merged |
-| 7 | 6b Evaluation and monitoring | `2026-10-21-plan-6b-evaluation.md` | Phase 6 merged |
+| Release | State | Tracker |
+|---|---|---|
+| Phases 1–5 | Merged | Historical phase reports remain unchanged. |
+| Browser reliability | Merged in PR #23; full local suite passed | #17 closed. |
+| Phase 6 feedback and selected preparation | Implementation and release verification | #21. |
+| Phase 7 evaluation and monitoring | Starts after Phase 6 merges | #22. |
 
-Run one phase per session, in order. A phase starts from `main` only after the previous phase's pull
-request is merged; check `git log origin/main` for that phase's merge before starting.
+The browser [verification report](../../audits/2026-10-23-browser-popup.md)
+records 3655 passed, 11 skipped and the independent review. The earlier Phase 5
+report preserves its original failed run; do not rewrite historical evidence.
 
-**Phase 5 local status:** source implementation is available on
-`codex/phase-5-explained-shortlist`; independent source review is complete.
-The [verification report](../../audits/2026-10-22-shortlist-release.md) records
-3653 passed, 11 skipped and one intermittent browser failure in the full run,
-followed by a passing browser-module rerun. PR integration and deployment remain
-separate. For this local
-execution, follow the owner-approved [Phase 5 plan](2026-10-22-phase-5-execution.md):
-the parent owns integration and commits, workers do not run the full suite, and
-the parent runs the release suite once the source is stable. This phase-specific
-workflow remains the local override to the generic launch prompt below.
+## Ownership and checks
 
-## Launch prompt
+The parent owns shared migrations, native API/chat integration and release-suite
+runs. Sol 6.1 implements assigned isolated components and independently reviews
+each release. LUNA drafts documentation that the parent verifies against source.
+Dependent work runs sequentially; delegation uses disjoint file ownership.
 
-Paste this into a new Claude Code cloud session on `phroggingphrog/jobwatch` (replace `N` and the plan
-file). It is complete on its own; the session needs nothing from earlier conversations.
+Use invented fixtures and synthetic transports. Keep development checks focused;
+run the full local suite on stable release source and the existing real synthetic
+R/JAGS checks without loosening thresholds. Record actual commands, results,
+review dispositions, remaining limitations and source rollback instructions.
 
-```text
-Execute Phase N of the Jobwatch roadmap. Read docs/superpowers/plans/EXECUTING.md, then the plan
-docs/superpowers/plans/<plan file>, its spec, AGENTS.md and INTENT.md. Follow EXECUTING.md exactly:
-use superpowers:subagent-driven-development with Sonnet subagents, work on branch
-claude/phase-N-<slug> from current main, run the full suite, push, open a pull request and watch it.
-Do not merge, deploy, activate services or timers, submit applications or contact anyone.
-```
+Required local checks and independent review determine completion. Hosted CI is
+disabled and optional for every repository PR; never enable it or wait for it as
+a merge gate. The owner authorized merging each reviewed release after local
+checks pass, then continuing from updated main. A merge is a source operation,
+not deployment or proof of real recommendation quality.
 
-## Rules for the executor
+## Boundaries and finish
 
-1. **Preconditions.** Confirm the previous phase is merged into `main` and the plan file exists. If
-   not, stop and report which precondition failed.
-2. **Branch.** `git fetch origin main && git checkout -B claude/phase-N-<slug> origin/main`.
-3. **Environment.** Python 3.12 virtualenv outside the repo:
-   `uv venv --python 3.12 <scratch>/venv && uv pip install --python <scratch>/venv/bin/python -e '.[dev]'`.
-   Chromium is preinstalled at `/opt/pw-browsers`; keep Playwright pinned as in `pyproject.toml`, never
-   run `playwright install`. Test command: `<venv>/bin/python -m pytest -q -p no:cacheprovider`.
-   The full suite takes about 20 minutes.
-4. **Method.** Use superpowers:subagent-driven-development: one Sonnet implementer per task, a Sonnet
-   task reviewer after each, scoped re-review after fixes, a final whole-branch review, one fix
-   dispatch. Keep the ledger in `.superpowers/sdd/<plan>/progress.md` (git-ignored). The owner asked
-   for Sonnet subagents; do not use a more expensive model unless a fix round escalates.
-5. **Rulings, not stalls.** Decide ambiguities against the spec and record each as
-   `Ruling: <decision> — <why> — <cost if wrong>` in the ledger; copy the list into the PR body.
-6. **Stop and ask the owner only for:** an irreversible or destructive operation, a security-sensitive
-   action, any outward action other than pushing the phase branch and opening its PR, or a plan so
-   broken that every path is a guess.
-7. **Never:** merge to `main`, deploy, enable/start services or timers, change live candidate data,
-   use live candidate records as fixtures, send candidate data to unapproved model routes or hosted
-   tracing, submit applications except through `jobwatch/apply/submit_confirm.py`, contact employers,
-   or count model output as a person's choice or approval.
-8. **Finish.** Required local checks and review complete; for a source release, the local full
-   suite is green (or each failure shown to be pre-existing on `main`, with evidence);
-   push; open the PR with: summary, the checks run and their exact results, rulings, remaining
-   limitations, what is unverified, and undo instructions (revert the merge commit; list any data
-   folders or tables the phase creates and how to remove them). Address review findings. Hosted
-   CI is optional, not a completion or merge gate. The owner has disabled it; do not re-enable it
-   unless explicitly requested. Disabled, absent, queued or failed CI does not block finishing.
-   This supersedes CI requirements in older phase plans without waiving required local checks.
-9. **Report.** End with the PR link, the full-suite line, and anything the owner must decide.
+Keep candidate files, credentials, private databases, reports and generated
+packages outside Git. Do not activate services/timers, deploy, migrate live human
+choices, fit live models, run paid replay, contact employers or submit applications
+as a side effect. Final Submit retains its separately confirmed canonical path.
 
-## Automating the sequence
-
-Each phase needs the previous one merged, and merging is the owner's decision, so phases are
-launched one at a time:
-
-- **Manual:** after merging phase N's PR, open a new cloud session and paste the launch prompt for
-  phase N+1.
-- **Scheduled:** a scheduled task that runs the launch prompt once a day; the executor stops at
-  rule 1 if the previous phase is not merged yet, so an early run costs one short session. Set it up
-  only when the owner asks for it.
+The roadmap finishes after all three remaining releases are reviewed and merged,
+required checks pass, and confirmed profile through selected package retrieval
+works through native API/chat. Blind quality study and live operations remain
+separate. Revert source for rollback while preserving approved versions, feedback,
+genuine choices, fits, selections, packages and evaluation records.

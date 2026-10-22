@@ -242,10 +242,20 @@ retained charges, blinded packets, absent labels, snapshot mismatches and split
 leakage. Historical evaluator fixtures now target the focused judgment stage for
 bounded corrections instead of accidentally sending a summary to that stage.
 
-Automation does not merge or deploy on a synthetic green result. Independent
-acceptance audit, reviewed matching examples and a real quality comparison remain
-release evidence. Missing human labels stays explicit;
+Reviewed source releases use the owner's required local checks and independent
+review; hosted CI remains disabled and optional. A merge does not establish
+deployment or recommendation quality. A real quality comparison remains separate
+evidence, and missing human labels stays explicit;
 no automated model answer is recorded as an owner's label or approval.
 
 Undo: revert the evidence-matching source commit and retain private artifacts.
 Restore a matching code/skills release for old conversations. Do not delete history.
+
+Phase 6 keeps canonical matching and eligibility authoritative. Rejection hides a
+posting as person-bound feedback and restoration rechecks current inputs. Confirmed
+exclusion amendments change the complete approved profile and stale old assessments,
+shortlists and fits. Neither action performs paid reassessment. Comparisons contain
+three current eligible jobs plus none; only genuine human comparison answers train
+preferences. Selection binds current entries and authorizes canonical preparation
+through a durable outbox. Impression and outcome statistics never become choices or
+ranking propensities. See [the backend contract](CHAT.md#feedback-and-selected-preparation-phase-6).

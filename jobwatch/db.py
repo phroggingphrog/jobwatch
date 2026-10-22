@@ -391,6 +391,52 @@ MIGRATIONS: list[str] = [
         UNIQUE(entry_id,surface,shown_day)
     );
     """,
+    """
+    CREATE TABLE feedback_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, person TEXT NOT NULL,
+        posting_id INTEGER, entry_id TEXT,
+        kind TEXT NOT NULL CHECK(kind IN ('reject','restore','select','exclude','comparison','answer')),
+        reason_code TEXT, reason_text TEXT NOT NULL DEFAULT '', meaning TEXT,
+        reasons_version TEXT NOT NULL, actor TEXT NOT NULL CHECK(actor='person'),
+        source TEXT NOT NULL CHECK(source IN ('api','chat')), run_key TEXT,
+        profile_version INTEGER, request_id TEXT NOT NULL, prompt_id TEXT,
+        detail_json TEXT NOT NULL DEFAULT '{}', input_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL, UNIQUE(person,request_id)
+    );
+    CREATE INDEX feedback_person_posting ON feedback_events(person,posting_id,id);
+    CREATE TRIGGER feedback_events_no_update BEFORE UPDATE ON feedback_events
+        BEGIN SELECT RAISE(ABORT,'immutable'); END;
+    CREATE TRIGGER feedback_events_no_delete BEFORE DELETE ON feedback_events
+        BEGIN SELECT RAISE(ABORT,'immutable'); END;
+    CREATE TABLE feedback_prompts (
+        id TEXT PRIMARY KEY, person TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('comparison','question')),
+        subject_json TEXT NOT NULL, context_hash TEXT NOT NULL,
+        basis TEXT NOT NULL, expected_gain REAL, set_id TEXT,
+        profile_version INTEGER, created_at TEXT NOT NULL,
+        closed_at TEXT, closed_reason TEXT CHECK(closed_reason IN ('answered','dismissed','stale'))
+    );
+    CREATE UNIQUE INDEX feedback_one_open ON feedback_prompts(person) WHERE closed_at IS NULL;
+    CREATE INDEX feedback_prompt_history ON feedback_prompts(person,created_at);
+    CREATE TABLE selection_requests (
+        id TEXT PRIMARY KEY, person TEXT NOT NULL, request_key TEXT NOT NULL,
+        input_hash TEXT NOT NULL, manifest_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('pending_dispatch','queued','running','completed','failed','cancelled')),
+        run_id TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        UNIQUE(person,request_key)
+    );
+    CREATE INDEX selection_pending ON selection_requests(person,state,created_at);
+    CREATE TRIGGER selection_inputs_immutable BEFORE UPDATE OF id,person,request_key,input_hash,manifest_json,created_at
+        ON selection_requests BEGIN SELECT RAISE(ABORT,'immutable'); END;
+    CREATE TRIGGER selection_no_delete BEFORE DELETE ON selection_requests
+        BEGIN SELECT RAISE(ABORT,'immutable'); END;
+    """,
+    """
+    ALTER TABLE selection_requests ADD COLUMN result_json TEXT;
+    CREATE TRIGGER selection_result_immutable BEFORE UPDATE OF result_json ON selection_requests
+        WHEN OLD.result_json IS NOT NULL AND NEW.result_json IS NOT OLD.result_json
+        BEGIN SELECT RAISE(ABORT,'immutable'); END;
+    """,
 ]
 
 

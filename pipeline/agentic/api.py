@@ -102,19 +102,29 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 cfg = get_config(person)
                 from pipeline.agentic.service import _config
                 settings = _config(cfg)
+                payload = json.loads(row['input_json'])
+                is_selection = 'selection_id' in payload
                 with APIStore(person) as store:
                     usage = store.usage_checkpoint(row['id'])
-                execution = Execution(row['id'], seconds=min(settings['job_seconds'], settings['batch_seconds']),
-                    token_ceiling=settings['job_token_ceiling'],
+                execution = Execution(row['id'], seconds=settings['batch_seconds'] if is_selection else min(settings['job_seconds'], settings['batch_seconds']),
+                    token_ceiling=settings['batch_token_ceiling'] if is_selection else settings['job_token_ceiling'],
                     emit=lambda kind, data: event(person, row['id'], kind, data), cancelled=cancelled, **usage)
-                payload = json.loads(row['input_json'])
                 with APIStore(person) as store:
                     if store.thread(row['thread_id'])['skill_hash'] != skill_version():
                         raise RuntimeErrorSafe('thread_skill_version_changed')
                 execution.check()
-                result = dispatcher(person=person, thread_id=row['thread_id'], config=cfg,
-                    llm=llm_factory(person) if llm_factory else None, execution=execution,
-                    human_decision='decisions' in payload, **payload)
+                if is_selection:
+                    from pipeline.agentic import selection, execution as invocation
+                    from jobwatch.execution_mode import effective_mode
+                    if effective_mode(cfg)=='off':
+                        raise RuntimeErrorSafe('execution_disabled')
+                    with invocation.use(execution), job_connection(cfg,write=True) as jobs:
+                        result=selection.execute(jobs,cfg,payload['selection_id'],payload['manifest_hash'],row['id'],
+                            llm_factory=(lambda:llm_factory(person)) if llm_factory else None)
+                else:
+                    result = dispatcher(person=person, thread_id=row['thread_id'], config=cfg,
+                        llm=llm_factory(person) if llm_factory else None, execution=execution,
+                        human_decision='decisions' in payload, **payload)
                 execution.check()
                 result['usage'] = execution.usage()
                 with APIStore(person) as store:
@@ -144,17 +154,31 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                     store.finish(row['id'], result)
             except Exception as exc:
                 code = getattr(exc, 'code', None)
-                if not isinstance(exc, (RuntimeErrorSafe, Conflict)) or not isinstance(code, str) or not re.fullmatch(r'[a-z_]{1,80}', code):
+                from pipeline.agentic.selection import SelectionError
+                if not isinstance(exc, (RuntimeErrorSafe, Conflict, SelectionError)) or not isinstance(code, str) or not re.fullmatch(r'[a-z_]{1,80}', code):
                     code = 'execution_failed'
                 with APIStore(person) as store:
                     if code == 'cancelled' and stopping.is_set() and not store.raw_run(row['id'])['cancel_requested']:
                         code = 'worker_interrupted'  # shutdown, not a user cancel: stay retryable (see CHAT.md recovery)
                     store.finish(row['id'], error=code)
+                payload=json.loads(row['input_json'])
+                if 'selection_id' in payload:
+                    from pipeline.agentic import selection
+                    with job_connection(get_config(person),write=True) as jobs:
+                        selection.finish_error(jobs,payload['selection_id'],code)
 
     async def worker():
         while not stopping.is_set():
             worked = False
             for person in people:
+                with users.use(person):
+                    cfg=get_config(person)
+                    if job_database(cfg).exists():
+                        with job_connection(cfg,write=True) as jobs:
+                            if jobs.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
+                                from pipeline.agentic import selection
+                                selection.reconcile(jobs)
+                                selection.dispatch_pending(jobs,cfg)
                 with APIStore(person) as store:
                     row = store.claim_next()
                 if row is not None:
@@ -259,6 +283,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     discovery_api.mount(app, require, get_config)
     from pipeline.agentic import shortlist_api
     shortlist_api.mount(app, require, get_config)
+    from pipeline.agentic import feedback_api
+    feedback_api.mount(app, require, get_config)
 
     @app.get('/health')
     def health():
@@ -350,7 +376,15 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     def cancel(run_id: str, principal=Depends(write)):
         with APIStore(principal.person) as store:
             store.cancel(run_id)
-            return store.public_run(run_id)
+            result=store.public_run(run_id)
+        with users.use(principal.person):
+            cfg=get_config(principal.person)
+            if job_database(cfg).exists():
+                with job_connection(cfg,write=True) as jobs:
+                    if jobs.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
+                        from pipeline.agentic import selection
+                        selection.reconcile(jobs,run_id=run_id)
+        return result
 
     @app.post('/api/agent/runs/{run_id}/retry', status_code=202)
     def retry(run_id: str, principal=Depends(write)):

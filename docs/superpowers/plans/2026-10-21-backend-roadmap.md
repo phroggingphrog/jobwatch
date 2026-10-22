@@ -12,6 +12,13 @@ Owner clarification on 2026-10-23: required local verification and review determ
 completion. Hosted CI is optional and is not a completion or merge gate. The owner
 has disabled it; earlier CI requirements in this roadmap and its plans are superseded.
 
+The [remaining-roadmap execution plan](2026-10-23-finish-backend-roadmap.md)
+supersedes older launch/workflow assumptions. Phases 1–5 and the browser repair
+(PR #23, issue #17) are merged. Phase 6 source is in release review; Phase 7 starts
+after its reviewed merge. Each release uses a local `codex/` branch, required local
+checks and independent review, followed by the owner-authorized merge. Source
+completion excludes deployment, live fitting/migration and the real blind study.
+
 ## Workflow being delivered
 
 Upload documents → parse a draft profile → interactive review → user confirms → save approved profile →
@@ -31,7 +38,7 @@ preparation, employer messages or submission.
 | 2 | Decision policy from the profile | Search strategy derived from the confirmed profile (employment-first when unemployed and no contrary instruction; explicit career/degree focus prioritised; exclusions always rules; ask when missing information is material). Removes person-specific code: `MAX_COMMUTE_KM`, Victoria regexes, `location_fit: melbourne`, entry-level-for-everyone, "student" prompts, owner family lists. Keeps genuine eligibility constraints (work rights, hours limits). | 1 |
 | 3 | Field and job discovery | Field discovery: dense retrieval of candidate evidence against O*NET tasks/skills and ESCO skills, through the approved Qwen embedding route, with versioned reference datasets and an investigated ANZSCO 2022 / OSCA correspondence; related occupations become search hypotheses, not qualification proof. Job discovery: title keywords become a recall-only pre-screen; a semantic step (quoted extraction from title and full ad, plus similarity to discovered fields) decides relevance in agentic mode. Semantic dedupe on description similarity across sources. | 2 |
 | 4 | Ranking and explained shortlist | Holistic 1–5 score demoted to a comparison baseline (no sole exclusion; low career alignment never rejects an employment-first job). Deterministic importance-weighted coverage from requirement judgments (demonstrated / partial / unknown / contradicted; missing documentation separated from a real gap or conflict). Labels: stronger match / stretch / needs clarification. Documented cold-start ordering rules, shown as provisional. Shortlist entity and API with evidence, transferable skills, objective fit, conditions, mandatory requirements, unresolved facts, rank reason and uncertainty. Preference model: canonical families and neutral priors retained, versioned factual features with missingness/provenance, eligible and evidence-held alternatives, explicit immutable historical-choice migration. Callback stats stay descriptive; time-to-response only investigated when history suffices. | 3, 6a |
-| 5 | Feedback and selection | Rejection reasons recorded with their meaning; explicit exclusions stored as rules; occasional targeted comparisons/questions chosen by expected information gain; job selection plus preparation approval through the API; agent output never recorded as a user choice. | 4 |
+| 5 | Feedback and selection | Append-only reasons and reversible posting dismissal; digest-confirmed exclusion amendments; bounded targeted comparisons/questions from a valid posterior or deterministic fallback; durable selected-job preparation through native API and exact-human-confirmed chat; agent output never becomes a user choice. | 4 |
 | 6b | Evaluation and monitoring | Runner that replays frozen inputs through baseline and revised pipelines; metrics: missed suitable jobs, unsupported qualification claims, ordering usefulness (precision@k / nDCG on owner labels), exclusion violations, uncertainty handling, cost, latency; leakage-safe grouped splits (duplicates and related employers); dev vs untouched evaluation sets; automated bounded comparisons; eligible model fits; reproducible reports; local full-suite release verification, with hosted CI optional. Missing independent labels stay explicit. | 6a, 4, 5 |
 
 The owner-approved [Phase 5 execution plan](2026-10-22-phase-5-execution.md) supersedes older ranking-model assumptions. Its [source verification report](../../audits/2026-10-22-shortlist-release.md) separates reviewed implementation, actual checks and remaining validation gaps from merge or deployment.

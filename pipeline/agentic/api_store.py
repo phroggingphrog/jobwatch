@@ -140,6 +140,21 @@ class APIStore:
         self.event(ident, 'queued')
         return ident
 
+    def enqueue_selection(self, selection_id, payload, skill_hash):
+        """A person-scoped identity independent of newly-created thread IDs."""
+        key = fingerprint(['selection', selection_id])
+        with self.transaction():
+            previous = self.conn.execute('SELECT id,input_hash FROM api_runs WHERE request_key=?',(key,)).fetchone()
+            if previous:
+                if previous['input_hash'] != fingerprint(payload):
+                    raise Conflict('idempotency_conflict')
+                return previous['id']
+            if self.conn.execute("SELECT COUNT(*) FROM api_runs WHERE state='queued'").fetchone()[0] >= 20:
+                raise Conflict('queue_full')
+            thread = uuid.uuid4().hex
+            self.conn.execute('INSERT INTO api_threads VALUES(?,?,?)',(thread,time.time(),skill_hash))
+            return self._insert(thread,payload,key)
+
     def public_run(self, ident):
         row = self.raw_run(ident)
         result = {k: row[k] for k in ('id', 'thread_id', 'state', 'error', 'created', 'updated')}

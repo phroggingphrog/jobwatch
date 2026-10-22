@@ -321,8 +321,10 @@ filtered source baseline; older Git history, operator notes and profile snapshot
 stay local. Use a fresh clone of that repository for future branches. The legacy
 PhrogVPS checkout has a different root and must not push its historical branches.
 
-Branch from GitHub `main`, commit one meaningful change, and open a draft pull
-request. Inspect the synthetic CI result and review before merging. Keep profiles,
+Branch locally from GitHub `main`, commit meaningful slices, and open a pull
+request. Required local checks and independent review gate completion. Hosted CI
+is disabled and optional; do not re-enable it. The owner's approved remaining-roadmap
+plan authorizes merging each reviewed release before its successor. Keep profiles,
 answers, credentials, databases, generated documents and backups outside Git.
 Deployment is a separate action; publishing source does not activate the API.
 
@@ -439,8 +441,8 @@ Preference features v4 retain zero priors and canonical families, replace the un
 Only explicit observed salary units/hours permit conversion; no fixed 38-hour week is
 assumed. Exact approved tenure can populate experience features only for a complete,
 verified general-work-experience condition. Specialist scope, truncated source clauses,
-unknown dates and unsupported inputs remain missing. The existing choice page remains
-eligible-only; later feedback work can introduce explicit held-job comparisons.
+unknown dates and unsupported inputs remain missing. Comparisons remain eligible-only;
+evidence holds stay visible on the shortlist without becoming actionable selections.
 
 `jobwatch preferences migrate --confirm-owner` is a separate explicit CLI operation.
 It copies genuine answered choices only when complete old profile/policy/evaluation/ad
@@ -450,3 +452,78 @@ skipped. Repeated migration is idempotent; original choices and fits remain immu
 Neither application startup nor shortlist refresh migrates choices or fits a model.
 Real synthetic sampler checks demonstrate statistical mechanics only; they do not validate
 live ranking usefulness. No live migration, fitting or deployment is part of this release.
+
+## Feedback and selected preparation (Phase 6)
+
+Feedback events are immutable and person-bound. Rejection hides exactly one posting;
+restore appends the original rejection ID and uses a new current snapshot. Both
+transitions invalidate saved shortlist inputs. Reasons distinguish preference,
+eligibility, data quality and neutral feedback. Impressions, rejections, restores,
+selections and genuine comparison choices remain separate records.
+
+| Method and path | Scope | Meaning |
+|---|---|---|
+| `GET /api/agent/feedback?limit=100` | read | Immutable history (maximum 200) and versioned reasons. |
+| `POST /api/agent/shortlist/{posting_id}/feedback` | interact | Reject exact current `expected_entry_id`, `reason_code`, optional verbatim `reason_text`. |
+| `POST /api/agent/shortlist/{posting_id}/restore` | interact | Restore exact `expected_rejection_id`; current eligibility still applies. |
+| `GET /api/agent/profile/rules` | read | Active rules and proposals for the current approved version. |
+| `POST /api/agent/profile/rules` | interact | Propose add (`kind`, `value`) or withdraw (`rule_id`) against the complete approved profile hash. |
+| `POST /api/agent/profile/rules/{proposal_id}/confirm` | approve | Confirm exact `rule_digest`, publishing an immutable profile version. |
+| `POST /api/agent/prompts/next` | read | Issue/reuse one bounded system comparison or question; no model call. |
+| `GET /api/agent/prompts/next` | read | Read outstanding prompt without issuing one. |
+| `GET /api/agent/prompts` | read | Person-bound prompt history. |
+| `POST /api/agent/prompts/{prompt_id}/pick` | interact | Genuine displayed posting ID or `null` for none. |
+| `POST /api/agent/prompts/{prompt_id}/answer` | interact | Verbatim answer, retained as feedback until separately confirmed as a profile fact. |
+| `POST /api/agent/prompts/{prompt_id}/dismiss` | interact | Dismiss without creating a preference choice. |
+| `POST /api/agent/selections` | approve | Approve preparation for 1–10 distinct current eligible jobs and exact entry/run IDs. |
+| `GET /api/agent/selections/{selection_id}` | read | Durable selection, nullable run ID and eventual run/artifacts. |
+| `POST /api/agent/selections/{selection_id}/cancel` | approve | Cancel pending dispatch or the existing queued/running preparation. |
+
+Feedback writes, proposals, prompt replies/dismissal and selections require an
+`Idempotency-Key`. Identical retries preserve the original result; different input
+under that key conflicts. Rule confirmation binds its immutable proposal digest.
+Authentication supplies identity and human scopes supply authority; actor/person
+cannot be supplied in request bodies.
+
+Canonical family, employer, title-term, location and work-type amendments take
+effect on confirmation. Active rules survive later profile confirmation; old-base
+drafts fail. Current full-profile hashing remains authoritative: amendments stale
+evaluations, fits and shortlists and return work to normal budgeted processing.
+Confirmation neither reassesses nor refits. The old `legacy` policy spelling is
+a compatibility alias for canonical confirmed-policy enforcement.
+
+Prompts default to one outstanding, three in rolling seven days and a thirty-day
+repeated-question cooldown. Raw agentic settings `prompts_enabled`,
+`prompts_per_week` (zero disables) and `question_cooldown_days` may reduce issuance
+or lengthen cooldown. Valid current genuine-choice posteriors use canonical
+diagnostics and held-out checks; otherwise at most nine unseen alternatives feed
+deterministic factual disagreement. Every comparison displays three eligible jobs
+and none. Display propensities remain NULL. Questions prioritize confirmed-policy
+gaps, then facts unresolved across multiple current shortlisted jobs. Answers up
+to 4000 characters remain verbatim in private event detail.
+
+Selection commits its immutable manifest and events before API dispatch. A stable
+person-scoped selection identity recovers the same API run across the two stores;
+`pending_dispatch` exposes a selection ID and null run ID. Inputs and eligibility
+are checked at acceptance, dispatch and execution; approval expires after 24 hours.
+The completed result is retained with the selection so interrupted API publication
+recovers it without another preparation pass or model-client initialization. Bounded
+reconciliation reflects terminal queue states and cancellation into selection status.
+Cancellation, budgets, package checkpoints and artifact verification reuse the
+canonical preparation service. Preparation progress can resume without treating its
+own operational checkpoints as changed evidence. Changed profile/ad/policy/model
+inputs fail before paid work. A completed conversation may only have selected the
+jobs: follow the selection's run to its actual READY/held/deferred outcome and files.
+
+Chat exposes `ranked_shortlist`, `feedback_history`, `exclusion_rules`,
+`next_feedback_prompt` and `selection_status` directly. Human writes use the same
+domain services through exact-payload interrupts naming literal jobs, choices,
+answers, reasons and amendments. `prepare_application` and `run_career_ops` select
+one current entry; `select_jobs` selects 1–10. Question text must come verbatim from
+the person's words. Model text never supplies approval. Skills changed with this
+release; use a matching source/skills release for persisted conversations.
+
+Selection authorizes preparation only. Final Submit remains the existing separately
+confirmed operation. Source rollback retains profile history, feedback, choices,
+fits, selections, packages and reports. See [ADR 0008](../../docs/adr/0008-feedback-and-selected-preparation.md)
+and the [synthetic example](../../docs/examples/feedback-selection.md).
