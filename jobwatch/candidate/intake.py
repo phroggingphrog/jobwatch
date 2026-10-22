@@ -920,6 +920,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
         facts, open_questions = _reconciled(cur)
+        from .rules import carry_facts
+        facts = carry_facts(last, facts)
         approved = {"schema": 1, "version": n, "proposal_id": cur.id, "proposal_digest": proposal_digest, "revision": cur.revision,
                     "base_version": cur.base_version, "actor": "person", "uploads": list(cur.uploads),
                     "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -15,7 +15,7 @@ from jobwatch.candidate._private_io import read_regular_file
 from jobwatch.candidate.policy import policy_for
 from jobwatch.preferences import PreferenceStore, PreferenceError
 from jobwatch.preferences.features import versions
-from pipeline.agentic import service, discovery, ranking
+from pipeline.agentic import service, discovery, ranking, feedback
 from pipeline.agentic.persistence import latest_result
 
 MEANING = ('Labels and order describe evidence fit and, when personalised, learned preference among '
@@ -85,6 +85,7 @@ def _pin(conn, config):
         response_readiness=response_time_readiness(conn),
         rules=content_hash(Path(ranking.__file__).read_bytes()),versions=versions(),
         catalog=catalog,preferences=preferences,relevance=relevance,
+        dismissals=feedback.dismissal_state_hash(conn),
         plan=plan.model_dump(mode='json') if plan else None,
         fields=[h.model_dump(mode='json') for h in _fields(config)]))
 
@@ -161,7 +162,11 @@ def build_shortlist(conn, config):
         if pid not in present:
             post=service._posting(conn,pid)
             excluded['closed' if post and post.get('closed_at') else 'not_current']+=1
+    rejected = feedback.rejected_posting_ids(conn)
     for row in runs:
+        if row.posting_id in rejected:
+            excluded['dismissed'] += 1
+            continue
         status=ranking.candidate_status(row.decision.route,row.decision.reason)
         if status is None:
             excluded[row.decision.reason]+=1
