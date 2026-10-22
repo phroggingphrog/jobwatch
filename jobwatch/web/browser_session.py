@@ -380,21 +380,18 @@ class _Session:
                 return
         previous_page = self.page
         target = getattr(page, '_jobwatch_target_id', None)
-        fresh = target is None
-        if fresh:
-            session = self.context.new_cdp_session(page)
-            try:
-                target = session.send('Target.getTargetInfo')['targetInfo']['targetId']
-                page._jobwatch_target_id = target
-            finally:
-                session.detach()
+        fresh = not getattr(page, '_jobwatch_page_registered', False)
         with self.lock:
+            # Publish the page and install restoration before any protocol call
+            # can yield back to the task loop. Unknown target metadata stays empty
+            # rather than referring to the previous application tab.
             self.page, self.target_id = page, target
             self.page_url_sha256 = hashlib.sha256(page.url.encode()).hexdigest()
             if self.application_page is None:
                 self.application_page = page
             page._jobwatch_owner_revision = self.owner_revision
             if fresh:
+                page._jobwatch_page_registered = True
                 def navigated(frame):
                     if frame == page.main_frame and self.page is page:
                         with self.lock:
@@ -414,6 +411,16 @@ class _Session:
                 page._jobwatch_fetch_request = self._fetch_public
                 page._jobwatch_block_websocket = self._guard_socket
                 page._jobwatch_navigate = lambda url, **kwargs: self._navigate_application(page, url, **kwargs)
+        if target is None:
+            session = self.context.new_cdp_session(page)
+            try:
+                target = session.send('Target.getTargetInfo')['targetInfo']['targetId']
+                page._jobwatch_target_id = target
+                with self.lock:
+                    if self.page is page:
+                        self.target_id = target
+            finally:
+                session.detach()
 
     def _run(self):
         from playwright.sync_api import sync_playwright
