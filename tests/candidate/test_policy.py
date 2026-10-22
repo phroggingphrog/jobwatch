@@ -184,3 +184,82 @@ def test_describe_modes(monkeypatch):
     monkeypatch.setattr(intake, 'current_version', lambda person: None)
     assert describe('fx-b', mode='profile') == {'policy': None, 'mode': 'profile', 'enabled': True, 'open_questions': [],
                                                 'reason': 'no_confirmed_profile'}
+
+
+# --- a place the person rules out is asked about, never dropped
+def test_never_in_a_place_asks_and_adds_no_region():
+    p = policy_of(fact('location', 'I live in Box Hill, VIC'), fact('constraint', 'never in Sydney', fid='n1'))
+    assert 'exclusion:n1' in p.open_questions and 'NSW' not in p.regions and p.regions == ('VIC',)
+
+
+def test_a_welcomed_place_survives_a_negated_one_in_the_same_sentence():
+    p = policy_of(fact('location', 'Open to Melbourne, but not Sydney', fid='n2'))
+    assert p.regions == ('VIC',) and 'exclusion:n2' in p.open_questions
+    assert 'location' not in p.open_questions
+
+
+def test_not_australia_wide_is_a_narrowing_that_asks():
+    p = policy_of(fact('location', 'Not Australia-wide, just Melbourne', fid='n3'))
+    assert p.regions == ('VIC',) and 'exclusion:n3' in p.open_questions
+
+
+def test_anywhere_except_asks():
+    p = policy_of(fact('location', 'Anywhere in Victoria except Geelong', fid='n4'))
+    assert 'exclusion:n4' in p.open_questions and p.regions == ('VIC',)
+
+
+def test_a_clean_state_and_suburb_pair_is_not_split():
+    p = policy_of(fact('location', 'Richmond, NSW'))
+    assert p.regions == ('NSW',) and not any(q.startswith('exclusion:') for q in p.open_questions)
+
+
+def test_not_far_does_not_negate_a_place():
+    p = policy_of(fact('location', 'I live in Box Hill VIC, not far from the city', fid='n5'))
+    assert p.regions == ('VIC',) and 'exclusion:n5' not in p.open_questions
+
+
+def test_negated_australia_wide_does_not_clear_regions_or_the_location_question():
+    p = policy_of(fact('location', 'Not Australia-wide'), fact('location', 'Melbourne'))
+    assert p.regions == ('VIC',)
+
+
+def test_australia_wide_answers_the_location_question():
+    p = policy_of(fact('location', 'Australia-wide'))
+    assert p.regions == () and 'location' not in p.open_questions
+
+
+def test_the_question_text_comes_from_any_evidence_fact(monkeypatch):
+    monkeypatch.setattr(intake, 'current_version', lambda person: approved(fact('constraint', 'never in Sydney', fid='n6')))
+    q = {x['code']: x for x in describe('fx-a', mode='profile')['open_questions']}
+    assert 'never in Sydney' in q['exclusion:n6']['question']
+
+
+@pytest.mark.parametrize('text,km', [('within 10.5 km of home', 10.5), ('Can travel up to 2.5 km', 2.5),
+                                      ('Commute under 30 km. Within 12 km if possible', 12.0)])
+def test_decimal_and_sentence_distances(text, km):
+    assert policy_of(fact('constraint', text)).max_commute_km == km
+
+
+def test_a_contracted_negation_ignores_the_level():
+    assert policy_of(fact('preference', "I don't want senior roles")).seniority == ()
+    assert policy_of(fact('preference', "I don’t want senior roles, junior is fine")).seniority == ('junior',)
+
+
+def test_a_non_dict_fact_does_not_void_the_policy():
+    payload = approved(fact('work_rights', 'Australian citizen'))
+    payload['facts'].append('stray')
+    p = policy_for('fx-a', approved=payload)
+    assert p is not None and p.work_rights['citizen_or_pr'] is True
+
+
+def test_unknown_work_type_is_an_open_question_not_a_rule():
+    p = policy_of(fact('exclusion', {'kind': 'work_type', 'value': 'night shift'}, fid='w1'))
+    assert p.exclusions == () and 'exclusion:w1' in p.open_questions
+    q = policy_of(fact('exclusion', {'kind': 'work_type', 'value': 'Full-time'}, fid='w2'))
+    assert [r.value for r in q.exclusions] == ['full_time']
+
+
+def test_a_policy_survives_a_json_round_trip():
+    p = policy_of(fact('exclusion', {'kind': 'family', 'value': 'retail'}), fact('location', 'I live in Box Hill, VIC'),
+                  fact('constraint', 'within 10.5 km of home'))
+    assert DecisionPolicy.model_validate(p.model_dump(mode='json')) == p

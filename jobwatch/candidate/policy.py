@@ -121,7 +121,10 @@ def rules_from_fact(fact: dict) -> list[ExclusionRule]:
 _AUSTRALIA_WIDE = re.compile(r"\b(?:australia[- ]?wide|nationwide|anywhere\s+in\s+australia)\b", re.I)
 _REMOTE_YES = re.compile(r"\bremote\b|\bwork(?:ing)?\s+from\s+home\b|\bwfh\b", re.I)
 _REMOTE_NO = re.compile(r"\bno\s+remote\b|\bnot\s+remote\b|\bon-?site\s+only\b|\bin-?person\s+only\b", re.I)
-_NEGATION = re.compile(r"\b(?:no|not|never|avoid|without|except|excluding|outside)\b", re.I)
+_NEGATION = re.compile(r"\b(?:no|not|never|avoid|without|except|excluding|outside)\b|n['\u2019]t\b", re.I)
+_NOT_FAR = re.compile(r"\bnot\s+(?:too\s+|very\s+|that\s+)?(?:far|near|close)\b", re.I)    # "not far from the city" names no exclusion
+_EXCEPT = re.compile(r"\s+(?:except|excluding|other\s+than)\s+", re.I)
+_PART_SPLIT = re.compile(r",|\s+but\s+|\s+and\s+", re.I)
 _HOME = re.compile(r"(?:\blive[sd]?\s+in|\bbased\s+in|\breside[sd]?\s+in|\bhome\s*:)\s*(.+?)"
                    r"(?=\s*;|\s*\.(?:\s|$)|\s+and\s+|\s+but\s+|$)", re.I | re.S)
 _KM = re.compile(r"(\d+(?:\.\d+)?)\s*(?:km|kilomet\w+)", re.I)
@@ -139,23 +142,41 @@ _NEG_WORDS = frozenset({"no", "not", "never", "avoid", "without"})
 
 
 def _clauses(text: str) -> list[str]:
-    return [c for c in re.split(r"[.;\n]+", text) if c.strip()]
+    """Sentences: split on ';', newlines and a full stop that is not a decimal point."""
+    return [c for c in re.split(r"(?:[;\n]+|\.(?!\d))", text) if c.strip()]
 
 
-def _regions_in(text: str) -> set[str]:
+def _negated(part: str) -> bool:
+    return bool(_NEGATION.search(_NOT_FAR.sub(" ", part)))
+
+
+def _places_in(text: str) -> tuple[set[str], bool, bool]:
+    """(regions the text welcomes, whether it says Australia-wide, whether it rules a place or Australia-wide out).
+
+    A part of a sentence (split on commas, 'but', 'and') with a negation word, or what follows 'except', is ruled out:
+    its regions are not welcomed, and the caller must ask. 'Richmond, NSW' stays whole when nothing is negated."""
     from pipeline.agentic.location import regions_named
-    found: set[str] = set()
-    for clause in _clauses(text):
-        if not _NEGATION.search(clause):          # "never in Sydney" is not a place the person will work
-            found |= set(regions_named(clause))
-    return found
+    welcomed: set[str] = set()
+    anywhere = ruled_out = False
+    for sentence in _clauses(text):
+        head, *tail = _EXCEPT.split(sentence, maxsplit=1)
+        parts = [(p, _negated(p)) for p in _PART_SPLIT.split(head) if p.strip()] + [(t, True) for t in tail]
+        keep = ", ".join(p for p, neg in parts if not neg) if any(neg for _, neg in parts) else sentence
+        welcomed |= set(regions_named(keep))
+        anywhere = anywhere or bool(_AUSTRALIA_WIDE.search(keep))
+        for p, neg in parts:
+            if neg and (regions_named(p) or _AUSTRALIA_WIDE.search(p)):
+                ruled_out = True
+        if tail and regions_named(head):          # "Anywhere in Victoria except Geelong": the exception is a place too
+            ruled_out = True
+    return welcomed, anywhere, ruled_out
 
 
 def _levels_in(text: str) -> set[str]:
     out: set[str] = set()
     for m in _LEVELS.finditer(text):
-        before = re.findall(r"[\w'-]+", text[:m.start()].casefold())[-3:]
-        if _NEG_WORDS & set(before):
+        before = re.findall(r"[\w'\u2019-]+", text[:m.start()].casefold())[-3:]
+        if any(w in _NEG_WORDS or w.endswith(("n't", "n\u2019t")) for w in before):
             continue
         word = re.match(r"[a-z]+", m.group(1).casefold()).group(0)
         key = next((k for k in _LEVEL_OF if word.startswith(k)), None)
@@ -192,6 +213,11 @@ def _home(facts: list[dict]) -> dict | None:
     return None
 
 
+def _fact_code(f: dict) -> str:
+    """The id the open question `exclusion:<id>` carries: the fact id, else a short hash of its text."""
+    return f["id"] if isinstance(f.get("id"), str) and f["id"] else _short_hash("exclusion", _text(f.get("value")))
+
+
 def build_policy(approved: dict) -> DecisionPolicy:
     """The decision policy for one approved.json payload (pure)."""
     facts = [f for f in approved.get("facts", ()) if isinstance(f, dict)]
@@ -204,21 +230,26 @@ def build_policy(approved: dict) -> DecisionPolicy:
         rules = rules_from_fact(f)
         exclusions += rules
         if not rules:
-            unresolved.append(f.get("id") if isinstance(f.get("id"), str) and f.get("id") else _short_hash("exclusion", _text(f["value"])))
+            unresolved.append(_fact_code(f))
 
     spatial = _evidence(facts, "location", "constraint", "preference")
     regions: set[str] = set()
     anywhere = remote_yes = remote_no = False
+    ruled_out: list[str] = []
     explicit_remote: bool | None = None
     for f in spatial:
         v = f["value"]
         text = _text(v)
         if isinstance(v, dict) and isinstance(v.get("regions"), (list, tuple, str)):
             listed = [v["regions"]] if isinstance(v["regions"], str) else list(v["regions"])
-            regions |= {c for x in listed if isinstance(x, str) for c in _regions_in(x)}
+            places = [_places_in(x) for x in listed if isinstance(x, str)]
         else:
-            regions |= _regions_in(text)
-        anywhere = anywhere or bool(_AUSTRALIA_WIDE.search(text))
+            places = [_places_in(text)]
+        for welcomed, wide, out in places:
+            regions |= welcomed
+            anywhere = anywhere or wide
+            if out:
+                ruled_out.append(_fact_code(f))
         remote_yes = remote_yes or bool(_REMOTE_YES.search(text))
         remote_no = remote_no or bool(_REMOTE_NO.search(text))
         if isinstance(v, dict) and isinstance(v.get("remote_ok"), bool):
@@ -240,7 +271,7 @@ def build_policy(approved: dict) -> DecisionPolicy:
     max_commute_km = min(kms) if kms else None
 
     from . import projection
-    work_rights = dict(projection._work_rights(approved))
+    work_rights = dict(projection._work_rights({**approved, "facts": facts}))
     right_facts = _evidence(facts, "work_rights")
     citizen = None
     for f in right_facts:
@@ -275,7 +306,7 @@ def build_policy(approved: dict) -> DecisionPolicy:
         questions.append("location")
     if strategy == "balanced":
         questions.append("career_focus")
-    questions += [f"exclusion:{i}" for i in unresolved]
+    questions += [f"exclusion:{i}" for i in dict.fromkeys([*unresolved, *ruled_out])]    # a place the person rules out is asked, never dropped
 
     fields = dict(profile_version=int(approved["version"]), strategy=strategy, focus=focus, exclusions=tuple(exclusions),
                   home=home, max_commute_km=max_commute_km, remote_ok=remote_ok, work_rights=work_rights,
@@ -310,7 +341,8 @@ def policy_for(person: str, *, approved: dict | None = None) -> DecisionPolicy |
 
 def _questions(policy: DecisionPolicy, approved: dict) -> list[dict]:
     from . import intake
-    values = {f.get("id"): _text(f.get("value")) for f in _evidence(approved.get("facts", ()), "exclusion")}
+    values = {_fact_code(f): _text(f.get("value")) for f in approved.get("facts", ())
+              if isinstance(f, dict) and f.get("basis") == "evidence"}
     out = []
     for code in policy.open_questions:
         if code.startswith("exclusion:"):
