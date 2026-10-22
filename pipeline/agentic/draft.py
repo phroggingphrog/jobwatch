@@ -16,9 +16,9 @@ from jobwatch.model_choice import get_model
 from jobwatch.apply.review import SCHEMA_HELP
 from jobwatch.candidate.evidence import career_profile_text, verify_evidence_snapshot
 from pipeline.agentic.letter_rules import letter_text as third_letter_text, third_opinion
-from pipeline.agentic.writing_guide import writing_guide
+from pipeline.agentic.writing_guide import approved_writing_profile, templates_for, writing_guide
 from jobwatch.apply.careerops_cv import render_cv_pdf
-from jobwatch.apply.render import CV_PAGES, cv_markdown, letter_markdown, pick_templates, render_pdf
+from jobwatch.apply.render import CV_PAGES, cv_markdown, letter_markdown, render_pdf
 from jobwatch.apply.verify import iter_claims, verify_draft
 from pipeline.agentic import jev_skills
 from jobwatch.apply.verify_pdf import verify_pdf
@@ -151,10 +151,10 @@ def _research_tools(research) -> tuple:
 def _trim_cv(content: dict) -> bool:
     """Drop the last bullet of the longest trimmable CV list; False when nothing more can go."""
     cv = content.get("cv") or {}
-    lists = [(cv.get("additional") or [], 0), (cv.get("skills") or [], 6)]
-    lists += [(b.get("bullets") or [], 3) for b in cv.get("experience") or []]
+    lists = [(cv.get("additional") or [], 0), (cv.get("skills") or [], 1)]
+    lists += [(b.get("bullets") or [], 1) for b in cv.get("experience") or []]
     lists += [(b.get("achievements") or [], 1) for b in cv.get("experience") or []]
-    lists += [(b.get("bullets") or [], 2) for b in cv.get("education") or []]
+    lists += [(b.get("bullets") or [], 1) for b in cv.get("education") or []]
     lists = [(items, keep) for items, keep in lists if len(items) > keep]
     if not lists:
         return False
@@ -193,8 +193,7 @@ def _role(profile, evaluation, ad_text, model=DEFAULT_MODEL, *, primary_sources=
                            Tool("submit_draft", _ProposalArgs, _submit_proposal)),
                     system_prompt=("The full ad and every evidence item (id, kind, text) are in the request; read more only if you need it. "
                                    "THE LETTER: write it the way a person writes to an employer they looked into, not as a "
-                                   "match report. Show real eagerness for THIS company and THIS job (owner 2026-10-20: "
-                                   "'show that eagerness or interest of the company or the job'): praise specific things "
+                                   "match report. Use the person's confirmed tone in writing_guide.preferences. Select specific details "
                                    "from company_research.brief, its cited sources and the full_ad. Connect actual duties and company work to "
                                    "career_interests and supported experience, so why this job reads naturally. "
                                    "Career interests are framing, never proof of a qualification. Distinguish explicit ad requirements "
@@ -216,20 +215,18 @@ def _role(profile, evaluation, ad_text, model=DEFAULT_MODEL, *, primary_sources=
                                    " Screening citations use primary source filename, its full file SHA256 and an exact quote. "
                                    "The evidence and source inventories are indexes, not proof: read relevant candidate "
                                    "evidence and complete primary sources with the supplied tools before making factual claims. "
-                                   "In the letter give dates as month and year at most, and no grades or unit codes. Write about the employer and the role, never about 'the ad' or 'your advertisement'. "
+                                   "Follow confirmed content-selection preferences about dates, grades and unit codes; absent a choice, select relevant supported facts. Write about the employer and the role. "
                                    "THE CV: use only cited candidate evidence; keep CV claims in the structured claim format. "
                                    "requirement_map pairs each ad requirement with the owner's fact that best proves it "
                                    "(owner: 'rewrite factual into match the job's requirement'). For every pair, restate "
                                    "that same fact in the requirement's own words and keywords in the CV (not the letter), and "
                                    "cite its evidence_id. Same facts only: no new numbers, tools, "
                                    "employers, outcomes or seniority; 'partly' pairs are framed as related experience. "
-                                   "The CV follows writing_guide.cv_guide and writing_guide.cv_template: fill the template's "
-                                   "length (two full pages for the graduate template, never a third page). For each main role give a 1-2 sentence "
-                                   "overview, 5-6 key responsibilities and the key achievements the evidence supports; use "
-                                   "the full set of supported bullets, strongest match to this employer first. Write boldly "
-                                   "and confidently (owner: bold, still true): strong verbs, the employer's own vocabulary, "
-                                   "outcomes and scope the evidence states; never add a number, tool, title, employer or "
-                                   "result the evidence does not contain. "
+                                   "The CV follows writing_guide.cv_guide and confirmed template and content choices in "
+                                   "writing_guide.preferences. Select responsibilities, overview and achievements only as "
+                                   "supported and useful for this role. A bullet count preference never authorizes invented "
+                                   "content. Keep the template's page limit. Use precise verbs and supported scope; "
+                                   "never add a number, tool, title, employer or result absent from the evidence. "
                                    "Read sources as needed, then return the complete proposal using submit_draft."),
                     terminal_tools=("submit_draft",))
 
@@ -358,7 +355,8 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
         raise AgenticError("invalid_draft_ad")
     primary_sources = {k: v.decode("utf-8") for k, v in bundle.contents.items()
                        if k in ("profile.yaml", "cv.md", "master_resume.md")}
-    cv_tpl, cl_tpl = pick_templates(posting, {"archetype": evaluation.archetype})  # owner's original CV/letter forms
+    approved_style = approved_writing_profile()
+    cv_tpl, cl_tpl = templates_for(approved_style)
     company = kwargs.get("company_research")
     if company is None:
         # Direct low-level callers retain ad/public context; the core service owns
@@ -366,7 +364,7 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
         from pipeline.agentic.company_research import company_brief
         company = company_brief(ad_text, kwargs.get("research"))
     context = {"run_key": run_key.model_dump(mode="json"), "evaluation": evaluation.model_dump(mode="json"),
-               "writing_guide": writing_guide(cl_tpl, posting.get("title") or "", evaluation.archetype, cv_tpl),
+               "writing_guide": writing_guide(cl_tpl, posting.get("title") or "", evaluation.archetype, cv_tpl, approved=approved_style),
                "evaluation_hash": eval_hash,
                "evidence_inventory": _inventory(profile.evidence),
                "screening_questions": list(evaluation.screening_questions), "posting": posting,
@@ -414,7 +412,7 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
         last["removed"] = rep.get("removed", [])
         last["letter"] = third_letter_text(clean)
         clean = jev_checked(clean)
-        notes = third_opinion(clean)  # third opinion: rules from open-source letter writers, back to the writer once
+        notes = third_opinion(clean, style_rules=context["writing_guide"]["preferences"])  # third opinion: rules from open-source letter writers, back to the writer once
         if notes:
             proposal = draft_once(tuple(feedback) + tuple(notes))
             clean, rep = _claim_report(copy.deepcopy(proposal.content), profile, evaluation, ad_text)
@@ -439,7 +437,8 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
     review_args = {"runner": run_role, "evidence": profile.evidence, "posting": {**posting, "full_ad": ad_text},
                    "screening_sources": primary_sources, "source_hashes": bundle.sources,
                    "model": kwargs.get("reviewer_model") or get_model("reviewer"),
-                   "human_examples": context["writing_guide"].get("human_examples")}
+                   "human_examples": context["writing_guide"].get("human_examples"),
+                   "writing_preferences": context["writing_guide"]["preferences"]}
     verdict = review_proposal(run_key, proposal, review_context, budget, llm_reviewer, **review_args)
     def gated(v):  # facts hold: taste notes alone never hold a letter
         return v.verdict in {"approve", "revise"} and all(v.criteria.get(k) for k in GATE_CRITERIA)

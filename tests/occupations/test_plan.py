@@ -37,7 +37,7 @@ def test_overlay_keeps_settings_and_uses_home_without_mutating_base():
     assert out['seek']['where'] == 'Sydney, NSW'
     assert out['seek']['keywords'] == ['accountant'] and out['seek']['max_pages'] == 2
     assert out['jobspy']['sites'] == ['indeed']
-    assert out['jobspy']['searches'] == [{'term': 'accountant'}]
+    assert out['jobspy']['searches'] == [{'term': 'accountant', 'location': 'Sydney, NSW'}]
     assert base['seek']['keywords'] == ['old']
 
 
@@ -46,7 +46,7 @@ def test_remote_searches_and_extra_locations():
     plan = search_plan(p, hyps('Accountant'), extra_locations=('Sydney, NSW', 'Perth, WA'))
     assert plan.locations == ('Sydney, NSW', 'Perth, WA')
     out = searches_overlay(plan, {}, p)
-    assert out['seek']['remote']['where'] == 'Australia'
+    assert out['seek']['searches'][-1] == {'term': 'accountant', 'location': 'Australia', 'is_remote': True}
     assert out['jobspy']['searches'][-1]['is_remote'] is True
 
 

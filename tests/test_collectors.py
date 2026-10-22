@@ -263,7 +263,7 @@ def test_jobspy_rows_and_args():
     assert [p.source_id for p in out] == ["linkedin:li-1", "indeed:in-2"]
     assert out[0].url == "https://www.linkedin.com/jobs/view/1" and out[0].work_type == "PT"
     assert out[1].salary_unit == "hour" and out[1].remote
-    assert captured["country_indeed"] == "Australia" and captured["location"] == "Melbourne, VIC"
+    assert captured["country_indeed"] == "Australia" and captured["location"] is None
     assert captured["results_wanted"] == 25 and captured["hours_old"] == 6
     assert set(captured["site_name"]) == {"linkedin", "indeed", "google"}
     assert "proxies" not in captured

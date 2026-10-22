@@ -86,7 +86,7 @@ documents, contacts an employer or submits; confirmation only starts discovery w
 | `GET /api/agent/profile/proposals/{id}/confirmation` | read | `proposal_digest`, `scope`, `scope_digest`, what it does and does not authorise. |
 | `POST /api/agent/profile/proposals/{id}/confirm` | approve | `{proposal_digest,scope_digest}` exactly as shown -> 201 `{version}`. Model text is never approval. |
 | `GET /api/agent/profile/`, `GET /api/agent/profile/versions` | read | Current approved version (`{"version":null}` if none); version list. |
-| `GET /api/agent/profile/policy` | read | The decision policy built from the latest confirmed profile, read only (nothing is written, no model is called): `{policy, mode, enabled, open_questions}`. `policy` is the policy JSON (`profile_version`, `strategy`, `focus`, `exclusions`, `home`, `max_commute_km`, `remote_ok`, `work_rights`, `seniority`, `regions`, `open_questions`, `policy_hash`); `mode` is `legacy` or `profile` and `enabled` is `mode == "profile"`. `open_questions` is a list of `{code, question, why}`. With no confirmed profile: `policy` is `null`, `open_questions` is `[]` and `reason` is `no_confirmed_profile`. |
+| `GET /api/agent/profile/policy` | read | The decision policy built from the latest confirmed profile, read only (nothing is written, no model is called): `{policy, mode, enabled, open_questions}`. `policy` is the policy JSON (`profile_version`, `strategy`, `focus`, `exclusions`, `home`, `max_commute_km`, `remote_ok`, `work_rights`, `seniority`, `regions`, `open_questions`, `policy_hash`); `mode` is `profile` and `enabled` is true (historical `legacy` config spelling is read as a compatibility alias). `open_questions` is a list of `{code, question, why}`. With no confirmed profile: `policy` is `null`, `open_questions` is `[]` and `reason` is `no_confirmed_profile`. |
 
 Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_first`, `proposal_not_draft`,
 `already_adopted`, `profile_edited_by_hand`, `profile_incomplete`. 413: `too_large`. 415: `unsupported_type`. 422:
@@ -100,8 +100,8 @@ The policy is derived from the person's latest confirmed profile and nothing els
 `{"kind", "value"}` form becomes a rule; free text never becomes a rule and is listed as an open question instead
 (`exclusion:<fact id>`: "Is '<value>' an employer, a kind of work, a place, a job family or a title word? Until you say, it
 is not applied as a rule."). The standing questions (`employment_status`, `work_rights`, `location`, `career_focus`) use the
-same wording as the intake questions. The flag `agentic.decision_policy` is `legacy` (the default: the fixed rules decide) or
-`profile` (the confirmed profile decides); any other value is `invalid_configuration`. `GET /api/agent/profile/policy` and the
+same wording as the intake questions. `agentic.decision_policy` defaults to `profile`; historical `legacy` spelling
+also uses canonical confirmed policy and cannot reactivate personal defaults. Any other value is `invalid_configuration`. `GET /api/agent/profile/policy` and the
 chat tool `profile_policy()` return the same dictionary for the server-bound person and only read: neither writes a fact, a
 rule, a label or an approval, and `profile_policy` is not a gated tool.
 
@@ -133,8 +133,7 @@ Discovery flags are `pipeline.agentic.search_plan` (default `false`),
 judgments archive nothing; screening makes no model or embedding call until
 fields and a plan have been refreshed. `relevance: on` archives a verified `no`
 as `not_relevant`; `uncertain` proceeds. The exclusion pre-filter archives as
-`excluded_by_rule` only when `pipeline.agentic.decision_policy: profile` is
-enabled. Semantic dedupe and hypothesis ordering use the approved embedding
+`excluded_by_rule` from the current confirmed policy in the normal default path. Semantic dedupe and hypothesis ordering use the approved embedding
 route. The tuning defaults are `pipeline.discovery.similar_at: 0.60`,
 `duplicate_cosine: 0.95`, `screen_per_run: 40`, `reconsider_per_run: 20`,
 `embedding_token_ceiling: 2000000`, `screen_token_ceiling: 300000`, and
@@ -144,9 +143,11 @@ The explicit operator commands are `python -m pipeline.agentic.discovery
 refresh --user NAME`, `python -m pipeline.agentic.discovery status --user
 NAME`, and `python -m pipeline.agentic.discovery restore --user NAME`.
 `status` is read-only; `refresh` computes and caches the current profile's
-hypotheses and plan and may make paid embedding calls. With `search_plan: true`,
-collection can refresh a missing plan automatically. Seek, Jora and JobSpy
-currently use only the first planned location. The similarity thresholds are
+hypotheses and plan and may make paid embedding calls. Collection always derives unpaid search inputs from
+the current confirmed scope. `search_plan: true` adds current cached occupational hypotheses; missing or stale
+indexes fall back to approved directions without a paid refresh. Seek, Jora and JobSpy rotate every approved
+location within existing request limits. Reddit uses confirmed geography. ATS/RSS/provider inventories remain
+explicitly configured sources; there is no automatic acquisition of new providers. The similarity thresholds are
 uncalibrated, there is no lexical hybrid, and these routes do not establish
 matching accuracy or deployment.
 
@@ -164,7 +165,7 @@ or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it doe
 when there is nothing to search for) and `profile_confirm`. `profile_confirm` is a gated tool: the human approval is
 bound to the exact `proposal_digest` and `scope_digest` (a changed draft or scope fails `approval_inputs_changed`),
 and model text is never approval. It starts discovery within the scope shown; it authorises no documents, employer
-messages or submission. The legacy `/welcome` onboarding is unchanged.
+messages or submission. The legacy `/welcome` onboarding leaves unspecified level unknown; generated suggestions still require confirmation.
 
 `profile_answer` and `profile_correct` are refused with `not_person_words` unless every recorded string is (after casefold,
 whitespace collapse and edge-punctuation trim) inside the person's own message for the turn (on a resumed turn: the last human
@@ -378,3 +379,24 @@ choice counts remain visible. No retraining or owner-choice migration occurs.
 
 Chat, the existing web interface and future clients are interchangeable front ends.
 This change belongs to the shared backend pipeline; it adds no chat or website UI.
+
+
+### Preference policy and historical data
+
+`candidate.eligibility.evaluate_eligibility` is shared by native assessment, the retained reader and
+deterministic pipeline. Numeric advertised hours are compared with confirmed limits; program titles grant no
+blanket exemption. A requested junior level does not create a two-year experience cutoff. Separate citizen,
+permanent-resident, clearance and sponsorship facts are checked against quoted ad requirements; unknowns
+and contradictions stay held. Holistic/career scores are advisory, not exclusion thresholds.
+
+New run identities include the full immutable confirmed-profile digest. Confirmation during work invalidates
+that input snapshot. Taste model feature/prior/structural versions changed; old immutable choices and fits
+remain available but are stale under a changed profile/context, and are excluded from current training data.
+New choice collection and fitting remain explicit. No live fit or private artifact was rewritten by source merge.
+
+Writing defaults are factual and neutral. A confirmed preference can specify e.g.
+`{"kind":"writing","value":{"tone":"warm","cv_template":"...","letter_template":"...",
+"omit_grades":true,"responsibilities_per_role":3,"use_style_examples":true}}`.
+Only supported installed templates are accepted; missing choices impose no graduate template, praise,
+eagerness, grade suppression or bullet quota. Preferences frame writing but never become qualification proof.
+See ADR 0006 and the source audit for release verification and undo.

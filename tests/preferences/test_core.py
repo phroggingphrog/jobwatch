@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 import pytest
 from jobwatch.preferences import PreferenceStore, PreferenceError, context_hash, evaluate_fit, predict_set
-from jobwatch.preferences.features import NAMES, versions
+from jobwatch.preferences.features import NAMES, FAMILIES, versions
 from jobwatch.preferences.model import parameter_names, prepare_data, transform_features
 
 CTX='a'*64
@@ -43,7 +43,7 @@ def test_immutable_owner_explicit_idempotent(store):
     assert store.status(CTX)['status']=='insufficient_data'
 
 def test_reject_bad_alternatives(store):
-    for update in ({'family':'customer_service'},{'current':False},{'eligible':False},{'ad_hash':'bad'}):
+    for update in ({'family':''},{'current':False},{'eligible':False},{'ad_hash':'bad'}):
         rows=[alternative(i) for i in (1,2,3)]; rows[0].update(update)
         with pytest.raises(PreferenceError): store.create_set(rows,CTX)
     with pytest.raises(PreferenceError): store.create_set([alternative(1)]*3,CTX)
@@ -115,7 +115,7 @@ def test_prediction_arithmetic_in_memory_fixture_only():
                'missing_rates':[0.]*len(NAMES)}
     b=[0.]*(len(NAMES)*2);b[NAMES.index('coverage')]=2.
     fit={'id':'arithmetic-fixture','context_hash':CTX,'origin':'owner','profile_hash':'b'*64,
-         'draws':{'beta':[b,b],'alpha':[[0.]*5,[0.]*5]},'preprocessing':transform}
+         'draws':{'beta':[b,b],'alpha':[[0.]*len(FAMILIES),[0.]*len(FAMILIES)]},'preprocessing':transform}
     class Stub:
         def status(self,ctx):return {'status':'valid','fit':fit}
     result=predict_set(Stub(),rows,CTX)

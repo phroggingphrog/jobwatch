@@ -265,7 +265,7 @@ def test_stock_edits_flags_template_phrases_and_i_openings():
                   {"id": "c2", "text": "I reviewed tax returns before lodgement."}],
                  [{"id": "c3", "text": "I handled enquiries by phone and live chat."},
                   {"id": "c4", "text": "Your team needs accurate records, which is what I kept at Northside Tax."}]]}}
-    edits = stock_edits(draft)
+    edits = stock_edits(draft, style_options={"avoid_stock_phrases": True, "avoid_repetition": True, "short_closing": True, "vary_openings": True})
     assert {e["target"] for e in edits} == {"c1", "s1", "letter"}
     assert all(e["kind"] == "style" for e in edits)
     assert stock_edits({"letter": {"paragraphs": [[{"id": "c1", "text": "Your team needs records kept."}]]}}) == []
@@ -297,8 +297,8 @@ def test_meta_text_removed_and_stock_framing_dropped(profile):
         [{"id": "c1", "tier": "framing", "text": "I am applying for the Clerk role."}],
         [{"id": "c2", "tier": "stated", "text": "I reviewed returns.", "key_span": "reviewed returns"},
          {"id": "c3", "tier": "stated", "text": "Again, I reviewed returns.", "key_span": "reviewed returns"}]]}}
-    assert [e["target"] for e in stock_edits(draft) if e["target"] != "letter"] == ["c1", "c3"]
-    assert drop_stock_framing(draft) == 1
+    assert [e["target"] for e in stock_edits(draft, style_options={"avoid_stock_phrases": True, "avoid_repetition": True, "short_closing": True}) if e["target"] != "letter"] == ["c1", "c3"]
+    assert drop_stock_framing(draft, style_options={"avoid_stock_phrases": True}) == 1
     assert [[c["id"] for c in p] for p in draft["letter"]["paragraphs"]] == [["c2", "c3"]]
 
 
@@ -312,13 +312,13 @@ def test_repeated_fact_in_new_words_flagged_and_dropped():
           "key_span": "the ATO"},
          {"id": "c4", "tier": "stated", "text": "I answered live chat.", "evidence_ids": ["e1", "e2"],
           "key_span": "live chat"}]]}}
-    edits = stock_edits(draft)
+    edits = stock_edits(draft, style_options={"avoid_stock_phrases": True, "avoid_repetition": True, "short_closing": True, "vary_openings": True})
     assert ("c3", "repeated fact (code check)") in {(e["target"], e["reason"]) for e in edits}
     assert ("letter", "no closing paragraph (code check)") in {(e["target"], e["reason"]) for e in edits}
-    assert drop_repeats(draft) == 1
+    assert drop_repeats(draft, style_options={"avoid_repetition": True}) == 1
     assert [[c["id"] for c in p] for p in draft["letter"]["paragraphs"]] == [["c1", "c2"], ["c4"]]
     draft["letter"]["paragraphs"].append([{"id": "c5", "tier": "framing", "text": "Happy to talk about the role."}])
-    assert not any(e["reason"].startswith("no closing") for e in stock_edits(draft))
+    assert not any(e["reason"].startswith("no closing") for e in stock_edits(draft, style_options={"avoid_stock_phrases": True, "avoid_repetition": True, "short_closing": True}))
 
 
 def test_caps_checks_a_line_opening_proper_noun_but_not_a_leading_verb():

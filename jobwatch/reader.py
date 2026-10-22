@@ -1,25 +1,9 @@
-"""AI evaluation of each job ad, the career-ops way: a model reads the WHOLE ad against the owner's profile.
+"""Read complete ads against approved evidence and confirmed per-person policy.
 
-career-ops (github.com/career-ops-hq/career-ops, rubric in `modes/oferta.md` + `modes/_shared.md`) evaluates a
-posting instead of keyword-matching it. This module does the same for every posting that passed the cheap rules:
-  1. get the full ad text (adtext.py);
-  2. send the ad, the owner's career-ops profile (`profile/career_ops_profile.md`: target archetypes, level,
-     location, work rights and hours policy) and the CV (`profile/cv.md`, name and contact block removed) to a model
-     (OmniRoute, claude/ combos only);
-  3. the model returns a structured evaluation: archetype, requirement-to-CV match table with importance and
-     evidence tier, gaps with mitigation, work-authorization check, five scoring dimensions and one global
-     score 1-5 (3.5 and up is shown, below 3.5 is hidden as low_fit), posting legitimacy (ghost-job signals), compensation
-     reliability, a one-line TL;DR;
-  4. plain code checks the model (quotes must be in the ad, caps from the owner's policy are enforced) and
-     decides show / hide / review. Hard rules the owner stated live HERE, in code: citizenship, PR, clearance
-     or unrestricted work rights; full-time-only roles (not internship, vacation or graduate programs); outside
-     the person's area; senior or 4+ years; paid ads; job families the person does not want (the model's "wanted" field,
-     judged by meaning against the person's interest_model.md and target_roles.not_wanted).
-  5. everything is stored in `ad_reviews`; `postings` and `matches` are never changed, so any decision can be
-     seen and undone on the board.
-
-The ad text is untrusted data (fenced in <ad> tags). Same ad + same prompt + same model + same profile = no
-new model call (content_hash).
+The model extracts facts and evidence judgments. Canonical eligibility decides
+show/hide/review; holistic scores are advisory. Untrusted ad text cannot change
+instructions, person identity or approval. Profile-dependent hashes invalidate
+stale readings, and worker contexts preserve the caller's isolated identity.
 """
 from __future__ import annotations
 
@@ -31,6 +15,7 @@ import math
 import re
 import time
 import unicodedata
+from contextvars import copy_context
 from bisect import bisect_right
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -46,15 +31,13 @@ from jobwatch.settings import DEFAULT_MODEL
 
 log = logging.getLogger(__name__)
 
-PROMPT_VERSION = 5
+PROMPT_VERSION = 6
 DEFAULTS = {
     "enabled": False,           # the pipeline runs the reader after each collection when true
     "model": DEFAULT_MODEL,
     "triage_model": DEFAULT_MODEL,
     "workers": 4,
     "max_chars": 9000,          # ad text sent to the model
-    "min_score_show": 3.5,      # global score (1-5) below this is hidden as low_fit (career-ops: below 3.5 = recommend against)
-    "hide_min_years": 4,        # the ad asks for this many years or more -> hidden as too_senior
     "per_run": 60,              # reviews per pipeline run (the backlog is cleared by `jobwatch review`)
     "seek_fetches_per_run": 25,
     "seek_delay": 3.0,
@@ -71,8 +54,6 @@ IMPORTANCE = ("critical", "high", "meaningful", "preferred", "low_signal")
 TIERS = ("stated", "structural", "inferred")
 MATCHES = ("strong", "partial", "missing", "na")
 LEGIT = ("high", "caution", "suspicious")
-UNREAD_HIDE_BELOW = 2.5      # a score under min_score_show hides an ad read in full; from a teaser or cut-off text only below this
-CAPS = {"rights": 1.5, "full_time": 2.5, "senior": 2.0, "out_of_area": 2.0, "not_target": 2.4}
 WANTED = ("core", "good", "adjacent", "not_wanted")
 # why a not_wanted job is not a target, judged by the model from the whole ad (the board groups the hidden jobs by it).
 # too_senior = a family the person pursues, at a level they cannot take yet: hidden as "too_senior", not "not_target".
@@ -110,7 +91,8 @@ Reply with ONE JSON object and nothing else:
  "not_target_kind": null or one of "shop_retail"|"hospitality"|"events_venue"|"customer_service"|"reception"|"sales"|
                     "too_senior"|"engineering_it"|"health_care_teaching"|"trades_manual"|"other_field",   // only when wanted is "not_wanted"
  "tldr": "one sentence, at most 160 characters",
- "role": {"seniority": "entry"|"junior"|"mid"|"senior", "work_mode": "onsite"|"hybrid"|"remote"|"unstated",
+ "role": {"role_family": "canonical neutral job family, or unknown when duties are unclear",
+          "seniority": "entry"|"junior"|"mid"|"senior", "work_mode": "onsite"|"hybrid"|"remote"|"unstated",
           "hours": "full_time_only"|"part_time_ok"|"casual"|"unstated",
           "location_fit": "inner"|"mid"|"cbd_or_far_suburb"|"outer"|"remote"|"out_of_scope",
           "min_years": integer or null,
@@ -145,22 +127,17 @@ market knowledge, which may never be critical or high.
 Keep at most 12 requirement rows, but never drop a critical or high row to make room; sort by importance (critical first), and
 inside a band put unmet rows (missing, partial) before met rows.
 
-Score meaning: 4.5+ strong match, 4.0-4.4 good, 3.5-3.9 decent, below 3.5 recommend against. Dimensions: cv_match = skills and
-proof points; north_star = fit with WHAT THE CANDIDATE PURSUES (that section outranks the target-role table in the profile);
-comp = 3.0 unless the ad clearly states low pay (never compare pay with the market, you do not know it); culture = company
-signals; red_flags = blockers. The global score integrates them.
-- "wanted": decide by what the job's day-to-day work is, using WHAT THE CANDIDATE PURSUES. A "not_wanted" job scores 1.0-2.4
-  overall however well the CV matches: past work in that field is history, never a reason to rate it well. "adjacent" (plainly
-  uses the skills the CV shows but is not a listed family) may score up to 3.9. Which job kinds the candidate does not want is
-  stated under CANDIDATE SETTINGS below; never mark a job "not_wanted" for a reason that is not in WHAT THE CANDIDATE PURSUES or
-  in those settings.
+Scores describe evidence-backed fit and uncertainty. They are advisory and cannot exclude a job.
+Keep ability, career direction, logistics and historical outcomes separate. Use only confirmed preferences;
+missing preferences remain unknown. Employment-first users can consider supported work outside a career focus.
+Do not penalize a role for an occupational family, full-time label, commute ring or seniority by default.
+A not_wanted label requires an explicit confirmed exclusion; never infer it from past work or title similarity.
 """ + KIND_GUIDE + """
-Hard rules from the candidate's profile (apply exactly; code enforces the caps again):
+Ad extraction (canonical eligibility checks compare these with approved facts):
 - authorization: "citizen_or_pr" = Australian citizens and/or permanent residents only, PR required, citizenship required (a line that
-  also admits New Zealand citizens still counts); "citizen_only" = Australian citizenship alone, and every Australian Public Service
-  (APS) or Commonwealth role (titles like APS4, EL1: quote that wording); "clearance" = a security clearance or vetting (baseline, NV1,
+  also admits New Zealand citizens still counts); "citizen_only" = Australian citizenship alone, only when explicitly stated in the ad; "clearance" = a security clearance or vetting (baseline, NV1,
   NV2, PV, AGSVA); "unrestricted_work_rights" = the ad asks for UNRESTRICTED work rights; "valid_work_rights" = only "the right to work
-  in Australia" or "full working rights", which does not exclude the candidate; "none_stated" = nothing about it (equal-opportunity
+  in Australia" or "full working rights", which must still be compared with the confirmed candidate facts; "none_stated" = nothing about it (equal-opportunity
   boilerplate is nothing, and a line that also admits visa holders or only PREFERS citizenship is not a requirement).
   Victorian Public Service roles do not require citizenship by themselves. "Only open to Australian residents", "must be based
   in Australia" or "we cannot sponsor visas" = valid_work_rights when the candidate's work rights under CANDIDATE SETTINGS meet it
@@ -375,17 +352,13 @@ def _interests() -> dict:
 
 
 def person_prefs() -> dict:
-    """What the prompts may say about THIS person, only from their own files; a missing key means neutral.
-    not_wanted: job kinds (target_roles.not_wanted); programs_wanted: bool; work_rights: text (candidate.work_rights);
-    reply_style: free text (candidate.reply_style)."""
-    from .apply.render import _candidate, work_rights
-    tr = _interests().get("target_roles")
-    tr = tr if isinstance(tr, dict) else {}
-    nw = tr.get("not_wanted")
-    return {"not_wanted": [str(k).strip() for k in nw if str(k).strip()] if isinstance(nw, list) else [],
-            "programs_wanted": bool(tr.get("programs_wanted")),
-            "work_rights": work_rights(),
-            "reply_style": str(_candidate().get("reply_style") or "").strip()}
+    """Only confirmed evidence facts may describe a person's preferences."""
+    from . import users
+    from .candidate.policy import policy_for
+    dp = policy_for(users.current())
+    return {'not_wanted': [r.value for r in dp.exclusions] if dp else [],
+            'programs_wanted': bool(dp and dp.work_rights.get('full_time_programs_ok') is True),
+            'work_rights': str(dp.work_rights) if dp else '', 'reply_style': ''}
 
 
 def settings_block() -> str:
@@ -404,7 +377,9 @@ def settings_block() -> str:
 
 
 def system_prompt() -> str:
-    return SYSTEM + "\n\n" + settings_block()
+    from .candidate.contracts import JOB_ROLE_FAMILIES
+    return SYSTEM + '\n\nClassify role.role_family from the actual daily duties using exactly one of: ' + \
+        ', '.join(JOB_ROLE_FAMILIES) + '. Classification never establishes personal fit.\n\n' + settings_block()
 
 
 def interest_path() -> Path:
@@ -413,24 +388,26 @@ def interest_path() -> Path:
 
 
 def load_interest() -> str:
-    return _defang(strip_contact(_read(interest_path()), preamble=False, profile=True))
+    from . import users
+    from .candidate.policy import policy_for
+    dp = policy_for(users.current())
+    if dp is None:
+        return ''
+    framing = dp.model_dump(mode='json', exclude={'policy_hash', 'profile_version'})
+    framing['exclusions'] = [{'kind': r.kind, 'value': r.value} for r in dp.exclusions]
+    return _defang(str(framing))
 
 
 def load_profile(config) -> str:
-    """The candidate context sent with every ad: what the candidate actually pursues (interest_model.md, which outranks
-    the profile's target-role table), the career-ops profile, and the CV (name and contact block removed).
-    Read from the person's folders at run time; never copied into the repo. With no career-ops profile, a neutral
-    "no profile yet" text is used (config/reader_profile.md is only an example template and is never read)."""
-    pdir = apaths.profile_dir()
-    prof = _defang(strip_contact(_read(pdir / "career_ops_profile.md"), preamble=False, profile=True))
-    cv = _defang(strip_contact(_read(pdir / "cv.md")))
-    interest = load_interest()
-    head = ("WHAT THE CANDIDATE PURSUES (their own decisions; outranks the profile's target roles):\n<interest>\n"
-            + interest + "\n</interest>\n\n") if interest else ""
-    if prof:
-        return head + "CANDIDATE PROFILE (career-ops _profile.md):\n<profile>\n" + prof + "\n</profile>\n\n" + \
-            "CANDIDATE CV (primary evidence):\n<cv>\n" + cv + "\n</cv>"
-    return head + "CANDIDATE PROFILE:\n" + _PROFILE_FALLBACK
+    """Approved per-person projection only; advisory files cannot override it."""
+    from . import users
+    from .candidate import intake, projection
+    approved = intake.current_version(users.current())
+    if not approved:
+        return _PROFILE_FALLBACK
+    rendered = projection.project(approved)
+    return 'CONFIRMED POLICY:\n' + load_interest() + '\nPRIMARY APPROVED EVIDENCE:\n' + _defang(strip_contact(
+        rendered.get('master_resume.md', ''), preamble=False))
 
 
 def settings(config) -> dict:
@@ -983,7 +960,8 @@ def normalize_report(m: dict, haystack: str) -> dict:
         "not_target_kind": _enum(m.get("not_target_kind"), NOT_TARGET_KINDS, None)
         if _enum(m.get("wanted"), WANTED, None) == "not_wanted" else None,
         "tldr": _clean(m.get("tldr"), 200),
-        "role": {"seniority": _enum(role.get("seniority"), SENIORITY), "work_mode": _clean(role.get("work_mode"), 12),
+        "role": {"role_family": _clean(role.get('role_family'), 80) or 'unknown',
+                 "seniority": _enum(role.get("seniority"), SENIORITY), "work_mode": _clean(role.get("work_mode"), 12),
                  "hours": _enum(role.get("hours"), HOURS, "unstated"),
                  "location_fit": _enum(role.get("location_fit"), LOCATION_FIT, None),
                  "min_years": parse_years(role.get("min_years"))[0],
@@ -1006,11 +984,11 @@ def _blank(kind: str, flags: list) -> dict:
             "archetype": "", "legitimacy": None, "reason": "", "pros": [], "cons": [], "flags": flags, "report": None}
 
 
-def decide(model_out: dict | None, text: str, kind: str, cfg: dict, sponsored: bool = False, title: str = "") -> dict:
-    """Turn the model's evaluation into the stored verdict. Every hiding rule and score cap lives here, in plain code.
+def decide(model_out: dict | None, text: str, kind: str, cfg: dict, sponsored: bool = False, title: str = "", *, company: str = "", location: str = "") -> dict:
+    """Validate extraction and route through canonical confirmed-person eligibility.
     Never raises: a failure inside the rules becomes verdict 'review' with flag decide_error (a paid ad is still hidden)."""
     try:
-        return _decide(model_out, text, kind, cfg, sponsored, title)
+        return _decide(model_out, text, kind, cfg, sponsored, title, company, location)
     except Exception as exc:                    # noqa: BLE001 - one odd answer must not stop a batch
         log.warning("reader: decide failed (%s)", type(exc).__name__)
         out = _blank(kind, ["decide_error"] + (["sponsored_ad"] if sponsored else []))
@@ -1020,7 +998,7 @@ def decide(model_out: dict | None, text: str, kind: str, cfg: dict, sponsored: b
         return out
 
 
-def _decide(model_out, text, kind, cfg, sponsored, title) -> dict:
+def _decide(model_out, text, kind, cfg, sponsored, title, company="", location="") -> dict:
     kind = kind if kind in KINDS else "teaser"  # an unknown kind is treated as unread
     text = text or ""
     flags: list[str] = []
@@ -1038,8 +1016,6 @@ def _decide(model_out, text, kind, cfg, sponsored, title) -> dict:
             out.update(verdict="hide", hide_reason="sponsored_ad", reason="Paid placement (sponsored ad).")
         return out
     m = model_out
-    min_show = float(cfg.get("min_score_show", DEFAULTS["min_score_show"]))
-    hide_years = int(cfg.get("hide_min_years", DEFAULTS["hide_min_years"]))
     haystack = f"{title}\n{text}"
     rep = normalize_report(m, haystack)
     holds: list[str] = []                       # the answer is incomplete or unproven: hold the ad for review, never show it
@@ -1077,8 +1053,6 @@ def _decide(model_out, text, kind, cfg, sponsored, title) -> dict:
     out["legitimacy"] = rep["legitimacy"]["tier"]
     out["reason"] = _clean(m.get("reason"), 240) or rep["tldr"]
     is_program = rep["role"]["program"] or bool(_PROGRAM_TITLE.search(title or ""))
-    program = is_program and person_prefs()["programs_wanted"]      # only then it escapes the full-time cap
-    not_target = rep["wanted"] == "not_wanted"
     if is_program:
         flags.append("program")
 
@@ -1129,65 +1103,49 @@ def _decide(model_out, text, kind, cfg, sponsored, title) -> dict:
         holds.append("rights_ongoing_only")     # "appointment to an ongoing role is only available to citizens": the owner decides
     rep["authorization"] = {"requirement": out["rights"], "quote": out["rights_quote"]}
 
-    # --- score caps from the owner's policy (profile: Work Rights and Availability, Level, Location), enforced here.
-    # An ad that was not read in full cannot support the soft caps (hours, level, place): those only hold it for review.
-    raw_score = score
-    full = kind == "full"
-    senior = out["seniority"] == "senior" or (out["min_years"] or 0) >= hide_years
-    caps = []
-    if out["rights"] in BLOCKING_RIGHTS:
-        caps.append(CAPS["rights"])
-    if not_target:
-        caps.append(CAPS["not_target"])
-    if full and hours == "full_time_only" and not program:
-        caps.append(CAPS["full_time"])
-    if full and senior:
-        caps.append(CAPS["senior"])
-    if full and loc == "out_of_scope":
-        caps.append(CAPS["out_of_area"])
-    if score is not None and caps:
-        score = min(score, min(caps))
-    out["score"] = score
-    out["fit"] = None if score is None else int(round(score * 20))
-    rep["score"] = score
-    out["report"] = rep
-    out["pros"] = [r["evidence"][:90] for r in rep["requirements"] if r["match"] == "strong" and r["evidence"]][:3]
-    out["cons"] = [g["gap"][:90] for g in rep["gaps"]][:3]
-    if rep["legitimacy"]["tier"] == "suspicious":
-        flags.append("legitimacy_suspicious")
-
-    # --- verdict. Order matters: the first rule that fires is the one shown to the owner.
-    pool_ad = ad_kind == "talent_pool"
-    pool_ok = pool_ad and raw_score is not None and raw_score >= min_show      # a concrete, high-scoring "pipeline" ad is the owner's call
-    soft = "full_time_only" if hours == "full_time_only" and not program else \
-        "out_of_area" if loc == "out_of_scope" else "too_senior" if senior else None
+    # Scores are advisory. Only confirmed policy and verified ad facts decide
+    # personal eligibility; a model's not_wanted label is not human approval.
+    out['score'] = score
+    out['fit'] = None if score is None else int(round(score * 20))
+    out['report'] = rep
+    out['pros'] = [r['evidence'][:90] for r in rep['requirements'] if r['match'] == 'strong' and r['evidence']][:3]
+    out['cons'] = [g['gap'][:90] for g in rep['gaps']][:3]
+    from .candidate.eligibility import evaluate_eligibility
+    from .candidate.policy import policy_for
+    from . import users
+    from pipeline.agentic.location import commute_km_for
+    dp = policy_for(users.current())
+    exact_location = location if location and location in haystack else ''
+    if not exact_location:
+        # Extract actual ad location evidence, never interpret the old model's
+        # distance-ring labels as a location fact.
+        from pipeline.agentic.location import regions_named
+        exact_location = ' | '.join(seg for seg in _segments(haystack) if regions_named(seg))
+    remote_claimed = role.get('work_mode') == 'remote'
+    if remote_claimed:
+        remote_quotes = [seg for seg in _segments(text) if re.search(r'\bremote\b|work from home', seg, re.I)]
+        if remote_quotes:
+            exact_location = ' | '.join(remote_quotes)
+        else:
+            holds.append('remote_claim_unverified')
+    eligibility = evaluate_eligibility({'title': title, 'company': company, 'location': exact_location,
+        'hours': hours, 'seniority': out['seniority'], 'min_years': out['min_years'],
+        'role_family': role.get('role_family', 'unknown'), 'remote': remote_claimed and bool(remote_quotes),
+        'work_rights': {'requirement': out['rights'], 'quote': out['rights_quote']}},
+        policy=dp, ad_text=haystack, commute_km=commute_km_for((dp.home or {}).get('place'), exact_location) if dp else None)
     if sponsored:
-        out.update(verdict="hide", hide_reason="sponsored_ad")
-        out["reason"] = out["reason"] or "Paid placement (sponsored ad)."
-    elif ad_kind == "scam" or (real_job == 0 and not pool_ad) or (pool_ad and not pool_ok):
-        out.update(verdict="hide", hide_reason="not_a_real_job")
-    elif out["rights"] in CITIZEN_RIGHTS:
-        out.update(verdict="hide", hide_reason="needs_citizen_or_pr")
-    elif out["rights"] == "unrestricted_work_rights":
-        out.update(verdict="hide", hide_reason="needs_unrestricted_rights")
-    elif not_target:                            # the owner's own "not wanted" families; the job type is clear even from a teaser
-        out.update(verdict="hide", hide_reason="too_senior" if rep["not_target_kind"] == "too_senior" else "not_target")
-    elif soft and full:
-        out.update(verdict="hide", hide_reason=soft)
-    elif score is not None and score < min_show and (full or score < UNREAD_HIDE_BELOW):
-        out.update(verdict="hide", hide_reason="low_fit")
-    else:
-        if soft:                                # from a teaser or a cut-off ad: unproven, so hold it
-            flags.append(f"{soft}_unconfirmed")
-        if score is not None and score < min_show:
-            flags.append("low_fit_unconfirmed")  # a middling score from text that was not read: held, only a clear miss is hidden
-        if pool_ok:
-            flags.append("talent_pool_review")
-        for h in holds:
-            if h not in flags:
-                flags.append(h)
-        if soft or pool_ok or holds or not full:
-            out["verdict"] = "review"           # the ad was not read in full, or the answer is not clean: never show on a guess
+        out.update(verdict='hide', hide_reason='sponsored_ad')
+    elif ad_kind == 'scam' or (real_job == 0 and ad_kind != 'talent_pool'):
+        out.update(verdict='hide', hide_reason='not_a_real_job')
+    elif holds:
+        out['verdict'] = 'review'
+        flags.extend(h for h in holds if h not in flags)
+    elif kind == 'full' and eligibility.status == 'excluded':
+        out.update(verdict='hide', hide_reason=eligibility.reason)
+    elif holds or kind != 'full' or eligibility.status == 'held' or ad_kind == 'talent_pool' or rep['legitimacy']['tier'] == 'suspicious':
+        out['verdict'] = 'review'
+        flags.extend(h for h in holds if h not in flags)
+        flags.extend(q for q in eligibility.questions if q not in flags)
     return out
 
 
@@ -1396,7 +1354,18 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
         ids = [int(i) for i in posting_ids]
         rows = conn.execute(_BASE_SQL + f"WHERE p.id IN ({','.join('?' * len(ids))})", ids).fetchall()
     else:
-        rows = conn.execute(_PENDING_SQL, (PROMPT_VERSION,)).fetchall()
+        pending = conn.execute(_PENDING_SQL, (PROMPT_VERSION,)).fetchall()
+        pending_ids = {r['id'] for r in pending}
+        rows = []
+        # Profile-dependent content hashes must be checked before selection,
+        # otherwise a full current-version result can stay stale forever.
+        for row in conn.execute(_BASE_SQL + 'ORDER BY m.matched_at DESC').fetchall():
+            if row['id'] in pending_ids:
+                rows.append(row)
+                continue
+            text, _ = adtext.local_text(conn, row)
+            if content_hash(row, text, cfg['model'], profile, settings_block()) != row['old_hash']:
+                rows.append(row)
     stats = {"pending": len(rows), "reviewed": 0, "skipped_same": 0, "fetched": 0, "model_failed": 0,
              "shown": 0, "hidden": 0, "review": 0, "teaser": 0, "partial": 0, "cost_usd": 0.0, "stopped": None,
              "errors": 0, "time_limit": None}
@@ -1481,7 +1450,8 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
         return item, out, cost, None
 
     with ThreadPoolExecutor(max_workers=max(1, int(cfg["workers"]))) as pool:
-        for item, model_out, cost, skipped in pool.map(one, work):
+        tasks = [pool.submit(copy_context().run, one, item) for item in work]
+        for item, model_out, cost, skipped in (task.result() for task in tasks):
             row, text, kind, chash, sponsored = item
             if skipped == "late":
                 left += 1
@@ -1496,7 +1466,8 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
                     stats["errors"] += skipped == "error"
                     continue                                     # leave it pending: retried next run
                 else:
-                    verdict = decide(model_out, text, kind, cfg, sponsored=sponsored, title=row["title"] or "")
+                    verdict = decide(model_out, text, kind, cfg, sponsored=sponsored, title=row["title"] or "",
+                                     company=row['company'] or '', location=row['location'] or '')
                 store(conn, row["id"], chash, cfg["model"], kind, len(text), verdict, cost, model_out)
                 stats["reviewed"] += 1
                 stats[{"show": "shown", "hide": "hidden"}.get(verdict["verdict"], "review")] += 1
@@ -1517,11 +1488,11 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
 
 def rederive(conn, config, posting_ids: list[int] | None = None) -> dict:
     """Re-apply the hiding rules (decide) to every stored model answer. No model call, no fetch.
-    Run after changing the rules in this file or the thresholds in config."""
+    Run to explicitly reapply canonical policy without calling a model."""
     cfg = settings(config)
     changed = total = 0
     rows = conn.execute("""SELECT r.posting_id, r.model_json, r.text_source, r.verdict, r.hide_reason, p.title, p.source,
-                                  p.description, p.raw_json, t.text AS ad
+                                  p.description, p.raw_json, p.company, p.location, t.text AS ad
                            FROM ad_reviews r JOIN postings p ON p.id = r.posting_id
                            LEFT JOIN ad_text t ON t.posting_id = r.posting_id""").fetchall()
     if posting_ids is not None:
@@ -1534,7 +1505,8 @@ def rederive(conn, config, posting_ids: list[int] | None = None) -> dict:
         total += 1
         model_out = json.loads(r["model_json"]) if r["model_json"] else None
         text, kind = adtext.classify(r["ad"], r["description"], r["source"], r["raw_json"])   # as review_pending
-        v = decide(model_out, text, kind, cfg, sponsored=sponsored, title=r["title"] or "")
+        v = decide(model_out, text, kind, cfg, sponsored=sponsored, title=r["title"] or "",
+                   company=r['company'] or '', location=r['location'] or '')
         if (v["verdict"], v["hide_reason"]) != (r["verdict"], r["hide_reason"]):
             changed += 1
         conn.execute("""UPDATE ad_reviews SET text_source=?, verdict=?, hide_reason=?, fit=?, real_job=?, ad_kind=?,

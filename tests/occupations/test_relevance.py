@@ -148,15 +148,15 @@ def test_screen_failure_defers_without_archiving_and_respects_limit(env, monkeyp
     assert conn.execute("SELECT COUNT(*) FROM pipeline_state WHERE stage='archived'").fetchone()[0] == 0
 
 
-def test_rule_prefilter_uses_profile_flag_and_no_model(env, monkeypatch):
+def test_rule_prefilter_uses_confirmed_policy_by_default_and_no_model(env, monkeypatch):
     conn, _, _, ctx = env
     add(conn)
     pol = build_policy({'version':1,'facts':[{'id':'f1','section':'exclusion','basis':'evidence','value':{'kind':'employer','value':'Acme'}}]})
     monkeypatch.setattr(discovery,'policy_for',lambda p:pol)
     from pipeline.agentic import service
     monkeypatch.setattr(service,'_capture',lambda c,p: ({},'complete ad','full'))
-    assert discovery.enforce_exclusions(conn,{}) == []
-    assert discovery.enforce_exclusions(conn,{'agentic':{'decision_policy':'profile'}}) == [1]
+    assert discovery.enforce_exclusions(conn,{}) == [1]
+    assert discovery.enforce_exclusions(conn,{'agentic':{'decision_policy':'profile'}}) == []
     assert ctx.embedder.calls == []
 
 

@@ -165,8 +165,8 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
     error = None
     try:
         from pipeline.agentic import discovery
-        if not dry_run:
-            config = discovery.prepare_run(conn, config)
+        # The scope projection is read-only and unpaid, including dry runs.
+        config = discovery.prepare_run(conn, config)
         rules = Rules(config.rules, config.employers)
         http_conf = config.settings.get("http") or {}
         http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5))

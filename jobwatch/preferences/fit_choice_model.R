@@ -18,7 +18,7 @@ for(s in seq_len(n)) {
 }
 train <- which(!holdout); test <- which(holdout)
 stopifnot(length(train)>=20, length(test)>=5)
-prior_mean <- unlist(input$prior_means); a0 <- c(.5,0,0,0,0)
+prior_mean <- unlist(input$prior_means); a0 <- rep(0, F)
 seeds <- c(1103L,2207L,3301L,4409L)
 set.seed(20261011)
 model <- jags.model(model_path, data=list(N=length(train),K=K,F=F,

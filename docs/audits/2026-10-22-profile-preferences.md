@@ -30,7 +30,7 @@ This correction does **not** replace the retained legacy final gate described
 below. Synthetic regression tests cover different regions, remote restrictions,
 unknowns and the ingest call site.
 
-## Confirmed findings remaining after that correction
+## Original findings at audit time (before remediation)
 
 | Priority | Surface and evidence | Current effect | Required repair |
 |---|---|---|---|
@@ -68,7 +68,7 @@ unknowns and the ingest call site.
 - Native chat prompts call canonical operations and approved facts; replacing the
   chat client would not repair the shared gate or collector issues.
 
-## Delivery sequence and acceptance
+## Original acceptance criteria
 
 Finish this discovery phase with the location correction, audited limitations,
 synthetic verification and no deployment. Track the remaining repairs separately:
@@ -85,3 +85,81 @@ synthetic checks alone do not establish recommendation quality.
 Undo this audit document by reverting its source commit. The audit itself changed
 no private state. Undo the location correction by reverting its source change;
 no profile migration or service change is involved.
+
+
+## Remediation of every finding in #14
+
+Owner's subsequent instruction:
+
+> fix all of the issues then merged into main
+
+The original table above preserves what the audit found. The following records
+the completed source repairs; release verification and merge results are recorded
+below separately. None of these changes activates a service or changes private records.
+
+| Finding | Source repair | Synthetic evidence |
+|---|---|---|
+| Legacy final gate/default | `service.decision_policy_mode` defaults to canonical profile; historical legacy config aliases the same path. `candidate.eligibility` is shared by native gate, retained reader and deterministic pipeline. No live fixed-policy branch remains. | `test_agentic_gate_policy`, `candidate/test_eligibility`, `test_personal_legacy_gate` |
+| Career/holistic thresholds | Gate scores stay advisory; evaluator receives confirmed strategy/focus. Interview preparation after an owner's transition no longer has a career-score cutoff. | `test_profile_gate_comparison`, `test_preference_service`, `test_interview_service` |
+| Structural donor exclusions | No mandatory occupation codes or reference/person-file exclusions in current analysis; default targets project only confirmed family rules. Historical payloads remain readable. | `candidate/test_policy`, `candidate/test_contracts`, `candidate/test_analysis` |
+| Workday title loss | Titles prioritize bounded rotating detail retrieval. Unknown listing locations remain unknown and listings remain stored for assessment. | `test_profile_collectors`, `test_collectors` |
+| Junior years/hours | Desired seniority never imposes a two-year experience cap. Primary-evidence matching checks qualifications. Actual advertised hours meet confirmed numeric limits; unknown material hours hold. A program flag cannot waive a numeric restriction. | `candidate/test_eligibility`, `test_agentic_gate_policy`, `test_profile_gate_comparison` |
+| Rights/clearance/sponsorship | Independent approved statuses; quotes must corroborate requirements. Citizenship is not inferred from PR or a combined disjunction. Clearances, sponsorship and contradictions remain distinct; unknown material facts hold. | `candidate/test_eligibility`, `test_gate_holds`, `test_agentic_gate_policy` |
+| Taste priors/families | Neutral zero-mean priors, canonical family vocabulary, new model/feature/structural identities. Confirmed-profile context changes mark immutable old choices/fits stale. No automatic refit. | `preferences/test_profile_neutral`, `test_preference_service`, R syntax parse |
+| Search/feed scope | Every confirmed scope overlays inherited searches and Reddit geography, including dry runs, with unpaid approved directions when no current semantic index exists. All supported locations rotate within request caps. | `test_profile_collectors`, `occupations/test_plan`, `test_collect_pipeline` |
+| Remote/home/provider defaults | Refused remote searches cleared; no JobSpy Melbourne fallback, no invented Jora place, no Oracle VIC-first truncation. | `test_profile_collectors`, `test_collectors` |
+| Older onboarding/generation/board | Missing level unknown; generated rules omit unstated personal constraints; no entry bonus. Known mid/senior work is not labeled unstated; labels name confirmed scope. | `test_onboarding_wrangle`, `test_fieldgen`, `web/test_neutral_board_score` |
+| Writing style/template | Neutral factual defaults, explicit approved style/template choices, selected renderer order honored. Examples are opt-in, per-person and protected against ancestor symlinks; legacy drafting/review share the controls. Factual/PDF checks remain mandatory. | `test_personal_writing_preferences`, `test_careerops_cv`, apply tests |
+| Retained paths | Reader/recall prompts use approved policy, no APS-title citizenship inference or inherited score caps; full-ad eligibility delegates canonical policy. Deterministic gate follows the same policy. | `test_reader`, `test_pipeline`, `test_personal_legacy_gate`, `test_gate_holds` |
+
+Additional review repairs bind run and taste-model identity to the complete immutable
+approved profile. New confirmation during a job or cached READY public recheck invalidates
+the snapshot. Remote labels cannot bypass constraints without verified ad evidence;
+recorded unknown seniority cannot turn into a schema placeholder. Fingerprints for frozen
+baseline replay include canonical eligibility and projection sources. Historical baseline
+manifests keep their original source inventory on load.
+Final adversarial review also removed foreign-jurisdiction status inference: presence
+in Australia is not Australian citizenship, negative foreign citizenship is not negative
+Australian status, and mixed-country alternatives remain unresolved. Repeated Boolean
+keywords and repeated identical clearance quotes retain the reader stress-test time limits.
+
+### Interpretation and remaining verification limits
+
+The frozen test fixture preserves the old **gate logic** with synthetic inputs, including
+jobs the former gate rejected in Sydney/Perth or for low career scores. It imports current
+ad scanners and contracts, so it is not a bit-for-bit reproduction of an earlier deployment.
+These comparisons establish the intended policy change, not recommendation quality over
+live archived jobs. No candidate records or live provider/model calls were used as fixtures.
+
+AU product scope, geographic reference data, operational request/token caps, evidence
+citations, factual/PDF review, human choices and exact Submit approvals remain controls.
+Commute distance coverage remains limited to available reference data; missing distance
+with a material confirmed limit holds. Unstated or ambiguous legal conditions require
+clarification rather than an inferred legal answer. Configured ATS/RSS/subreddit source
+inventories remain explicit acquisition coverage; this does not discover new providers.
+No real taste model was refitted and no historical choices or posteriors were rewritten.
+
+Undo the remediation by reverting its merge/source commits. No destructive schema or
+private-data migration is required; historical artifacts remain immutable. Such a revert
+restores the earlier policy behavior. Source merge does not establish deployed behavior.
+
+### Release verification, 2026-10-22
+
+The complete stable-source command `/tmp/jobwatch-phase4-venv/bin/python -m pytest -q --tb=short`
+finished with **3,492 passed, 10 skipped, 6 warnings in 974.15 seconds**. The skips
+remain optional/known test gaps; in particular this does not verify a real statistical
+fit, live provider/model behavior or deployment. Warnings concern dependency configuration
+and the test client's deprecated per-request cookie API.
+
+The final independent read-only eligibility review cleared its eight exact jurisdiction
+probes and **308 focused regressions**. The reader module separately passed all **655**
+cases with its original stress-test time limits. `jobwatch check --code` passed with an
+isolated invented profile; the R model source parses, and `git diff --check` passes.
+Development runs interrupted for fixes are not counted as completed release evidence.
+
+PR #15 carries these source repairs and Phase 4 discovery into main, closing #13 and #14
+when merged. GitHub Actions could not start steps because account billing/spending limits
+blocked execution; this is separate from the completed local release checks. No billing,
+services, timers, model fitting, candidate records or application submission were changed.
+Undo by reverting PR #15's squash merge; historical runtime artifacts need no destructive
+migration. Merge does not establish deployment or live recommendation quality.

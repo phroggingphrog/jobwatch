@@ -108,6 +108,9 @@ def test_friend_cannot_reach_owner(tmp_path, monkeypatch):
 
 def test_drafter_gets_only_own_samples(tmp_path, monkeypatch):
     from jobwatch.apply import review
+    monkeypatch.setattr('pipeline.agentic.writing_guide.approved_writing_profile', lambda: {'facts': [{
+        'section': 'preference', 'basis': 'evidence', 'value': {'kind': 'writing', 'value': {'use_style_examples': True}}}]})
+
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
     (tmp_path / "style" / "examples").mkdir(parents=True)
     (tmp_path / "style" / "examples" / "01.md").write_text("OWNER LETTER")
@@ -121,6 +124,9 @@ def test_drafter_gets_only_own_samples(tmp_path, monkeypatch):
 def test_run_chain_passes_only_own_samples(tmp_path, monkeypatch):
     import pytest
     from jobwatch.apply import chain
+
+    monkeypatch.setattr('pipeline.agentic.writing_guide.approved_writing_profile', lambda: {'facts': [{
+        'section': 'preference', 'basis': 'evidence', 'value': {'kind': 'writing', 'value': {'use_style_examples': True}}}]})
 
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
     (tmp_path / "style" / "examples").mkdir(parents=True)
@@ -166,3 +172,13 @@ def test_build_profile_writes_structured_work_rights(tmp_path, monkeypatch):
     class E:
         def chat(self, *a, **k): return SimpleNamespace(data={"name": "Sam"})
     assert onboarding.build_profile("cv", "sam", E())[0]["candidate"]["work_rights"] == {}
+
+
+def test_onboarding_missing_level_stays_unknown(monkeypatch):
+    monkeypatch.setattr(onboarding, 'write_profile_file', lambda *args: None)
+    class L:
+        def chat(self, *args, **kwargs):
+            return SimpleNamespace(data={'name': 'Sam'})
+    profile, _ = onboarding.build_profile('cv', 'sam', L())
+    assert profile['level'] == ''
+    assert profile['avoid_titles'] == []

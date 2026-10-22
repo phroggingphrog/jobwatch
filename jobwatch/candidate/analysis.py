@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 
 from .contracts import (
-    excluded_families,
     AnalysisResult,
     ArchetypeProposal,
     CandidateError,
@@ -18,6 +17,9 @@ from .contracts import (
 from .evidence import verify_evidence_snapshot
 from .mapping import validate_mappings
 from .reference import verify_reference_snapshot
+
+
+STRUCTURAL_VERSION = "structural-confirmed-policy-v2"
 
 
 def _error(code: str) -> CandidateError:
@@ -117,7 +119,7 @@ def analyse_candidate(
         eh = evidence.bundle_hash
         ph = digest(safe_policy.model_dump(mode="json"))
         mh = digest([])
-        run = digest({"evidence": eh, "reference": None, "mappings": mh, "policy": ph, "clusters": []})
+        run = digest({"implementation": STRUCTURAL_VERSION, "evidence": eh, "reference": None, "mappings": mh, "policy": ph, "clusters": []})
         return AnalysisResult(
             archetypes=(), run_key=run, evidence_hash=eh, reference_hash=None,
             policy_hash=ph, mapping_hash=mh, status=status,
@@ -154,7 +156,7 @@ def analyse_candidate(
         evidence_ids = tuple(sorted({i for dwa in contrib for i in ids_by_dwa.get(dwa, ())}))
         states = tuple(sorted({s for dwa in contrib for s in states_by_dwa.get(dwa, ())}))
         gaps = tuple(sorted(set(occupation.dwa_weights) - mapped_dwas))
-        if occupation.excluded or occupation.code in safe_policy.excluded_codes or occupation.family in excluded_families():
+        if occupation.code in safe_policy.excluded_codes:
             recommendation_status = "excluded"
         elif occupation.family not in reference.families:
             recommendation_status = "taxonomy_conflict"
@@ -188,6 +190,7 @@ def analyse_candidate(
     mh = digest([m.model_dump(mode="json") for m in mapping_records])
     rh = ref_hash
     run = digest({
+        "implementation": STRUCTURAL_VERSION,
         "evidence": eh, "reference": rh, "mappings": mh, "policy": ph,
         "clusters": [p.model_dump(mode="json") for p in archetypes],
     })

@@ -70,7 +70,8 @@ class Rules:
         self.senior = _regexes(sen.get("exclude_title"))
         self.off_target = _regexes(sen.get("exclude_title_global"))
         self.exempt = [fold(p) for p in sen.get("exempt_phrases", [])]
-        self.exclude_years = int(sen.get("exclude_min_years", 5))
+        raw_years = sen.get("exclude_min_years")
+        self.exclude_years = int(raw_years) if raw_years is not None else None
         self.senior_class = _regexes(sen.get("exclude_classification"))
         fl = rules.get("flags", {})
         self.work_rights = _regexes(fl.get("work_rights_required"))
@@ -78,7 +79,8 @@ class Rules:
         ft = fl.get("full_time_only", {})
         self.ft = _regexes(ft.get("title_or_type"))
         self.ft_unless = _regexes(ft.get("unless"))
-        self.flag_years = int(fl.get("experience_flag_min_years", 2))
+        raw_flag = fl.get("experience_flag_min_years")
+        self.flag_years = int(raw_flag) if raw_flag is not None else None
         self.entry = _regexes(fl.get("entry_level"))
         self.entry_class = _regexes(fl.get("entry_classification"))
         # Registry (brief) arm names -> rules.yaml arm ids. Reporting only; never used to match.
@@ -104,6 +106,9 @@ class Rules:
         return hits
 
     def seniority_hit(self, title: str) -> str | None:
+        if self.profile_policy is not None:
+            # Titles aid recall. Final evidence assessment checks approved levels.
+            return None
         low = fold(title)
         for phrase in self.exempt:
             low = low.replace(phrase, " ")
@@ -113,11 +118,21 @@ class Rules:
         return None
 
     def off_target_hit(self, title: str) -> str | None:
+        if self.profile_policy is not None:
+            from .candidate.policy import exclusion_hit
+            rule = exclusion_hit(self.profile_policy, family=None, company='', title=title,
+                                 location_text='', remote=False, hours='')
+            return rule.rule_id if rule else None
         low = fold(title)
         return next((p.pattern for p in self.off_target if p.search(low)), None)
 
     def title_relevant(self, title: str) -> bool:
         """Cheap pre-check collectors use to decide whether a detail fetch is worth it."""
+        if self.profile_policy is not None:
+            # Shared arms are discovery vocabulary, not personal interests.
+            focus = self.profile_policy.focus
+            words = set(re.findall(r'\w+', title.casefold()))
+            return not focus or any(set(re.findall(r'\w+', q.casefold())) & words for q in focus)
         return bool(self.arm_hits(title)) and not self.seniority_hit(title) and not self.off_target_hit(title)
 
     def location_rule(self, p: Posting) -> str | None:
@@ -143,6 +158,8 @@ class Rules:
         return None
 
     def classification_hit(self, classification: str | None) -> str | None:
+        if self.profile_policy is not None:
+            return None
         low = fold(classification or "")
         return next((p.pattern for p in self.senior_class if p.search(low)), None) if low else None
 
@@ -188,6 +205,18 @@ class Rules:
 
     # -- main -------------------------------------------------------------------
     def evaluate(self, p: Posting) -> Decision:
+        if self.profile_policy is not None:
+            from .candidate.policy import exclusion_hit
+            rule = exclusion_hit(self.profile_policy, family=None, company=p.company, title=p.title,
+                                 location_text=p.location or '', remote=bool(p.remote), hours='')
+            if rule:
+                return Decision(False, 'off_target', rules={'confirmed_exclusion': rule.rule_id})
+            loc = self.location_rule(p)
+            if not loc:
+                return Decision(False, 'location', rules={'location': p.location})
+            # Metadata admits recall; full-ad evidence decides qualifications.
+            return Decision(True, arm='profile_discovery', arm_tier='core', arms=['profile_discovery'],
+                            rules={'location': loc}, flags=list(p.flags))
         hits = self.arm_hits(p.title)
         if not hits:
             return Decision(False, "title")
@@ -204,7 +233,7 @@ class Rules:
         if not loc:
             return Decision(False, "location", rules={"location": p.location})
         years = self.experience_years(p.description)
-        if years is not None and years >= self.exclude_years:
+        if self.profile_policy is None and self.exclude_years is not None and years is not None and years >= self.exclude_years:
             return Decision(False, "experience", rules={"experience_years": years})
 
         flags = list(dict.fromkeys(p.flags))
@@ -213,7 +242,7 @@ class Rules:
             flags.append("work_rights_required")
         if self.full_time_only(p):
             flags.append("full_time_only")
-        if years is not None and years >= self.flag_years:
+        if self.profile_policy is None and self.flag_years is not None and years is not None and years >= self.flag_years:
             flags.append(f"experience_years>={self.flag_years}")
         if any(x.search(p.title) for x in self.entry) or \
                 (p.classification and any(x.search(p.classification) for x in self.entry_class)):

@@ -22,12 +22,16 @@ technical_skills: the advert's REQUIRED skills and tools versus the candidate's 
   5 = every required skill is plainly held; 4 = most, the rest learnable on the job; 3 = about half;
   2 = a few, key ones missing; 1 = almost none.
 experience: the level and years the advert asks versus the candidate (use the candidate's own roles and education).
-  5 = entry level / graduate / program, no years asked; 4 = 1 year asked or "some experience"; 3 = 2 years;
-  2 = 3 years or mid level; 1 = senior, lead, manager or 4+ years.
-domain: what the person would do all day versus WHAT THE CANDIDATE PURSUES (their own decisions; this outranks
-  anything else). 5 = a core pursued family; 4 = a good pursued family; 3 = adjacent (plainly uses the same
+  Compare required level, duties and years with this candidate's actual supported roles and education.
+  5 = clearly supported; 4 = mostly supported; 3 = partial or unknown evidence;
+  2 = important demonstrated gaps; 1 = clear contradiction.
+  A senior role is not inherently a poor fit and a graduate role is not inherently a good fit.
+  Do not invent duration or equate missing evidence with confirmed inability.
+domain: advisory career direction from what the person would do all day versus WHAT THE CANDIDATE PURSUES
+  (their own confirmed decisions; keep separate from ability and eligibility). 5 = a core pursued family; 4 = a good pursued family; 3 = adjacent (plainly uses the same
   skills); 2 = weakly related; 1 = a NOT WANTED family (whatever the candidate's past work was: past work in that
-  field is history, never a reason to mark it up).
+  field is history, not a confirmed present preference). When preferences are unknown, use 3 and explain unknown.
+  Domain and wanted are advisory; they never authorize exclusion.
 wanted: "core" | "good" | "adjacent" | "not_wanted", the family by that same reading.
 justification: two or three plain sentences a person can check."""
 

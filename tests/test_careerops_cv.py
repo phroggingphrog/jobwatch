@@ -53,3 +53,11 @@ def test_ats_check_flags_columns_and_missing_headings():
 def test_real_print_is_ats_grade_a():
     pdf, info = render_cv_pdf(CONTENT, _Profile(), "cv_graduate_2page")
     assert pdf.startswith(b"%PDF") and info["ats"]["grade"] == "A", info
+
+
+def test_confirmed_templates_change_section_order_consistently_with_markdown():
+    graduate = cv_html(CONTENT, _Profile(), 'cv_graduate_2page')
+    compact = cv_html(CONTENT, _Profile(), 'cv_compact_1page')
+    assert graduate.index('>Education</div>') < graduate.index('>Professional Experience</div>')
+    assert compact.index('>Professional Experience</div>') < compact.index('>Education</div>')
+    assert compact.index('>Education</div>') < compact.index('>Core Capabilities</div>')

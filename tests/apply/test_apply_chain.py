@@ -30,8 +30,8 @@ def test_chain_end_to_end(conn, profile):
     s = st["metrics"]
     assert s["verify_ok"] and s["pages"] == {"cv": 1, "letter": 1}
     assert s["claims_counts"]["removed_by_reason"] == {"number_not_in_evidence": 1}
-    # bogus kind dropped; style = 1 reviewer edit + 2 stock-phrase code edits (c9 "I am applying for", c12)
-    assert s["reviewer_edits"]["grounding"] == 1 and s["reviewer_edits"]["style"] == 3
+    # Bogus kind dropped; no unconfirmed stock-phrase preference adds edits.
+    assert s["reviewer_edits"]["grounding"] == 1 and s["reviewer_edits"]["style"] == 1
     assert s["models"] == [DEFAULT_MODEL]  # owner 2026-10-19: no Claude subscription; Sol writes and checks
     vdir = st["dir"]
     for name in ("cv.md", "cv.pdf", "letter.md", "letter.pdf", "claims.json", "verify.json", "review.json",

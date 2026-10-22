@@ -46,27 +46,71 @@ def search_plan(policy, hypotheses, *, extra_locations=(), max_queries=12) -> Se
     queries = _unique([q.casefold()[:80] for q in policy.focus] + [query_for(h.title) for h in hypotheses])[:max_queries]
     home = policy.home or {}
     location = ', '.join(str(home[k]) for k in ('place', 'state') if home.get(k))
+    from pipeline.agentic.location import regions_named
+    locations = _unique([location, *extra_locations])
+    covered = set().union(*(regions_named(loc) for loc in locations)) if locations else set()
+    locations = _unique([*locations, *(r for r in getattr(policy, 'regions', ()) if r not in covered)])
     data = dict(profile_version=policy.profile_version, policy_hash=policy.policy_hash,
         queries={key: queries for key in ('seek', 'jora', 'jobspy')},
-        locations=_unique([location, *extra_locations]), hypotheses=tuple(h.id for h in hypotheses))
+        locations=locations, hypotheses=tuple(h.id for h in hypotheses))
     return SearchPlan(**data, plan_hash=digest(data))
 
 
 def searches_overlay(plan: SearchPlan, base: dict, policy=None) -> dict:
+    """Replace personal search inputs, preserving only acquisition controls from shared config.
+
+    Explicit query/location pairs share each collector's existing rotation and request
+    allowance. Locations alternate before advancing to the next query.
+    """
     out = deepcopy(base)
+    location = plan.locations[0] if plan.locations else ''
+    out['location'] = location
     for key in ('seek', 'jora'):
         out.setdefault(key, {})['keywords'] = list(plan.queries.get(key, ()))
-    out.setdefault('jobspy', {})['searches'] = [{'term': q} for q in plan.queries.get('jobspy', ())]
-    if plan.locations:
-        out['location'] = plan.locations[0]
-        for key in ('seek', 'jora'):
-            out[key]['where'] = plan.locations[0]
-        out['jobspy']['location'] = plan.locations[0]
-    if policy and policy.remote_ok and (policy.home or {}).get('country'):
-        country = policy.home['country']
-        out['seek']['remote'] = {'enabled': True, 'keywords': list(plan.queries.get('seek', ())[:4]), 'where': country}
-        out['jobspy']['searches'] += [{'term': q, 'location': country, 'is_remote': True}
-                                     for q in plan.queries.get('jobspy', ())[:4]]
+        out[key]['where'] = location
+    out.setdefault('jobspy', {})['location'] = location
+    for key in ('seek', 'jora', 'jobspy'):
+        out[key]['searches'] = [{'term': q, 'location': loc}
+            for q in plan.queries.get(key, ()) for loc in (plan.locations or ('',))]
+        # Technical defaults keep an expanded scope bounded even with sparse config.
+        out[key].setdefault('searches_per_run', 4)
+    out['seek']['remote'] = {'enabled': False}
+    if policy and policy.remote_ok is True:
+        country = (policy.home or {}).get('country') or ('Australia' if getattr(policy, 'regions', ()) else '')
+        if country:
+            for key in ('seek', 'jobspy'):
+                out[key]['searches'] += [{'term': q, 'location': country, 'is_remote': True}
+                    for q in plan.queries.get(key, ())[:4]]
+    return out
+
+
+def feeds_overlay(plan: SearchPlan, base: dict, policy) -> dict:
+    """Scope existing Reddit feeds without inventing or enabling a new source."""
+    from pipeline.agentic.location import regions_named
+    from jobwatch.place import STATES
+    out = deepcopy(base)
+    conf = out.setdefault('reddit', {})
+    regions = set(getattr(policy, 'regions', ()))
+    conf['_profile_scope'] = list(plan.locations)
+    conf['_profile_regions'] = sorted(regions)
+    conf['_remote_ok'] = policy.remote_ok
+    labels = [*plan.locations, *regions, *(STATES[r] for r in regions if r in STATES)]
+    conf['hiring_location'] = [r'\b' + re.escape(s) + r'\b' for s in _unique(labels)]
+    if policy.remote_ok is True:
+        conf['hiring_location'].append(r'\bremote\b|\bwork from home\b')
+    terms = plan.queries.get('seek', ())
+    feeds = []
+    for entry in conf.get('feeds') or []:
+        entry = deepcopy(entry)
+        # Local sources outside the approved regions cannot become implicit location facts.
+        local = entry.get('location')
+        if local and regions and not (regions_named(local) & regions):
+            continue
+        # Shared keyword queries must not import another person's career or home.
+        if entry.get('q'):
+            entry['q'] = ' OR '.join('"' + q.replace('"', '') + '"' for q in terms)
+        feeds.append(entry)
+    conf['feeds'] = feeds
     return out
 
 

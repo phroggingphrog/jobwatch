@@ -26,7 +26,7 @@ AD = ("Accounts Assistant (part time). You will process supplier invoices, recon
 
 
 def facts(**kw):
-    d = {"real_job": True, "role_family": "accounts payable", "duties": ["process invoices"],
+    d = {"real_job": True, "role_family": "finance_clerical", "duties": ["process invoices"],
          "required_skills": ["Excel", "MYOB"], "preferred_skills": [], "seniority": "entry", "min_years": None,
          "hours": "part_time_ok", "program": False,
          "work_rights": {"requirement": "valid_work_rights", "quote": "You must have the right to work in Australia."},
@@ -72,6 +72,19 @@ class Gateway:
                                                 "answer": "Yes, I used MYOB in my accounts role.", "source": "evidence"}]}
         text = out if isinstance(out, str) else json.dumps(out)
         return 200, {"choices": [{"message": {"content": text}}], "usage": {}}
+
+
+@pytest.fixture(autouse=True)
+def confirmed_candidate(monkeypatch):
+    """These graph fixtures explicitly confirm rights and region; no donor defaults."""
+    from jobwatch.candidate.policy import build_policy
+    policy = build_policy({'version': 1, 'facts': [
+        {'section': 'work_rights', 'basis': 'evidence', 'value': {
+            'valid_work_rights': True, 'citizen': False, 'permanent_resident': False,
+            'unrestricted_work_rights': False}},
+        {'section': 'location', 'basis': 'evidence', 'value': 'Victoria'}]})
+    monkeypatch.setattr('jobwatch.candidate.policy.policy_for', lambda *args, **kwargs: policy)
+    return policy
 
 
 @pytest.fixture
@@ -167,24 +180,25 @@ def test_a_good_job_goes_through_every_node_to_ready_and_nothing_is_submitted(wo
     assert drafts["n"] == 1
 
 
-def test_a_low_score_is_archived_and_never_drafted(world):
+def test_a_low_score_remains_advisory_and_supported_job_can_be_drafted(world):
     conn, add, run, drafts = world
     pid = add("Data Entry Clerk")
     run(Gateway(evaluate={"Data Entry Clerk": score(2, 3, 4)}))
     row = store.get(conn, pid)
-    assert row["stage"] == "archived" and row["reason"] == "low_score" and drafts["n"] == 0
+    assert row["stage"] == "ready" and drafts["n"] == 1
+    assert row["data"]["evaluate"]["overall"] == 2.9
 
 
-@pytest.mark.parametrize("marks,route", [((5, 3, 3), "draft"), ((4, 4, 3), "archive"), ((4, 4, 4), "draft")])
-def test_the_gate_threshold_is_3_8_computed_by_code(marks, route):
+@pytest.mark.parametrize("marks,route", [((5, 3, 3), "draft"), ((4, 4, 3), "draft"), ((4, 4, 4), "draft")])
+def test_computed_scores_are_preserved_without_unconfirmed_cutoff(marks, route):
     sc = MatchScore.model_validate(score(*marks))
-    got, dec = gate.decide(JobFacts.model_validate(facts()), sc, AD, "Accounts Assistant")
+    got, dec = gate.decide(JobFacts.model_validate(facts()), sc, AD, "Accounts Assistant", posting={"location": "Melbourne VIC"})
     assert got == route and dec.score == sc.overall
 
 
-def test_a_not_wanted_family_is_archived_whatever_the_score():
-    got, dec = gate.decide(JobFacts.model_validate(facts()), MatchScore.model_validate(score(5, 5, 5, "not_wanted")), AD)
-    assert (got, dec.reason) == ("archive", "not_target")
+def test_model_not_wanted_is_not_a_confirmed_person_exclusion():
+    got, dec = gate.decide(JobFacts.model_validate(facts()), MatchScore.model_validate(score(5, 5, 5, "not_wanted")), AD, posting={"location": "Melbourne VIC"})
+    assert (got, dec.reason) == ("draft", "eligible")
 
 
 # ------------------------------------------------------------------------------------------------ work rights (absolute)
@@ -196,7 +210,7 @@ def test_citizenship_quoted_from_the_ad_is_an_absolute_fail(world):
         "requirement": "citizen_or_pr", "quote": "Applicants must be Australian citizens or permanent residents."})},
         evaluate={"Payroll Officer": score(5, 5, 5)}))
     row = store.get(conn, pid)
-    assert row["stage"] == "archived" and row["reason"] == "work_rights:citizen_or_pr" and drafts["n"] == 0
+    assert row["stage"] == "archived" and row["reason"] == "work_rights_incompatible" and drafts["n"] == 0
 
 
 def test_a_rights_claim_the_ad_does_not_say_goes_to_review_not_to_a_guess(world):
@@ -207,14 +221,14 @@ def test_a_rights_claim_the_ad_does_not_say_goes_to_review_not_to_a_guess(world)
     row = store.get(conn, pid)
     assert row["stage"] == "dlq"
     dlq = conn.execute("SELECT * FROM pipeline_dlq WHERE posting_id=?", (pid,)).fetchone()
-    assert "rights_claim_unverified" in dlq["error"]
+    assert "verification_required" in dlq["error"]
 
 
-def test_a_visa_holder_line_is_not_a_block():
+def test_a_visa_alternative_is_held_until_approved_facts_establish_the_branch():
     text = AD + "You must be an Australian citizen, permanent resident or hold a valid visa with work rights."
-    got, _ = gate.decide(JobFacts.model_validate(facts(work_rights={"requirement": "valid_work_rights", "quote": ""})),
-                         MatchScore.model_validate(score()), text)
-    assert got == "draft"
+    got, _ = gate.decide(JobFacts.model_validate(facts(work_rights={"requirement": "valid_work_rights", "quote": "You must have the right to work in Australia."})),
+                         MatchScore.model_validate(score()), text, posting={"location": "Melbourne VIC"})
+    assert got == "review"  # Valid rights alone do not establish the advertised visa alternative.
 
 
 # ------------------------------------------------------------------------------------------------ retries and the DLQ
@@ -364,6 +378,10 @@ def test_archived_not_target_jobs_get_a_named_kind_without_moving(world):
     conn.execute("INSERT INTO ad_reviews(posting_id, content_hash, prompt_version, model, verdict, reviewed_at, model_json) "
                  "VALUES(?,?,?,?,?,?,?)", (shop, "c", 5, "m", "hide", "t", json.dumps({"not_target_kind": "shop_retail"})))
     conn.commit()
+    store.ensure(conn)
+    for pid in (cafe, shop):
+        store.admit(conn, pid, "old-" + str(pid), {}, stage=Stage.ARCHIVED, reason="not_target")
+    conn.commit()
     gw = SortGateway(kinds={cafe: "hospitality"}, evaluate={"Barista": nw, "Shop Assistant": nw})
     _, stats = run(gw)
     assert stats["sort"] == {"candidates": 2, "from_reader": 1, "from_model": 1, "failed_batches": 0}
@@ -383,6 +401,9 @@ def test_a_bad_sort_reply_is_retried_then_left_for_the_next_run(world):
     conn, add, run, _ = world
     cafe = add("Barista", desc=AD.replace("Accounts", "Cafe"))
     nw = score(2, 3, 1, wanted="not_wanted")
+    store.ensure(conn)
+    store.admit(conn, cafe, "old-cafe", {}, stage=Stage.ARCHIVED, reason="not_target")
+    conn.commit()
     _, stats = run(SortGateway(bad=3, evaluate={"Barista": nw}))
     assert stats["sort"]["failed_batches"] == 1 and "sort" not in store.get(conn, cafe)["data"]
     assert conn.execute("SELECT COUNT(*) FROM pipeline_dlq").fetchone()[0] == 0     # no job dead-lettered for a label

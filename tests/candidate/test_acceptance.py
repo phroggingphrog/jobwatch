@@ -65,19 +65,19 @@ def test_callable_flow_is_read_only_and_exposes_safe_metadata(tmp_path: Path) ->
     assert reference is not None
     first = snapshot_evidence(first_root)
     second = snapshot_evidence(second_root)
-    first_result = analyse_candidate(first, reference, (_confirmed(first, reference),), default_policy())
+    first_result = analyse_candidate(first, reference, (_confirmed(first, reference),), TargetPolicy(version="neutral"))
     second_result = analyse_candidate(
-        second, reference, (_confirmed(second, reference, dwa_id="test.analytics"),), default_policy()
+        second, reference, (_confirmed(second, reference, dwa_id="test.analytics"),), TargetPolicy(version="neutral")
     )
 
-    assert [fit.code for fit in first_result.recommendations] == ["221111"]
+    assert [fit.code for fit in first_result.recommendations] == ["221111", "431111"]
     assert [fit.code for fit in second_result.recommendations] == ["224114"]
     assert all(fit.recommendation_status == "candidate_path" for fit in first_result.recommendations)
     assert all(fit.recommendation_status == "candidate_path" for fit in second_result.recommendations)
     assert first_result.run_key != second_result.run_key
     assert first_result.evidence_hash != second_result.evidence_hash
-    excluded = next(fit for fit in first_result.diagnostics if fit.code == "431111")
-    assert excluded.recommendation_status == "excluded"
+    barista = next(fit for fit in first_result.recommendations if fit.code == "431111")
+    assert barista.recommendation_status == "candidate_path"
     metadata = analysis_metadata(first_result)
     rendered = json.dumps(metadata, sort_keys=True)
     assert "Reconciled ledgers" not in rendered
@@ -131,7 +131,7 @@ def test_suggested_and_gwa_only_evidence_remain_diagnostic(tmp_path: Path) -> No
     assert next(f for f in gwa_only.diagnostics if f.code == "221112").recommendation_status == "suggested_path"
 
 
-def test_unknown_declared_policy_taxonomy_and_immutable_exclusion_are_distinct(tmp_path: Path) -> None:
+def test_unknown_declared_policy_taxonomy_and_explicit_exclusion_are_distinct(tmp_path: Path) -> None:
     root = fictional_profile(tmp_path / "profile")
     # A factual undeclared family is a taxonomy conflict; a declared but non-target family is not_target.
     path = fictional_reference(tmp_path / "refs")
@@ -152,14 +152,14 @@ def test_unknown_declared_policy_taxonomy_and_immutable_exclusion_are_distinct(t
     reference = load_reference(path)
     assert reference is not None
     evidence = snapshot_evidence(root)
-    result = analyse_candidate(evidence, reference, (_confirmed(evidence, reference),), default_policy())
+    result = analyse_candidate(evidence, reference, (_confirmed(evidence, reference),),
+                               TargetPolicy(version="confirmed-explicit-code", excluded_codes=("541211",)))
     statuses = {fit.code: fit.recommendation_status for fit in result.diagnostics}
     assert statuses["222111"] == "taxonomy_conflict"
     assert statuses["222112"] == "not_target"
     assert statuses["541211"] == "excluded"
     assert TargetPolicy(version="alias-v1", allowed_families=("Finance-Clerical",)).allowed_families == ("finance_clerical",)
-    with pytest.raises(ValueError):
-        TargetPolicy(version="bad-v1", allowed_families=("finance_clerical", "Customer Service"))
+    assert TargetPolicy(version="alias-v1", allowed_families=("Customer Service",)).allowed_families == ("customer_service",)
 
 
 def test_changed_inputs_invalidate_run_identity_and_stale_receipts_fail(tmp_path: Path) -> None:

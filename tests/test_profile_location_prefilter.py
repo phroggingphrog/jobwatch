@@ -47,3 +47,16 @@ def test_explicit_remote_location_is_not_lost_when_provider_omits_its_remote_fla
     monkeypatch.setattr(policy,'policy_for',lambda person:dp)
     cfg = make_config()
     assert Rules(cfg.rules,cfg.employers).location_rule(posting('Sydney NSW — Remote')) == 'profile_remote'
+
+
+def test_shared_title_arms_cannot_exclude_a_confirmed_nonaccounting_profile(monkeypatch):
+    dp = policy.build_policy({'version': 1, 'facts': [
+        {'id': 'scope', 'section': 'career_focus', 'basis': 'evidence', 'value': 'Engineering'},
+        {'id': 'home', 'section': 'location', 'basis': 'evidence', 'value': 'Sydney NSW'}]})
+    monkeypatch.setattr(policy, 'policy_for', lambda person: dp)
+    cfg = make_config()
+    rules = Rules(cfg.rules, cfg.employers)
+    item = posting('Sydney NSW')
+    item.title = 'Senior Mechanical Engineer'
+    assert rules.evaluate(item).matched
+    assert rules.evaluate(item).arm == 'profile_discovery'

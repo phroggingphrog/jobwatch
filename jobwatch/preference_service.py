@@ -7,6 +7,23 @@ from pipeline.agentic.persistence import latest_result
 from jobwatch.preferences import PreferenceStore, PreferenceError, alternative_from_evaluation, context_hash
 
 
+def preference_context(*, bundle, policy, cfg, structural):
+    """Bind model readiness to every confirmed input for the server-bound person.
+
+    Preferences such as location and writing style can change without changing
+    primary evidence or the structural family projection. Like canonical run
+    keys, use the complete approved payload so these changes invalidate old fits.
+    This is read-only: historic owner responses and posteriors remain untouched.
+    """
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from jobwatch.candidate.contracts import digest
+    approved = intake.current_version(users.current())
+    return context_hash(bundle.bundle_hash, policy.model_dump(mode='json'), cfg,
+                        structural.run_key, service.RUBRIC_VERSION, service.IMPLEMENTATION_VERSION,
+                        digest(approved) if approved else None)
+
+
 def pool(conn, config):
     cfg, policy = service._config(config), service.default_policy()
     dp = service.decision_policy_for(config)
@@ -14,8 +31,7 @@ def pool(conn, config):
     service.verify_evidence_snapshot(bundle)
     inputs = service.load_inputs(bundle, cfg)
     structural = service.analyse_candidate(bundle, *inputs, policy)
-    identity = context_hash(bundle.bundle_hash, policy.model_dump(mode='json'), cfg,
-                            structural.run_key, service.RUBRIC_VERSION, service.IMPLEMENTATION_VERSION)
+    identity = preference_context(bundle=bundle, policy=policy, cfg=cfg, structural=structural)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     if not {'agentic_runs', 'agentic_packages', 'agentic_artifacts'} <= tables:
         return identity, []

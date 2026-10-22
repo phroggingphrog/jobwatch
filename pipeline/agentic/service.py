@@ -47,7 +47,7 @@ RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
 MIN_READ_SECONDS = 20   # less than this left in the batch: do not start another job (a Seek page read needs 7-15 s)
-IMPLEMENTATION_VERSION = 'deepagents-0.7.23-qwen-retrieval-20261021'
+IMPLEMENTATION_VERSION = 'confirmed-profile-eligibility-v2-20261022'
 
 
 def settings(config) -> dict:
@@ -102,20 +102,17 @@ def _config(config):
 
 
 def decision_policy_mode(config) -> Literal['legacy', 'profile']:
-    """Which gate decides: `legacy` (the fixed rules) or `profile` (the person's confirmed profile).
-
-    Read here and nowhere in `_config()`, so the flag never enters a RunKey or the runtime-config hash."""
-    mode = agentic_settings(config).get('decision_policy', 'legacy')
+    """Canonical profile gate. Historical `legacy` spelling is a compatibility alias."""
+    mode = agentic_settings(config).get('decision_policy', 'profile')
     if type(mode) is not str or mode not in ('legacy', 'profile'):
         raise AgenticError('invalid_configuration')
-    return mode
+    # Historical config spelling remains readable; it cannot reactivate donor rules.
+    return 'profile'
 
 
 def decision_policy_for(config) -> DecisionPolicy | None:
-    """The current person's decision policy, or None when the mode is `legacy` or no profile is confirmed
-    (the legacy gate then runs)."""
-    if decision_policy_mode(config) != 'profile':
-        return None
+    """The current confirmed policy; absent preferences remain unknown."""
+    decision_policy_mode(config)
     return policy_for(users.current())
 
 
@@ -123,7 +120,7 @@ def commute_km_of(decision_policy: DecisionPolicy | None, location: str | None) 
     """The one commute definition, for the evaluator input and the gate: the policy's home when there is a policy
     (no home: no distance), otherwise the legacy distance from the person's profile suburb."""
     if decision_policy is None:
-        return km_from_home(location or '')
+        return None
     home = decision_policy.home['place'] if decision_policy.home else None
     return commute_km_for(home, location or '')
 
@@ -144,16 +141,8 @@ _SENIORITY_RANK = {'entry': 0, 'junior': 1, 'mid': 2, 'senior': 3}
 
 
 def applicable_knockouts(dp: DecisionPolicy | None) -> frozenset[str]:
-    """The Jev knock-out questions that apply to this person. No policy: both, as before."""
-    if dp is None:
-        return frozenset(KNOCKOUT_REASONS)
-    out = set()
-    ranks = [_SENIORITY_RANK[level] for level in dp.seniority if level in _SENIORITY_RANK]
-    if ranks and max(ranks) <= _SENIORITY_RANK['junior']:
-        out.add('five_years')
-    if dp.work_rights.get('citizen_or_pr') is not True:
-        out.add('citizen_or_pr')
-    return frozenset(out)
+    """Public classifier probabilities cannot establish personal incompatibility."""
+    return frozenset()
 
 
 def _draft_limits(config):
@@ -209,10 +198,14 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
     structural = structural or analyse_candidate(bundle, reference, mappings, policy)
     candidate_hash = assessment_run_key(bundle.bundle_hash, content_hash(career_profile_text(bundle).encode()),
                                         digest(policy.model_dump(mode='json')), structural.run_key, cfg['evaluator_model'])
+    from jobwatch.candidate import intake
+    approved = intake.current_version(users.current())
+    confirmed_hash = digest(approved) if approved else None
     return RunKey(posting_id=posting_id, ad_hash=content_hash(text.encode()), evidence_hash=bundle.bundle_hash,
                   rubric_version=RUBRIC_VERSION, candidate_hash=candidate_hash,
                   config_hash=digest({'policy': policy.model_dump(mode='json'), 'runtime': cfg,
                                       'implementation': IMPLEMENTATION_VERSION,
+                                      'confirmed_profile': confirmed_hash,
                                       'location_reference': LOCATION_REFERENCE_HASH, 'posting': posting}))
 
 
@@ -362,8 +355,12 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     if not enabled(config):
         skip('agentic_disabled')
         return None
+    from jobwatch.candidate import intake
+    approved_snapshot = intake.current_version(users.current())
+    confirmed_hash = digest(approved_snapshot) if approved_snapshot else None
     cfg, pol = _config(config), policy or default_policy()
-    dp = decision_policy_for(config)
+    decision_policy_mode(config)
+    dp = policy_for(users.current(), approved=approved_snapshot) if approved_snapshot else None
     draft_limits = _draft_limits(config)
     invocation_id = batch.batch_id if batch is not None else 'agentic-' + uuid.uuid4().hex
     if _invocation_deadline is None:
@@ -376,6 +373,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         return None
     reference, mappings = load_inputs(bundle, cfg)
     key = _run_key(posting_id, captured, bundle, pol, cfg, (reference, mappings))
+    approved_after_key = intake.current_version(users.current())
+    if (digest(approved_after_key) if approved_after_key else None) != confirmed_hash:
+        raise AgenticError('snapshot_changed')
     if expected_run_key is not None and key.value != expected_run_key:
         raise AgenticError('snapshot_changed')
     store = AgenticStore(conn)
@@ -447,6 +447,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     raise AgenticError('artifact_invalid')
             if _capture(conn, posting_id) != captured:
                 raise AgenticError('snapshot_changed')
+            current_approved = intake.current_version(users.current())
+            if (digest(current_approved) if current_approved else None) != confirmed_hash:
+                raise AgenticError('snapshot_changed')
             adapter.set_stage(claim, Stage.READY, 'agentic_package_ready', key.ad_hash,
                               application_id=previous['application_id'], draft_id=previous['draft_id'])
             stage, reason, final_status = Stage.READY, 'agentic_package_ready', 'ready'
@@ -511,7 +514,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 key, ad_text, budget, llm, evidence_bundle=bundle, candidate_analysis=candidate,
                 model=cfg['evaluator_model'], research=_research(posting, budget, cfg),
                 commute_km=commute_km_of(dp, posting.get('location')), model_insights=models,
-                embedding_model=cfg['embedding_model'])
+                embedding_model=cfg['embedding_model'], decision_policy=dp)
             decision = gate_current(evaluation, posting=posting, ad_text=ad_text, decision_policy=dp, policy=pol,
                                     captured_complete=text_kind == 'full', expected_run_key=key,
                                     evidence_bundle=bundle)

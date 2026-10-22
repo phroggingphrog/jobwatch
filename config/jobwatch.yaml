@@ -36,7 +36,7 @@ pipeline:
   execution_mode: agentic
   # Legacy flags below are read only when execution_mode is absent.
   enabled: true
-  threshold: 3.8          # node 4: score >= 3.8 goes to drafting
+  threshold: 3.8          # historical config compatibility; eligibility uses confirmed policy, scores are advisory
   ingest_limit: 200       # node 1: new jobs admitted per run
   fetch_budget: 25        # node 1: ad pages fetched per run
   drafts_per_run: 3       # node 5: cost cap; the rest wait for the next run
@@ -53,7 +53,7 @@ pipeline:
     research_enabled: true  # existing local SearXNG; public employer/job facts only
     max_batch_jobs: 20
     concurrency: 2
-    # decision_policy: legacy   # legacy (default) keeps the fixed gate; profile gates on the person's confirmed profile
+    decision_policy: profile   # only each person's confirmed preferences; absent facts remain unknown
     # Field and job discovery: defaults below preserve the legacy search/archive behaviour.
     # search_plan: false
     # relevance: shadow       # off | shadow | on; shadow stores judgments but archives nothing

@@ -62,7 +62,7 @@ def test_work_rights_come_from_approved_facts():
     assert p.work_rights['hours_limit_per_fortnight'] == 48 and p.work_rights['full_time_programs_ok'] is True
 
 @pytest.mark.parametrize('text,expect', [('Australian citizen', True), ('Permanent resident of Australia', True),
-                                         ('I am not an Australian citizen', False), ('Working holiday visa', None),
+                                         ('I am not an Australian citizen', None), ('Working holiday visa', None),
                                          ('Not yet an Australian citizen', None),
                                          ('I am not currently an Australian citizen', None),
                                          ('Neither an Australian citizen nor a permanent resident', None),
@@ -346,67 +346,106 @@ PINNED_DEFAULT_RUN_KEY = {
 }
 
 
-def test_default_policy_json_and_hash_are_unchanged(tmp_path, monkeypatch):
-    monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(tmp_path))     # no person file: the default families are every known family
-    dumped = default_policy().model_dump(mode='json')
-    assert 'require_minimum_excluded_codes' not in dumped and dumped['excluded_codes'] == ['431111', '541211']
-    assert digest(dumped) == PINNED_DEFAULT_POLICY_DIGEST
+def _archived_target_payload():
+    # This is the historic neutral-family serialization, including donor occupation exclusions.
+    # It is evidence for compatibility checks, never a live default or a confirmed person's policy.
+    return {'version': 'owner-targets-v1', 'allowed_families': list(KNOWN_FAMILIES),
+            'excluded_codes': list(MINIMUM_EXCLUDED_CODES)}
 
 
-def test_minimum_excluded_codes_stay_the_legacy_default_and_stay_immutable_there():
-    assert MINIMUM_EXCLUDED_CODES == ('431111', '541211') and TargetPolicy(version='v1', allowed_families=('accounting',)).excluded_codes == MINIMUM_EXCLUDED_CODES
+def test_archived_policy_json_and_hash_remain_parseable_without_becoming_the_default(tmp_path, monkeypatch):
+    _person_who_excludes(tmp_path, monkeypatch, 'legacy-file', 'retail')
+    payload = _archived_target_payload()
+    archived = TargetPolicy.model_validate(payload)
+    assert archived.model_dump(mode='json') == payload
+    assert digest(archived.model_dump(mode='json')) == PINNED_DEFAULT_POLICY_DIGEST
+    assert default_policy().excluded_codes == ()
+    assert digest(default_policy().model_dump(mode='json')) != PINNED_DEFAULT_POLICY_DIGEST
+
+
+def test_legacy_minimum_is_only_an_explicit_archival_contract():
+    assert MINIMUM_EXCLUDED_CODES == ('431111', '541211')
+    assert TargetPolicy(version='v1', allowed_families=('accounting',)).excluded_codes == ()
+    assert TargetPolicy(version='v1', excluded_codes=('999999',)).excluded_codes == ('999999',)
+    archived = TargetPolicy(version='archive', allowed_families=('accounting',),
+                            excluded_codes=MINIMUM_EXCLUDED_CODES, require_minimum_excluded_codes=True)
+    assert 'require_minimum_excluded_codes' not in archived.model_dump(mode='json')
     with pytest.raises(ValidationError):
-        TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('999999',))
-    with pytest.raises(ValidationError):
-        TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('431111',), require_minimum_excluded_codes=True)
+        TargetPolicy(version='archive', excluded_codes=('431111',), require_minimum_excluded_codes=True)
 
 
-def test_dropping_the_minimum_needs_the_explicit_flag_and_still_checks_the_codes():
-    p = TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('999999',), require_minimum_excluded_codes=False)
+def test_explicit_exclusion_codes_remain_validated_and_round_trip():
+    p = TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('999999',))
     assert p.excluded_codes == ('999999',) and p.model_dump(mode='json')['require_minimum_excluded_codes'] is False
     with pytest.raises(ValidationError):
-        TargetPolicy(version='v1', allowed_families=('accounting',), excluded_codes=('99',), require_minimum_excluded_codes=False)
-    assert TargetPolicy.model_validate(p.model_dump(mode='json')) == p        # the flag survives a round trip
+        TargetPolicy(version='v1', excluded_codes=('99',))
+    assert TargetPolicy.model_validate(p.model_dump(mode='json')) == p
 
 
 def test_profile_target_policy_is_person_independent_and_drops_the_minimum():
     p = profile_target_policy()
     assert p.excluded_codes == () and p.allowed_families == KNOWN_FAMILIES and p.model_dump(mode='json')['require_minimum_excluded_codes'] is False
     assert p.version == 'profile-neutral-v1'
-    assert p == profile_target_policy()                             # no profile read: identical for every person
+    assert p == profile_target_policy()
 
 
 def _person_who_excludes(tmp_path, monkeypatch, name, *families):
-    """A synthetic profile dir whose interests file lists `families` as excluded_families, made the current profile."""
+    """A synthetic unapproved legacy file cannot become current policy."""
     d = tmp_path / name
     d.mkdir()
     (d / 'interests_and_criteria.yaml').write_text('target_roles:\n  excluded_families: [' + ', '.join(families) + ']\n')
     monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(d))
 
 
-def test_profile_target_policy_builds_for_a_person_who_excludes_a_family_and_is_equal_across_people(tmp_path, monkeypatch):
+def test_neutral_projection_ignores_unapproved_interest_files_across_people(tmp_path, monkeypatch):
     _person_who_excludes(tmp_path, monkeypatch, 'one', 'retail', 'hospitality')
-    first = profile_target_policy()
+    first = default_policy()
     _person_who_excludes(tmp_path, monkeypatch, 'two', 'engineering')
-    second = profile_target_policy()
-    assert first.allowed_families == KNOWN_FAMILIES and 'retail' in first.allowed_families
-    assert first == second and first.model_dump(mode='json') == second.model_dump(mode='json')
+    second = default_policy()
+    assert first.allowed_families == KNOWN_FAMILIES
+    assert first == second and first.excluded_codes == ()
+    assert profile_target_policy().allowed_families == KNOWN_FAMILIES
 
 
-def test_a_default_policy_still_rejects_a_family_the_person_excludes(tmp_path, monkeypatch):
-    _person_who_excludes(tmp_path, monkeypatch, 'three', 'retail')
-    with pytest.raises(ValidationError, match='not_wanted'):
-        TargetPolicy(version='v1', allowed_families=('accounting', 'retail'))
-    with pytest.raises(ValidationError, match='not_wanted'):
-        TargetPolicy(version='v1', allowed_families=('accounting', 'Retail'), require_minimum_excluded_codes=True)
-    assert 'retail' not in default_policy().allowed_families           # the default projection still drops it
+def test_default_policy_applies_only_each_server_bound_persons_confirmed_family_exclusions(monkeypatch):
+    from jobwatch import users
+    versions = {
+        'synthetic-a': approved(fact('exclusion', {'kind': 'family', 'value': 'retail'})),
+        'synthetic-b': approved(fact('exclusion', {'kind': 'family', 'value': 'accounting'})),
+        'synthetic-inferred': approved(fact('exclusion', {'kind': 'family', 'value': 'engineering'}, basis='inference')),
+        'synthetic-adopted': {'version':1, 'facts':[fact('exclusion', {'kind':'family', 'value':'health'})]},
+    }
+    monkeypatch.setattr(intake, 'current_version', lambda person: versions.get(person))
+    policies = {}
+    for name in (*versions, 'synthetic-missing'):
+        monkeypatch.setattr(users, 'current', lambda name=name: name)
+        policies[name] = default_policy()
+    assert 'retail' not in policies['synthetic-a'].allowed_families
+    assert 'accounting' in policies['synthetic-a'].allowed_families
+    assert 'retail' in policies['synthetic-b'].allowed_families
+    assert 'accounting' not in policies['synthetic-b'].allowed_families
+    assert policies['synthetic-inferred'].allowed_families == KNOWN_FAMILIES
+    assert policies['synthetic-adopted'].allowed_families == KNOWN_FAMILIES
+    assert policies['synthetic-missing'].allowed_families == KNOWN_FAMILIES
+    assert all(p.excluded_codes == () for p in policies.values())
 
 
-def test_run_key_for_the_default_policy_is_unchanged(world):
+def test_archived_run_key_parses_and_current_policy_does_not_reuse_it(world):
     from pipeline.agentic import service
+    from pipeline.agentic.contracts import RunKey
+    archived = RunKey.model_validate(PINNED_DEFAULT_RUN_KEY)
+    assert archived.model_dump(mode='json') == PINNED_DEFAULT_RUN_KEY
     conn, config, bundle, add = world
     add(42)
     cfg = service._config(config)
     inputs = service.load_inputs(bundle, cfg)
     key = service._run_key(42, service._capture(conn, 42), bundle, default_policy(), cfg, inputs)
-    assert key.model_dump(mode='json') == PINNED_DEFAULT_RUN_KEY
+    assert key.value != archived.value
+    assert key.candidate_hash != archived.candidate_hash
+
+
+def test_denied_australian_citizenship_does_not_disprove_permanent_residency():
+    rights = policy_of(fact('work_rights', 'I am not an Australian citizen')).work_rights
+    assert rights['citizen'] is False
+    assert rights.get('permanent_resident') is None
+    assert rights.get('citizen_or_pr') is None

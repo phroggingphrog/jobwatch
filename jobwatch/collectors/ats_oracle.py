@@ -35,12 +35,12 @@ def api_url(employer: dict, offset: int) -> str:
 
 
 def _locations(req: dict) -> list[tuple[str, str]]:
-    """[(name, country)] for primary + secondary locations, VIC first."""
+    """[(name, country)] in the provider's primary/secondary order."""
     locs = [(req.get("PrimaryLocation") or "", req.get("PrimaryLocationCountry") or "")]
     for sec in req.get("secondaryLocations") or []:
         locs.append((sec.get("Name") or "", sec.get("CountryCode") or ""))
     locs = [(n, c) for n, c in locs if n or c]
-    return sorted(locs, key=lambda x: 0 if re.search(r"\bVIC\b|Victoria", x[0]) else 1)
+    return locs
 
 
 def req_to_posting(req: dict, employer: dict) -> Posting | None:
@@ -48,7 +48,13 @@ def req_to_posting(req: dict, employer: dict) -> Posting | None:
     au = [(n, c) for n, c in locs if (is_australian(c) if c else is_australian(None, n))]
     if not au:
         return None
-    location = " | ".join(n for n, _ in au)[:200]
+    location = " | ".join(n for n, _ in au)
+    if len(location) > 200:
+        # Posting metadata is bounded; retain every named state before locality text.
+        # The full provider locations remain in raw for subsequent ad retrieval.
+        from pipeline.agentic.location import regions_named
+        regions = dict.fromkeys(r for n, _ in au for r in sorted(regions_named(n)))
+        location = ' | '.join([*regions, location])
     host, site = employer["host"], employer["site"]
     workplace = f"{req.get('WorkplaceType') or ''} {req.get('WorkplaceTypeCode') or ''}".lower()
     return Posting(

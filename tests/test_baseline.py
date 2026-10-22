@@ -73,6 +73,7 @@ def test_gate_sources_are_the_reconciled_gate_files():      # contract decision 
     assert set(baseline.gate_sources()) == {
         'pipeline.agentic.gate', 'pipeline.agentic.location', 'jobwatch.candidate.person',
         'jobwatch.reader', 'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
+        'jobwatch.candidate.eligibility', 'jobwatch.candidate.projection', 'jobwatch.models',
         'pipeline.agentic/data/vic-geo.json', 'pipeline.agentic/data/metro-localities.json'}
     assert re.fullmatch(r'[0-9a-f]{64}', baseline.GATE_VERSION)
     assert baseline.GATE_VERSION == baseline.current_gate_version()
@@ -94,6 +95,9 @@ def test_gate_version_changes_by_itself_when_a_gate_source_changes(tmp_path, mon
     ('pipeline.agentic/data/vic-geo.json', 'pipeline/agentic/data/vic-geo.json'),
     ('pipeline.agentic/data/metro-localities.json', 'pipeline/agentic/data/metro-localities.json'),
     ('jobwatch.candidate.policy', 'jobwatch/candidate/policy.py'),
+    ('jobwatch.candidate.eligibility', 'jobwatch/candidate/eligibility.py'),
+    ('jobwatch.candidate.projection', 'jobwatch/candidate/projection.py'),
+    ('jobwatch.models', 'jobwatch/models.py'),
 ])
 def test_a_changed_data_file_or_policy_module_changes_the_gate_version(tmp_path, monkeypatch, key, original):
     _patched_copy(tmp_path, monkeypatch, key, ROOT / original)
@@ -214,7 +218,7 @@ def _evaluated(world, *ids, long_hours=False):
     for ident in ids:
         text = add(ident)
         if long_hours:
-            adtext.save_text(conn, ident, text + ' Full-time position, 38 hours per week. ', 'synthetic-full')
+            adtext.save_text(conn, ident, text.replace('24 hours per week', '38 hours per week'), 'synthetic-full')
     conn.commit()
     agentic_batch_run(list(ids), config, conn, evidence_bundle=bundle,
                       llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']), operation='evaluate')
@@ -237,14 +241,15 @@ def test_freeze_writes_a_private_hash_verified_baseline(frozen):
     assert loaded == b and [c.posting_id for c in cases] == [42, 43, 44]
     by = {c.posting_id: c for c in cases}
     assert (by[42].decision['route'], by[42].decision['reason']) == ('draft', 'eligible')
-    assert (by[44].decision['route'], by[44].decision['reason']) == ('archive', 'score_below_threshold')
-    assert by[44].stored['run_status'] == 'archived' and by[42].stored['run_reason'] == 'evaluation_complete'
+    assert (by[44].decision['route'], by[44].decision['reason']) == ('draft', 'eligible')
+    assert by[44].stored['run_status'] != 'archived'
+    assert by[44].stored['run_reason'] == by[42].stored['run_reason'] == 'evaluation_complete'
     assert by[42].evaluation['global_score'] == 4.3 and by[44].evaluation['global_score'] == 2.7
-    assert 'previously_rejected' in by[44].tags and all(c.tags == baseline.tag_case(c) for c in cases)
+    assert 'previously_rejected' not in by[44].tags and all(c.tags == baseline.tag_case(c) for c in cases)
     assert by[42].usage['charged_tokens'] > 0 and by[42].usage['actual_tokens'] is None and by[42].usage['latency_seconds'] > 0
     assert by[42].group_id == by[43].group_id != by[44].group_id        # 'Synthetic Alpha' and 'Synthetic Alpha Pty Ltd'
     assert by[42].snapshot['full_ad'] and by[42].candidate and by[42].structural_inputs['reference_utf8']
-    assert b.summary['cases'] == 3 and b.summary['routes'] == {'draft': 2, 'archive': 1, 'hold': 0, 'error': 0}
+    assert b.summary['cases'] == 3 and b.summary['routes'] == {'draft': 3, 'archive': 0, 'hold': 0, 'error': 0}
     assert set(b.summary['tags']) == set(baseline.TAGS) and b.summary['groups'] == 2
     assert b.summary['largest_group'] == 2 and b.summary['decision_errors'] == 0
     assert re.fullmatch(r'bl-\d{8}T\d{6}Z-[0-9a-f]{8}', b.baseline_id) and b.baseline_id.endswith(b.content_sha256[:8])
@@ -303,9 +308,35 @@ def test_a_tampered_blob_is_refused(frozen):
     assert _code(err) == 'baseline_corrupt'
 
 
-def test_decision_follows_the_frozen_profile_not_later_edits(world):
+def test_loading_historical_source_inventory_never_rewrites_frozen_records(frozen):
+    """A historical fingerprint remains historical when new gate sources are tracked."""
+    b = baseline.freeze_baseline(frozen.ro, frozen.config)
+    root = _dir(b.baseline_id)
+    path = root / 'baseline.json'
+    record = json.loads(path.read_bytes())
+    historical = {key: value for key, value in record['gate_dependencies'].items()
+                  if key not in ('jobwatch.candidate.eligibility', 'jobwatch.candidate.projection')}
+    record['gate_dependencies'] = historical
+    record['gate_version'] = baseline.digest(historical)
+    path.write_text(json.dumps(record, sort_keys=True))
+    before = {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+    loaded, cases = baseline.load_baseline(b.baseline_id)
+    assert loaded.gate_dependencies == historical
+    assert loaded.gate_version != baseline.current_gate_version()
+    assert baseline.list_baselines() == [loaded]
+    assert baseline.frozen_approved(b.baseline_id)['version'] == loaded.profile_version
+    assert cases and baseline.read_labels(b.baseline_id) == []
+    assert {p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()} == before
+
+
+def test_decision_follows_the_frozen_profile_not_later_edits(world, monkeypatch):
+    from jobwatch.candidate.policy import DecisionPolicy
+    from tests.candidate.policy_fixtures import fact
     ro = _evaluated(world, 42, long_hours=True)
     config = world[1]
+    approved = intake.current_version(users.current())
+    limited = {**approved, 'facts': [*approved['facts'], fact('work_rights', {'hours_limit_per_fortnight': 48})]}
+    monkeypatch.setattr(intake, 'current_version', lambda person: limited)
     _profile_yaml(hours=48)
     b = baseline.freeze_baseline(ro, config)
     _, (case,) = baseline.load_baseline(b.baseline_id)
@@ -313,30 +344,40 @@ def test_decision_follows_the_frozen_profile_not_later_edits(world):
     assert (case.decision['route'], case.decision['reason']) == ('archive', 'hard_gate')
     assert b.summary['evidence_mismatch'] == 1                           # profile.yaml is in the evidence bundle
     _profile_yaml(hours=None)
+    monkeypatch.setattr(intake, 'current_version', lambda person: approved)
     assert baseline.decide_frozen(case.snapshot, case.evaluation, commute_km=None)['route'] == 'draft'    # live profile
+    pinned = DecisionPolicy.model_validate(baseline.frozen_decision_policy(b.baseline_id))
     with baseline.pinned_profile(b.baseline_id):
-        assert baseline.decide_frozen(case.snapshot, case.evaluation, commute_km=None) == case.decision   # frozen profile
+        assert baseline.decide_frozen(case.snapshot, case.evaluation, commute_km=None,
+                                      decision_policy=pinned) == case.decision
 
 
-def test_commute_is_measured_from_the_frozen_home(world):
+def test_commute_is_measured_from_the_frozen_home(world, monkeypatch):
+    from jobwatch.candidate.policy import DecisionPolicy
+    from pipeline.agentic.location import commute_km_for
+    from tests.candidate.policy_fixtures import fact
     ro = _evaluated(world, 42)
     config = world[1]
+    approved = intake.current_version(users.current())
+    homed = {**approved, 'facts': [*approved['facts'], fact('location', {'home': 'Brunswick, VIC'})]}
+    monkeypatch.setattr(intake, 'current_version', lambda person: homed)
     _profile_yaml(location='Brunswick, VIC')
     b = baseline.freeze_baseline(ro, config)
     _, (case,) = baseline.load_baseline(b.baseline_id)
     assert case.commute_km == 5.0
     _profile_yaml(location='Geelong, VIC')
-    assert km_from_home('Melbourne VIC') != 5
+    pinned = DecisionPolicy.model_validate(baseline.frozen_decision_policy(b.baseline_id))
+    assert commute_km_for('Geelong, VIC', 'Melbourne VIC') != 5
     with baseline.pinned_profile(b.baseline_id):
-        assert km_from_home('Melbourne VIC') == 5
+        assert commute_km_for(pinned.home['place'], 'Melbourne VIC') == 5
 
 
 def test_the_pinned_profile_version_is_frozen_with_the_baseline(frozen):      # contract decision 1
     b = baseline.freeze_baseline(frozen.ro, frozen.config)
     approved = baseline.frozen_approved(b.baseline_id)
-    assert approved == intake.current_version(users.current()) and b.decision_policy_sha256 is None
-    assert baseline.frozen_decision_policy(b.baseline_id) is None
-    assert not (_dir(b.baseline_id) / 'decision_policy.json').exists()
+    assert approved == intake.current_version(users.current()) and b.decision_policy_sha256
+    assert baseline.frozen_decision_policy(b.baseline_id)['profile_version'] == approved['version']
+    assert (_dir(b.baseline_id) / 'decision_policy.json').is_file()
     # a later intake version does not change what frozen_approved returns
     later = {**approved, 'version': approved['version'] + 1}
     intake_current = intake.current_version
@@ -738,14 +779,11 @@ def test_decide_frozen_goes_through_gate_current(frozen, monkeypatch):          
     assert got == before and 'error' not in got
 
 
-def test_freeze_stores_the_decision_policy_when_the_profile_path_is_active(frozen, monkeypatch):
+def test_freeze_stores_the_confirmed_policy_even_for_retained_legacy_configuration(frozen, monkeypatch):
     from jobwatch.candidate.policy import policy_for
     from pipeline.agentic import service
-    legacy = baseline.freeze_baseline(frozen.ro, frozen.config)
-    assert legacy.decision_policy_sha256 is None and baseline.frozen_decision_policy(legacy.baseline_id) is None
-    assert not (_dir(legacy.baseline_id) / 'decision_policy.json').exists()
     settings = frozen.config.settings['pipeline']['agentic']
-    settings['decision_policy'] = 'profile'
+    settings['decision_policy'] = 'legacy'
     seen = []
     real = service.gate_current
     monkeypatch.setattr(service, 'gate_current', lambda *a, **k: seen.append(k['decision_policy']) or real(*a, **k))

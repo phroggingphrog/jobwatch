@@ -55,14 +55,10 @@ FONT_STEPS = (10.5, 10.0, 9.5, 9.0)
 
 
 def pick_templates(posting: dict, reading: dict | None = None) -> tuple[str, str]:
-    """§6: 1-page/agency/temp ads -> compact; data, graduate, intern ads -> graduate; else consult."""
-    title = (posting.get("title") or "").lower()
-    kind = f"{title} {(reading or {}).get('archetype') or ''}".lower()
-    if any(w in kind for w in ("agency", "temp", "casual", "1 page", "one page")):
-        return "cv_compact_1page", "cl_short_direct"
-    if any(w in kind for w in ("data", "analytic", "graduate", "intern", "cadet")):
-        return "cv_graduate_2page", "cl_graduate_academic"
-    return "cv_consult_default", "cl_consult_default"
+    """Use the person's confirmed template choice; job titles never imply a preference."""
+    from pipeline.agentic.writing_guide import templates_for
+    return templates_for()
+
 
 
 CSS = """

@@ -27,10 +27,10 @@ from .model_choice import get_model
 PROMPT = """You read a CV and extract a job-search profile. Use only what the CV says; never invent.
 Return JSON with exactly these keys:
 name, headline, email, phone, location (city, state/country), level (one of: student, graduate,
-entry, mid, senior), education (list of strings), roles (list of past job titles), skills (list of
+entry, mid, senior, or "" when unstated), education (list of strings), roles (list of past job titles), skills (list of
 strings), work_rights (string, or "" if the CV does not say), target_titles (8-15 job titles this person
-should search for, matching their field and level), avoid_titles (job titles in other fields or above
-their level that should never match), questions (short plain questions about things the CV did not
+could explore, matching their evidenced field; these are suggestions for confirmation),
+avoid_titles (only explicit job-search exclusions stated in the CV, otherwise []), questions (short plain questions about things the CV did not
 say that job applications will need, e.g. work rights, salary, notice period, willingness to relocate;
 at most 8)."""
 
@@ -73,8 +73,14 @@ def style_examples(user: str | None = None) -> list[str]:
     user = user or users.current()
     if user != users.current():
         raise PermissionError("letter samples are per person")
-    d = users.user_dir(user) / "style" / "examples"
-    return [p.read_text(encoding="utf-8") for p in sorted(d.glob("*.md"))] if d.is_dir() else []
+    person_root = users.user_dir(user)
+    d = person_root / "style" / "examples"
+    if (person_root.is_symlink() or d.parent.is_symlink() or d.is_symlink()
+            or not d.resolve().is_relative_to(person_root.resolve())):
+        return []
+    return [p.read_text(encoding="utf-8") for p in sorted(d.glob("*.md"))
+            if not p.is_symlink() and p.resolve().is_relative_to(person_root.resolve())] if d.is_dir() else []
+
 
 
 def wrangle(docs: list[tuple[str, str, str]], user: str, llm: LLM | None = None) -> tuple[dict, list[str]]:
@@ -128,7 +134,7 @@ def build_profile(cv_text: str, user: str, llm: LLM | None = None) -> tuple[dict
     profile = {"version": 1, "candidate": {k: data.get(k, "") for k in
                                            ("name", "headline", "email", "phone", "location")}
                          | {"work_rights": {"statement": rights} if rights else {}},
-               "level": data.get("level") or "entry",
+               "level": data.get("level") or "",
                "education": data.get("education") or [], "roles": data.get("roles") or [],
                "skills": data.get("skills") or [],
                "target_titles": data.get("target_titles") or [],

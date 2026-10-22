@@ -21,7 +21,7 @@ from jobwatch.candidate.policy import policy_for, exclusion_hit
 from jobwatch.execution_mode import effective_mode
 from jobwatch.occupations import DiscoveryError
 from jobwatch.occupations.hypotheses import FieldHypothesis
-from jobwatch.occupations.plan import SearchPlan, search_plan, save_plan, load_plan, searches_overlay, title_matches_plan
+from jobwatch.occupations.plan import SearchPlan, search_plan, save_plan, load_plan, searches_overlay, feeds_overlay, title_matches_plan
 
 log = logging.getLogger(__name__)
 DEFAULTS = dict(search_plan=False, relevance='shadow', dedupe='legacy', ordering='legacy',
@@ -83,19 +83,27 @@ def _current_plan(person):
 
 def prepare_run(conn, config):
     try:
-        if not settings(config)['search_plan'] or effective_mode(config) != 'agentic' or intake.discovery_scope(users.current()) is None:
+        scope = intake.discovery_scope(users.current())
+        if scope is None:
             return config
         policy, plan = _current_plan(users.current())
-        if plan is None or _fields().cached_hypotheses(users.current(), config=config) is None:
-            refresh(users.current(), config, conn=conn)
-            policy, plan = _current_plan(users.current())
-        if plan is None:
+        if policy is None:
             return config
+        cached = _fields().cached_hypotheses(users.current(), config=config) if settings(config)['search_plan'] and plan else None
+        if not settings(config)['search_plan'] or plan is None or cached is None:
+            # Confirmed scope always replaces inherited searches. No paid refresh
+            # is needed to search the person's own approved directions.
+            from types import SimpleNamespace
+            hypotheses = tuple(SimpleNamespace(id=f'scope:{i}', title=value) for i, value in enumerate(scope.basis))
+            plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
         return replace(config, searches=searches_overlay(plan, config.searches, policy),
+                       feeds=feeds_overlay(plan, config.feeds, policy),
                        extra={**config.extra, 'search_plan': plan})
     except Exception as exc:
         log.info('discovery prepare: %s', type(exc).__name__)
-        return config
+        # Never fall back to another person's shared search settings after a
+        # failed confirmed-scope projection.
+        raise DiscoveryError('confirmed_scope_unavailable') from None
 
 
 def recall_filter(base, config):

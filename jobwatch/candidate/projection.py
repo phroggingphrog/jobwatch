@@ -50,21 +50,35 @@ def _number(v) -> float | int | None:
 def _work_rights(approved: dict) -> dict:
     out: dict = {}
     statements = []
+    clearance_claims, limits = [], []
     for f in _facts(approved, "work_rights"):
         v = f["value"]
         if isinstance(v, dict):
+            for k in ('citizen', 'permanent_resident', 'citizen_or_pr', 'valid_work_rights',
+                      'unrestricted_work_rights', 'requires_sponsorship'):
+                if type(v.get(k)) is bool:
+                    out[k] = v[k] if k not in out or out[k] == v[k] else None
+            if isinstance(v.get('clearances'), list) and all(isinstance(x, str) for x in v['clearances']):
+                clearance_claims.append(tuple(sorted({x.strip().upper() for x in v['clearances'] if x.strip()})))
             for k in _RIGHTS_TEXT:
                 if isinstance(v.get(k), str) and v[k].strip():
                     out.setdefault(k, v[k].strip())
             if isinstance(v.get("full_time_programs_ok"), bool):
                 out["full_time_programs_ok"] = v["full_time_programs_ok"]
-            if _number(v.get("hours_limit_per_fortnight")) is not None:
-                out["hours_limit_per_fortnight"] = _number(v["hours_limit_per_fortnight"])
+            for key, factor in (('hours_limit_per_fortnight', 1), ('max_hours_per_week', 2)):
+                number = _number(v.get(key))
+                if number is not None and number < float('inf'):
+                    limits.append(number * factor)
         else:
             statements.append(_text(v))
             m = _HOURS.search(statements[-1])
             if m and _number(m.group(1)) is not None:
-                out.setdefault("hours_limit_per_fortnight", _number(m.group(1)))
+                limits.append(_number(m.group(1)))
+    if clearance_claims:
+        out['clearances'] = list(clearance_claims[0]) if len(set(clearance_claims)) == 1 else None
+    if limits:
+        # A repeated looser statement does not silently expand confirmed permission.
+        out['hours_limit_per_fortnight'] = min(limits)
     if statements:
         out["statement"] = "; ".join(statements)
     return out

@@ -24,7 +24,7 @@ def preference_insights(conn, config, set_id: str = '') -> dict:
     store = PreferenceStore(conn)
     state = store.status(identity)
     result = {key: state[key] for key in ('status', 'n_sets', 'n_choices', 'n_train', 'n_holdout',
-                                        'minimum_train', 'minimum_holdout')}
+                                        'minimum_train', 'minimum_holdout', 'historical_choices', 'stale_choices')}
     result['meaning'] = 'Owner-choice preference within three eligible jobs plus none; not hiring probability or qualification.'
     from jobwatch.preferences.features import NAMES, FEATURE_VERSION
     result['feature_coverage'] = {'version': FEATURE_VERSION, 'alternatives': len(alternatives),
@@ -62,15 +62,13 @@ def callback_insights(conn) -> dict:
 def pipeline_insights(conn, config, *, bundle, policy, cfg, structural) -> dict:
     """Persist the existing model layers alongside every core job assessment."""
     from jobwatch.candidate.analysis import structural_summary
-    from jobwatch.preferences import context_hash
-    identity = context_hash(bundle.bundle_hash, policy.model_dump(mode='json'), cfg,
-                            structural.run_key, service.RUBRIC_VERSION, service.IMPLEMENTATION_VERSION)
+    from jobwatch.preference_service import preference_context
+    identity = preference_context(bundle=bundle, policy=policy, cfg=cfg, structural=structural)
     store = PreferenceStore(conn)
     try:
         state = store.status(identity)
         preferences = {k: state[k] for k in ('status', 'n_choices', 'n_train', 'n_holdout',
-                                           'minimum_train', 'minimum_holdout')}
-        preferences['historical_choices'] = sum(s['answered'] for s in store.list_sets())
+                                           'minimum_train', 'minimum_holdout', 'historical_choices', 'stale_choices')}
         preferences['meaning'] = 'Owner-choice model readiness; not qualification, motivation or hiring odds.'
     except (ValueError, OSError, sqlite3.DatabaseError):
         preferences = {'status': 'unavailable', 'reason': 'preference_state_unavailable'}

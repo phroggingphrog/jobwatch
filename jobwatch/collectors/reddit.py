@@ -42,7 +42,14 @@ def classify(title: str, text: str, conf: dict, local: bool = False) -> tuple[st
     hiring = _compile(conf.get("hiring_keywords"))
     where = _compile(conf.get("hiring_location"))
     not_hiring = _compile(conf.get("not_hiring"))
-    if any(p.search(title) or p.search(text[:400]) for p in hiring) and (local or any(p.search(blob) for p in where)) \
+    admitted = local or any(p.search(blob) for p in where)
+    if '_profile_scope' in conf:
+        from pipeline.agentic.location import location_verdict, _REMOTE_WORDS
+        remote = bool(_REMOTE_WORDS.search(blob))
+        regions = frozenset(conf.get('_profile_regions') or ())
+        verdict = location_verdict(blob, regions, remote_fit=remote, remote_ok=conf.get('_remote_ok'))
+        admitted = verdict != 'outside' and not (remote and conf.get('_remote_ok') is False)
+    if any(p.search(title) or p.search(text[:400]) for p in hiring) and admitted \
             and not any(p.search(title) for p in not_hiring):
         return "hiring", []
     themes = [name for name, words in (conf.get("chatter_themes") or {}).items()
@@ -68,11 +75,20 @@ def parse(text: str, entry: dict, conf: dict) -> tuple[list[Posting], list[dict]
                      "score": None, "comments": None, "published_at": published})
         if kind == "hiring":
             low = f"{title} {body}".lower()
-            area = area_pattern()
-            if area and area.search(low):
-                location = location_text()
+            if '_profile_scope' in conf:
+                from pipeline.agentic.location import regions_named, _REMOTE_WORDS
+                # Geography is posting evidence, never inferred from the person's home.
+                named = sorted(regions_named(f'{title} {body}'))
+                remote = bool(_REMOTE_WORDS.search(low))
+                location = ' | '.join(named) or entry.get('location') or ''
+                if remote:
+                    location = 'Remote' + (', ' + location if location else '')
             else:
-                location = entry.get("location") or "Remote, Australia"
+                area = area_pattern()
+                if area and area.search(low):
+                    location = location_text()
+                else:
+                    location = entry.get("location") or "Remote, Australia"
             postings.append(Posting(
                 source=NAME, source_id=rid, url=e.get("link") or "", title=_TAG.sub("", title),
                 company=f"r/{sub}", location=location,

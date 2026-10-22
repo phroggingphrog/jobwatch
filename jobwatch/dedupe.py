@@ -62,6 +62,18 @@ def ingest(conn: sqlite3.Connection, posting: Posting, run_id: int | None = None
         # A closed posting stays closed when an aggregator lists it again: the sighting only makes it due for a live
         # re-check (expiry.sweep), and only a check that finds it open reopens it.
         conn.execute("UPDATE postings SET last_seen_at=? WHERE id=?", (now, posting_id))
+        primary = conn.execute('SELECT source,source_id,description FROM postings WHERE id=?', (posting_id,)).fetchone()
+        if (primary['source'] == posting.source and primary['source_id'] == posting.source_id
+                and not primary['description'] and posting.description):
+            # Bounded collectors may store metadata before obtaining full detail.
+            # Enrich that same source's empty evidence without letting another
+            # source replace it, reopening closed jobs or erasing richer text.
+            conn.execute('''UPDATE postings SET description=?,raw_json=?,dedupe_key=?,
+                location=CASE WHEN ?<>'' THEN ? ELSE location END,
+                state=COALESCE(?,state),remote=?,work_type=COALESCE(?,work_type)
+                WHERE id=?''', (posting.description, posting.raw_json(), key,
+                    posting.location or '', posting.location or '', posting.state,
+                    int(posting.remote), posting.work_type, posting_id))
     else:
         cur = conn.execute(
             """INSERT INTO postings(source, source_id, url, url_hash, dedupe_key, title, company,

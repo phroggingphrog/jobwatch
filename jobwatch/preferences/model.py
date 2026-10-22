@@ -65,7 +65,7 @@ def prepare_data(sets):
         values=[a['features'][name] for s in train for a in s['alternatives'] if a['features'][name] is not None]
         centers.append(statistics.median(values) if values else 0.)
         missing_rates.append(1-len(values)/(3*len(train)))
-        # Pay preserves original $5/hour unit; remaining features preserve donor scale.
+        # Pay preserves original $5/hour unit; remaining features preserve their documented units.
         scales.append(5. if name in ('pay_low_c','pay_high_c') else 1.)
     transform={'centers':centers,'scales':scales,'names':list(NAMES),'missing_indicators':True,'missing_rates':missing_rates}
     payload={'names':list(NAMES)+[n+'_missing' for n in NAMES], 'families':list(FAMILIES),

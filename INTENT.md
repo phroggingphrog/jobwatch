@@ -14,10 +14,18 @@ Owner follow-up on 2026-10-22:
 Personal preferences must come from each person's confirmed profile, not inherited
 geographic, career, seniority or writing assumptions in shared code. Missing facts
 stay unknown. The collector/ingest regional prefilter now reads the confirmed
-policy; this does not establish parity in all final gates or legacy paths. The
-[source audit](docs/audits/2026-10-22-profile-preferences.md) records remaining
-shared assumptions and separates them from reference data and technical controls.
-Track their repair in GitHub #14 without treating an audit as a policy promotion.
+policy. The [source audit](docs/audits/2026-10-22-profile-preferences.md) preserves
+the original findings and records their source repairs across active and retained
+paths, separately from reference data and technical controls. Its verification
+limits still apply; source repairs do not establish live recommendation quality.
+Owner's subsequent direction:
+
+> fix all of the issues then merged into main
+
+This authorizes completing the repairs in GitHub #14 and merging reviewed source into main.
+Use confirmed profile policy across collection, eligibility, ordering and writing; scores
+remain advisory. Preserve historical decisions for comparison without retaining a live
+personal-policy fallback. Source merge does not activate a service, refit a model or submit an application.
 
 ## Owner's words
 

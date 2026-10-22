@@ -187,7 +187,7 @@ def should_prepare_after_interview(conn, posting_id, config):
         context,_,identity=capture(conn,posting_id,bundle,config)
         evaluation=context.get('evaluation')
         return bool(context.get('application') and context['application']['status']=='interview'
-            and evaluation and evaluation['global_score']>=4.0
+            and evaluation
             and not conn.execute('SELECT 1 FROM interview_runs WHERE run_key=?',(identity,)).fetchone())
     except (AgenticError,CandidateError):
         return False
@@ -250,7 +250,7 @@ def queued_posting_ids(conn, config):
             context,_,_=capture(conn,pid,snapshot_evidence(profile_dir()),config)
             trigger=(context.get('application') or {}).get('interview_event_id')
             evaluation=context.get('evaluation')
-            if not trigger or not evaluation or evaluation['global_score']<4.0:continue
+            if not trigger or not evaluation:continue
             attempted=any(_payload(row).get('trigger_event_id')==trigger for row in conn.execute(
                 'SELECT * FROM interview_runs WHERE posting_id=?',(pid,)).fetchall())
             if not attempted and enqueue(conn,pid,config):queued.add(pid)

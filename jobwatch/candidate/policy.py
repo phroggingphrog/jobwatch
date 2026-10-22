@@ -13,9 +13,12 @@ log = logging.getLogger(__name__)
 
 
 def default_policy() -> TargetPolicy:
-    """The current person's target projection: every known family except the ones they do not want.
-    The version string is stored in run keys, so it keeps its original identifier."""
-    return TargetPolicy(version="owner-targets-v1", allowed_families=default_allowed_families())
+    """Project only confirmed family exclusions; missing preferences are neutral."""
+    from jobwatch import users
+    dp = policy_for(users.current())
+    excluded = {r.value for r in dp.exclusions if r.kind == 'family'} if dp else set()
+    return TargetPolicy(version="confirmed-targets-v2", allowed_families=tuple(
+        f for f in KNOWN_FAMILIES if f not in excluded), excluded_codes=(), require_minimum_excluded_codes=False)
 
 
 def profile_target_policy() -> TargetPolicy:
@@ -137,8 +140,14 @@ _HOME = re.compile(r"(?:\blive[sd]?\s+in|\bbased\s+in|\breside[sd]?\s+in|\bhome\
                    r"(?=\s*;|\s*\.(?:\s|$)|\s+and\s+|\s+but\s+|\s*,?\s*not\s+(?:near|close)\b|$)", re.I | re.S)
 _KM = re.compile(r"(\d+(?:\.\d+)?)\s*(?:km|kilomet\w+)", re.I)
 _COMMUTE_WORDS = re.compile(r"\bcommute|\btravel|\bwithin\b|\bfrom\s+home\b", re.I)
-_CITIZEN_NO = re.compile(r"\b(?:not|non|never|no)[\s-]+(?:an?\s+)?(?:australian\s+)?(?:citizen|permanent\s+resident|(?-i:PR))\b", re.I)
-_CITIZEN_YES = re.compile(r"\baustralian\s+citizen\b|\bpermanent\s+resident\b", re.I)
+_CITIZEN_YES = re.compile(r"\baustralian\s+(?:citizen|permanent\s+resident)\b|"
+                          r"\bcitizen\s+of\s+Australia\b|"
+                          r"\bpermanent\s+resident\s+(?:of|in)\s+Australia\b", re.I)
+_RIGHTS_DISJUNCTION = re.compile(r'\bcitizen\s*(?:or|/)\s*(?:an?\s+)?(?:Australian\s+)?permanent\s+resident\b', re.I)
+_AU_EITHER_STATUS = re.compile(
+    r"(?:(?:I am|I'm)\s+)?(?P<negative>(?:not|non|no)\s+)?(?:an?\s+)?"
+    r'Australian\s+citizen\s*(?:or|/)\s*(?:an?\s+)?(?:Australian\s+)?'
+    r'permanent\s+resident(?:\s+(?:of|in)\s+Australia)?', re.I)
 _LADDER = ("entry", "junior", "mid", "senior")
 _LEVELS = re.compile(
     r"\b(entry(?:[- ]level)?|graduates?|interns?(?:hips?)?|trainees?|cadets?|early[- ]career|junior|mid[- ]?level|"
@@ -303,12 +312,68 @@ def build_policy(approved: dict) -> DecisionPolicy:
             citizen = v["citizen_or_pr"] if citizen is None else (citizen and v["citizen_or_pr"])
             continue
         text = _text(v)
-        if _CITIZEN_NO.search(text):
-            citizen = False
-        elif _affirmed(_CITIZEN_YES, text) and citizen is None:
+        if _RIGHTS_DISJUNCTION.search(text):
+            # Mixed or qualified alternatives need structured confirmation. Only
+            # a complete shared-Australian statement proves the combined fact.
+            either = _AU_EITHER_STATUS.fullmatch(text.strip(' .\t\r\n'))
+            if either and not either.group('negative') and citizen is None:
+                citizen = True
+            continue
+        # A negative citizenship claim alone cannot disprove residence.
+        # Presence in Australia also does not establish Australian nationality.
+        if _affirmed(_CITIZEN_YES, text) and citizen is None:
             citizen = True
     if citizen is not None:
         work_rights["citizen_or_pr"] = citizen
+
+    # Citizenship and residence are independent facts. A combined claim cannot
+    # prove citizenship alone. Pending/aspirational claims establish neither.
+    for key, pattern in (('citizen', r'\bAustralian\s+citizen\b|\bcitizen\s+of\s+Australia\b'),
+                         ('permanent_resident', r'\bAustralian\s+permanent\s+resident\b|\bpermanent\s+resident\s+(?:of|in)\s+Australia\b')):
+        claims = []
+        for f in right_facts:
+            v = f['value']
+            if isinstance(v, dict) and type(v.get(key)) is bool:
+                claims.append(v[key])
+            elif not isinstance(v, dict):
+                text = _text(v)
+                if re.search(r'\b(?:pending|yet|applying|applied|become|will|hope|neither|nor)\b', text, re.I):
+                    continue
+                if _RIGHTS_DISJUNCTION.search(text):
+                    either = _AU_EITHER_STATUS.fullmatch(text.strip(' .\t\r\n'))
+                    if either and either.group('negative'):
+                        claims.append(False)
+                    # Affirming an either/or statement does not prove either member.
+                    continue
+                if re.search(r'\b(?:not|non|no)\s+(?:an?\s+)?(?:' + pattern + ')', text, re.I):
+                    claims.append(False)
+                elif _affirmed(re.compile(pattern, re.I), text):
+                    claims.append(True)
+        if claims:
+            work_rights[key] = claims[0] if len(set(claims)) == 1 else None
+    if work_rights.get('citizen') is True or work_rights.get('permanent_resident') is True:
+        work_rights['citizen_or_pr'] = True
+    elif work_rights.get('citizen') is False and work_rights.get('permanent_resident') is False:
+        work_rights['citizen_or_pr'] = False
+    combined_claims = [f['value']['citizen_or_pr'] for f in right_facts
+        if isinstance(f['value'], dict) and type(f['value'].get('citizen_or_pr')) is bool]
+    combined_conflict = len(set(combined_claims)) > 1
+    combined_conflict = combined_conflict or (False in combined_claims and (
+        work_rights.get('citizen') is True or work_rights.get('permanent_resident') is True))
+    combined_conflict = combined_conflict or (True in combined_claims and
+        work_rights.get('citizen') is False and work_rights.get('permanent_resident') is False)
+    if combined_conflict:
+        # Contradictory approved claims need a person to resolve them. Neither a
+        # conjunction nor fact order supplies authority to choose one statement.
+        for key in ('citizen', 'permanent_resident', 'citizen_or_pr'):
+            work_rights[key] = None
+    for f in _evidence(facts, 'constraint', 'preference'):
+        v = f['value']
+        if isinstance(v, dict):
+            for key in ('hours_limit_per_fortnight', 'max_hours_per_week'):
+                if _number(v.get(key)) is not None:
+                    amount = _number(v[key]) * (2 if key == 'max_hours_per_week' else 1)
+                    work_rights['hours_limit_per_fortnight'] = min(amount, work_rights.get('hours_limit_per_fortnight', amount))
 
     levels: set[str] = set()
     for f in _evidence(facts, "preference", "career_focus", "constraint"):

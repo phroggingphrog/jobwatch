@@ -74,24 +74,27 @@ def test_reconsider_reaches_changed_rule_after_twenty_still_excluded_jobs(env, m
     assert all(states[pid] == 'archived' for pid in range(1, 21))
 
 
-def test_dry_run_collection_never_prepares_or_refreshes_discovery(tmp_path, monkeypatch):
+def test_dry_run_collection_uses_unpaid_scope_but_never_refreshes_discovery(tmp_path, monkeypatch):
     config = make_config(settings={'pipeline': {'agentic': {'enabled': True, 'search_plan': True}},
                                   'tiers': {'fast': [], 'slow': []}}, tmp_path=tmp_path)
     called = []
 
     def forbidden(*args, **kwargs):
-        called.append('discovery')
-        raise AssertionError('dry-run reached discovery preparation')
+        raise AssertionError('dry-run reached paid discovery refresh')
 
-    monkeypatch.setattr(discovery, 'prepare_run', forbidden)
+    original = discovery.prepare_run
+    def prepare(conn, config):
+        called.append('unpaid scope')
+        return original(conn, config)
+    monkeypatch.setattr(discovery, 'prepare_run', prepare)
     monkeypatch.setattr(discovery, 'refresh', forbidden)
     monkeypatch.setattr(collection, 'tier_collectors', lambda *args: [])
     result = collection.run(config, 'fast', dry_run=True, printer=lambda *args: None)
-    assert called == []
+    assert called == ['unpaid scope']
     assert result['collectors'] == [] and result['ai'] == {}
 
 
-def test_prepare_run_refreshes_changed_reference_with_same_profile_and_policy(tmp_path, monkeypatch):
+def test_prepare_run_uses_unpaid_confirmed_scope_when_reference_changes(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     person = 'boundary-person'
     policy = make_policy()
@@ -101,7 +104,7 @@ def test_prepare_run_refreshes_changed_reference_with_same_profile_and_policy(tm
     monkeypatch.setattr(loaders, 'load_reference_records', lambda **kwargs: current_reference[0])
     monkeypatch.setattr(hypotheses, 'policy_for', lambda person: policy)
     monkeypatch.setattr(discovery, 'policy_for', lambda person: policy)
-    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(locations=(), daily_token_ceiling=1_000_000))
+    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(basis=('supplier reconciliation',), locations=(), daily_token_ceiling=1_000_000))
     monkeypatch.setattr(hypotheses, 'reference_store', lambda model=None: VectorStore(tmp_path / 'reference', model))
     monkeypatch.setattr(discovery, 'effective_mode', lambda cfg: 'agentic')
     calls = []
@@ -126,9 +129,9 @@ def test_prepare_run_refreshes_changed_reference_with_same_profile_and_policy(tm
             assert load_plan(person) == original_plan
             monkeypatch.setattr(discovery, 'refresh', refresh)
             prepared = discovery.prepare_run(connection, config)
-            assert refreshed == [person]
-            assert len(calls) > before
-            assert hypotheses.cached_hypotheses(person, config=config) is not None
+            assert refreshed == []
+            assert len(calls) == before
+            assert hypotheses.cached_hypotheses(person, config=config) is None
             assert prepared.extra['search_plan'].profile_version == original_plan.profile_version
             assert prepared.extra['search_plan'].policy_hash == original_plan.policy_hash
         finally:
