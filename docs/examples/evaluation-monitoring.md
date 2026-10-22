@@ -55,7 +55,9 @@ jobwatch --user <person> evaluate replay <baseline-id> --partition holdout \
   --allow-holdout --limit 500 --seconds 300
 ```
 
-The holdout access log records the operation and provenance before cases are returned. Holdout is not used by development monitoring or optional fitting.
+The holdout access log records the operation and provenance before cases are returned.
+After splitting, legacy `baseline show <baseline-id>` also requires `--allow-holdout`,
+with or without `--cases`; its complete-baseline inspection is audited. Holdout is not used by development monitoring or optional fitting.
 
 A paid evaluation is a separate explicit action. It requires both flags and uses configured approved routes and budgets:
 

@@ -81,3 +81,16 @@ def test_private_directory_symlink_refused(frozen,tmp_path):
     with pytest.raises(AgenticError,match='unsafe_evaluation_path'):
         eval_data.create_split(record.baseline_id)
     assert not list(outside.iterdir())
+
+
+def test_config_drift_rejects_staging_before_publication(frozen,monkeypatch):
+    original=eval_data.capture_inputs
+    def changed(conn,config,cases,approved,**kwargs):
+        config.settings['pipeline']['agentic']['job_token_ceiling']+=1
+        return original(conn,config,cases,approved,**kwargs)
+    monkeypatch.setattr(eval_data,'capture_inputs',changed)
+    with pytest.raises(AgenticError,match='snapshot_changed'):
+        eval_data.freeze_cases(frozen.ro,frozen.config)
+    assert baseline.list_baselines()==[]
+    assert not list(baseline._baselines_root().glob('.staging-*'))
+    assert not frozen.ro.in_transaction

@@ -741,7 +741,10 @@ def _freeze_into(conn: sqlite3.Connection, config, staging: Path, person: str, a
         'evidence_mismatch': sum(case.snapshot['run_key']['evidence_hash'] != evidence_bundle_hash for case in cases),
         'decision_errors': routes['error']}
     from .eval_data import capture_inputs
-    evaluation_inputs = _canonical(capture_inputs(conn, config, cases, approved, staging=staging))
+    captured_inputs = capture_inputs(conn, config, cases, approved, staging=staging)
+    if digest(captured_inputs['runtime']) != runtime_config_sha256:
+        raise AgenticError('snapshot_changed')
+    evaluation_inputs = _canonical(captured_inputs)
     safe_write_bytes(staging / 'evaluation_inputs.json', evaluation_inputs)
     content_sha256 = digest({'cases': case_sha256, 'profile': profile_sha256, 'approved': _sha(approved_raw)})
     created_at = _utcnow()

@@ -39,3 +39,25 @@ def test_terminal_labels_and_explicit_holdout(frozen,monkeypatch,capsys):
     assert baseline.read_labels(r.baseline_id)==[]
     assert cli.main(args+['--allow-holdout'])==0
     assert baseline.read_labels(r.baseline_id)[0].suitable is True
+
+
+def test_legacy_show_audits_before_any_split_case_reads(frozen,monkeypatch,capsys):
+    r=eval_data.freeze_cases(frozen.ro,frozen.config);split=eval_data.create_split(r.baseline_id)
+    read=[];original=baseline._read_verified
+    def spy(path,sha):
+        if path.parent.name=='cases':
+            read.append(path.stem)
+            log=baseline._baseline_dir(r.baseline_id)/'evaluation'/'holdout_access.jsonl'
+            assert log.exists(), 'audit must precede the read'
+        return original(path,sha)
+    monkeypatch.setattr(baseline,'_read_verified',spy)
+    for flags in ([],['--cases']):
+        assert cli.main(['baseline','show',r.baseline_id,*flags])==1
+        assert 'holdout_approval_required' in capsys.readouterr().err
+        assert read==[]
+        assert cli.main(['baseline','show',r.baseline_id,*flags,'--allow-holdout'])==0
+        capsys.readouterr()
+        assert set(read)==set(r.case_ids)
+        read.clear()
+    log=baseline._baseline_dir(r.baseline_id)/'evaluation'/'holdout_access.jsonl'
+    assert [json.loads(row)['operation'] for row in log.read_text().splitlines()]==['report','report']

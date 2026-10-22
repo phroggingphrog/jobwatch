@@ -535,7 +535,8 @@ and the [synthetic example](../../docs/examples/feedback-selection.md).
 write-once `split`, `replay` (alias `run`), `report` and `monitor`. The tools operate
 in the selected person's private baseline area; they are not agent tools or API
 label writers. Existing `baseline label` also requires explicit audited access
-when labelling a split's holdout case.
+when labelling a split's holdout case. Both `baseline show` variants require
+`--allow-holdout` before inspecting a split baseline and audit that inspection.
 
 New freezes pin complete approved profile/evidence, ads, target and decision
 policy, runtime/discovery configuration, search plan, field hypotheses and matching
@@ -543,7 +544,8 @@ relevance judgments. Per-case relevance stays with that case, so monitoring does
 not open holdout ad evidence through a shared context file. Older baselines without
 this context report `frozen_context_unavailable`; replay never substitutes live
 configuration. Freeze uses a read-only database snapshot and the profile-version
-lock; replay does not read production databases or the live approved profile.
+lock; configuration drift is rejected before publication. Replay does not read
+production databases or the live approved profile.
 
 Splitting unions duplicate-ad, normalized employer and historical grouping keys
 transitively. A seeded order allocates `ceil(30% of groups)` to holdout, leaving at
