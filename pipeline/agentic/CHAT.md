@@ -506,6 +506,9 @@ Selection commits its immutable manifest and events before API dispatch. A stabl
 person-scoped selection identity recovers the same API run across the two stores;
 `pending_dispatch` exposes a selection ID and null run ID. Inputs and eligibility
 are checked at acceptance, dispatch and execution; approval expires after 24 hours.
+The completed result is retained with the selection so interrupted API publication
+recovers it without another preparation pass or model-client initialization. Bounded
+reconciliation reflects terminal queue states and cancellation into selection status.
 Cancellation, budgets, package checkpoints and artifact verification reuse the
 canonical preparation service. Preparation progress can resume without treating its
 own operational checkpoints as changed evidence. Changed profile/ad/policy/model
