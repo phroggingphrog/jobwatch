@@ -32,3 +32,9 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Frozen case | One posting's inputs, outputs, group, tags and usage inside a baseline. |
 | Gate version | A sha256 over the gate's source files; it changes by itself when the gate changes. |
 | Owner label | The owner's own suitability, relevance or exclusion judgment of a frozen case; never produced by a model. |
+| Decision policy | The search strategy, exclusion rules, eligibility constraints and open questions derived from the approved profile's `evidence` facts, separate from `TargetPolicy`. |
+| Search strategy | How discovery is aimed for a person, derived from the confirmed profile by five rules: employment-first, explicit focus first, exclusions as rules, ask when material, update on change. |
+| Exclusion rule | A confirmed `{"kind", "value"}` exclusion that the gate enforces and that carries its `source_fact_id`; a free-text exclusion is not one until the person names its kind. |
+| Eligibility constraint | A work-rights or hours limit the person stated and confirmed, kept as a genuine constraint apart from preferences. |
+| Open question | A fact the policy needs but does not have as `evidence`, such as `exclusion:<fact_id>`; it is asked, never answered by the agent. |
+| Policy flag | `pipeline.agentic.decision_policy`, with values `legacy` (default) and `profile`, choosing the legacy checks or the confirmed-profile policy. |
