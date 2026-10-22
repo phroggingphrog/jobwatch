@@ -26,6 +26,9 @@ CANDIDATE = {
 WORK_RIGHTS = {
     "visa": str, "work_conditions": str, "eligibility": str, "source": str, "cv_line": str,
     "hours_limit_per_fortnight": (int, float, type(None)), "full_time_programs_ok": bool,
+    "statement": str, "clearances": (list, type(None)),
+    **{k: (bool, type(None)) for k in ('citizen', 'permanent_resident', 'citizen_or_pr',
+         'valid_work_rights', 'unrestricted_work_rights', 'requires_sponsorship')},
 }
 INTERESTS = {
     "target_roles": dict, "locations": dict, "compensation": dict, "culture_preferences": dict,

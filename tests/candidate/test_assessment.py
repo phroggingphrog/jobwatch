@@ -94,7 +94,8 @@ def test_excluded_and_non_target_paths_are_rejected(tmp_path):
     bundle, choices = case(tmp_path)
     choices[-1]["arguments"]["target_paths"][0]["family"] = "hospitality"
     with pytest.raises(AgenticError, match="invalid_candidate_assessment"):
-        evaluate_candidate(bundle, budget(), Model(choices))
+        evaluate_candidate(bundle, budget(), Model(choices),
+                           policy=TargetPolicy(version="confirmed-accounting", allowed_families=("accounting",)))
 
 
 def test_snapshot_hashes_career_profile_without_extracting_it_as_evidence(tmp_path):

@@ -155,7 +155,7 @@ def test_unknown_family_is_not_silently_promoted_to_an_owner_target(tmp_path, fa
 
 
 @pytest.mark.parametrize("family", ["customer_service", "hospitality", "retail", "shop_floor", "other"])
-def test_neutral_jd_family_vocabulary_preserves_non_target_roles(tmp_path, family):
+def test_neutral_jd_family_vocabulary_does_not_imply_personal_exclusion(tmp_path, family):
     from jobwatch.candidate.policy import default_policy
     from pipeline.agentic.gate import decide
     bundle, ad, key, choices = build_case(tmp_path)
@@ -163,7 +163,7 @@ def test_neutral_jd_family_vocabulary_preserves_non_target_roles(tmp_path, famil
     result = evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
     assert result.facts.role_family == family
     assert decide(result, ad_text=ad, title="Junior analyst", policy=default_policy(),
-                  captured_complete=True, expected_run_key=key, evidence_bundle=bundle).route == "archive"
+                  captured_complete=True, expected_run_key=key, evidence_bundle=bundle).route == "draft"
 
 
 @pytest.mark.parametrize("source", ["ad", "career_ops_profile.md", "research"])
@@ -386,11 +386,11 @@ def test_research_budget_mismatch_rejected_before_jd_call(tmp_path):
     assert model.seen == []
 
 
-def test_unknown_family_follows_the_archetype_opus_named(tmp_path):
+def test_archetype_cannot_invent_a_personal_exclusion(tmp_path):
     """2026-10-12: 'unknown' is read from the archetype (KPMG Vacationer); a non-target archetype still archives."""
     from jobwatch.candidate.policy import default_policy
     from pipeline.agentic.gate import decide
-    for archetype, route in (("Tax / Graduate Accountant", "draft"), ("Retail sales", "archive")):
+    for archetype, route in (("Tax / Graduate Accountant", "draft"), ("Retail sales", "draft")):
         bundle, ad, key, choices = build_case(tmp_path / archetype[:4])
         choices[1]["arguments"]["facts"]["role_family"] = "unknown"
         for c in choices[2:]:

@@ -338,7 +338,7 @@ def confirm_profile(c, adds=()):
 
 def test_policy_endpoint_without_a_profile(env):
     got = env.get(P + '/policy', headers=h()).json()
-    assert got == {'policy': None, 'mode': 'legacy', 'enabled': False, 'open_questions': [], 'reason': 'no_confirmed_profile'}
+    assert got == {'policy': None, 'mode': 'profile', 'enabled': True, 'open_questions': [], 'reason': 'no_confirmed_profile'}
 
 
 def test_policy_endpoint_after_confirmation_lists_open_questions(env):
@@ -346,7 +346,7 @@ def test_policy_endpoint_after_confirmation_lists_open_questions(env):
     got = env.get(P + '/policy', headers=h()).json()
     assert set(got) == {'policy', 'mode', 'enabled', 'open_questions'}
     assert got['policy']['profile_version'] == 1 and got['policy']['strategy'] == 'balanced'
-    assert got['mode'] == 'legacy' and got['enabled'] is False
+    assert got['mode'] == 'profile' and got['enabled'] is True
     assert {'employment_status', 'location'} <= {q['code'] for q in got['open_questions']}
     assert all(q['question'] and q['why'] for q in got['open_questions'])
     standing = {q['code']: (q['question'], q['why']) for q in got['open_questions'] if not q['code'].startswith('exclusion:')}
@@ -367,7 +367,7 @@ def test_policy_is_per_person(env):
     confirm_profile(env)
     assert env.get(P + '/policy', headers=h()).json()['policy']['profile_version'] == 1
     other = env.get(P + '/policy', headers=h(OTHER)).json()
-    assert other == {'policy': None, 'mode': 'legacy', 'enabled': False, 'open_questions': [], 'reason': 'no_confirmed_profile'}
+    assert other == {'policy': None, 'mode': 'profile', 'enabled': True, 'open_questions': [], 'reason': 'no_confirmed_profile'}
 
 
 def test_policy_endpoint_needs_read_scope_only(tmp_path, monkeypatch):
@@ -382,14 +382,14 @@ def test_policy_endpoint_needs_read_scope_only(tmp_path, monkeypatch):
         assert c.post(P + '/policy', headers=h(reader)).status_code == 405
 
 
-def test_policy_mode_mirrors_the_flag(tmp_path, monkeypatch):
+def test_policy_mode_is_canonical_for_both_supported_config_spellings(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     users.create_user_dirs('fixture-a')
-    for flag, enabled in (('profile', True), ('legacy', False)):
+    for flag in ('profile', 'legacy'):
         config = {'agentic': {'enabled': False, 'decision_policy': flag}}
         with TestClient(create_api(credentials={RUN: Principal('fixture-a')}, config=config)) as c:
             got = c.get(P + '/policy', headers=h()).json()
-            assert got['mode'] == flag and got['enabled'] is enabled and got['policy'] is None
+            assert got['mode'] == 'profile' and got['enabled'] is True and got['policy'] is None
 
 
 def test_policy_reads_write_nothing_and_call_no_model(env):

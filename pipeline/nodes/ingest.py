@@ -98,6 +98,11 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
                    location=r["location"] or "", url=r["url"] or "", location_rule=loc, text_kind="full",
                    content_hash=h)
         dup = conn.execute("SELECT posting_id FROM pipeline_state WHERE content_hash=? LIMIT 1", (h,)).fetchone()
+        # Description hashes do not distinguish stores, cities or requisitions.
+        # Semantic mode applies its company/title/location/source guards later.
+        from pipeline.agentic.discovery import settings as discovery_settings
+        if discovery_settings(config)['dedupe'] == 'semantic':
+            dup = None
         if dup:
             store.admit(conn, r["id"], h, {"ingest": ad.model_dump()}, Stage.ARCHIVED, f"duplicate_of:{dup[0]}")
             stats["duplicate"] += 1

@@ -55,7 +55,7 @@ def test_three_fresh_evaluations_required(tmp_path, monkeypatch):
 def test_inspect_predictions_only_after_explicit_choice(tmp_path, monkeypatch):
     from jobwatch.web import preference_routes
     from jobwatch.preferences.model import predict_set
-    from jobwatch.preferences.features import NAMES
+    from jobwatch.preferences.features import NAMES, FAMILIES
     client, rows = setup(tmp_path, monkeypatch)
     for i, row in enumerate(rows): row['features']['coverage'] = i / 2
     client.post('/preferences/new')
@@ -63,7 +63,7 @@ def test_inspect_predictions_only_after_explicit_choice(tmp_path, monkeypatch):
     item = PreferenceStore(conn).list_sets()[0]
     b = [0.] * (2 * len(NAMES)); b[NAMES.index('coverage')] = 2.
     fit = {'id':'memory-only-test','context_hash':CTX,'origin':'owner','profile_hash':'b'*64,
-           'draws':{'beta':[b,b], 'alpha':[[0.]*5,[0.]*5]},
+           'draws':{'beta':[b,b], 'alpha':[[0.]*len(FAMILIES),[0.]*len(FAMILIES)]},
            'preprocessing':{'centers':[0.]*len(NAMES), 'scales':[1.]*len(NAMES),'missing_rates':[0.]*len(NAMES)},
            'n_train':20,'n_holdout':5,'holdout_log_score':-4.,'prior_log_score':-8.}
     original_status = PreferenceStore.status

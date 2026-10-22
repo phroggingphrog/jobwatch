@@ -38,7 +38,7 @@ def test_real_agentic_score_reason_archetype_drive_board_filters_and_cards(world
     for pid, score in ((42, 4.3), (43, 4.8), (44, 2.7)):
         result = run_agentic_job(pid, config, conn, evidence_bundle=bundle,
                                 llm=LLM(transport=SyntheticGateway(bundle, score=score), keys=['synthetic']))
-        assert result == (Stage.ARCHIVED if pid == 44 else Stage.READY)
+        assert result == Stage.READY
     rows = queries.load_rows(conn, 'all')
     by_id = {r['id']: r for r in rows}
     assert [r['id'] for r in queries.sort_rows(rows, 'fit')] == [43, 42, 44]
@@ -53,7 +53,8 @@ def test_real_agentic_score_reason_archetype_drive_board_filters_and_cards(world
     assert [r['id'] for r in filtered] == [43]
     assert counts['arch']['junior accounting'] == 1
     hidden, _ = queries.apply_filters(rows, queries.Filters(scope='all', ai='hide'))
-    assert [r['id'] for r in hidden] == [44] and hidden[0]['ai']['hide_reason'] == 'low_fit'
+    assert hidden == []
+    assert by_id[44]['score5'] == 2.7 and by_id[44]['ai_state'] == 'show'
     with TestClient(create_app(config), base_url='http://localhost', headers={'host': 'localhost'}) as client:
         card = client.get('/api/board?scope=all&ai=show').text
         table = client.get('/api/table?scope=all&ai=show').text

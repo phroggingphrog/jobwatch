@@ -10,7 +10,7 @@ import html
 import re
 from pathlib import Path
 
-from .render import CV_PAGES, headline, work_rights
+from .render import CV_ORDERS, CV_PAGES, headline, work_rights
 
 TEMPLATES = Path(__file__).resolve().parent / "careerops_templates"
 _BLOCK = re.compile(r"<!--([A-Z][A-Z0-9_]+)-->([\s\S]*?)<!--/\1-->")
@@ -147,6 +147,24 @@ def _strip_section(page: str, placeholder: str) -> str:
     return page[:start] + page[end + len("\n  </div>\n"):] if start >= 0 and end >= 0 else page
 
 
+def _ordered_sections(page: str, cv_tpl: str) -> str:
+    """Use the same supported section order as the markdown renderer."""
+    blocks = list(re.finditer(r'  <div class="section">\n.*?\n  </div>', page, re.S))
+    if not blocks:
+        return page
+    names = {'summary': 'SUMMARY', 'skills': 'COMPETENCIES', 'experience': 'EXPERIENCE',
+             'education': 'EDUCATION', 'certifications': 'CERTIFICATIONS', 'additional': 'SKILLS'}
+    by_name = {}
+    for block in blocks:
+        name = re.search(r'\{\{SECTION_([A-Z]+)\}\}', block.group())
+        if name:
+            by_name[name.group(1)] = block.group()
+    order = [names[key] for key in CV_ORDERS[cv_tpl]]
+    ordered = [by_name[name] for name in order if name in by_name]
+    ordered += [block for name, block in by_name.items() if name not in order]
+    return page[:blocks[0].start()] + '\n\n'.join(ordered) + page[blocks[-1].end():]
+
+
 def cv_html(content: dict, profile, cv_tpl: str = "cv_consult_default") -> str:
     cv = content.get("cv") or {}
     ev = profile.by_id
@@ -182,6 +200,7 @@ def cv_html(content: dict, profile, cv_tpl: str = "cv_consult_default") -> str:
     for name, value in [("SUMMARY_TEXT", summary)] + list(sections.items()):
         if not value.strip():
             page = _strip_section(page, name)
+    page = _ordered_sections(page, cv_tpl)
     fields = {"LANG": "en-AU", "PAGE_WIDTH": "100%", "NAME": _esc(profile.name),
               "TITLE_BLOCK": f'<div class="header-title">{_esc(headline(cv_tpl))}</div>',
               "PHONE": _esc(contact["phone"]), "EMAIL": _esc(contact["email"]), "LOCATION": _esc(contact["location"]),

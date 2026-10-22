@@ -121,6 +121,8 @@ class PreferenceStore:
                 if len(prior)!=1 or tuple(prior[0]) != (set_id,selected,request_id):
                     raise PreferenceError('pick_conflict')
             else:
+                if choice['versions'] != versions():
+                    raise PreferenceError('stale_set')
                 self.conn.execute('INSERT INTO preference_picks VALUES(?,?,?,?,?)',(set_id,selected,request_id,'owner',now()))
             self.conn.commit()
         except Exception:
@@ -141,11 +143,14 @@ class PreferenceStore:
         return json.loads(row[0]) if row else None
 
     def status(self, context_hash=None):
-        rows=self.list_sets(context_hash)
+        all_rows=self.list_sets()
+        rows=[s for s in all_rows if context_hash is None or s['context_hash']==context_hash]
         current=[s for s in rows if s['answered'] and s['versions']==versions() and s['origin']==self.origin]
         n_train=sum(not s['holdout'] for s in current)
         n_holdout=sum(s['holdout'] for s in current)
-        status='no_data' if not current else 'insufficient_data' if n_train<MIN_TRAIN or n_holdout<MIN_HOLDOUT else 'untrained'
+        historical_choices=sum(s['answered'] and s['origin']==self.origin for s in all_rows)
+        stale_choices=historical_choices-len(current)
+        status=('stale' if stale_choices else 'no_data') if not current else 'insufficient_data' if n_train<MIN_TRAIN or n_holdout<MIN_HOLDOUT else 'untrained'
         fit=self.latest_fit(context_hash) if context_hash else None
         if fit:
             from .model import evaluate_fit
@@ -153,6 +158,7 @@ class PreferenceStore:
         if status=='valid' and self.origin=='synthetic':
             status='synthetic_valid'
         return {'origin':self.origin,'status':status,'n_sets':len(rows),'n_choices':len(current),'n_train':n_train,'n_holdout':n_holdout,
+                'historical_choices':historical_choices,'stale_choices':stale_choices,
                 'minimum_train':MIN_TRAIN,'minimum_holdout':MIN_HOLDOUT,'fit':fit}
 
     def save_fit(self, summary):

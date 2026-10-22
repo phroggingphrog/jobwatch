@@ -144,6 +144,7 @@ def run_chain(conn, p: sqlite3.Row, app_id: int, version: int, vdir: Path, llm: 
     profile = profile or load_profile()
     ptext = full_posting_text(conn, p)
     posting = {"title": p["title"], "company": p["company"]}
+    cv_tpl, _ = render.pick_templates(posting)
     reqs = get_or_extract(conn, p["id"], llm)
     req_ids = {r["id"] for r in reqs}
     ensure_dir(vdir)
@@ -151,7 +152,7 @@ def run_chain(conn, p: sqlite3.Row, app_id: int, version: int, vdir: Path, llm: 
     # (b) drafter
     res = llm.chat(get_model("writer"), review.drafter_messages(ptext, reqs, profile.cv_body, profile.evidence,
                                                                  ad_reading(conn, p["id"]), angle_notes(profile),
-                                                                 onboarding.style_examples()),
+                                                                 None),
                    max_tokens=12000)
     draft0 = res.data or {}
     # (c) verifier
@@ -159,8 +160,8 @@ def run_chain(conn, p: sqlite3.Row, app_id: int, version: int, vdir: Path, llm: 
     # (d) fresh-context reviewer: drafts inline + named refs (posting, cited evidence) only
     cited = _cited(draft1, profile)
     claim_ids = {c["id"] for _, c in iter_claims(draft1)}
-    edits = review.run_reviewer(llm, render.cv_markdown(draft1, profile, tagged=True),
-                                render.letter_markdown(draft1, profile, posting, tagged=True), ptext,
+    edits = review.run_reviewer(llm, render.cv_markdown(draft1, profile, tagged=True, cv_tpl=cv_tpl),
+                                render.letter_markdown(draft1, profile, posting, tagged=True, cv_tpl=cv_tpl), ptext,
                                 cited, claim_ids)
     edits += [e for e in review.stock_edits(draft1) if e["target"] not in {x["target"] for x in edits}]
     # (e) reviser, then (c) again
@@ -183,9 +184,9 @@ def run_chain(conn, p: sqlite3.Row, app_id: int, version: int, vdir: Path, llm: 
     closing_missing = any(e["reason"].startswith("no closing") for e in review.stock_edits(draft2))
     stock_left = sum(e["reason"].startswith("stock") for e in review.stock_edits(draft2))
     # (f) render
-    cv_md = render.cv_markdown(draft2, profile)
-    letter_md = render.letter_markdown(draft2, profile, posting)
-    cv_pdf, cv_info = render.render_pdf(cv_md, max_pages=2)
+    cv_md = render.cv_markdown(draft2, profile, cv_tpl=cv_tpl)
+    letter_md = render.letter_markdown(draft2, profile, posting, cv_tpl=cv_tpl)
+    cv_pdf, cv_info = render.render_pdf(cv_md, max_pages=render.CV_PAGES[cv_tpl])
     letter_pdf, letter_info = render.render_pdf(letter_md, max_pages=1, letter=True)
     safe_write_text(vdir / "cv.md", cv_md)
     safe_write_text(vdir / "letter.md", letter_md)

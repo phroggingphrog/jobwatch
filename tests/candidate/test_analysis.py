@@ -65,9 +65,9 @@ def _mapped(evidence, reference, *, evidence_index: int = 0, dwa_id: str = "test
     return mapping
 
 
-def test_policy_cannot_reenable_excluded_family() -> None:
-    with pytest.raises(ValueError):
-        TargetPolicy(version="owner-v1", allowed_families=("accounting", "hospitality"))
+def test_policy_contract_does_not_read_legacy_family_preferences() -> None:
+    policy = TargetPolicy(version="owner-v1", allowed_families=("accounting", "hospitality"))
+    assert policy.allowed_families == ("accounting", "hospitality")
 
 
 def test_confirmed_ledger_mapping_recommends_target_not_excluded_high_similarity(tmp_path: Path) -> None:
@@ -80,10 +80,11 @@ def test_confirmed_ledger_mapping_recommends_target_not_excluded_high_similarity
     evidence = snapshot_evidence(cv)
     reference = _reference(fictional_reference(tmp_path))
     mappings = (_mapped(evidence, reference, dwa_id="test.accounts"),)
-    result = analyse_candidate(evidence, reference, validate_mappings(evidence, reference, mappings), default_policy())
+    result = analyse_candidate(evidence, reference, validate_mappings(evidence, reference, mappings),
+                               TargetPolicy(version="confirmed-accounting", allowed_families=("accounting", "finance_clerical")))
     assert [fit.code for fit in result.recommendations] == ["221111", "221112"]
     excluded = next(fit for fit in result.diagnostics if fit.code == "431111")
-    assert excluded.recommendation_status == "excluded"
+    assert excluded.recommendation_status == "not_target"
     assert all(fit.code != "431112" for fit in result.recommendations)
     finance = next(fit for fit in result.recommendations if fit.code == "221112")
     assert finance.dwa_coverage == 0.5
@@ -104,7 +105,8 @@ def test_hospitality_evidence_does_not_become_target_path(tmp_path: Path) -> Non
     evidence = snapshot_evidence(cv)
     reference = _reference(fictional_reference(tmp_path))
     mapping = _mapped(evidence, reference, dwa_id="test.service")
-    result = analyse_candidate(evidence, reference, validate_mappings(evidence, reference, (mapping,)), default_policy())
+    result = analyse_candidate(evidence, reference, validate_mappings(evidence, reference, (mapping,)),
+                               TargetPolicy(version="confirmed-accounting", allowed_families=("accounting",)))
     assert result.recommendations == ()
     assert all(fit.recommendation_status != "candidate_path" for fit in result.diagnostics)
 
@@ -231,7 +233,7 @@ def test_invalid_forged_policy_error_has_no_nested_context(tmp_path: Path) -> No
     cv.mkdir()
     (cv / "cv.md").write_text("# Fictional\\n\\n## Skills\\n- Reconciled ledgers\\n", encoding="utf-8")
     evidence = snapshot_evidence(cv)
-    forged_policy = default_policy().model_copy(update={"allowed_families": ("hospitality",)})
+    forged_policy = default_policy().model_copy(update={"excluded_codes": ("PRIVATE_INVALID_CODE",)})
     with pytest.raises(CandidateError) as error:
         analyse_candidate(evidence, None, (), forged_policy)
     assert error.value.args == ("candidate_invalid",)
@@ -256,3 +258,27 @@ def test_unmapped_has_no_recommendations_and_metadata_is_safe(tmp_path: Path) ->
         "mapping_hash", "recommendation_count", "diagnostic_count", "archetype_count",
         "unmapped_count",
     }
+
+
+def test_reference_desirability_annotations_do_not_exclude_careers(tmp_path, monkeypatch):
+    """Same evidence/reference, only the confirmed policy projection changes desirability."""
+    from jobwatch.candidate.contracts import KNOWN_FAMILIES
+    cv = tmp_path / 'synthetic-profile'
+    cv.mkdir()
+    (cv / 'cv.md').write_text('# Fictional\n\n## Skills\n- Reconciled ledgers\n')
+    # A legacy unapproved interest must not become a structural exclusion.
+    (cv / 'interests_and_criteria.yaml').write_text('target_roles:\n  excluded_families: [hospitality]\n')
+    monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(cv))
+    evidence = snapshot_evidence(cv)
+    reference = load_reference(fictional_reference(tmp_path))
+    mappings = validate_mappings(evidence, reference, (_mapped(evidence, reference),))
+    neutral = TargetPolicy(version='confirmed-person-a', allowed_families=KNOWN_FAMILIES,
+                           excluded_codes=(), require_minimum_excluded_codes=False)
+    result = analyse_candidate(evidence, reference, mappings, neutral)
+    assert {f.code for f in result.recommendations} == {'221111', '431111'}
+    confirmed_exclusion = neutral.model_copy(update={'version':'confirmed-person-b',
+        'allowed_families':tuple(f for f in KNOWN_FAMILIES if f != 'hospitality')})
+    excluded = analyse_candidate(evidence, reference, mappings, confirmed_exclusion)
+    assert {f.code for f in excluded.recommendations} == {'221111'}
+    assert next(f for f in excluded.diagnostics if f.code == '431111').recommendation_status == 'not_target'
+    assert result.run_key != excluded.run_key

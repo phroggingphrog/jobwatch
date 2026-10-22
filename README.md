@@ -9,6 +9,10 @@ The current delivery focus is the native agent API and backend. Read
 [INTENT.md](INTENT.md) for the agreed goal and [AGENTS.md](AGENTS.md) for contributor
 and agent guidance.
 
+The [profile-preference audit](docs/audits/2026-10-22-profile-preferences.md)
+records remaining inherited assumptions in final gates, collectors and models.
+Profile-driven location admission does not mean those separate repairs are done.
+
 ## Features
 
 - Native agent API: persistent conversations/runs, progress streaming, scoped human approvals and protected documents; see [backend setup](pipeline/agentic/CHAT.md).
@@ -99,6 +103,53 @@ Discovery runs only for a person whose current profile is confirmed, with a conf
 Existing installs: discovery stays off until a confirmed profile exists. `jobwatch --user <name> profile adopt` turns your current `profile/` files into version 1, which protects them from being overwritten and keeps them in the history; it authorises no discovery. To turn discovery on, onboard on top of that version: let the chat agent guide you (it can read your existing files through `profile_start` with `use_existing_files`) or start a proposal with `base_version` set to the current version, then confirm the scope shown. A scope with nothing to search for is refused (`profile_incomplete`).
 
 Confirmation does not authorise document preparation, employer messages or submission; those keep their own approvals, and Submit stays on the owner-confirmed path. Walk-through with real requests and responses: [docs/examples/profile-intake.md](docs/examples/profile-intake.md).
+
+### Field and job discovery
+
+Field discovery compares approved profile facts with versioned occupation
+references and saves related occupations as search hypotheses, never as proof
+of qualification. The public bundled reference is always available; optional
+public datasets are hash-verified under `<data>/reference/<dataset>/<version>/`
+(`data` is `users.base_dir()`). Per-person hypotheses and the search plan are
+stored under `<person>/discovery/`. Embeddings use the approved paid Qwen route
+through OmniRoute and count against the confirmed scope's token budget.
+
+Discovery flags live under `pipeline.agentic` and default to preserving current
+collection and archive behaviour: `search_plan: false`, `relevance: shadow`,
+`dedupe: legacy` and `ordering: legacy`. In `shadow`, relevance judgments are
+stored and no posting is archived for relevance. With no cached hypotheses or
+plan, shadow screening makes no model or embedding call; `refresh` is the first
+paid step under defaults. If `search_plan: true`, collection can refresh a
+missing plan automatically. `relevance: on` archives a `no` judgment as `not_relevant`;
+`uncertain` continues. Profile exclusion pre-filtering requires
+`pipeline.agentic.decision_policy: profile` and archives matches as
+`excluded_by_rule`.
+
+Inspect the configured flags and current state with
+`python -m pipeline.agentic.discovery status --user <name>`; status is
+read-only. After confirming the current profile and scope, explicitly compute
+and cache fields and a search plan with
+`python -m pipeline.agentic.discovery refresh --user <name>`. The first refresh
+can build the shared reference index through the approved embedding route.
+`python -m jobwatch.occupations.datasets status` reports reference dataset
+availability without network access. The authenticated API also exposes
+read-only `GET /api/agent/discovery/fields`, `/plan` and
+`/postings/{posting_id}/relevance` routes under the server-bound person.
+
+The thresholds `similar_at: 0.60` and `duplicate_cosine: 0.95` are uncalibrated;
+there is no matching-accuracy claim. Relevance uses embeddings and, below the
+similarity threshold, a bounded model extraction; there is no lexical hybrid.
+Seek, Jora and JobSpy currently search only the first location in the plan.
+Nothing here establishes deployment or real-model behaviour.
+
+Undo by removing the discovery keys under `pipeline.agentic` and the
+`pipeline.discovery` tuning block (or set `relevance: off` to stop shadow
+judging). To restore postings archived by relevance or the exclusion
+pre-filter, first run `python -m pipeline.agentic.discovery restore --user <name>`;
+this returns those postings to `ingested`. To remove generated state,
+delete that person's `<person>/discovery/` directory and the shared
+`<data>/reference/` folder; both are rebuilt on demand. The migration tables
+`text_embeddings`, `posting_relevance` and `discovery_spend` can remain unused.
 
 ### Frozen baseline
 

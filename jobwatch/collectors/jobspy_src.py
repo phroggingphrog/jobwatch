@@ -1,6 +1,6 @@
 """python-jobspy scrape_jobs for LinkedIn, Indeed (Australia) and Google.
 
-searches.yaml -> jobspy: sites, location ("Melbourne, VIC"), hours_old (default 6),
+searches.yaml -> jobspy: sites, optional location, hours_old (default 6),
 results_wanted (<= 25), searches_per_run (rotation), searches: [{term, google_term?}].
 No proxies. JobSpy makes its own requests; we pause between searches.
 """
@@ -92,7 +92,7 @@ def collect(cfg: CollectorContext, since=None, scrape=None) -> list[Posting]:
         from jobspy import scrape_jobs as scrape
     searches = rotate(cfg, "jobspy", list(conf.get("searches") or []), conf.get("searches_per_run"))
     sites = conf.get("sites") or ["linkedin", "indeed", "google"]
-    location = conf.get("location") or cfg.config.searches.get("location") or "Melbourne, VIC"
+    location = conf.get("location") or cfg.config.searches.get("location") or None
     results: list[Posting] = []
     for i, search in enumerate(searches):
         if cfg.full(results):
@@ -109,7 +109,7 @@ def collect(cfg: CollectorContext, since=None, scrape=None) -> list[Posting]:
             with capture_jobspy_logs() as messages:
                 frame = scrape(
                     site_name=search.get("sites") or sites, search_term=term,
-                    google_search_term=search.get("google_term") or f"{term} jobs near {where} since yesterday",
+                    google_search_term=search.get("google_term") or f"{term} jobs{' near ' + where if where else ''} since yesterday",
                     location=where, is_remote=bool(search.get("is_remote")), results_wanted=wanted,
                     hours_old=int(conf.get("hours_old", 6)), country_indeed="Australia",
                     description_format="markdown", verbose=0,

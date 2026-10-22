@@ -104,14 +104,14 @@ def test_late_worker_cannot_settle_or_publish_after_takeover(world):
     assert value['checkpoint']['job_charged']>12000
 
 
-def test_auto_trigger_requires_interview_current_four_plus_evaluation_and_no_attempt(world,monkeypatch):
+def test_auto_trigger_requires_interview_current_evaluation_and_no_attempt(world,monkeypatch):
     from jobwatch.interview_prep import should_prepare_after_interview
     conn,bundle,config=world
     context={'application':{'status':'interview'},'evaluation':{'global_score':4.0}}
     monkeypatch.setattr('jobwatch.interview_prep.capture',lambda *a:(context,AD,'a'*64))
     assert should_prepare_after_interview(conn,1,config)
     context['evaluation']['global_score']=3.9
-    assert not should_prepare_after_interview(conn,1,config)
+    assert should_prepare_after_interview(conn,1,config)  # career score cannot veto the person's interview transition
     context['evaluation']['global_score']=4.0;context['application']['status']='applied'
     assert not should_prepare_after_interview(conn,1,config)
     context['application']['status']='interview'

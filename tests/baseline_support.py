@@ -15,7 +15,7 @@ from pipeline.agentic.contracts import (
 )
 from pipeline.agentic.service import agentic_batch_run
 from pipeline.schemas import JobFacts
-from tests.test_agentic_service import SyntheticGateway, world  # noqa: F401  (world is a fixture)
+from tests.test_agentic_service import SyntheticGateway, world as _source_world  # noqa: F401
 
 AD = (
     "Graduate accounting analyst role based in Melbourne. Hybrid attendance with two days "
@@ -23,6 +23,22 @@ AD = (
 )
 AD_HASH = hashlib.sha256(AD.encode("utf-8")).hexdigest()
 _RESUME_HASH = "3" * 64
+
+
+@pytest.fixture
+def world(tmp_path, monkeypatch):
+    """Use an invented reference for baseline persistence, retaining a large blob.
+
+    These checks test freezing and replay, not the shipped occupation dataset.
+    JSON whitespace gives the reference a realistic shared-artifact size without
+    rebuilding thousands of unrelated occupation models for every freeze.
+    """
+    from tests.candidate.fixtures import fictional_reference
+    source = _source_world.__wrapped__(tmp_path, monkeypatch)
+    reference = fictional_reference(tmp_path)
+    reference.write_bytes(reference.read_bytes() + b'\n' + b' ' * 220_000)
+    source[1].settings['pipeline']['agentic']['occupation_reference_path'] = str(reference)
+    return source
 
 
 def _match(requirement_id: str, status: str) -> RequirementMatch:
@@ -96,7 +112,7 @@ def synthetic_case(case_id: str = "c-1", *, posting_id: int = 1, title: str = "J
 
 @pytest.fixture
 def frozen(world, monkeypatch):
-    """Three evaluated synthetic postings (42 and 43 share an employer, 44 is a low fit) behind a read-only
+    """Three evaluated synthetic postings (42 and 43 share an employer, 44 has a low advisory score) behind a read-only
     connection. After the batch, every model call fails the test."""
     conn, config, bundle, add = world
     add(42)

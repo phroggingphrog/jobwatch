@@ -66,6 +66,16 @@ is assessed before preferences, company context, occupation similarity or callba
 history. Typed output and exact quotes establish traceability, not semantic truth.
 There is no claim of calibrated confidence or hiring probability.
 
+## Field and job discovery
+
+Field hypotheses and posting relevance are available behind the discovery
+flags, with relevance defaulting to `shadow`; no posting is archived for a
+relevance `no` until `pipeline.agentic.relevance: on`. The `similar_at` (0.60)
+and `duplicate_cosine` (0.95) thresholds are uncalibrated design values. The
+retrieval currently uses embeddings without a lexical hybrid, and Seek, Jora and
+JobSpy use only the first planned location. No matching-accuracy claim is made;
+real-model behaviour and Qwen cosine ranges remain unverified.
+
 ## Storage and compatibility
 
 The existing private `evaluation` artifact stores judgments and

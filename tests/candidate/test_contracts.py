@@ -489,35 +489,15 @@ def test_canonicalize_family_helper() -> None:
     assert canonicalize_family("  Data__Analyst  ") == "data_analyst"
 
 
-def test_target_policy_immutable_exclusions_and_normalization() -> None:
-    assert excluded_families()[:4] == ("customer_service", "hospitality", "retail", "shop_floor")
-    assert "accounting" in DEFAULT_ALLOWED_FAMILIES
-
-    # Attempting to add an excluded family (e.g. hospitality or customer-service) to allowed_families rejected
+def test_target_policy_neutral_defaults_and_explicit_exclusions() -> None:
+    # Classification validation does not read a person's unapproved legacy interest file.
+    policy = TargetPolicy(version="v1", allowed_families=("accounting", "Hospitality", "customer-service"))
+    assert policy.allowed_families == ("accounting", "hospitality", "customer_service")
+    assert policy.excluded_codes == ()
+    explicit = TargetPolicy(version="v1", allowed_families=("accounting",), excluded_codes=("999999",))
+    assert explicit.excluded_codes == ("999999",)
     with pytest.raises(ValueError):
-        TargetPolicy(version="v1", allowed_families=("accounting", "hospitality"))
-
-    # Attempting via alias
-    with pytest.raises(ValueError):
-        TargetPolicy(version="v1", allowed_families=("accounting", "Hospitality"))
-    with pytest.raises(ValueError):
-        TargetPolicy(version="v1", allowed_families=("accounting", "customer-service"))
-    with pytest.raises(ValueError):
-        TargetPolicy(version="v1", allowed_families=("accounting", "hospitality_"))
-
-    # Attempting to remove minimum excluded codes ('431111', '541211') rejected
-    with pytest.raises(ValueError):
-        TargetPolicy(version="v1", allowed_families=("accounting",), excluded_codes=("999999",))
-
-    # Additive exclusions permitted
-    policy = TargetPolicy(
-        version="v1",
-        allowed_families=("accounting",),
-        excluded_codes=("431111", "541211", "999999"),
-    )
-    assert "431111" in policy.excluded_codes
-    assert "541211" in policy.excluded_codes
-    assert "999999" in policy.excluded_codes
+        TargetPolicy(version="v1", excluded_codes=("bad",))
 
 
 def test_reference_bundle_validation(tmp_path: Path) -> None:

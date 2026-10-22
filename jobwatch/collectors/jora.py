@@ -1,4 +1,4 @@
-"""Jora AU search pages (HTML, no login): https://au.jora.com/j?q=<kw>&l=Melbourne+VIC&sp=recent&a=24h
+"""Jora AU search pages (HTML, no login): https://au.jora.com/j?q=<kw>&l=<location>&sp=recent&a=24h
 
 Jora sits behind a bot wall that refuses plain HTTP clients (403), and its robots.txt
 disallows all generic agents. The owner asked for Jora (2026-10-06); like Seek, this is
@@ -66,7 +66,7 @@ def parse(page: str, keyword: str = "") -> list[Posting]:
             url=f"{BASE}{href.split('?')[0]}" if href.startswith("/") else href.split("?")[0],
             title=html.unescape(re.sub(r"<[^>]+>", "", t.group(2))).strip(),
             company=_text(_COMPANY.search(card)),
-            location=_text(_LOCATION.search(card)) or location_text(),
+            location=_text(_LOCATION.search(card)),
             work_type=work_type_of(*badges),
             salary_text=salary, salary_min=smin, salary_max=smax, salary_unit=unit,
             posted_at=posted_from(_text(_DATE.search(card))),
@@ -82,7 +82,8 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
     if conf.get("enabled") is False:
         return []
     from curl_cffi import requests as cffi    # browser TLS fingerprint (see module doc)
-    keywords = rotate(cfg, "jora", list(conf.get("keywords") or [""]), conf.get("searches_per_run", 4))
+    items = conf['searches'] if 'searches' in conf else list(conf.get('keywords') or [''])
+    keywords = rotate(cfg, "jora", items, conf.get("searches_per_run", 4))
     results: list[Posting] = []
     seen: set[str] = set()
     for i, keyword in enumerate(keywords):
@@ -90,7 +91,11 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
             break
         if i:
             time.sleep(float(conf.get("delay_s", 4)))
-        url = f"{BASE}/j?" + urlencode({"q": keyword, "l": conf.get("where") or location_text() or "All Australia",
+        where = conf.get('where') or location_text() or 'All Australia'
+        if isinstance(keyword, dict):
+            where = keyword.get('location') or 'All Australia'
+            keyword = keyword['term']
+        url = f"{BASE}/j?" + urlencode({"q": keyword, "l": where,
                                          "sp": "recent", "a": conf.get("age", "24h")})
         try:
             r = cffi.get(url, impersonate="chrome", timeout=30)

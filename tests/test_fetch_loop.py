@@ -42,7 +42,7 @@ class Gateway:
         text = "\n".join(m["content"] for m in body["messages"])
         if self.delay:
             time.sleep(self.delay)
-        if "triage job adverts" in text:
+        if "JOBS (id | title | company | place | start of ad):\n" in text:
             ids = [int(line.split(" | ")[0]) for line in text.split("JOBS (id | title | company | place | start of ad):\n")[1].splitlines() if line.strip()]
             out = {"results": [{"id": i, "relevant": False} for i in ids]}
         else:
@@ -290,10 +290,10 @@ def test_every_exception_for_one_posting_is_caught(world, monkeypatch):
         world.add(title, desc="The whole ad is in the feed. " * 40)
     real_decide, real_store, real_sponsored = reader.decide, reader.store, reader.is_sponsored
 
-    def decide(model_out, text, kind, cfg, sponsored=False, title=""):
+    def decide(model_out, text, kind, cfg, sponsored=False, title="", **kwargs):
         if title == "Decide Boom":
             raise RuntimeError("rules crashed")
-        return real_decide(model_out, text, kind, cfg, sponsored=sponsored, title=title)
+        return real_decide(model_out, text, kind, cfg, sponsored=sponsored, title=title, **kwargs)
 
     def store(conn, posting_id, *a, **kw):
         if posting_id == ids["Store Boom"]:

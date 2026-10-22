@@ -166,7 +166,8 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
                  evidence_bundle: Any = None, candidate_analysis: Any = None,
                  career_profile: str = "", model: str = DEFAULT_MODEL,
                  research: ResearchCapability | None = None, commute_km: int | None = None,
-                 model_insights: dict | None = None, embedding_model: str | None = None) -> AgenticEvaluation:
+                 model_insights: dict | None = None, embedding_model: str | None = None,
+                 decision_policy=None) -> AgenticEvaluation:
     """Read the complete JD without candidate context, then match verified evidence.
 
     All caller inputs are snapshotted. Model output cannot modify extracted facts,
@@ -246,8 +247,8 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             "completion in uncertainties. Do not infer willingness, consent, completion or a satisfactory result. "
             "Explicit current qualifications or existing clearances remain blockers. If an essential condition's "
             "timing is unclear, retain the blocker and uncertainty rather than assuming it is deferred. "
-            "Cite the actual location condition, not an unrelated city. location_fit 'melbourne' (the stored legacy name) means "
-            "anywhere in the candidate's own state, regional included (owner, 2026-10-12); 'outside' is another state or country. "
+            "Cite the actual location condition, not an unrelated city. Extract all offered locations and work modes. "
+            "location_fit is a historical storage label; canonical policy checks interpret the exact location quote. "
             "commute_km_from_home, when given, is the straight-line distance from the candidate's suburb; use it "
             "for the commute part of the location score as the career profile describes. "
             "Unknown hours are unstated. If seniority is not established, record 'seniority unknown' in "
@@ -295,6 +296,7 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
         "facts": extraction.facts.model_dump(mode="json"), "uncertainties": extraction.uncertainties,
         "ad_text": ad_text, "career_profile": framing,
         "evidence_hash": bundle.bundle_hash,
+        "confirmed_decision_policy": decision_policy.model_dump(mode='json') if decision_policy else None,
         "evidence_inventory": [{"id": item.id, "kind": item.kind} for item in bundle.items],
         "candidate_analysis_available": analysis is not None,
         "model_insights": model_insights or {},
@@ -433,6 +435,9 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             "3 plausible with meaningful gaps, 4 strong evidence-backed fit, 5 exceptional direct fit. "
             "Dimensions are cv_match, north_star, compensation, culture, red_flags, each with score and reason. "
             "No compensation or culture evidence means uncertainty, not invented positive evidence. "
+            "Use only the confirmed decision policy for preferences, strategy and focus. Employment-first keeps "
+            "supported work visible despite weak career-direction fit. Missing preferences are unknown. "
+            "Scores are advisory; only canonical evidence and eligibility checks decide routing. "
             "Produce report A: opportunity/archetype; B: candidate evidence/requirements; C: career direction; "
             "D: compensation and culture; E: legitimacy/rights/location/hours/seniority and uncertainties; "
             "F: gaps, risks and realistic mitigation; G: justified holistic judgment and next action. "

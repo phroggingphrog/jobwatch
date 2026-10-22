@@ -69,36 +69,21 @@ EVIDENCE (atomic verbatim items with ids). Hard rules:
 6. No third-party branding (job boards, AI tools, this system). Australian English.
 7. Experience/education headings are chosen by evidence id only (role_ids / entry_ids); the
    heading text is printed from the evidence, so do not write titles or dates yourself.
-8. CV fits 2 A4 pages (most relevant 4-6 roles, 2-5 bullets each); letter <= 1 page, 3-4 short
-   paragraphs, addressed generically (the header and sign-off are added by code).
-9. Write it for THIS ad, in the candidate's own voice (owner 2026-10-07: drafts read like a template).
-   AD READING is a reader's analysis of the full ad: its requirements marked by importance, with the
-   ad's own words (jd_signal). Before writing, pick the 2-3 critical/high requirements the EVIDENCE
-   answers best and build the letter and CV summary around them; leave the rest to the CV.
-   Letter: paragraph 1 = what this job actually involves, in the ad's terms (framing), then the one
-   most relevant thing the candidate has done. Paragraphs 2-3 = one chosen requirement each, answered
-   by one concrete example: what the candidate did and where, linked to what this employer needs
-   (the ad's words for the need, the evidence's words for the deed). One idea per paragraph, never a
-   run of unrelated duties. Last paragraph = 1-2 plain sentences tied to this role (framing).
-   CV summary = 2 sentences: this employer's main need, then the candidate's matching experience.
-   Voice: first person, plain and direct, short sentences, varied openings (not every sentence
-   starting with "I"), like a person writing to a hiring manager, not a CV read aloud. ANGLE NOTES
-   say how the candidate wants to be presented; they are not evidence and are never cited.
-10. Never use stock phrases: {STOCK_HELP}.
-11. Say each fact once across the letter (no sentence repeating an earlier one in new words). Never
-    write about the drafting rules or what is not claimed; a gap is simply left out of the letter.
-    Skill and subject names from the evidence go mid-sentence in lower case unless they are proper
-    names (MYOB, Excel, Australian Taxation Office).
+8. Respect the supported template's page limit and the letter's one-page PDF limit. Select only
+   relevant supported content; no paragraph count, bullet quota or academic emphasis is implied.
+9. Follow WRITING PREFERENCES and any candidate-provided samples for voice and presentation only.
+   With no confirmed style choice, use neutral factual prose. Explain job-specific supported experience;
+   never invent motivation, enthusiasm or a qualification. AD READING is advisory analysis of the ad;
+   ANGLE NOTES and preferences are framing, never evidence. Keep ability, career interests and practical
+   eligibility separate. No word-choice or structural preference can override evidence requirements.
 {SCHEMA_HELP}"""
 
 REVIEWER_SYSTEM = """You are a fresh-context reviewer of a job application draft. You see only the
 draft text below and two named references. You do not decide what is true; you point at
 sentences whose wording goes beyond what the cited references support (kind "grounding") and at
-style problems: clarity, concision, tone, repetition, Australian English, relevance to the
-posting (kind "style"). Flag as style: stock phrases ("I am applying for", "I would welcome the
-opportunity", "proven track record"...), a letter paragraph that is a run of unrelated duties, and a
-letter that could be sent to any employer unchanged; the fix is to tie one example to one need named
-in the posting. Never suggest adding facts, metrics, tools or keywords that are not in
+style problems relative to WRITING PREFERENCES and candidate-provided samples (kind "style").
+Without a confirmed style choice, use neutral factual prose. Keep style advice separate from grounding.
+Assess relevance to the posting without demanding a fixed letter structure or an enthusiastic voice. Never suggest adding facts, metrics, tools or keywords that are not in
 the references. Each draft sentence is tagged [c<n>]; use that id as target ("cv" or "letter"
 for whole-document remarks). Output JSON only:
 {"edits": [{"kind": "grounding"|"style", "target": "c<n>"|"cv"|"letter",
@@ -117,6 +102,9 @@ Return the full revised draft plus "applied": [edit index], "skipped": [{{"index
 def drafter_messages(posting_text: str, requirements: list[dict], cv_body: str, evidence: list[dict],
                      ad_reading: dict | None = None, angle: str = "",
                      letter_samples: list[str] | None = None) -> list[dict]:
+    guide = _writing_guide()
+    if guide['preferences'].get('use_style_examples') is not True:
+        letter_samples = None
     reqs = [{"id": r["id"], "text": r["text"], "tier": r["tier"], "weight": r["weight"],
              "blocker": bool(r["blocker"])} for r in requirements]
     ev = [{"id": e["id"], "kind": e["kind"], "text": e["text"], **({"group": e["group"]} if e.get("group") else {})}
@@ -129,6 +117,7 @@ def drafter_messages(posting_text: str, requirements: list[dict], cv_body: str, 
                "structure only. Never reuse their facts, employers, names or sentences):\n"
                + "\n---\n".join(x[:4000] for x in letter_samples[:3]) + "\n\n" if letter_samples else "")
             + f"CV:\n{cv_body}\n\nEVIDENCE:\n{json.dumps(ev, ensure_ascii=False)}")
+    user += "\n\nWRITING PREFERENCES (form only):\n" + json.dumps(guide, ensure_ascii=False)
     return [{"role": "system", "content": DRAFTER_SYSTEM}, {"role": "user", "content": user}]
 
 
@@ -138,6 +127,7 @@ def reviewer_messages(cv_tagged: str, letter_tagged: str, posting_text: str,
     refs = "\n".join(f"- {e['id']}: {e['text']}" for e in cited_evidence)
     user = (f"DRAFT CV:\n{cv_tagged}\n\nDRAFT COVER LETTER:\n{letter_tagged}\n\n"
             f"REFERENCE \"posting\":\n{posting_text}\n\nREFERENCE \"evidence\" (items the draft cites):\n{refs}")
+    user += "\n\nWRITING PREFERENCES (form only):\n" + json.dumps(_writing_guide(), ensure_ascii=False)
     return [{"role": "system", "content": REVIEWER_SYSTEM}, {"role": "user", "content": user}]
 
 
@@ -163,30 +153,40 @@ def reviser_messages(draft: dict, edits: list[dict], posting_text: str, evidence
     return [{"role": "system", "content": REVISER_SYSTEM}, {"role": "user", "content": user}]
 
 
-def stock_edits(draft: dict) -> list[dict]:
+def _writing_guide() -> dict:
+    from pipeline.agentic.writing_guide import writing_guide
+    return writing_guide('', '', '')
+
+
+def _style_options(style_options: dict | None) -> dict:
+    return _writing_guide()['preferences'] if style_options is None else style_options
+
+
+def stock_edits(draft: dict, *, style_options: dict | None = None) -> list[dict]:
     """Code check: a style edit for every letter / CV-summary claim that still uses a stock phrase,
     plus one whole-letter edit when most letter sentences open with "I"."""
+    options = _style_options(style_options)
     out = []
     claims = [c for p in (draft.get("letter") or {}).get("paragraphs") or [] for c in p or []]
     for c in claims + list((draft.get("cv") or {}).get("summary") or []):
         m = STOCK_RE.search(str(c.get("text") or ""))
-        if m:
+        if m and options.get("avoid_stock_phrases") is True:
             out.append({"kind": "style", "target": c["id"],
                         "suggestion": f'Rewrite without the stock phrase "{m.group(0)}"; say the specific thing '
                                       "this posting needs instead, or delete the sentence if it adds nothing.",
                         "reason": "stock phrase (code check)"})
-    for c in repeated_claims(claims):
+    for c in repeated_claims(claims) if options.get("avoid_repetition") is True else []:
         if c["id"] not in {e["target"] for e in out}:
             out.append({"kind": "style", "target": c["id"],
                         "suggestion": "This repeats a fact already given earlier in the letter; delete it or "
                                       "replace it with a different example.", "reason": "repeated fact (code check)"})
     paras = (draft.get("letter") or {}).get("paragraphs") or []
-    if len(paras) >= 2 and any(c.get("tier") != "framing" for c in paras[-1] or []):
+    if options.get("short_closing") is True and len(paras) >= 2 and any(c.get("tier") != "framing" for c in paras[-1] or []):
         out.append({"kind": "style", "target": "letter",
                     "suggestion": "End with a short closing paragraph of 1-2 plain sentences tied to this role "
                                   "(framing: no new facts, no stock phrases).", "reason": "no closing paragraph (code check)"})
     starts = [str(c.get("text") or "").lstrip().startswith(("I ", "I'")) for c in claims]
-    if len(starts) >= 4 and sum(starts) * 2 > len(starts):
+    if options.get("vary_openings") is True and len(starts) >= 4 and sum(starts) * 2 > len(starts):
         out.append({"kind": "style", "target": "letter",
                     "suggestion": "Vary sentence openings: lead some sentences with the employer's need or the "
                                   "place/task, not \"I\".", "reason": "most sentences start with I (code check)"})
@@ -209,8 +209,10 @@ def repeated_claims(claims: list[dict]) -> list[dict]:
     return out
 
 
-def drop_repeats(draft: dict) -> int:
+def drop_repeats(draft: dict, *, style_options: dict | None = None) -> int:
     """Delete letter claims that repeat an earlier fact (repeated_claims), after revision. Returns the count."""
+    if _style_options(style_options).get("avoid_repetition") is not True:
+        return 0
     letter = draft.get("letter") or {}
     claims = [c for p in letter.get("paragraphs") or [] for c in p or []]
     rep = {id(c) for c in repeated_claims(claims)}
@@ -221,9 +223,11 @@ def drop_repeats(draft: dict) -> int:
     return len(rep)
 
 
-def drop_stock_framing(draft: dict) -> int:
+def drop_stock_framing(draft: dict, *, style_options: dict | None = None) -> int:
     """Delete letter framing sentences (no candidate facts) that still use a stock phrase after revision.
     Safe because framing carries no evidence; returns how many were dropped."""
+    if _style_options(style_options).get("avoid_stock_phrases") is not True:
+        return 0
     letter = draft.get("letter") or {}
     dropped, paras = 0, []
     for para in letter.get("paragraphs") or []:

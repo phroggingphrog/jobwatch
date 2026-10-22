@@ -73,7 +73,7 @@ def canonicalize_family(family: str) -> str:
 
 
 # Classification vocabulary shared by every person: a family is a kind of work, not a preference.
-# Which families a person does not want comes from their own files (person.excluded_families()).
+# Current exclusions come only from the confirmed decision policy, never from this vocabulary.
 KNOWN_FAMILIES: tuple[str, ...] = (
     "accounting",
     "finance_clerical",
@@ -103,18 +103,18 @@ JOB_ROLE_FAMILIES = KNOWN_FAMILIES + ("unknown",)
 
 
 def excluded_families() -> tuple[str, ...]:
-    """Families this person does not want (interests_and_criteria.yaml target_roles.not_wanted)."""
+    """Legacy runtime-file accessor retained for explicit archival comparisons."""
     from .person import excluded_families as _ef
     return tuple(canonicalize_family(f) for f in _ef())
 
 
 def default_allowed_families() -> tuple[str, ...]:
-    """Every known family except the ones this person does not want."""
+    """Legacy runtime-file projection; live defaults use the confirmed decision policy."""
     no = excluded_families()
     return tuple(f for f in KNOWN_FAMILIES if f not in no)
 
 
-def __getattr__(name: str):  # these stay importable, read from the person's file
+def __getattr__(name: str):  # legacy compatibility exports; not a current policy
     if name == "EXCLUDED_FAMILIES":
         return excluded_families()
     if name in ("DEFAULT_ALLOWED_FAMILIES", "ALLOWED_FAMILIES"):
@@ -122,6 +122,7 @@ def __getattr__(name: str):  # these stay importable, read from the person's fil
     raise AttributeError(name)
 
 
+# Archived policy payload compatibility only; never a live policy default.
 MINIMUM_EXCLUDED_CODES: tuple[str, ...] = ("431111", "541211")
 
 
@@ -573,11 +574,20 @@ class Mapping(StrictFrozen):
 
 class TargetPolicy(StrictFrozen):
     version: str
-    allowed_families: tuple[str, ...] = Field(default_factory=default_allowed_families)
-    excluded_codes: tuple[str, ...] = MINIMUM_EXCLUDED_CODES
-    # True (the legacy default) demands MINIMUM_EXCLUDED_CODES in excluded_codes. It is omitted from the serialised
-    # form while True so every existing policy JSON, digest and run key stays byte-identical.
-    require_minimum_excluded_codes: bool = True
+    allowed_families: tuple[str, ...] = KNOWN_FAMILIES
+    excluded_codes: tuple[str, ...] = ()
+    # Archived policies omitted this flag. Keep their exact serialized payload for hash verification,
+    # while every newly constructed policy starts without donor preferences.
+    require_minimum_excluded_codes: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _historical_payload(cls, value: Any) -> Any:
+        if (isinstance(value, dict) and "require_minimum_excluded_codes" not in value
+                and "allowed_families" in value and isinstance(value.get("excluded_codes"), (tuple, list))
+                and all(c in value["excluded_codes"] for c in MINIMUM_EXCLUDED_CODES)):
+            return {**value, "require_minimum_excluded_codes": True}
+        return value
 
     @model_serializer(mode="wrap")
     def _omit_historical_default(self, handler):
@@ -625,11 +635,7 @@ class TargetPolicy(StrictFrozen):
     @model_validator(mode="after")
     def _validate_minimum_excluded_codes(self):
         if self.require_minimum_excluded_codes:
-            # The person-file family check applies only to the legacy policy; the neutral variant reads no person file.
-            banned = excluded_families()
-            for f in self.allowed_families:
-                if f in banned:
-                    raise ValueError("family is in the person's not_wanted families")
+            # Only an explicitly archived payload retains this historical invariant.
             for min_code in MINIMUM_EXCLUDED_CODES:
                 if min_code not in self.excluded_codes:
                     raise ValueError("immutable minimum excluded code cannot be removed")

@@ -60,6 +60,7 @@ def test_mapping_file_rejects_duplicates_and_symlinks(tmp_path):
 
 
 def test_public_reference_suggestions_never_become_confirmed_paths(tmp_path):
+    from jobwatch.candidate.contracts import KNOWN_FAMILIES
     root=tmp_path/'profile';root.mkdir()
     (root/'cv.md').write_text('# Synthetic\n\n## Skills\n- Prepare financial reports and reconcile financial accounts\n')
     bundle=snapshot_evidence(root)
@@ -71,7 +72,8 @@ def test_public_reference_suggestions_never_become_confirmed_paths(tmp_path):
     assert len(json.dumps(structural_summary(analysis)))<15000
     view=statistical_view(bundle,{})
     assert view['suggested_count']>0 and view['confirmed_count']==0
-    assert all(f['family'] not in {'customer_service','hospitality','retail','other'} for f in view['fits'])
+    # Reference classification is not an inherited personal exclusion.
+    assert all(f['family'] in KNOWN_FAMILIES for f in view['fits'])
 
 
 def test_reference_policy_does_not_promote_counter_or_delivery_roles():

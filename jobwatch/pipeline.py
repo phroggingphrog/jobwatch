@@ -43,9 +43,10 @@ def _alert_status(conn, posting, seeded: bool, max_age_h: float, now) -> str:
 
 def run_collector(conn, config: Config, rules: Rules, http: Fetcher, name: str, run_id: int,
                   limit: int | None, tier: str = "fast") -> dict:
+    from pipeline.agentic import discovery
     module = registry.get(name)
     ctx = CollectorContext(
-        config=config, http=http, limit=limit, tier=tier, title_relevant=rules.title_relevant,
+        config=config, http=http, limit=limit, tier=tier, title_relevant=discovery.recall_filter(rules.title_relevant, config),
         is_known=lambda source, sid: conn.execute(
             "SELECT 1 FROM sightings WHERE source=? AND (source_id=? OR url=?) LIMIT 1",
             (source, sid, canonical_url(sid) if sid.startswith("http") else "")).fetchone() is not None,
@@ -71,7 +72,8 @@ def run_collector(conn, config: Config, rules: Rules, http: Fetcher, name: str, 
     seeded_keys = set(dbm.get_state(conn, f"seeded:{name}", []) or [])
     for p in postings:
         try:
-            posting_id, is_new = ingest(conn, p, run_id)
+            posting_id, is_new = ingest(conn, p, run_id,
+                key_merge=discovery.settings(config)['dedupe'] != 'semantic')
         except Exception as exc:
             stats["errors"].append(f"store {p.source_id}: {exc}"[:200])
             continue
@@ -162,6 +164,9 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
     http = None
     error = None
     try:
+        from pipeline.agentic import discovery
+        # The scope projection is read-only and unpaid, including dry runs.
+        config = discovery.prepare_run(conn, config)
         rules = Rules(config.rules, config.employers)
         http_conf = config.settings.get("http") or {}
         http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5))

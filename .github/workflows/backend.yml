@@ -35,10 +35,25 @@ jobs:
           tests/test_agentic_evaluate.py
           tests/test_agentic_contracts.py
           tests/test_agentic_gate.py
+          tests/test_agentic_gate_policy.py
+          tests/test_profile_gate_comparison.py
+          tests/test_confirmed_policy_binding.py
+          tests/candidate/test_eligibility.py
+          tests/candidate/test_policy.py
           tests/test_profile_pin.py
           tests/test_baseline.py
           tests/test_cli_baseline.py
+          tests/occupations
+          tests/test_discovery_api.py
+          tests/test_profile_location_prefilter.py
+          tests/test_profile_collectors.py
+          tests/test_personal_writing_preferences.py
+          tests/test_personal_legacy_gate.py
+          tests/test_personal_legacy_extract.py
+          tests/test_delayed_posting_details.py
+          tests/test_reader.py
           tests/preferences/test_core.py
+          tests/preferences/test_profile_neutral.py
           tests/test_preference_service.py
           tests/outcomes/test_out_callback.py
           tests/outcomes/test_readiness.py

@@ -1,4 +1,4 @@
-"""The decision-policy flag, the single live gate call, the decision log and the policy-aware knock-outs.
+"""Canonical policy aliases, exact confirmed inputs, shared gate wiring and advisory classifiers.
 
 Synthetic data only: the service world is a temporary directory and the model is the synthetic gateway."""
 import copy
@@ -8,6 +8,7 @@ import re
 import pytest
 
 from jobwatch import preference_service
+from jobwatch.candidate import intake
 from jobwatch.candidate.policy import default_policy
 from jobwatch.llm import LLM
 from pipeline.agentic import decision_log, gate, service
@@ -15,7 +16,7 @@ from pipeline.agentic.contracts import AgenticError
 from pipeline.agentic.location import commute_km_for, km_from_home
 from pipeline.agentic.persistence import latest_result
 from pipeline.schemas import Stage
-from tests.candidate.policy_fixtures import fact, policy_of
+from tests.candidate.policy_fixtures import approved, fact, policy_of
 from tests.test_agentic_service import SyntheticGateway, world  # noqa: F401  (world is a fixture)
 
 ACCOUNTING = fact('exclusion', {'kind': 'family', 'value': 'accounting'})
@@ -47,13 +48,15 @@ def table_exists(conn):
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='gate_decisions'").fetchone() is not None
 
 
-def test_flag_is_legacy_by_default_and_outside_the_run_key(world):
+def test_profile_is_default_and_legacy_spelling_is_an_equivalent_alias(world):
     conn, config, bundle, add = world
     add(42)
-    assert service.decision_policy_mode(config) == 'legacy'
+    assert service.decision_policy_mode(config) == 'profile'
     on = with_flag(config, 'profile')
     assert service.decision_policy_mode(on) == 'profile' and service._config(on) == service._config(config)
-    assert key_for(conn, on, bundle) == key_for(conn, config, bundle)    # same posting, same bundle -> identical RunKey with either value
+    legacy = with_flag(config, 'legacy')
+    assert service.decision_policy_mode(legacy) == 'profile'
+    assert key_for(conn, on, bundle) == key_for(conn, config, bundle) == key_for(conn, legacy, bundle)
 
 
 @pytest.mark.parametrize('value', [True, 'yes', 1, None, ''])
@@ -66,32 +69,31 @@ def test_flag_must_be_legacy_or_profile(world, value):
         service.decision_policy_for(bad)
 
 
-def test_decision_policy_fields_never_enter_the_run_key(world, monkeypatch):    # contract decision 4
+def test_every_confirmed_policy_change_enters_the_run_key_and_aliases_do_not(world, monkeypatch):
     conn, config, bundle, add = world
     add(42)
-    policies = [policy_of(ACCOUNTING),
-                policy_of(fact('exclusion', {'kind': 'employer', 'value': 'Synthetic Beta'}),
-                          fact('experience', 'Ledger clerk'), version=3),
-                policy_of(fact('exclusion', 'something unclear', fid='x9'), version=4)]
-    assert len({p.policy_hash for p in policies}) == 3 and len({p.profile_version for p in policies}) == 3
-    assert policies[2].open_questions != policies[0].open_questions
+    payloads = [approved(ACCOUNTING, version=2),
+                approved(fact('exclusion', {'kind':'employer', 'value':'Synthetic Beta'}), version=3),
+                approved(fact('preference', {'kind':'writing_style', 'value':'direct'}), version=4)]
+    current = {'value':payloads[0]}
+    monkeypatch.setattr(intake, 'current_version', lambda person: current['value'])
     keys = []
-    for mode in ('legacy', 'profile'):
-        for policy in policies:
-            monkeypatch.setattr(service, 'policy_for', lambda person, policy=policy: policy)
-            keys.append(key_for(conn, with_flag(config, mode), bundle))
-    assert len(keys) == 6
-    for key in keys[1:]:
-        assert (key.value, key.config_hash, key.candidate_hash) == (keys[0].value, keys[0].config_hash, keys[0].candidate_hash)
-    source = inspect.getsource(service._run_key)
-    assert 'DecisionPolicy' not in source and 'policy_hash' not in source
+    for payload in payloads:
+        current['value'] = payload
+        profiles = [key_for(conn, with_flag(config, mode), bundle) for mode in ('legacy','profile')]
+        assert profiles[0] == profiles[1]
+        keys.append(profiles[0])
+    assert len({k.value for k in keys}) == 3
+    assert len({k.config_hash for k in keys}) == 3
+    # Employer/style-only confirmations do not alter primary evidence or the structural family projection.
+    assert keys[1].candidate_hash == keys[2].candidate_hash
 
 
 def test_profile_mode_gate_uses_the_confirmed_policy(world, monkeypatch):
     conn, config, bundle, add = world
     add(42)
     dp = policy_of(ACCOUNTING)
-    monkeypatch.setattr(service, 'policy_for', lambda person: dp)
+    monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: dp)
     stage, result = evaluate(world, with_flag(config, 'profile'))
     assert stage == Stage.ARCHIVED and result['status'] == 'archived' and result['reason'] == 'policy_excluded'
     assert tuple(conn.execute('SELECT stage, reason FROM pipeline_state WHERE posting_id=42').fetchone()) == (
@@ -101,56 +103,60 @@ def test_profile_mode_gate_uses_the_confirmed_policy(world, monkeypatch):
     assert (logged['route'], logged['reason']) == ('archive', 'policy_excluded')
 
 
-def test_legacy_mode_ignores_the_policy_and_writes_no_decision_row(world, monkeypatch):
+def test_legacy_spelling_applies_the_confirmed_policy_and_records_its_decision(world, monkeypatch):
     conn, config, bundle, add = world
     add(42)
-    monkeypatch.setattr(service, 'policy_for', lambda person: policy_of(ACCOUNTING))
-    stage, result = evaluate(world, config)
-    assert stage == Stage.DLQ and result['status'] == 'held' and result['reason'] == 'evaluation_complete'
-    assert not table_exists(conn)
-    assert decision_log.latest(conn, result['run_key']) is None
+    dp = policy_of(ACCOUNTING)
+    monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: dp)
+    stage, result = evaluate(world, with_flag(config, 'legacy'))
+    assert stage == Stage.ARCHIVED and result['reason'] == 'policy_excluded'
+    logged = decision_log.latest(conn, result['run_key'])
+    assert logged['policy_hash'] == dp.policy_hash and logged['route'] == 'archive'
 
 
-def test_profile_mode_without_a_confirmed_policy_runs_the_legacy_gate(world, monkeypatch):
+def test_missing_confirmed_policy_stays_neutral_and_writes_no_policy_decision(world, monkeypatch):
     conn, config, bundle, add = world
     add(42)
-    monkeypatch.setattr(service, 'policy_for', lambda person: None)
+    monkeypatch.setattr(intake, 'current_version', lambda person: None)
     assert service.decision_policy_for(with_flag(config, 'profile')) is None
     stage, result = evaluate(world, with_flag(config, 'profile'))
-    assert stage == Stage.DLQ and result['reason'] == 'evaluation_complete'     # the legacy result
+    assert stage == Stage.DLQ and result['reason'] == 'evaluation_complete'     # no donor preference substitutes for a missing confirmation
     assert not table_exists(conn)
 
 
-def test_removing_an_exclusion_releases_the_job_without_a_model_call(world, monkeypatch):
+def test_changed_confirmed_exclusion_gets_a_new_run_and_preserves_the_old_decision(world, monkeypatch):
     conn, config, bundle, add = world
     add(42)
-    on = with_flag(config, 'profile')
+    # Use an employer exclusion so candidate structural paths remain independently admissible.
+    excluded = approved(fact('exclusion', {'kind':'employer', 'value':'Synthetic Alpha'}), version=2)
+    released = approved(fact('experience', 'Ledger clerk'), version=3)
+    current = {'value':excluded}
+    monkeypatch.setattr(intake, 'current_version', lambda person: current['value'])
     gateway = SyntheticGateway(bundle)
     llm = LLM(transport=gateway, keys=['synthetic'])
-    excluded, released = policy_of(ACCOUNTING), policy_of(fact('experience', 'Ledger clerk'), version=3)
-    monkeypatch.setattr(service, 'policy_for', lambda person: excluded)
-    stage, first = evaluate(world, on, llm=llm)
+    stage, first = evaluate(world, config, llm=llm)
     assert stage == Stage.ARCHIVED and first['reason'] == 'policy_excluded'
     calls = len(gateway.calls)
     assert calls > 0
-    monkeypatch.setattr(service, 'policy_for', lambda person: released)
-    stage, second = evaluate(world, on, llm=llm)
-    assert second['run_key'] == first['run_key']
-    assert stage != Stage.ARCHIVED and second['status'] == 'held' and second['reason'] == 'evaluation_complete'
-    assert len(gateway.calls) == calls                                          # no model call
-    assert decision_log.latest(conn, first['run_key'])['policy_hash'] == released.policy_hash
-    rows = conn.execute('SELECT policy_hash, route FROM gate_decisions WHERE run_key=? ORDER BY policy_hash',
-                        (first['run_key'],)).fetchall()
-    assert sorted(map(tuple, rows)) == sorted([(excluded.policy_hash, 'archive'), (released.policy_hash, 'draft')])
+    first_log = decision_log.latest(conn, first['run_key'])
+    current['value'] = released
+    stage, second = evaluate(world, with_flag(config, 'legacy'), llm=llm)
+    assert second['run_key'] != first['run_key']
+    assert stage == Stage.DLQ and second['reason'] == 'evaluation_complete'
+    assert len(gateway.calls) > calls   # a new exact-input run must not reuse old bound outputs
+    assert decision_log.latest(conn, first['run_key']) == first_log
+    newest = decision_log.latest(conn, second['run_key'])
+    assert (first_log['profile_version'], first_log['route']) == (2, 'archive')
+    assert (newest['profile_version'], newest['route']) == (3, 'draft')
 
 
-def test_a_policy_excluded_archive_stays_archived_when_the_policy_path_is_off(world, monkeypatch):
+def test_a_confirmed_exclusion_cannot_be_disabled_by_a_mode_alias(world, monkeypatch):
     conn, config, bundle, add = world
     add(42)
-    monkeypatch.setattr(service, 'policy_for', lambda person: policy_of(ACCOUNTING))
+    monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: policy_of(ACCOUNTING))
     stage, first = evaluate(world, with_flag(config, 'profile'))
     assert stage == Stage.ARCHIVED
-    stage, again = evaluate(world, config)                                      # legacy: the old archive is final
+    stage, again = evaluate(world, with_flag(config, 'legacy'))
     assert stage == Stage.ARCHIVED and again['reason'] == 'policy_excluded'
 
 
@@ -158,7 +164,7 @@ def test_gate_current_is_the_only_live_gate_call(world, monkeypatch):           
     conn, config, bundle, add = world
     add(42)
     dp = policy_of(fact('experience', 'Ledger clerk'))
-    monkeypatch.setattr(service, 'policy_for', lambda person: dp)
+    monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: dp)
     on = with_flag(config, 'profile')
     via_gate_current, decide_kwargs = [], []
     real_current, real_decide = service.gate_current, gate.decide
@@ -214,33 +220,29 @@ def test_gate_current_derives_commute_and_company_from_the_posting(world, monkey
     assert seen[0]['commute_km'] == 7
 
 
-def test_jev_knockouts_follow_the_policy():
-    assert service.applicable_knockouts(None) == {'citizen_or_pr', 'five_years'}
-    assert service.applicable_knockouts(policy_of(fact('preference', 'graduate roles'))) == {'citizen_or_pr', 'five_years'}
-    assert service.applicable_knockouts(policy_of(fact('preference', 'mid-level roles'),
-                                                  fact('work_rights', 'Australian citizen'))) == frozenset()
-    assert service.applicable_knockouts(policy_of(fact('experience', 'x'))) == {'citizen_or_pr'}   # no stated level: no seniority knock-out
+def test_public_classifier_probabilities_never_establish_personal_knockouts():
+    for dp in (None, policy_of(fact('preference','graduate roles')),
+               policy_of(fact('preference','mid-level roles'), fact('work_rights','Australian citizen')),
+               policy_of(fact('experience','x'))):
+        assert service.applicable_knockouts(dp) == frozenset()
 
 
-def test_run_filters_the_jev_knockouts_through_the_policy(world, monkeypatch):
+def test_personal_classifier_signals_stay_advisory_for_all_confirmed_profiles(world, monkeypatch):
     conn, config, bundle, add = world
-    add(42); add(43, 'Synthetic Beta')
-    assert service.extras_settings(config)['knockout_at']['citizen_or_pr'] <= 0.99
-    answers = {'injection': 0.0, 'citizen_or_pr': 0.99, 'five_years': 0.99}
+    answers = {'injection':0.0, 'citizen_or_pr':0.99, 'five_years':0.99}
     monkeypatch.setattr(service, 'jev_screen', lambda ad, cfg=None: dict(answers))
-    stage, result = evaluate(world, config, pid=42)                                  # legacy: the first knock-out wins
-    assert stage == Stage.ARCHIVED and result['reason'] == 'work_rights:citizen_or_pr'
-    on = with_flag(config, 'profile')
-    # a citizen who states no level: neither knock-out applies, the job is judged and held for evaluation
-    monkeypatch.setattr(service, 'policy_for', lambda person: policy_of(fact('work_rights', 'Australian citizen')))
-    stage, result = evaluate(world, on, pid=43)
-    assert stage != Stage.ARCHIVED and result['reason'] == 'evaluation_complete'
-    # a non-citizen who wants junior roles keeps both
-    monkeypatch.setattr(service, 'policy_for', lambda person: policy_of(fact('preference', 'junior roles')))
-    answers['citizen_or_pr'] = 0.0
+    for pid, dp in ((42, policy_of(fact('work_rights', 'Australian citizen'))),
+                    (43, policy_of(fact('preference','entry and junior roles')))):
+        add(pid, f'Synthetic Employer {pid}')
+        monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: dp)
+        stage, result = evaluate(world, with_flag(config, 'legacy' if pid == 42 else 'profile'), pid=pid)
+        assert stage == Stage.DLQ and result['reason'] == 'evaluation_complete'
+        assert decision_log.latest(conn, result['run_key'])['route'] == 'draft'
+    # Injection remains an ad-integrity control, separate from personal preference classification.
+    answers['injection'] = 0.99
     add(44, 'Synthetic Gamma')
-    stage, result = evaluate(world, on, pid=44)
-    assert stage == Stage.ARCHIVED and result['reason'] == 'too_senior'
+    stage, result = evaluate(world, config, pid=44)
+    assert stage == Stage.DLQ and result['reason'] == 'ad_has_ai_instructions'
 
 
 def test_commute_comes_from_the_policy_home(monkeypatch):
@@ -252,8 +254,8 @@ def test_commute_comes_from_the_policy_home(monkeypatch):
     assert type(service.commute_km_of(homed, 'Carlton VIC')) is int
     assert km_from_home('Carlton VIC') is not None
     assert service.commute_km_of(homeless, 'Carlton VIC') is None                   # no home -> no distance, whatever the owner
-    assert service.commute_km_of(None, 'Carlton VIC') == km_from_home('Carlton VIC')
-    assert service.commute_km_of(None, None) == km_from_home('')
+    assert service.commute_km_of(None, 'Carlton VIC') is None
+    assert service.commute_km_of(None, None) is None
     assert service.commute_km_of(homed, None) is None
 
 
@@ -264,9 +266,9 @@ def test_the_run_hands_the_evaluator_the_policy_commute(world, monkeypatch):
     real = service.evaluate_job
     monkeypatch.setattr(service, 'evaluate_job', lambda *a, **k: seen.append(k['commute_km']) or real(*a, **k))
     on = with_flag(config, 'profile')
-    monkeypatch.setattr(service, 'policy_for', lambda person: policy_of(fact('location', 'I live in Box Hill, VIC')))
+    monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: policy_of(fact('location', 'I live in Box Hill, VIC')))
     evaluate(world, on, pid=42)
-    monkeypatch.setattr(service, 'policy_for', lambda person: policy_of(fact('experience', 'x')))
+    monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: policy_of(fact('experience', 'x')))
     evaluate(world, on, pid=43)
     assert seen == [commute_km_for('Box Hill, VIC', 'Melbourne VIC'), None]
 

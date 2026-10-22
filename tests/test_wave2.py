@@ -59,14 +59,15 @@ def test_successfactors_conditional_get():
 
 
 # ---------------------------------------------------------------- Oracle HCM
-def test_oracle_au_gate_vic_first_and_url():
+def test_oracle_au_gate_preserves_provider_location_order_and_url():
     http = FakeHttp({"recruitingCEJobRequisitions": fixture_json("oracle_reqs.json")})
     e = emp("oracle-hcm", name="Suncorp Group", host="fa-x.oraclecloud.com", site="CX_1")
     ctx = make_ctx(http, [e])
     out = ats_oracle.collect(ctx)
     assert ctx.raw_count == 3 and len(out) == 2                              # Auckland dropped
     multi = next(p for p in out if "Underwriter" in p.title)
-    assert multi.location.startswith("Heatherton, VIC")                     # VIC secondary first
+    assert 'Heatherton, VIC' in multi.location
+    assert not multi.location.startswith('Heatherton, VIC')  # no inherited VIC priority
     assert multi.url == "https://fa-x.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1001766"
     assert multi.posted_at.startswith("2026-10-02") and multi.posted_at_source == "provider"
     assert multi.work_type == "FT"

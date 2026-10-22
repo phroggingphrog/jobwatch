@@ -247,7 +247,7 @@ def test_complete_real_pipeline_varied_jobs_pdf_ledger_and_idempotency(world):
     gateway = SyntheticGateway(bundle)
     llm = LLM(transport=gateway, keys=['synthetic'])
     summary = agentic_batch_run([42, 43, 44, 45], config, conn, evidence_bundle=bundle, llm=llm)
-    assert summary['ready'] == 3 and summary['archived'] == 1, [latest_result(conn, p) for p in (42, 43, 44, 45)]
+    assert summary['ready'] == 3 and summary['archived'] == 0 and summary['held'] == 1, [latest_result(conn, p) for p in (42, 43, 44, 45)]
     current = latest_result(conn, 42)
     assert current['candidate']['structural_analysis']['reference_hash'] is not None
     receipt_path = conn.execute("SELECT path FROM agentic_artifacts WHERE run_key=? AND kind='structural_inputs'",
@@ -258,7 +258,7 @@ def test_complete_real_pipeline_varied_jobs_pdf_ledger_and_idempotency(world):
 
     assert gateway.calls.count('complete_candidate_assessment') == 2  # read + terminal, shared across the batch
     assert conn.execute('SELECT COUNT(DISTINCT batch_id) FROM agentic_batches').fetchone()[0] == 1
-    for pid, employer in ((42, 'Synthetic Alpha'), (43, 'Synthetic Beta'), (45, 'Synthetic Gamma')):
+    for pid, employer in ((42, 'Synthetic Alpha'), (43, 'Synthetic Beta'), (44, 'Synthetic Alpha')):
         result = latest_result(conn, pid)
         assert result['status'] == 'ready' and result['manifest']['run_key']['candidate_hash'] == result['candidate']['run_key']
         if pid == 42:
@@ -655,9 +655,10 @@ def test_real_deepagents_research_checkpoints_on_file_database(world, monkeypatc
                     'tool': 'research_employer', 'arguments': {'intent': 'employer_identity'}})
             return status, payload
     summary = agentic_batch_run([46], config, conn, evidence_bundle=bundle,
-                               llm=LLM(transport=ResearchGateway(bundle), keys=['synthetic']))
+                               llm=LLM(transport=ResearchGateway(bundle), keys=['synthetic']), operation='evaluate')
     assert checkpoint_errors == []
-    assert summary['archived'] == 1 and summary['held'] == 0
+    assert summary['ready'] == 0 and summary['archived'] == 0 and summary['held'] == 1
+    assert latest_result(conn, 46)['reason'] == 'evaluation_complete'
     assert len(queries) == 1 and queries[0][1] != main_thread
     cp = json.loads(conn.execute('SELECT checkpoint_json FROM agentic_runs').fetchone()[0])
     assert cp['research_queries'] == 1 and cp['research_pages'] == 0

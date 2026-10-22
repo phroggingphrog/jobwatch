@@ -5,18 +5,21 @@ import json
 import math
 import re
 from pathlib import Path
-from jobwatch.candidate.contracts import excluded_families, canonicalize_family
+from jobwatch.candidate.contracts import JOB_ROLE_FAMILIES, canonicalize_family
 
-FEATURE_VERSION = 'choice-features-v2'
-MODEL_VERSION = 'conditional-logit-outside-v1'
-PRIOR_VERSION = 'archived-directions-sd05-missing-sd05-v1'
+FEATURE_VERSION = 'choice-features-v3-canonical-families'
+MODEL_VERSION = 'conditional-logit-outside-v2-neutral-families'
+PRIOR_VERSION = 'neutral-zero-sd05-family-exchangeable-v2'
 NAMES = ('hours_part_time','hours_flexible_full_time','exp_shortfall','exp_excess',
          'coverage','must_have_gaps','entry_signal','ring_inner','ring_r5_10','ring_outer',
          'ring_remote','pay_low_c','pay_high_c','automation_angle','rights_welcomes_visa',
          'rights_full_rights_wording','age_days')
-PRIOR_MEANS = (.8,-.8,-.7,-.1,2.,-.5,.6,.4,.2,-.4,.2,.2,.2,.3,.3,-.2,-.02)
-# Stored model dimensions (part of the saved model's digest): other families map to 'other'.
-FAMILIES = ('accounting','data','admin','ai_automation','other')
+# Symmetric Normal(0, .5) regularization for observed and missingness coefficients.
+# The same uncertainty applies to objective evidence features: none is a human taste label.
+PRIOR_MEANS = (0.,) * len(NAMES)
+# Exchangeable family intercepts: common Normal(0, 1), half-Normal(0, .5) spread;
+# no occupation receives a cold-start advantage. Unknown remains a distinct category.
+FAMILIES = JOB_ROLE_FAMILIES
 
 class PreferenceError(ValueError):
     """Fixed public error codes only."""
@@ -31,6 +34,7 @@ def versions():
     root = Path(__file__).parent
     files = ('features.py', 'store.py', 'model.py', 'fit_choice_model.R', 'choice_model.jags')
     return {'feature': FEATURE_VERSION, 'model': MODEL_VERSION, 'prior': PRIOR_VERSION,
+            'families': list(FAMILIES), 'prior_means': list(PRIOR_MEANS),
             'source_hashes': {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in files}}
 
 def context_hash(*identities):
@@ -51,8 +55,8 @@ def validate_alternatives(alternatives):
                 raise PreferenceError('invalid_provenance')
         if any(type(raw.get(k)) is not str or not raw[k].strip() or len(raw[k]) > 500 for k in ('title', 'company', 'family')):
             raise PreferenceError('invalid_alternative')
-        if canonicalize_family(raw['family']) in excluded_families():
-            raise PreferenceError('excluded_family')
+        # Eligibility is freshly established by the canonical per-person gate upstream.
+        # Validation never reads a legacy interest file or reinterprets stored owner choices.
         features = raw.get('features')
         if type(features) is not dict or set(features) != set(NAMES):
             raise PreferenceError('invalid_features')
@@ -67,8 +71,7 @@ def validate_alternatives(alternatives):
 
 def family_index(family):
     family = canonicalize_family(family)
-    mapping = {'data_analyst':'data', 'back_office_admin':'admin'}
-    return FAMILIES.index(mapping.get(family, family) if mapping.get(family, family) in FAMILIES else 'other') + 1
+    return FAMILIES.index(family if family in FAMILIES else 'other') + 1
 
 def alternative_from_evaluation(evaluation, *, title, company, profile_hash, gate):
     """Caller must freshly gate against current ad, policy, evidence and expected run key."""

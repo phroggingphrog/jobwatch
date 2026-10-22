@@ -69,6 +69,7 @@ def _personal(key: str, question: str, options: list) -> tuple[str, list]:
     cand = _candidate()
     question = question.replace("{region}", _region())
     rights = cand.get("work_rights") or {}
+    rights = rights if isinstance(rights, dict) else {}
     if key == "visa_type":
         options = [("Citizen", "Australian citizen"), ("Permanent resident", "Permanent resident"),
                    ("Temporary visa with work rights", "Temporary visa with work rights"), ("Other", "other")]

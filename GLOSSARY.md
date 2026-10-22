@@ -38,3 +38,9 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Eligibility constraint | A work-rights or hours limit the person stated and confirmed, kept as a genuine constraint apart from preferences. |
 | Open question | A fact the policy needs but does not have as `evidence`, such as `exclusion:<fact_id>`; it is asked, never answered by the agent. |
 | Policy flag | `pipeline.agentic.decision_policy`, with values `legacy` (default) and `profile`, choosing the legacy checks or the confirmed-profile policy. |
+| Field hypothesis | A related occupation found by semantic retrieval from approved facts, used as a search hypothesis; never proof of qualification. |
+| Reference dataset | Public, versioned, hash-verified occupation data under `<data>/reference/`. |
+| Search plan | The queries and locations collectors use, derived from field hypotheses and the decision policy. |
+| Relevance judgment | A stored yes/no/uncertain verdict on whether a posting's full ad belongs to the person's fields, with verbatim quotes. |
+| Recall pre-screen | Title keywords that may only add postings for detail fetching, never exclude one from the semantic step. |
+| Semantic duplicate | The same vacancy listed by different sources, found by description similarity plus company, title and city agreement. |

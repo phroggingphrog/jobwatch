@@ -1,6 +1,6 @@
 """Seek public search JSON (no login): https://www.seek.com.au/api/jobsearch/v5/search
 
-Params: siteKey=AU-Main, where="All Melbourne VIC", keywords, dateRange=1, page<=2.
+Params: siteKey=AU-Main, where=<search location>, keywords, dateRange=1, page<=2.
 NOTE: Seek's robots.txt disallows /api/jobsearch/ for all agents. The owner accepted the
 ToS risk for personal, low-volume use (PLAN D3); set seek.respect_robots: true in
 searches.yaml to honour robots.txt instead (the collector then records a clean error).
@@ -46,7 +46,8 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
     conf = cfg.config.searches.get("seek") or {}
     if conf.get("enabled") is False:
         return []
-    keywords = rotate(cfg, "seek", list(conf.get("keywords") or []), conf.get("searches_per_run"))
+    items = conf['searches'] if 'searches' in conf else list(conf.get('keywords') or [])
+    keywords = rotate(cfg, "seek", items, conf.get("searches_per_run"))
     remote = conf.get("remote") or {}
     if remote.get("enabled"):                # remote-only jobs anywhere in Australia
         keywords += [("remote", k) for k in rotate(cfg, "seek_remote", list(remote.get("keywords") or []),
@@ -56,10 +57,16 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
     seen: set[str] = set()
     for keyword in keywords:
         extra, failed = {}, False
-        if isinstance(keyword, tuple):       # ("remote", kw): one page, All Australia, remote only
+        if isinstance(keyword, dict):
+            search = keyword
+            keyword = search['term']
+            extra = {'where': search.get('location') or 'All Australia'}
+            if search.get('is_remote'):
+                extra['workarrangement'] = 3
+        elif isinstance(keyword, tuple):       # ("remote", kw): one page, All Australia, remote only
             keyword = keyword[1]
             extra = {"where": remote.get("where", "All Australia"), "workarrangement": 3}
-        for page in range(1, (1 if extra else max_pages) + 1):
+        for page in range(1, (1 if extra.get('workarrangement') else max_pages) + 1):
             if cfg.full(results):
                 return results
             params = {"siteKey": "AU-Main", "where": conf.get("where") or location_text() or "All Australia",
@@ -89,5 +96,5 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
             if len(rows) < int(params["pageSize"]):
                 break
         if not failed:
-            cfg.origins.add(f"seek:{'remote:' if extra else ''}{keyword}")
+            cfg.origins.add(f"seek:{'remote:' if extra.get('workarrangement') else ''}{keyword}")
     return results

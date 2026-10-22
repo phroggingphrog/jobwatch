@@ -3,6 +3,30 @@
 Recorded from the owner's direction on 2026-10-21. Keep this document public and
 candidate-free. Changes to the product goal require the owner's explicit direction.
 
+## Profile-dependent behavior
+
+Owner follow-up on 2026-10-22:
+
+> pre filter shouldn't be hardcoded
+
+> yeah can you do an audit where preferences is hardcoded because it shouldn't profile preferences behavior shouldn't be hardcoded
+
+Personal preferences must come from each person's confirmed profile, not inherited
+geographic, career, seniority or writing assumptions in shared code. Missing facts
+stay unknown. The collector/ingest regional prefilter now reads the confirmed
+policy. The [source audit](docs/audits/2026-10-22-profile-preferences.md) preserves
+the original findings and records their source repairs across active and retained
+paths, separately from reference data and technical controls. Its verification
+limits still apply; source repairs do not establish live recommendation quality.
+Owner's subsequent direction:
+
+> fix all of the issues then merged into main
+
+This authorizes completing the repairs in GitHub #14 and merging reviewed source into main.
+Use confirmed profile policy across collection, eligibility, ordering and writing; scores
+remain advisory. Preserve historical decisions for comparison without retaining a live
+personal-policy fallback. Source merge does not activate a service, refit a model or submit an application.
+
 ## Owner's words
 
 > native API is my plan
@@ -144,6 +168,18 @@ confirmed search scope. Initial setup is guided by the agent, which asks for the
 asks the person questions while their documents are processed in the background. Confirmation does not
 authorise document preparation, employer messages or submission. See [ADR 0002](docs/adr/0002-profile-intake-and-approval.md)
 and [the worked example](docs/examples/profile-intake.md).
+
+## Semantic field and posting discovery
+
+Owner direction on 2026-10-21:
+
+> it should use semanntic reasoning/extraction to filter out how about that
+
+Title keywords may widen recall by adding postings for full-ad fetching; they
+never exclude a posting from semantic assessment or decide personal fit. Related
+occupations are search hypotheses, not proof of qualification. Similarity
+thresholds remain uncalibrated, and the current implementation makes no
+matching-accuracy claim. See [ADR 0005](docs/adr/0005-field-and-job-discovery.md).
 
 ## Confirmed Submit
 

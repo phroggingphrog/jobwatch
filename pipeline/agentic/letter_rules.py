@@ -21,15 +21,17 @@ def letter_text(content: dict) -> str:
     return "\n\n".join(" ".join(str(c.get("text", "")) for c in p if isinstance(c, dict)) for p in paras)
 
 
-def third_opinion(content: dict) -> list[str]:
+def third_opinion(content: dict, *, style_rules: dict | None = None) -> list[str]:
     """Notes for the writer; empty when the letter passes."""
     text = letter_text(content)
     low = text.casefold()
-    notes = [f'Cut the stock phrase "{b}" and say the specific thing instead.' for b in BANNED if b in low]
+    style_rules = style_rules or {}
+    notes = [f'Cut the stock phrase "{b}" and say the specific thing instead.' for b in BANNED if b in low] if style_rules.get("avoid_stock_phrases") is True else []
     if re.search(r"\[[^\]]+\]|\{[^}]+\}|<[a-z ]+>", text):
         notes.append("Remove placeholder text in brackets; write the real words or leave it out.")
-    if "—" in text:
+    if style_rules.get("avoid_em_dashes") is True and "—" in text:
         notes.append("Replace em dashes with commas or full stops; people rarely type them.")
-    if len(re.findall(r"[^.!?]+[.!?]", text)) and max((len(s.split()) for s in re.split(r"[.!?]", text)), default=0) > 40:
-        notes.append("Split sentences over 40 words; read it aloud.")
+    limit = style_rules.get("max_sentence_words")
+    if type(limit) is int and limit > 0 and max((len(s.split()) for s in re.split(r"[.!?]", text)), default=0) > limit:
+        notes.append(f"Split sentences over {limit} words, as the person requested.")
     return notes

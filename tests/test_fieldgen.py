@@ -23,9 +23,34 @@ def test_generated_rules_do_not_read_a_national_title_as_remote(tmp_path, monkey
     from jobwatch.models import Posting
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
     users.create_user_dirs("friend")
-    fieldgen.generate_config(NURSE, "friend")
+    fieldgen.generate_config({**NURSE, "remote_ok": True}, "friend")
     with users.use("friend"):
         rules = Rules(load_config().rules)
     p = lambda title, loc: Posting(source="t", source_id=title + loc, url="https://x/" + title, title=title, location=loc)
     assert rules.location_rule(p("National Registered Nurse", "Sydney NSW")) != "remote_au"
     assert rules.location_rule(p("Registered Nurse", "Australia - National")) == "remote_au"
+
+
+def test_generated_rules_do_not_invent_seniority_experience_or_remote_constraints(tmp_path, monkeypatch):
+    import yaml
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    users.create_user_dirs('friend')
+    for level in ('', 'graduate', 'senior'):
+        p = {'target_titles': ['nurse'], 'level': level}
+        cdir = fieldgen.generate_config(p, 'friend')
+        rules = yaml.safe_load((cdir / 'rules.yaml').read_text())
+        assert rules['seniority']['exclude_title'] == []
+        assert rules['seniority']['exclude_min_years'] is None
+        assert rules['flags']['experience_flag_min_years'] is None
+        assert rules['location']['remote_patterns'] == []
+        assert rules['location']['vic_patterns'] == []
+
+
+def test_generated_rules_preserve_only_stated_exclusions_and_remote_preference(tmp_path, monkeypatch):
+    import yaml
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    users.create_user_dirs('friend')
+    cdir = fieldgen.generate_config({**NURSE, 'remote_ok': True}, 'friend')
+    rules = yaml.safe_load((cdir / 'rules.yaml').read_text())
+    assert rules['seniority']['exclude_title_global'] == ['\\baccountant\\b']
+    assert rules['location']['remote_patterns']

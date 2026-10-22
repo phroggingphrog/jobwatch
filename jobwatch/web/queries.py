@@ -69,7 +69,9 @@ HIDE_REASONS = [("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real
                 ("engineering_it", "Other field: software, engineering or IT"),
                 ("health_care_teaching", "Other field: health, care or teaching"),
                 ("trades_manual", "Other field: trades or manual work"),
-                ("other_field", "Other field: a different profession")]
+                ("other_field", "Other field: a different profession"),
+                ("not_relevant", "Not relevant to your fields"),
+                ("excluded_by_rule", "Excluded by your rule")]
 NOT_TARGET_KEYS = frozenset(k for k, _ in HIDE_REASONS[HIDE_REASONS.index(("low_fit", "Not a fit")) + 1:])
 HIDE_LABEL = {**dict(HIDE_REASONS), "not_target": "Not a target role (not sorted yet)", "other": "Other reason",
               "duplicate": "Same ad as another job",
@@ -92,8 +94,8 @@ AD_KIND_LABEL = {"agency": "Agency", "talent_pool": "Talent pool", "scam": "Look
 # The career-ops style evaluation (reader prompt v3), stored in ad_reviews.report_json. Plain words for every code.
 HOURS_TEXT = {"full_time_only": "Full-time only", "part_time_ok": "Part-time OK", "casual": "Casual", "unstated": "Not stated"}
 WORK_MODE_TEXT = {"onsite": "On site", "hybrid": "Hybrid", "remote": "Remote", "unstated": "Not stated"}
-LOCATION_TEXT = {"inner": "Inner Melbourne", "mid": "Middle suburbs", "cbd_or_far_suburb": "The CBD or a far suburb",
-                 "outer": "Outer suburbs", "remote": "Remote", "out_of_scope": "Outside Melbourne"}
+LOCATION_TEXT = {"inner": "Location fit reported", "mid": "Location fit reported", "cbd_or_far_suburb": "Location fit reported",
+                 "outer": "Location fit reported", "remote": "Remote", "out_of_scope": "Outside confirmed scope"}
 IMPORTANCE_TEXT = {"critical": "Critical", "high": "High", "meaningful": "Meaningful", "preferred": "Preferred",
                    "low_signal": "Low signal"}
 TIER_TEXT = {"stated": "Stated", "structural": "Structural", "inferred": "Inferred"}
@@ -693,6 +695,7 @@ def ai_from_row(r: dict) -> dict | None:
 # pipeline has not judged yet (ingested / extracted / scored) keeps the reader's review, or waits.
 PL_SHOW = ("draft_queued", "drafted", "ready")
 PL_HIDE_REASON = {"not_a_real_job": "not_a_real_job", "sponsored_ad": "sponsored_ad", "too_senior": "too_senior",
+                  "not_relevant": "not_relevant", "excluded_by_rule": "excluded_by_rule",
                   "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
                   "work_rights:citizen_or_pr": "needs_citizen_or_pr", "work_rights:citizen_only": "needs_citizen_or_pr",
                   "work_rights:clearance": "needs_citizen_or_pr",
@@ -802,7 +805,8 @@ def _ai_from_agentic(result: dict | None, posting_id: int, at: str | None) -> di
         text = f"Archived ({_line(why, 120)}). " + text
     if evaluation and verdict != 'hide':  # owner 2026-10-19: shown with a note instead of held
         notes = [n for n, on in (('Hours not stated: check they fit your availability', evaluation.facts.hours == 'unstated'),
-                                 ('Level not stated', evaluation.facts.seniority not in ('entry', 'junior', 'graduate')),
+                                 ('Level not stated', any('seniority unknown' in str(u).casefold() for u in
+                                     (evaluation.matching_diagnostics or {}).get('ad_uncertainties', ()))),
                                  ('Employer not verified', evaluation.legitimacy != 'verified')) if on]
         if notes:
             text = '. '.join(notes) + '. ' + text
@@ -913,7 +917,7 @@ def ai_progress(conn) -> dict:
 
 
 def fit_score(r: dict) -> tuple[int, list[str]]:
-    """Rule-based keyword score (0-100). No LLM: arm tier, entry-level, freshness, salary listed,
+    """Provisional keyword score (0-100). No LLM: arm tier, freshness, salary listed,
     warning flags, seen on several sources. Used only when the AI has not scored the ad (see enrich)."""
     pts, why = 0, []
     if r["arm_tier"] == "core":
@@ -922,9 +926,6 @@ def fit_score(r: dict) -> tuple[int, list[str]]:
     elif r["arm_tier"] == "fallback":
         pts += 12
         why.append("fallback arm +12")
-    if r["entry"]:
-        pts += 15
-        why.append("entry-level +15")
     age = r["age_days"]
     fresh = 20 if age <= 1 else 15 if age <= 3 else 10 if age <= 7 else 5 if age <= 14 else 0
     if fresh:

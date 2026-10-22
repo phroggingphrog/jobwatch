@@ -1,4 +1,9 @@
-"""Synthetic tests for the deterministic agentic admission gate."""
+"""Frozen historical admission tests, retained to compare intentional policy changes.
+
+These exercise the pre-remediation baseline only. Current active policy is tested
+in test_agentic_gate_policy.py and candidate/test_eligibility.py. No runtime path
+imports this test fixture or can select the old personal defaults.
+"""
 import hashlib
 
 import pytest
@@ -7,7 +12,7 @@ from jobwatch.candidate.contracts import TargetPolicy
 from pipeline.agentic.contracts import (
     AgenticEvaluation, Dimension, RequirementSet, RunKey, SourceCitation,
 )
-from pipeline.agentic.gate import decide
+from tests.fixtures.frozen_person_gate_20261022 import decide
 from pipeline.schemas import JobFacts
 
 
@@ -356,7 +361,7 @@ def test_unproven_or_conflicting_location_cannot_pass_on_model_label(evaluation,
     ('Accounting Intern','Full time',False,False),
 ])
 def test_intern_title_confirms_claimed_program_without_substring_or_duties_false_positive(title,body,claimed,expected):
-    from pipeline.agentic.gate import _is_program
+    from tests.fixtures.frozen_person_gate_20261022 import _is_program
     assert _is_program(title,body,claimed) is expected
 
 
@@ -437,7 +442,7 @@ def test_program_where_you_nominate_your_office_is_in_scope(evaluation, policy):
 
 
 def test_unknown_family_is_read_from_the_archetype():
-    from pipeline.agentic.gate import _family_from_archetype
+    from tests.fixtures.frozen_person_gate_20261022 import _family_from_archetype
     assert _family_from_archetype("Vacation/intern program — Tax / Graduate Accountant + Data Analyst", True) == "finance_program"
     assert _family_from_archetype("Accounts & Administration", False) == "back_office_admin"
     assert _family_from_archetype("Barista", False) == "unknown"
@@ -459,7 +464,7 @@ def test_ad_inviting_visa_holders_is_not_a_citizenship_requirement():
     ("Office Coordinator Trainee", "Full-time traineeship.", False),
 ])
 def test_only_graduate_and_vacation_roles_bypass_full_time(title, ad, exempt):
-    from pipeline.agentic.gate import _full_time_exempt
+    from tests.fixtures.frozen_person_gate_20261022 import _full_time_exempt
     assert _full_time_exempt(title, ad) is exempt
 
 
@@ -488,7 +493,7 @@ def test_graduate_and_vacation_roles_draft_from_3_5(evaluation, policy):
 ])
 def test_general_work_rights_excludes_citizenship_pr_and_clearance(text, general):
     from types import SimpleNamespace
-    from pipeline.agentic.gate import _general_work_rights
+    from tests.fixtures.frozen_person_gate_20261022 import _general_work_rights
     assert _general_work_rights(SimpleNamespace(id="req", text=text, jd_signal=None)) is general
 
 
@@ -503,7 +508,7 @@ def test_general_work_rights_excludes_citizenship_pr_and_clearance(text, general
 ])
 def test_logistics_requirements_never_hold_a_job(rid, text, exempt, expected):
     from types import SimpleNamespace
-    from pipeline.agentic.gate import _logistics
+    from tests.fixtures.frozen_person_gate_20261022 import _logistics
     assert _logistics(SimpleNamespace(id=rid, text=text, jd_signal=None), exempt) is expected
 
 
