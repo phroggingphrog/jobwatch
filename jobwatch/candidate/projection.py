@@ -27,6 +27,13 @@ def _text(value) -> str:
     return " ".join(str(value).split())
 
 
+def _exclusion(value) -> str:
+    """The text of one exclusion fact. A structured {kind, value} exclusion gives its value, not its kind."""
+    if isinstance(value, dict) and isinstance(value.get("value"), str):
+        return _text(value["value"])
+    return _text(value)
+
+
 def _uniq(items) -> list[str]:
     return list(dict.fromkeys(i for i in items if i))
 
@@ -103,7 +110,7 @@ def project(approved: dict) -> dict[str, str]:
     """File name -> text for an approved profile (see module docstring for what is left out)."""
     rights = _work_rights(approved)
     profile: dict = {"version": 1, "candidate": {"work_rights": rights} if rights else {}}
-    exclusions = _uniq(_text(f["value"]) for f in _facts(approved, "exclusion"))
+    exclusions = _uniq(_exclusion(f["value"]) for f in _facts(approved, "exclusion"))
     families = _uniq(canonicalize_family(e) for e in exclusions if canonicalize_family(e) in KNOWN_FAMILIES)
     target = {"titles": _uniq(_text(f["value"]) for f in _facts(approved, "career_focus")),
               "not_wanted": exclusions, "excluded_families": families}
