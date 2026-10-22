@@ -16,8 +16,8 @@ assumptions from application code. Preserve genuine eligibility constraints."
 
 Today the gate and the prompts carry assumptions about one person: a commute-distance
 constant, regional place regexes, a stored location-fit label that stands for the
-home region, an entry-level preference applied to everyone, student wording in
-prompts, and occupation family lists. They are reachable for every person and do
+home region, a seniority preference applied to everyone, prompt wording that
+assumes a study status, and occupation family lists. They are reachable for every person and do
 not come from any confirmed fact. Genuine eligibility is different: work rights and
 hours limits the person states are real constraints and stay.
 
