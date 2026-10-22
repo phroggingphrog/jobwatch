@@ -31,6 +31,7 @@ def register(sub):
     label.add_argument("--relevance", type=int, help="relevance 0 to 3")
     label.add_argument("--exclusion-violation", choices=list(_YES_NO_UNSURE),
                        help="does the case violate an explicit exclusion")
+    label.add_argument("--allow-holdout", action="store_true", help="explicit audited holdout access")
     label.add_argument("--note", default="", help="free note; never counts as a judgment by itself")
     label.add_argument("--tag", action="append", default=[], metavar="TAG", help="owner tag; repeat for more")
 
@@ -116,6 +117,12 @@ def _label(args):
         print("human_required", file=sys.stderr)
         return 1
     from pipeline.agentic import baseline
+    from pipeline.agentic import eval_data
+    split_path = baseline._baseline_dir(args.baseline_id) / 'evaluation' / 'split.json'
+    if split_path.exists():
+        split = eval_data.load_split(args.baseline_id)
+        if args.case_id in split['holdout']:
+            eval_data.audit_holdout(args.baseline_id, 'label', allow_holdout=getattr(args, 'allow_holdout', False))
     baseline.label_case(args.baseline_id, args.case_id, actor="owner",     # at a terminal this is the owner's own act
                         suitable=_YES_NO_UNSURE[args.suitable] if args.suitable else None,
                         relevance=args.relevance,

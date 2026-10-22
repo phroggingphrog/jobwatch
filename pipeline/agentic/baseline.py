@@ -67,6 +67,7 @@ class FrozenCase(StrictFrozen):
     group_keys: tuple[str, ...] = ()
     stored: dict = {}
     blob_refs: dict[str, str] = {}
+    evaluation_context: dict = {}
 
 
 class Baseline(StrictFrozen):
@@ -89,6 +90,7 @@ class Baseline(StrictFrozen):
     case_sha256: dict[str, str]
     content_sha256: str
     summary: dict
+    evaluation_inputs_sha256: str | None = None
 
 
 # --------------------------------------------------------------------------- gate version
@@ -718,7 +720,9 @@ def _freeze_into(conn: sqlite3.Connection, config, staging: Path, person: str, a
     for item in prepared:
         case = FrozenCase(case_id=item['case_id'], posting_id=item['posting_id'], group_id=groups[item['case_id']],
                           tags=(), **item['fields'])
-        case = case.model_copy(update={'tags': tag_case(case)})
+        from .eval_data import capture_case_context
+        case = case.model_copy(update={'tags': tag_case(case),
+            'evaluation_context': capture_case_context(conn, config, case)})
         raw = _canonical(case.model_dump(mode='json'))
         safe_write_bytes(staging / 'cases' / f"{case.case_id}.json", raw)
         case_sha256[case.case_id] = _sha(raw)
@@ -736,6 +740,9 @@ def _freeze_into(conn: sqlite3.Connection, config, staging: Path, person: str, a
         'groups': len(sizes), 'largest_group': max(sizes.values()),
         'evidence_mismatch': sum(case.snapshot['run_key']['evidence_hash'] != evidence_bundle_hash for case in cases),
         'decision_errors': routes['error']}
+    from .eval_data import capture_inputs
+    evaluation_inputs = _canonical(capture_inputs(conn, config, cases, approved, staging=staging))
+    safe_write_bytes(staging / 'evaluation_inputs.json', evaluation_inputs)
     content_sha256 = digest({'cases': case_sha256, 'profile': profile_sha256, 'approved': _sha(approved_raw)})
     created_at = _utcnow()
     stamp = datetime.fromisoformat(created_at).astimezone(UTC).strftime('%Y%m%dT%H%M%SZ')
@@ -746,7 +753,8 @@ def _freeze_into(conn: sqlite3.Connection, config, staging: Path, person: str, a
         case_ids=tuple(case.case_id for case in cases), gate_dependencies=gate_sources(), person=person,
         policy=policy, runtime_config_sha256=runtime_config_sha256, evidence_bundle_hash=evidence_bundle_hash,
         approved_sha256=_sha(approved_raw), decision_policy_sha256=decision_policy_sha256,
-        case_sha256=case_sha256, content_sha256=content_sha256, summary=summary)
+        case_sha256=case_sha256, content_sha256=content_sha256, summary=summary,
+        evaluation_inputs_sha256=_sha(evaluation_inputs))
     safe_write_bytes(staging / 'baseline.json', _canonical(record.model_dump(mode='json')))
     return record
 
