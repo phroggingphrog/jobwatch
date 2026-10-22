@@ -123,16 +123,16 @@ Walk-through with real output (invented data, no model called): [docs/examples/f
 
 With `profile`, the gate reads only the approved facts of the confirmed version:
 
-- **Strategy.** A stated career focus gives `career_focus`. Unemployed with no contrary status gives `employment_first`, so a low career-alignment score does not reject an employment-first opportunity. Anything else is `balanced`.
+- **Strategy.** A stated career focus gives `career_focus`. Unemployed with no contrary status gives `employment_first`. Anything else is `balanced`. The strategy is derived and shown in the policy, but the gate does not read it yet: the `north_star < 3` score gate still applies to every strategy.
 - **Exclusions are rules only when structured.** An exclusion becomes a rule only as a `{kind, value}` fact, with kind `family`, `employer`, `title_term`, `location` or `work_type`. Free text is never a rule. It stays prompt text and is listed as the open question `exclusion:<fact_id>` until the person gives it a kind.
-- **Work rights, hours, level and commute** are read from the approved facts by a documented deterministic grammar. Wording the grammar does not recognise becomes an open question, not a rule.
+- **Work rights, hours, level and commute** are read from the approved facts by a documented deterministic grammar. The grammar asks only about missing sections and about locations and exclusions it cannot read. A work-rights, hours, level or commute statement it cannot read is ignored without a question and appears only in the policy JSON. A commute limit with no recognised home is not applied.
 - **Missing facts** that change a decision are open questions (for example `location`). An ad whose location cannot be resolved holds rather than archives.
 
 To see the policy and its open questions: `GET /api/agent/profile/policy` (scope `read`) returns `policy`, `mode`, `enabled`, `open_questions` (each `{code, question, why}`) and `reason` when there is no policy. The chat agent's read-only `profile_policy` tool returns the same. Neither writes anything.
 
 Limits: distance uses place data for Victoria only. Other states resolve by state name, state code or capital city, and an unresolved location holds. The product remains Australia-only. Collection pre-filters, `_target_first`, near-duplicate embeddings, the `north_star < 3` score gate and the preference-model families are unchanged. A person with no confirmed version that carries these facts stays on the legacy gate even when the flag is `profile`.
 
-Undo: set `decision_policy: legacy`, which restores the current gate immediately with no revert. To remove the table, run `DROP TABLE IF EXISTS gate_decisions` on the person's database. Walk-through with real output (invented data, no model called): [docs/examples/decision-policy.md](docs/examples/decision-policy.md).
+Undo: set `decision_policy: legacy`, which restores the legacy gate for new decisions with no revert. A job that `profile` archived as `policy_excluded` stays archived under `legacy`. To remove the table, run `DROP TABLE IF EXISTS gate_decisions` on the person's database. Walk-through with real output (invented data, no model called): [docs/examples/decision-policy.md](docs/examples/decision-policy.md).
 
 ## Config files (`config/`)
 

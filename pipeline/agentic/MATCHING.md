@@ -118,9 +118,9 @@ freeze must confirm it opens. No figure in this document changed. See
 [docs/examples/frozen-baseline.md](../../docs/examples/frozen-baseline.md).
 
 The gate also has a policy path, selected by `pipeline.agentic.decision_policy: profile`
-(default `legacy`). With `profile` it takes the strategy, structured exclusion rules and
-missing-fact questions from the person's confirmed profile, and it records each decision
-in `gate_decisions`. The flag is outside the run key, so existing evaluations keep their
+(default `legacy`). With `profile` it takes the structured exclusion rules, the location, commute and level
+limits and the missing-fact questions from the person's confirmed profile. It also derives
+a strategy, which the gate does not read yet. It records each decision in `gate_decisions`. The flag is outside the run key, so existing evaluations keep their
 keys. The owner's labels, the baseline and the figures above are unchanged; the policy
 path has not been compared with the legacy gate on real postings, so it makes no
 matching-quality claim. Its behaviour is described in the README's decision policy

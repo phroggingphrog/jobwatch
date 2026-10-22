@@ -6,14 +6,13 @@ The flag defaults to `legacy`, which keeps the fixed gate and changes nothing. T
 
 ## 1. The confirmed profile
 
-The approved version (version 1) holds four facts relevant to the policy:
+The approved version (version 1) holds three facts relevant to the policy, and no location:
 
 | Fact | Basis | Value |
 |---|---|---|
 | Employment status | evidence | "Currently unemployed and looking for work" |
 | Exclusion | evidence | `{"kind": "family", "value": "accounting"}` |
 | Exclusion | evidence | "no night shifts" (free text) |
-| Location | none | not stated |
 
 ## 2. The policy endpoint
 
@@ -99,7 +98,7 @@ What the tables show:
 - Distance uses place data for Victoria only. Other states resolve by state name, state code or capital city, and an unresolved location holds.
 - The product remains Australia-only.
 - Only the structured `{kind, value}` exclusion becomes a rule. Free text is never enforced until the person classifies it.
-- **Legacy gap:** the legacy projection (`jobwatch/candidate/projection.py`) builds `excluded_families` from the text of each exclusion fact. For a structured fact that text is `"family, accounting"`, which matches no known family, so the family is dropped. Under `legacy` a confirmed family exclusion is therefore not applied. This is a known limitation of Plan 1 code, not changed in this phase.
+- **Legacy gap:** the legacy projection (`jobwatch/candidate/projection.py`) builds `excluded_families` from the text of each exclusion fact. For a structured fact that text is `"family, accounting"`, which matches no known family, so the family is dropped. Under `legacy` a structured family exclusion is therefore not applied (a bare family name typed as text still is). This is a known limitation of Plan 1 code, not changed in this phase.
 - Collection pre-filters, `_target_first`, near-duplicate embeddings, the `north_star < 3` score gate and the preference-model families are unchanged.
 - Nothing here was measured on real postings. No matching-quality claim is made.
 
