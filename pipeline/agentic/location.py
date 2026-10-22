@@ -197,3 +197,58 @@ def km_from_home(location_text: str, home: str | None = None) -> int | None:
     if place not in VIC_PLACES or home not in VIC_PLACES:
         return None
     return round(_km(VIC_PLACES[home], VIC_PLACES[place]))
+
+
+# --- Person-independent region and commute evidence (decision policy from the confirmed profile) ---
+# These helpers take the regions and home place as arguments; none reads a person's profile or assumes a home state.
+CAPITALS: dict[str, str] = {'sydney': 'NSW', 'melbourne': 'VIC', 'brisbane': 'QLD', 'perth': 'WA', 'adelaide': 'SA',
+                            'hobart': 'TAS', 'canberra': 'ACT', 'darwin': 'NT'}
+_CAPITAL_WORD = re.compile(r'\b(' + '|'.join(CAPITALS) + r')\b', re.I)
+_REMOTE_WORDS = re.compile(r'\b(?:remote|work from home|anywhere in australia)\b', re.I)
+
+
+def regions_named(text: str) -> frozenset[str]:
+    """State codes the text names: a state code (upper case word), a full state name or a capital city.
+
+    Only when the text names no state does a Victorian place from the bundled data count as VIC, so a state
+    named in the text always wins over place data ("Richmond NSW" is NSW, never VIC)."""
+    from jobwatch.place import STATES
+    text = ' '.join((text or '').split())
+    found = {code for code, name in STATES.items()
+             if re.search(rf'(?-i:\b{code}\b)', text) or re.search(rf'\b{re.escape(name)}\b', text, re.I)}
+    found |= {CAPITALS[m.group(1).lower()] for m in _CAPITAL_WORD.finditer(text)}
+    if not found and victorian_place(text) is not None:
+        found.add('VIC')
+    return frozenset(found)
+
+
+def location_verdict(quote: str, regions: frozenset[str], *, remote_fit: bool, remote_ok: bool | None):
+    """'in', 'outside', 'remote' or 'unknown' for a cited location against the regions the person accepts.
+
+    No regions given: no area filter ('in'). A named region in `regions` is 'in' (alternatives such as
+    "Melbourne VIC or Sydney NSW" count). Named regions all outside are 'outside', unless the role is a fit
+    for remote work, the quote says so and remote work is not ruled out. No region named: 'remote' on remote
+    words when the role fits remote work, else 'unknown'."""
+    if not regions:
+        return 'in'
+    named = regions_named(quote)
+    remote = remote_fit and bool(_REMOTE_WORDS.search(quote or ''))
+    if named & regions:
+        return 'in'
+    if named:
+        return 'remote' if remote and remote_ok is not False else 'outside'
+    return 'remote' if remote else 'unknown'
+
+
+def commute_km_for(home_place: str | None, location_text: str) -> int | None:
+    """Straight-line km between two Victorian places, or None.
+
+    Documented limit: distance data exists for Victoria only, so a home or a job place outside it (or one
+    that names another state) has no distance."""
+    home = victorian_place(home_place or '')
+    place = victorian_place(location_text or '')
+    if home not in VIC_PLACES or place not in VIC_PLACES:
+        return None
+    if any('VIC' not in regions_named(t) for t in (home_place or '', location_text or '') if regions_named(t)):
+        return None  # "Richmond NSW" is not the Victorian Richmond
+    return round(_km(VIC_PLACES[home], VIC_PLACES[place]))
