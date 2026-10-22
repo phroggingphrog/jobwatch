@@ -147,7 +147,14 @@ def _clauses(text: str) -> list[str]:
 
 
 def _negated(part: str) -> bool:
-    return bool(_NEGATION.search(_NOT_FAR.sub(" ", part)))
+    """A negation word rules the part out. "not far/near/close" is only filler when no place follows it:
+    "not far from the city" names no exclusion, "not near Sydney" does."""
+    from pipeline.agentic.location import regions_named
+
+    def filler(m: re.Match) -> str:
+        return m.group(0) if regions_named(part[m.end():]) else " "
+
+    return bool(_NEGATION.search(_NOT_FAR.sub(filler, part)))
 
 
 def _places_in(text: str) -> tuple[set[str], bool, bool]:
@@ -167,7 +174,7 @@ def _places_in(text: str) -> tuple[set[str], bool, bool]:
         for p, neg in parts:
             if neg and (regions_named(p) or _AUSTRALIA_WIDE.search(p)):
                 ruled_out = True
-        if tail and regions_named(head):          # "Anywhere in Victoria except Geelong": the exception is a place too
+        if tail and (regions_named(head) or _AUSTRALIA_WIDE.search(head)):    # "Anywhere in Victoria except Geelong": the exception is a place too
             ruled_out = True
     return welcomed, anywhere, ruled_out
 

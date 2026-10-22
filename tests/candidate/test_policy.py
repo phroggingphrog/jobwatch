@@ -219,8 +219,9 @@ def test_not_far_does_not_negate_a_place():
 
 
 def test_negated_australia_wide_does_not_clear_regions_or_the_location_question():
-    p = policy_of(fact('location', 'Not Australia-wide'), fact('location', 'Melbourne'))
-    assert p.regions == ('VIC',)
+    p = policy_of(fact('location', 'Not Australia-wide', fid='n7'), fact('location', 'Melbourne'))
+    assert p.regions == ('VIC',) and 'location' not in p.open_questions
+    assert any(q.startswith('exclusion:') for q in p.open_questions) and 'exclusion:n7' in p.open_questions
 
 
 def test_australia_wide_answers_the_location_question():
@@ -263,3 +264,21 @@ def test_a_policy_survives_a_json_round_trip():
     p = policy_of(fact('exclusion', {'kind': 'family', 'value': 'retail'}), fact('location', 'I live in Box Hill, VIC'),
                   fact('constraint', 'within 10.5 km of home'))
     assert DecisionPolicy.model_validate(p.model_dump(mode='json')) == p
+
+
+def test_not_near_a_place_rules_it_out():
+    p = policy_of(fact('location', 'I live in Box Hill, VIC'), fact('constraint', 'Not near Sydney', fid='n8'),
+                  fact('preference', 'not close to Sydney NSW', fid='n9'))
+    assert p.regions == ('VIC',) and 'exclusion:n8' in p.open_questions and 'exclusion:n9' in p.open_questions
+
+
+def test_not_far_from_the_city_keeps_the_home_region_and_asks_nothing():
+    p = policy_of(fact('location', 'I live in Box Hill VIC, not far from the city', fid='n10'))
+    assert p.regions == ('VIC',) and not any(q.startswith('exclusion:') for q in p.open_questions)
+    q = policy_of(fact('location', 'Box Hill VIC not far from the city', fid='n11'))
+    assert q.regions == ('VIC',) and 'exclusion:n11' not in q.open_questions
+
+
+def test_australia_wide_except_a_place_asks():
+    p = policy_of(fact('location', 'Australia-wide except Geelong', fid='n12'))
+    assert p.regions == () and 'exclusion:n12' in p.open_questions and 'location' not in p.open_questions
