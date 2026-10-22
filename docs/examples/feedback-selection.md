@@ -1,7 +1,7 @@
 # Feedback and selected preparation — synthetic API example
 
-**Status:** Source implementation is underway; parent integration verification,
-local release checks and review remain pending. This walkthrough uses invented
+**Status:** Source implementation, local checks and independent review are complete;
+merge is tracked in PR #24. This walkthrough uses invented
 IDs and values. It is not a captured response and makes no quality or deployment
 claim. Prompt reads and HTTP selection acceptance do not call a model. After
 acceptance, the authenticated worker prepares packages through existing approved
@@ -206,7 +206,7 @@ Feedback history and selection status are scoped to the authenticated person.
 This Phase 6 example does not expose evaluation reports or holdout results;
 private Phase 7 reports remain outside this implementation scope.
 
-Focused worker verification recorded by the parent passed 7 checks in 97.16
-seconds for the `None` and Qwen routes, followed by 10 checks in 12.84 seconds
-after the stable-context guard. The complete release suite and parent release
-verification remain pending; this example does not claim release completion.
+The [release audit](../audits/2026-10-23-feedback-selection.md) records actual
+native API/chat package checks, independent review and the complete local suite:
+**3758 passed, 11 skipped**. Synthetic checks establish workflow behavior, not
+real recommendation quality.
