@@ -32,6 +32,11 @@ direction takes precedence; preserve their words and do not silently narrow the 
 Use the existing checks when verification is requested or required for release.
 Keep checks focused; reserve the full suite for a release. Documentation changes
 do not need application tests. Never use live candidate records as test fixtures.
+Completion depends on the required local checks and review. Hosted CI is optional
+and is not a completion or merge requirement; disabled, absent, queued or failed
+CI does not block finishing. This overrides older plans requiring CI. The owner
+has disabled CI; do not re-enable it unless explicitly requested. Continue to
+report and address failures in required local checks and review findings.
 Report the actual check and result, what remains unverified, and how to undo the
 change. A merge, passing CI or a plan does not establish a deployed backend.
 

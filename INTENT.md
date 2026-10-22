@@ -3,6 +3,19 @@
 Recorded from the owner's direction on 2026-10-21. Keep this document public and
 candidate-free. Changes to the product goal require the owner's explicit direction.
 
+## Development completion
+
+Owner direction on 2026-10-23:
+
+> can we not include CI as the rules for it to be finished
+
+> I already disabled It
+
+Use the required local verification and review to determine source completion.
+Hosted CI is optional and does not gate completion or merge. Keep it disabled
+unless the owner requests otherwise. Local failures and review findings still
+require accurate reporting and resolution; deployment remains a separate action.
+
 ## Profile-dependent behavior
 
 Owner follow-up on 2026-10-22:
