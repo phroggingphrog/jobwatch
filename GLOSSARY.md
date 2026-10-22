@@ -58,3 +58,7 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Relevance judgment | A stored yes/no/uncertain verdict on whether a posting's full ad belongs to the person's fields, with verbatim quotes. |
 | Recall pre-screen | Title keywords that may only add postings for detail fetching, never exclude one from the semantic step. |
 | Semantic duplicate | The same vacancy listed by different sources, found by description similarity plus company, title and city agreement. |
+| Grouped split | A write-once seeded partition of related advertisements and employers, allocating whole groups to development or holdout. |
+| Frozen replay | A current canonical gate and provisional ranking calculation over pinned baseline inputs, without production-state writes. |
+| Development monitor | A bounded development-only replay, defaulting to zero model calls and reading neither holdout cases nor the human-label log. |
+| Evaluation report | A private, deterministic aggregate/identifier export of metrics and input/code hashes; never candidate or ad text or measured quality without sufficient human labels. |

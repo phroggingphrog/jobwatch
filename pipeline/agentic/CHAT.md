@@ -289,8 +289,8 @@ interactions or artifacts; archive backups before adopting a retention policy.
 evidence, adverts and the owner's labels), so keep it private, never commit or upload it,
 and note that it is included when the person's folder is backed up. It is not exposed
 through the API, the chat tools or MCP, and a freeze calls no model and writes no database
-row. Undo with `rm -rf <user_dir>/baselines/<baseline_id>` (or the whole `baselines`
-folder); nothing else reads these folders. See
+row. Preserve these histories during source rollback; Phase 7 evaluation reads
+them without changing their original cases or labels. See
 [docs/examples/frozen-baseline.md](../../docs/examples/frozen-baseline.md).
 
 `deploy/jobwatch-agent.service` is an optional user-service installation template.
@@ -527,3 +527,64 @@ Selection authorizes preparation only. Final Submit remains the existing separat
 confirmed operation. Source rollback retains profile history, feedback, choices,
 fits, selections, packages and reports. See [ADR 0008](../../docs/adr/0008-feedback-and-selected-preparation.md)
 and the [synthetic example](../../docs/examples/feedback-selection.md).
+
+
+## Frozen evaluation and bounded monitoring (Phase 7)
+
+`jobwatch --user <person> evaluate` provides `cases`, terminal-human `label`,
+write-once `split`, `replay` (alias `run`), `report` and `monitor`. The tools operate
+in the selected person's private baseline area; they are not agent tools or API
+label writers. Existing `baseline label` also requires explicit audited access
+when labelling a split's holdout case.
+
+New freezes pin complete approved profile/evidence, ads, target and decision
+policy, runtime/discovery configuration, search plan, field hypotheses and matching
+relevance judgments. Per-case relevance stays with that case, so monitoring does
+not open holdout ad evidence through a shared context file. Older baselines without
+this context report `frozen_context_unavailable`; replay never substitutes live
+configuration. Freeze uses a read-only database snapshot and the profile-version
+lock; replay does not read production databases or the live approved profile.
+
+Splitting unions duplicate-ad, normalized employer and historical grouping keys
+transitively. A seeded order allocates `ceil(30% of groups)` to holdout, leaving at
+least one development group; fewer than two groups is explicitly unavailable.
+The same seed reuses the split and a different seed conflicts. Cross-partition
+keys or groups are refused. Holdout replay, label and report operations require
+`--allow-holdout` and append private source/data/split provenance to an audit log.
+Reports contain aggregate holdout results, without individual holdout entries.
+
+Default replay is zero-model and provisional, using the canonical gate, coverage,
+labels and ordering with frozen inputs. It compares original baseline routes and
+advisory-score ordering against that current calculation. A baseline frozen after
+a gate revision remains labelled as such. Default limits are 500 cases and 300
+seconds. Monitoring enforces those maxima, is development-only and never reads the
+human-label log or holdout cases. It creates no timer or service.
+
+A paid evaluation requires both `--paid` and a positive `--budget-tokens`; the
+canonical runtime, approved paid routes and remaining deadline enforce the budget.
+It re-evaluates in memory and writes only private evaluation results. No research
+fetch, production run, package or submission is performed. Optional `--fit` uses
+only frozen genuine choices whose alternatives all belong to the processed
+development cases, retaining original train/holdout assignments and canonical
+sampler diagnostics. Its result is evaluation-only; ordering stays provisional.
+Neither paid replay nor live fitting is part of source implementation verification.
+
+Versioned metrics require ten applicable genuine human labels for each quality
+metric. Missing suitability, relevance or exclusion labels remain missing; they do
+not become negatives. Precision/nDCG at 5 and 10 explicitly use condensed labelled
+ordering and report coverage. Partial replay suppresses comparative quality values.
+Citation integrity and mandatory-conflict indicators are deterministic diagnostics,
+not independent qualification judgments. Missing latency remains unmeasured;
+original historical usage and new replay usage remain separate. Pending outcomes
+are censored and never rank jobs; exposure/selection bias and absent propensities
+remain limitations.
+
+Private content-addressed JSON/Markdown exports allow only safe identifiers,
+closed enums, numeric metrics and provenance hashes; they omit candidate/ad text,
+notes, raw labels and arbitrary reasons/errors. Repeated exports have identical
+bytes, and conflicts or symlink paths are refused. Directories are `0700`, files
+`0600`. Retain baselines, human labels, splits, access logs, results, fits and reports
+during rollback. See [ADR 0009](../../docs/adr/0009-frozen-evaluation-and-monitoring.md)
+and [the command example](../../docs/examples/evaluation-monitoring.md). This tooling
+supports a later real blind study; synthetic checks do not establish measured
+recommendation quality or deployment.

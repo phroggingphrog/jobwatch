@@ -11,8 +11,8 @@ rejected running another setup workflow for this repository.
 |---|---|---|
 | Phases 1–5 | Merged | Historical phase reports remain unchanged. |
 | Browser reliability | Merged in PR #23; full local suite passed | #17 closed. |
-| Phase 6 feedback and selected preparation | Implementation and release verification | #21. |
-| Phase 7 evaluation and monitoring | Starts after Phase 6 merges | #22. |
+| Phase 6 feedback and selected preparation | Merged in PR #24; local suite and review passed | #21 closed. |
+| Phase 7 evaluation and monitoring | Implementation complete; release verification and review | #22. |
 
 The browser [verification report](../../audits/2026-10-23-browser-popup.md)
 records 3655 passed, 11 skipped and the independent review. The earlier Phase 5
