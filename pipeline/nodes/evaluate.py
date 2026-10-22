@@ -21,7 +21,7 @@ RUBRIC (integer marks 1-5, each with one or two sentences of evidence naming the
 technical_skills: the advert's REQUIRED skills and tools versus the candidate's skills.
   5 = every required skill is plainly held; 4 = most, the rest learnable on the job; 3 = about half;
   2 = a few, key ones missing; 1 = almost none.
-experience: the level and years the advert asks versus the candidate (an entry-level student who works part time).
+experience: the level and years the advert asks versus the candidate (use the candidate's own roles and education).
   5 = entry level / graduate / program, no years asked; 4 = 1 year asked or "some experience"; 3 = 2 years;
   2 = 3 years or mid level; 1 = senior, lead, manager or 4+ years.
 domain: what the person would do all day versus WHAT THE CANDIDATE PURSUES (their own decisions; this outranks

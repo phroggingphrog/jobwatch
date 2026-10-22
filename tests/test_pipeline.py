@@ -4,6 +4,7 @@ work-rights rule, resume after a stop, and that nothing is ever submitted. No ne
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -418,3 +419,9 @@ def test_a_slow_ad_page_does_not_crash_the_run(world, monkeypatch):
     _, stats = run(Gateway())
     assert calls["n"] == 1 and stats["ingest"]["fetch_errors"] == 1
     assert store.get(conn, slow) is None and stage(conn, ok) == "ready"
+
+
+def test_legacy_mode_prompts_name_no_one_person():
+    from pipeline.nodes import evaluate, extract
+    for text in (evaluate.SYSTEM, extract.SYSTEM):
+        assert not re.search(r'\bstudent\b|student-visa|Melbourne|Victoria', text, re.I)

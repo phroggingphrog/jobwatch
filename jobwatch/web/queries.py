@@ -58,8 +58,8 @@ AI_ORDER = {k: i for i, (k, _) in enumerate(AI_VIEWS)}
 HIDE_REASONS = [("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real vacancy"),
                 ("needs_citizen_or_pr", "Needs citizenship or PR"),
                 ("needs_unrestricted_rights", "Needs unrestricted work rights"),
-                ("full_time_only", "Full-time only: not possible while studying"),
-                ("out_of_area", "Outside Melbourne, not remote"), ("too_senior", "Too senior"),
+                ("full_time_only", "Full-time only: does not fit your hours"),
+                ("out_of_area", "Outside your search area, not remote"), ("too_senior", "Too senior"),
                 ("low_fit", "Not a fit"),
                 # "not a target role", split by the AI's reading of the day-to-day work (reader.NOT_TARGET_KINDS)
                 ("shop_retail", "Not wanted: shop or retail"), ("hospitality", "Not wanted: hospitality or food"),
@@ -75,8 +75,8 @@ HIDE_LABEL = {**dict(HIDE_REASONS), "not_target": "Not a target role (not sorted
               "duplicate": "Same ad as another job",
               "hard_gate": "Ruled out by a hard requirement (work rights, level or years)"}
 # the same reasons in running text where the label alone would read badly ("Hidden: full-time only: not possible...")
-HIDE_SENTENCE = {"full_time_only": "full-time only, not possible while studying",
-                 "out_of_area": "outside Melbourne, not remote"}
+HIDE_SENTENCE = {"full_time_only": "full-time only, which does not fit your hours",
+                 "out_of_area": "outside your search area, not remote"}
 RIGHTS_TEXT = {
     "none_stated": "The ad does not mention work rights or citizenship",
     "valid_work_rights": "Needs the right to work in Australia (not citizenship)",
@@ -801,7 +801,7 @@ def _ai_from_agentic(result: dict | None, posting_id: int, at: str | None) -> di
     elif verdict == 'hide':
         text = f"Archived ({_line(why, 120)}). " + text
     if evaluation and verdict != 'hide':  # owner 2026-10-19: shown with a note instead of held
-        notes = [n for n, on in (('Hours not stated: check they fit your visa', evaluation.facts.hours == 'unstated'),
+        notes = [n for n, on in (('Hours not stated: check they fit your availability', evaluation.facts.hours == 'unstated'),
                                  ('Level not stated', evaluation.facts.seniority not in ('entry', 'junior', 'graduate')),
                                  ('Employer not verified', evaluation.legitimacy != 'verified')) if on]
         if notes:
