@@ -1,5 +1,7 @@
 """Current, independently gated evaluations are the only preference alternatives."""
 from __future__ import annotations
+from dataclasses import dataclass
+from hashlib import sha256
 from pipeline.agentic import service
 from pipeline.agentic.contracts import AgenticEvaluation
 from pipeline.agentic.runtime import validate_model_payload
@@ -24,39 +26,85 @@ def preference_context(*, bundle, policy, cfg, structural):
                         digest(approved) if approved else None)
 
 
-def pool(conn, config):
+@dataclass(frozen=True)
+class CurrentRun:
+    posting_id: int
+    captured: tuple
+    posting: dict
+    key: object
+    result: dict
+    evaluation: AgenticEvaluation
+    decision: object
+    approved: dict | None = None
+
+
+def current_runs(conn, config):
+    """Read current stored assessments; never fetch, evaluate or create state."""
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from jobwatch.candidate.contracts import digest
+    from jobwatch.candidate.policy import policy_for
+    approved = intake.current_version(users.current())
+    approved_hash = digest(approved) if approved else None
     cfg, policy = service._config(config), service.default_policy()
-    dp = service.decision_policy_for(config)
+    dp = policy_for(users.current(), approved=approved) if approved else None
     bundle = service.snapshot_evidence(service.profile_dir())
     service.verify_evidence_snapshot(bundle)
     inputs = service.load_inputs(bundle, cfg)
     structural = service.analyse_candidate(bundle, *inputs, policy)
     identity = preference_context(bundle=bundle, policy=policy, cfg=cfg, structural=structural)
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    if not {'agentic_runs', 'agentic_packages', 'agentic_artifacts'} <= tables:
-        return identity, []
-    columns = {r[1] for r in conn.execute('PRAGMA table_info(agentic_runs)')}
-    if 'generation' not in columns:
-        return identity, []
-    rows = conn.execute('SELECT DISTINCT posting_id FROM agentic_runs ORDER BY posting_id DESC').fetchall()
+    runs = []
+    columns = {r[1] for r in conn.execute('PRAGMA table_info(agentic_runs)')} if 'agentic_runs' in tables else set()
+    if {'agentic_runs', 'agentic_packages', 'agentic_artifacts'} <= tables and 'generation' in columns:
+        rows = conn.execute('SELECT DISTINCT posting_id FROM agentic_runs ORDER BY posting_id DESC').fetchall()
+        for (posting_id,) in rows:
+            posting = service._posting(conn, posting_id)
+            if not posting or posting.get('closed_at'):
+                continue
+            captured = service._capture(conn, posting_id)
+            if captured is None or captured[2] != 'full':
+                continue
+            result = latest_result(conn, posting_id)
+            if not result or not result.get('evaluation') or result.get('reason') == 'artifact_invalid':
+                continue
+            if not service.observation_current(service.latest_observation(conn,posting_id),
+                    posting_id=posting_id,url=captured[0]['url'],ad_hash=sha256(captured[1].encode()).hexdigest()):
+                continue
+            key = service._run_key(posting_id, captured, bundle, policy, cfg, inputs, structural)
+            if key.value != result['run_key']:
+                continue
+            try:
+                ev = validate_model_payload(AgenticEvaluation, result['evaluation'])
+                gate = service.gate_current(ev, posting=captured[0], ad_text=captured[1], decision_policy=dp,
+                    policy=policy, captured_complete=True, expected_run_key=key, evidence_bundle=bundle)
+                runs.append(CurrentRun(posting_id, captured, posting, key, result, ev, gate, approved))
+            except ValueError:
+                continue
+    latest = intake.current_version(users.current())
+    if (digest(latest) if latest else None) != approved_hash:
+        raise PreferenceError('snapshot_changed')
+    service.verify_evidence_snapshot(bundle)
+    return identity, bundle, policy, runs
+
+
+def pool(conn, config, *, statuses=('eligible',)):
+    from jobwatch.candidate.contracts import digest
+    from jobwatch.candidate.policy import build_policy
+    identity, bundle, policy, runs = current_runs(conn, config)
     alternatives = []
-    for (posting_id,) in rows:
-        captured = service._capture(conn, posting_id)
-        if captured is None or captured[2] != 'full':
-            continue
-        result = latest_result(conn, posting_id)
-        if not result or not result.get('evaluation'):
-            continue
-        key = service._run_key(posting_id, captured, bundle, policy, cfg, inputs, structural)
-        if key.value != result['run_key']:
+    for row in runs:
+        status = 'eligible' if (row.decision.route, row.decision.reason) == ('draft', 'eligible') else (
+            'held' if (row.decision.route, row.decision.reason) == ('hold', 'insufficient_evidence') else None)
+        if status not in statuses:
             continue
         try:
-            ev = validate_model_payload(AgenticEvaluation, result['evaluation'])
-            gate = service.gate_current(ev, posting=captured[0], ad_text=captured[1], decision_policy=dp,
-                                        policy=policy, captured_complete=True, expected_run_key=key,
-                                        evidence_bundle=bundle)
-            alternatives.append(alternative_from_evaluation(ev, title=captured[0]['title'],
-                company=captured[0]['company'], profile_hash=bundle.bundle_hash, gate=gate))
+            alternative = alternative_from_evaluation(row.evaluation, title=row.posting['title'],
+                company=row.posting['company'], profile_hash=bundle.bundle_hash, gate=row.decision,
+                posting=row.posting, ad_text=row.captured[1], approved=row.approved)
+            alternative['approved_hash'] = digest(row.approved) if row.approved else None
+            alternative['policy_hash'] = build_policy(row.approved).policy_hash if row.approved else None
+            alternatives.append(alternative)
         except ValueError:
             continue
     return identity, alternatives

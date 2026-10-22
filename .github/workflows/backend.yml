@@ -37,6 +37,18 @@ jobs:
           tests/test_agentic_gate.py
           tests/test_agentic_gate_policy.py
           tests/test_profile_gate_comparison.py
+          tests/test_ranking.py
+          tests/test_current_runs.py
+          tests/test_shortlist.py
+          tests/test_shortlist_api.py
+          tests/test_shortlist_scheduling.py
+          tests/test_shortlist_utilities.py
+          tests/test_shortlist_integration_regressions.py
+          tests/test_cli_preferences.py
+          tests/preferences/test_features_v4.py
+          tests/preferences/test_migration.py
+          tests/preferences/test_utilities_v4.py
+          tests/outcomes/test_response_time.py
           tests/test_confirmed_policy_binding.py
           tests/candidate/test_eligibility.py
           tests/candidate/test_policy.py

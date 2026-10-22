@@ -257,6 +257,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
 
     profile_api.mount(app, require, get_config, llm_factory)
     discovery_api.mount(app, require, get_config)
+    from pipeline.agentic import shortlist_api
+    shortlist_api.mount(app, require, get_config)
 
     @app.get('/health')
     def health():
@@ -275,6 +277,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                     skill_version=skill_version(), protocol='native-http',
                     human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes),
                     discovery=dict(read_only=True, flags=discovery_api.flags(get_config(principal.person))),
+                    shortlist=dict(labels=shortlist_api.LABELS,orderings=['provisional','personalised'],
+                                   rules_version='ranking-rules-v1',refresh_paid=False),
                     profile=dict(upload_max_bytes=intake.MAX_UPLOAD_BYTES, kinds=list(intake.KINDS),
                                  extensions=list(intake.EXTENSIONS)))
 

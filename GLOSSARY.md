@@ -13,6 +13,14 @@ This is the single glossary for Jobwatch's career-operations domain.
 | Interaction | A pending human question or approval, bound to the relevant checkpoint and inputs. |
 | Approval | A trusted human decision permitting the specified work; only a `submit_application` approval of an exact reviewed fill authorizes final Submit. |
 | Package | The persisted application documents and associated verified artifacts for a job. |
+| Shortlist | A per-person, current set of explained job candidates built from stored evaluations and canonical eligibility. |
+| Stretch | A shortlist label for a candidate with a partial mandatory requirement, a nonmandatory conflict, or weighted evidence coverage below the documented threshold. |
+| Label (stronger match / stretch / needs clarification) | A versioned presentation category based on evidence coverage, unresolved facts, mandatory requirements and current relevance; it is not eligibility or hiring probability. |
+| Coverage (importance-weighted) | The fraction of applicable requirement weight supported by demonstrated or partial evidence, with an upper bound showing the effect of unknowns. |
+| Provisional ordering | Deterministic shortlist ordering used when a valid preference fit is unavailable. |
+| Personalised ordering | A valid preference model's ordering within label tiers, using only a complete set of current per-posting utilities. |
+| Score policy | Ranking design in which holistic and career-alignment scores are advisory comparison data and do not exclude or order shortlist candidates. |
+| Impression | A record that a shortlist entry was shown at a rank and surface; it is exposure data, not an owner choice. |
 | READY | A current package has met the authoritative eligibility, factual and document gates. |
 | Held / archived | Saved domain outcomes explaining why a job has stopped or been excluded. |
 | Deferred | Work was not admitted or could not proceed now; report the reason and next eligible time when known. |

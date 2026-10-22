@@ -196,3 +196,17 @@ page still voids a confirmation, scrolling does not. It is refused if any bound 
 after one use, or 15 minutes after a chat approval. A chat approval names the posting and
 binds to the fill, but does not show its answers: review the fill on the board before
 approving. See `jobwatch/apply/submit_confirm.py`.
+
+## Ranked and explained shortlists
+
+Owner approved implementation of Phase 5 on 2026-10-22:
+
+> Build a ranked shortlist that explains **what the evidence supports, what remains uncertain, and why each job appears where it does**.
+
+Use the confirmed profile and canonical eligibility operation. Evidence labels and
+provisional ordering explain the frozen requirement judgments; preferences, missing
+facts and practical conditions remain distinct. Neutral priors stay neutral, and only
+a valid genuine-choice fit can personalise within evidence tiers. The owner selected
+explicit historical-choice migration tooling that preserves original records; no live
+migration or fitting follows from implementation. The approved scope and interfaces
+are recorded in the [Phase 5 plan](docs/superpowers/plans/2026-10-22-phase-5-execution.md).

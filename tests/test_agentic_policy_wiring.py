@@ -184,8 +184,10 @@ def test_gate_current_is_the_only_live_gate_call(world, monkeypatch):           
     # the preference pool takes the same road
     via_gate_current.clear(); decide_kwargs.clear()
     preference_service.pool(conn, on)
-    assert len(via_gate_current) == 1 and via_gate_current[0]['decision_policy'] is dp
-    assert len(decide_kwargs) == 1 and decide_kwargs[0]['decision_policy'] is dp
+    # Reconstructed immutable snapshots must preserve every policy value; object
+    # identity is not the canonical policy contract. Gate invocation stays singular.
+    assert len(via_gate_current) == 1 and via_gate_current[0]['decision_policy'] == dp
+    assert len(decide_kwargs) == 1 and decide_kwargs[0]['decision_policy'] == dp
     # and no other source line calls the gate
     from pipeline.agentic import baseline
     for module in (service, preference_service, baseline):

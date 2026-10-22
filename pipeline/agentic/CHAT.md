@@ -400,3 +400,53 @@ Writing defaults are factual and neutral. A confirmed preference can specify e.g
 Only supported installed templates are accepted; missing choices impose no graduate template, praise,
 eagerness, grade suppression or bullet quota. Preferences frame writing but never become qualification proof.
 See ADR 0006 and the source audit for release verification and undo.
+
+## Ranking and explained shortlists (Phase 5)
+
+Shortlists project current stored assessments without fetching ads or calling a model.
+They use the same confirmed-profile gate as assessment. Eligible work and evidence-related
+holds can appear; verification failures, confirmed exclusions, expired posting checks,
+closed jobs and mandatory contradictions cannot appear as actionable matches. Holistic
+scores stay advisory. The three evidence labels are `stronger_match`, `stretch` and
+`needs_clarification`; documented weights and thresholds are provisional presentation
+conventions, not measured hiring probabilities or personal preferences.
+
+| Method and path | Scope | Result |
+|---|---|---|
+| `GET /api/agent/shortlist?label=&limit=20&offset=0` | read | Latest current snapshot with explained entries, rank reasons, coverage and unresolved facts; limit 1–50. |
+| `GET /api/agent/shortlist/{posting_id}` | read | Full entry, frozen requirement rows and exact citations; 404 if absent or stale. |
+| `POST /api/agent/shortlist/refresh` | run | Database-only rebuild. A snapshot under 60 seconds is reused only while its complete input identity remains unchanged. |
+
+Bearer identity selects the person. Missing database returns `not_built`; no confirmed
+profile returns `no_confirmed_profile`; changed inputs return `stale` with no entries.
+Profile, evidence, ad, posting liveness, reference/configuration, gate/implementation,
+ranking rules and preference-model context fence both persistence and reads. A change
+inside the refresh window bypasses reuse. Shortlist snapshots display at most 100 entries;
+list pages are bounded separately. Corrupt artifacts and unverifiable stored evaluations
+must be assessed again rather than reused. Ordinary and spent-budget collection paths
+refresh the shortlist without additional paid assessment; refresh failures stay isolated.
+
+Ordering is provisional until a genuine current human-choice fit passes existing
+20-training/5-holdout, convergence and held-out checks and supplies utilities for every
+candidate. Personalisation operates within evidence tiers. Current semantic links to
+confirmed career-focus facts can prioritize focus; unrelated evidence hypotheses cannot
+silently become that preference. Callback statistics and response-time readiness never
+change rank. Impression rows record actual displayed positions once per entry/surface/UTC
+day; deterministic displays have NULL exposure probabilities and never create choices.
+
+Preference features v4 retain zero priors and canonical families, replace the undefined
+`automation_angle` with `status_held`, and preserve source provenance and missingness.
+Only explicit observed salary units/hours permit conversion; no fixed 38-hour week is
+assumed. Exact approved tenure can populate experience features only for a complete,
+verified general-work-experience condition. Specialist scope, truncated source clauses,
+unknown dates and unsupported inputs remain missing. The existing choice page remains
+eligible-only; later feedback work can introduce explicit held-job comparisons.
+
+`jobwatch preferences migrate --confirm-owner` is a separate explicit CLI operation.
+It copies genuine answered choices only when complete old profile/policy/evaluation/ad
+provenance remains verifiable and unchanged, retaining the original selection including
+none, train/holdout split and migration lineage. Old records without that provenance are
+skipped. Repeated migration is idempotent; original choices and fits remain immutable.
+Neither application startup nor shortlist refresh migrates choices or fits a model.
+Real synthetic sampler checks demonstrate statistical mechanics only; they do not validate
+live ranking usefulness. No live migration, fitting or deployment is part of this release.

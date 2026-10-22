@@ -73,11 +73,17 @@ class PreferenceStore:
     def get_set(self, set_id):
         return next((s for s in self.list_sets() if s['id']==set_id), None)
 
-    def create_set(self, alternatives, context_hash):
+    def create_set(self, alternatives, context_hash, *, holdout=None, migrated_from=None):
         alternatives = validate_alternatives(alternatives)
         if type(context_hash) is not str or len(context_hash) != 64 or any(c not in '0123456789abcdef' for c in context_hash):
             raise PreferenceError('invalid_context')
+        if holdout is not None and type(holdout) is not bool:
+            raise PreferenceError('invalid_holdout')
+        if migrated_from is not None and (type(migrated_from) is not str or not migrated_from.strip() or len(migrated_from) > 128):
+            raise PreferenceError('invalid_migration_source')
         payload = {'alternatives':alternatives, 'versions':versions(), 'origin':self.origin, 'context_hash':context_hash}
+        if migrated_from is not None:
+            payload['migrated_from'] = migrated_from
         key = digest(payload)
         self.ensure()
         self.conn.execute('BEGIN IMMEDIATE')
@@ -87,6 +93,8 @@ class PreferenceStore:
             old = self.conn.execute('SELECT id FROM preference_sets WHERE payload_hash=?',(key,)).fetchone()
             if old:
                 set_id = old[0]
+                if holdout is not None and self.get_set(set_id)['holdout'] != holdout:
+                    raise PreferenceError('split_overlap')
             else:
                 set_id = uuid.uuid4().hex
                 # Split assigned before the owner answers, never by outcome.
@@ -95,7 +103,9 @@ class PreferenceStore:
                 assigned = {s['holdout'] for s in existing if ids & {a['posting_id'] for a in s['alternatives']}}
                 if len(assigned) > 1:
                     raise PreferenceError('split_overlap')
-                holdout = assigned.pop() if assigned else len(existing) % 5 == 4
+                if assigned and holdout is not None and holdout not in assigned:
+                    raise PreferenceError('split_overlap')
+                holdout = assigned.pop() if assigned else (len(existing) % 5 == 4 if holdout is None else holdout)
                 self.conn.execute('INSERT INTO preference_sets VALUES(?,?,?,?,?,?)',
                                   (set_id,context_hash,now(),int(holdout),canonical(payload),key))
             self.conn.commit()
