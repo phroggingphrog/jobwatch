@@ -1,8 +1,8 @@
 # ADR 0008: Human feedback and selected preparation
 
-**Status:** Phase 6 source implementation is underway. Focused worker checks are
-recorded as passing; the full release suite, parent integration review and
-release verification remain pending (2026-10-23).
+**Status:** Implemented, locally verified and independently reviewed (2026-10-23).
+Release evidence is in [the Phase 6 audit](../audits/2026-10-23-feedback-selection.md);
+merge is tracked in PR #24.
 
 ## Context
 
@@ -92,7 +92,7 @@ second run. Preparation remains separate from final submission.
 ## Release and undo
 
 The example is synthetic and documents source shapes only. Parent integration,
-local release checks, independent review and merge remain outstanding. No live
+local release checks and independent review passed; merge is tracked in PR #24. No live
 profile amendment, fit, migration, service activation, timer or deployment follows
 from this ADR.
 
