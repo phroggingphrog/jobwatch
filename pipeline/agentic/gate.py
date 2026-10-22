@@ -5,9 +5,10 @@ import hashlib
 import re
 
 from jobwatch.candidate.contracts import TargetPolicy, canonicalize_family, excluded_families
+from jobwatch.candidate.policy import DecisionPolicy, exclusion_hit
 from jobwatch.candidate.person import full_time_programs_ok, hours_limit_per_fortnight
 from jobwatch.reader import blocking_quote, rights_backstop, unrestricted_backstop
-from pipeline.agentic.location import cited_victoria_location
+from pipeline.agentic.location import CAPITALS, cited_victoria_location, location_verdict, regions_named
 from pipeline.agentic.contracts import (
     AgenticError, AgenticEvaluation, AgenticGateDecision, RunKey, SourceCitation,
 )
@@ -158,98 +159,10 @@ def _entry_signals(title: str, ad_text: str) -> tuple[bool, bool]:
     return entry, senior
 
 
-def decide(
-    evaluation: AgenticEvaluation,
-    *,
-    ad_text: str,
-    title: str = "",
-    policy: TargetPolicy,
-    captured_complete: bool = True,
-    expected_run_key: RunKey | None = None,
-    evidence_bundle=None,
-    commute_km: int | None = None,
-) -> AgenticGateDecision:
-    """Validate and route an evaluation using deterministic checks only.
-
-    Public errors intentionally carry only fixed codes; malformed nested inputs never leak
-    validation payloads or source text.
-    """
-    valid = True
-    try:
-        if type(evaluation) is not AgenticEvaluation or type(policy) is not TargetPolicy:
-            valid = False
-        else:
-            evaluation = AgenticEvaluation.model_validate(evaluation.model_dump())
-            policy = TargetPolicy.model_validate(policy.model_dump())
-            if expected_run_key is not None:
-                if type(expected_run_key) is not RunKey:
-                    valid = False
-                else:
-                    expected_run_key = RunKey.model_validate(expected_run_key.model_dump())
-        if type(ad_text) is not str or type(title) is not str or type(captured_complete) is not bool:
-            valid = False
-    except Exception:
-        valid = False
-    if not valid:
-        raise AgenticError("invalid_gate_input") from None
-
-    if not captured_complete or not ad_text:
-        return _hold(evaluation, "insufficient_evidence")
-
-    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
-    if ad_hash != evaluation.run_key.ad_hash or ad_hash != evaluation.requirements.ad_hash:
-        return _hold(evaluation, "verification_required")
-    if expected_run_key is not None and expected_run_key != evaluation.run_key:
-        return _hold(evaluation, "verification_required")
-
-    for requirement in evaluation.requirements.requirements:
-        if requirement.jd_signal and not _verified(requirement.jd_signal, ad_text, ad_hash):
-            return _hold(evaluation, "verification_required")
-    requirements = {r.id: r for r in evaluation.requirements.requirements}
-    unverified_blocker = False
-    for match in evaluation.matches:
-        if any(c.source_id not in {"master_resume.md", "cv.md", "profile.yaml"} for c in match.evidence):
-            return _hold(evaluation, "verification_required")
-        if match.match == "partial" and not match.evidence:
-            return _hold(evaluation, "verification_required")
-        if match.match in {"missing", "not_applicable"} and match.evidence:
-            return _hold(evaluation, "verification_required")
-        if match.match == "not_applicable" and requirements[match.requirement_id].importance in {"critical", "high"}:
-            return _hold(evaluation, "verification_required")
-        if requirements[match.requirement_id].blocker and match.match != "strong":
-            # "missing" means not demonstrated, not proven incompatible.
-            # Preserve confirmed policy exclusions below before holding unknowns.
-            if _logistics(requirements[match.requirement_id], _full_time_exempt(title, ad_text)):
-                # Logistics are not candidate gaps (2026-10-12: Sol marked "application documents", "location" and
-                # "full time" as blockers on Morrows). Jobwatch writes the CV and letter itself, and location and
-                # hours have their own rules below; graduate/vacation roles may bypass the hours limit (see _full_time_exempt).
-                continue
-            if (match.match == "partial" and match.evidence and _full_time_exempt(title, ad_text)
-                    and _general_work_rights(requirements[match.requirement_id])):
-                # Graduate/vacation roles bypass the visa hours limit when the profile says so, so a general right-to-work
-                # requirement met only "partially" by the person's visa does not hold them. Citizenship, PR and
-                # clearance demands are hard-gated elsewhere and never reach this line as a pass.
-                continue
-            unverified_blocker = True
-    missing_candidate_evidence = bool(evaluation.matches) and not any(
-        m.match in {"strong", "partial"} and m.evidence for m in evaluation.matches
-    )
-    if evidence_bundle is not None:
-        try:
-            from jobwatch.candidate.evidence import verify_evidence_snapshot
-            from jobwatch.candidate.assessment import verify_candidate_citations
-            verify_evidence_snapshot(evidence_bundle)
-            if evidence_bundle.bundle_hash != evaluation.run_key.evidence_hash:
-                raise ValueError
-            for match in evaluation.matches:
-                verify_candidate_citations(match.evidence, evidence_bundle)
-                if match.judgment is not None:
-                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
-                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
-                        raise ValueError
-        except Exception:
-            return _hold(evaluation, "verification_required")
-
+def _rights_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, *,
+                   citizen_ok: bool = False) -> AgenticGateDecision | None:
+    """The person-independent checks: a real job, and the ad's work-rights wording.
+    `citizen_ok` is read by the policy path (Task 5); the legacy path never sets it."""
     facts = evaluation.facts
     if not facts.real_job:
         return _archive(evaluation, "hard_gate")
@@ -268,7 +181,14 @@ def decide(
         return _hold(evaluation, "verification_required")
     if re.search(r"\b(?:requires? sponsorship|sponsorship required|sponsored applicants only)\b", ad_text, re.I):
         return _archive(evaluation, "hard_gate")
+    return None
 
+
+def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, policy: TargetPolicy,
+                          commute_km: int | None) -> AgenticGateDecision | None:
+    # legacy baseline; delete after the owner switches the policy flag to profile
+    facts = evaluation.facts
+    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
     # The person's region is Victoria: - any cited Victorian place is in scope, regional included.
     if evaluation.location_fit == "outside" and not (
             _verified(evaluation.location_evidence, ad_text, ad_hash)
@@ -339,6 +259,175 @@ def decide(
             return _archive(evaluation, "hard_gate")
     # Owner 2026-10-19: an ad that does not state its hours is shown as Good with a "check the hours fit"
     # note (queries._ai_from_agentic), not held. Hours that are stated and too many are still archived above.
+    return None
+
+
+def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, company: str,
+                   dp: DecisionPolicy, commute_km: int | None) -> AgenticGateDecision | None:
+    """Exclusions, location and commute from the person's confirmed decision policy.
+
+    Reads no profile file and no Victoria constant: the regions, the commute limit and the exclusion rules all come
+    from `dp`. The stored location_fit values 'melbourne' and 'outside' are ignored; only 'remote_accessible' and
+    the verified quote matter. TargetPolicy.allowed_families is not consulted. Level and hours follow in Task 5."""
+    facts = evaluation.facts
+    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
+    verified = _verified(evaluation.location_evidence, ad_text, ad_hash)
+    quote = evaluation.location_evidence.quote if verified else ""
+    remote_fit = evaluation.location_fit == "remote_accessible"
+
+    # (1) exclusion rules
+    if exclusion_hit(dp, family=canonicalize_family(facts.role_family), company=company, title=title,
+                     location_text=quote, remote=remote_fit, hours=facts.hours) is not None:
+        return _archive(evaluation, "policy_excluded")
+
+    # (2) location, only when the policy has a place to hold the job to
+    regions = frozenset(dp.regions)
+    verdict = None
+    if regions or dp.max_commute_km is not None or any(r.kind == "location" for r in dp.exclusions):
+        if not verified:
+            return _hold(evaluation, "insufficient_evidence")
+        verdict = location_verdict(quote, regions, remote_fit=remote_fit, remote_ok=dp.remote_ok)
+        if verdict == "outside":
+            return _archive(evaluation, "hard_gate")
+        if verdict == "unknown":
+            # A national program where the candidate nominates their office is open to the person's office.
+            nominate_office = (evaluation.location_fit == "unknown" and _is_program(title, ad_text, facts.program)
+                               and re.search(r"\bnominate\b[^.\n]{0,40}\b(?:office|location|city)\b", quote, re.I))
+            if not nominate_office:
+                return _hold(evaluation, "insufficient_evidence")
+
+    # (3) the product is Australia-only
+    if re.search(r"\b(?:US|USA|United States|UK|United Kingdom|Canada|New Zealand)\s+(?:residents?\s+)?only\b|"
+                 r"\bmust\s+(?:be\s+)?(?:based|reside|live)\s+in\s+(?:the\s+)?"
+                 r"(?:US|USA|United States|UK|United Kingdom|Canada|New Zealand)\b", ad_text, re.I):
+        return _archive(evaluation, "hard_gate")
+
+    # (4) on-site in a capital outside the person's regions
+    others = [name for name, state in CAPITALS.items() if state not in regions]
+    if regions and others:
+        names = "|".join(others)
+        keyword = r"(?:onsite|on-site|office|attendance|based)"
+        pattern = (rf"\b(?:based|located|work|onsite|on-site|office)\b[^.\n]{{0,100}}\b(?:{names})\b[^.\n]{{0,60}}\b{keyword}\b|"
+                   rf"\b(?:{names})\b[^.\n]{{0,60}}\b{keyword}\b")
+        for match in re.finditer(pattern, ad_text, re.I):
+            if not regions_named(match.group(0)) & regions:
+                return _archive(evaluation, "hard_gate")
+
+    # (5) commute: no default distance, the limit is the person's own
+    if (dp.max_commute_km is not None and commute_km is not None and commute_km > dp.max_commute_km
+            and verdict != "remote"):
+        return _archive(evaluation, "hard_gate")
+    return None
+
+
+def decide(
+    evaluation: AgenticEvaluation,
+    *,
+    ad_text: str,
+    title: str = "",
+    policy: TargetPolicy,
+    captured_complete: bool = True,
+    expected_run_key: RunKey | None = None,
+    evidence_bundle=None,
+    commute_km: int | None = None,
+    decision_policy: DecisionPolicy | None = None,
+    company: str = "",
+) -> AgenticGateDecision:
+    """Validate and route an evaluation using deterministic checks only.
+
+    Public errors intentionally carry only fixed codes; malformed nested inputs never leak
+    validation payloads or source text.
+    """
+    valid = True
+    try:
+        if type(evaluation) is not AgenticEvaluation or type(policy) is not TargetPolicy:
+            valid = False
+        else:
+            evaluation = AgenticEvaluation.model_validate(evaluation.model_dump())
+            policy = TargetPolicy.model_validate(policy.model_dump())
+            if expected_run_key is not None:
+                if type(expected_run_key) is not RunKey:
+                    valid = False
+                else:
+                    expected_run_key = RunKey.model_validate(expected_run_key.model_dump())
+        if decision_policy is not None:
+            if type(decision_policy) is not DecisionPolicy:
+                valid = False
+            else:
+                decision_policy = DecisionPolicy.model_validate(decision_policy.model_dump())
+        if (type(ad_text) is not str or type(title) is not str or type(company) is not str
+                or type(captured_complete) is not bool):
+            valid = False
+    except Exception:
+        valid = False
+    if not valid:
+        raise AgenticError("invalid_gate_input") from None
+
+    if not captured_complete or not ad_text:
+        return _hold(evaluation, "insufficient_evidence")
+
+    ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
+    if ad_hash != evaluation.run_key.ad_hash or ad_hash != evaluation.requirements.ad_hash:
+        return _hold(evaluation, "verification_required")
+    if expected_run_key is not None and expected_run_key != evaluation.run_key:
+        return _hold(evaluation, "verification_required")
+
+    for requirement in evaluation.requirements.requirements:
+        if requirement.jd_signal and not _verified(requirement.jd_signal, ad_text, ad_hash):
+            return _hold(evaluation, "verification_required")
+    requirements = {r.id: r for r in evaluation.requirements.requirements}
+    unverified_blocker = False
+    for match in evaluation.matches:
+        if any(c.source_id not in {"master_resume.md", "cv.md", "profile.yaml"} for c in match.evidence):
+            return _hold(evaluation, "verification_required")
+        if match.match == "partial" and not match.evidence:
+            return _hold(evaluation, "verification_required")
+        if match.match in {"missing", "not_applicable"} and match.evidence:
+            return _hold(evaluation, "verification_required")
+        if match.match == "not_applicable" and requirements[match.requirement_id].importance in {"critical", "high"}:
+            return _hold(evaluation, "verification_required")
+        if requirements[match.requirement_id].blocker and match.match != "strong":
+            # "missing" means not demonstrated, not proven incompatible.
+            # Preserve confirmed policy exclusions below before holding unknowns.
+            if _logistics(requirements[match.requirement_id], _full_time_exempt(title, ad_text)):
+                # Logistics are not candidate gaps (2026-10-12: Sol marked "application documents", "location" and
+                # "full time" as blockers on Morrows). Jobwatch writes the CV and letter itself, and location and
+                # hours have their own rules below; graduate/vacation roles may bypass the hours limit (see _full_time_exempt).
+                continue
+            if (match.match == "partial" and match.evidence and _full_time_exempt(title, ad_text)
+                    and _general_work_rights(requirements[match.requirement_id])):
+                # Graduate/vacation roles bypass the visa hours limit when the profile says so, so a general right-to-work
+                # requirement met only "partially" by the person's visa does not hold them. Citizenship, PR and
+                # clearance demands are hard-gated elsewhere and never reach this line as a pass.
+                continue
+            unverified_blocker = True
+    missing_candidate_evidence = bool(evaluation.matches) and not any(
+        m.match in {"strong", "partial"} and m.evidence for m in evaluation.matches
+    )
+    if evidence_bundle is not None:
+        try:
+            from jobwatch.candidate.evidence import verify_evidence_snapshot
+            from jobwatch.candidate.assessment import verify_candidate_citations
+            verify_evidence_snapshot(evidence_bundle)
+            if evidence_bundle.bundle_hash != evaluation.run_key.evidence_hash:
+                raise ValueError
+            for match in evaluation.matches:
+                verify_candidate_citations(match.evidence, evidence_bundle)
+                if match.judgment is not None:
+                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
+                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
+                        raise ValueError
+        except Exception:
+            return _hold(evaluation, "verification_required")
+
+    early = _rights_checks(evaluation, ad_text, title)
+    if early is None and decision_policy is None:
+        early = _legacy_person_checks(evaluation, ad_text, title, policy, commute_km)
+    elif early is None:
+        early = _policy_checks(evaluation, ad_text, title, company, decision_policy, commute_km)
+    if early is not None:
+        return early
+
 
     if unverified_blocker or missing_candidate_evidence:
         return _hold(evaluation, "insufficient_evidence")
