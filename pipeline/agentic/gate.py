@@ -263,7 +263,7 @@ def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: st
 
 
 _REMOTE_QUOTE = re.compile(r"\b(?:remote|work from home|anywhere in Australia)\b", re.I)
-_AUSTRALIA_QUOTE = re.compile(r"\b(?:Australia|Australian|worldwide|anywhere|globally)\b", re.I)
+_AUSTRALIA_QUOTE = re.compile(r"\b(?:Australia|Australian|worldwide|globally)\b", re.I)
 
 
 def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, company: str,

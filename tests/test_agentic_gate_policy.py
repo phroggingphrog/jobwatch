@@ -130,6 +130,12 @@ def test_remote_ad_must_establish_australia(evaluation, policy):
     europe_ad = "Graduate accounting analyst. Remote - Europe." + RIGHTS
     europe = retarget(evaluation, europe_ad, "Remote - Europe", location_fit="remote_accessible")
     assert outcome(europe, europe_ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    anywhere_ad = "Graduate accounting analyst. Remote - anywhere in Europe." + RIGHTS
+    anywhere = retarget(evaluation, anywhere_ad, "Remote - anywhere in Europe", location_fit="remote_accessible")
+    assert outcome(anywhere, anywhere_ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    in_au_ad = "Graduate accounting analyst. Remote - anywhere in Australia." + RIGHTS
+    in_au = retarget(evaluation, in_au_ad, "Remote - anywhere in Australia", location_fit="remote_accessible")
+    assert outcome(in_au, in_au_ad, policy, policy_of(VIC)) == ("draft", "eligible")
     wide_ad = "Graduate accounting analyst. Remote, Australia wide." + RIGHTS
     wide = retarget(evaluation, wide_ad, "Remote, Australia wide", location_fit="remote_accessible")
     assert outcome(wide, wide_ad, policy, policy_of(VIC)) == ("draft", "eligible")
