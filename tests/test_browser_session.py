@@ -344,6 +344,65 @@ def test_owner_login_anchor_popup_stays_scoped_and_restores_protected_applicatio
     assert manager.status('synthetic-app')['review_protected'] is True
 
 
+def test_login_popup_is_adopted_before_target_lookup_finishes(manager, submission_site, monkeypatch):
+    """A yielding Chromium target lookup must not leave controls on the opener."""
+    from types import SimpleNamespace
+    from playwright.sync_api import BrowserContext
+
+    base, seen = submission_site
+    original = BrowserContext.new_cdp_session
+    lookup_entered = threading.Event()
+
+    def gated_target_lookup(context, page):
+        cdp = original(context, page)
+        if page.opener() is not None:
+            lookup_entered.set()
+            # Hold the real protocol boundary until the next owner-page callback.
+            # Playwright keeps dispatching events while this browser condition waits.
+            page.wait_for_function('window.releaseTargetLookup === true', timeout=5000)
+        return cdp
+
+    monkeypatch.setattr(BrowserContext, 'new_cdp_session', gated_target_lookup)
+    manager.open('synthetic-app', base)
+    application_target = manager.status('synthetic-app')['target_id']
+    manager.with_page('synthetic-app', lambda page: page.evaluate(
+        "document.body.insertAdjacentHTML('beforeend','<a id=login target=_blank href=/login>Sign in</a>')"))
+    manager.prepare('synthetic-app', lambda page: SimpleNamespace(reason='owner_session_required')).result(timeout=5)
+    button = manager.with_page('synthetic-app', lambda page: page.locator('#login').bounding_box())
+    manager.action('synthetic-app', {'kind':'click','x':button['x']+5,'y':button['y']+5})
+
+    assert lookup_entered.wait(timeout=5)
+    with pytest.raises(BrowserSessionError, match='submit_not_confirmable'):
+        manager.confirm_submit('synthetic-app', 'unapproved', {}, timeout=5)
+
+    def inspect(page):
+        assert lookup_entered.is_set()
+        selected_url = page.url
+        target_during_lookup = manager.status('synthetic-app')['target_id']
+        for candidate in page.context.pages:
+            candidate.evaluate('window.releaseTargetLookup = true')
+        return selected_url, target_during_lookup
+
+    assert manager.with_page('synthetic-app', inspect) == (base+'login', None)
+    manager.with_page('synthetic-app', lambda page: page.wait_for_url(base+'login'))
+    assert manager.status('synthetic-app')['popup_active'] is True
+    popup_target = manager.status('synthetic-app')['target_id']
+    assert popup_target and popup_target != application_target
+    assert manager.status('synthetic-app')['page_url_sha256'] == hashlib.sha256((base+'login').encode()).hexdigest()
+    assert manager.status('synthetic-app')['review_protected'] is True
+    assert manager.with_page('synthetic-app', lambda page: page.evaluate(
+        "fetch('/submit',{method:'POST'}).then(()=>false).catch(()=>true)")) is True
+    assert ('POST','/submit') not in seen
+    manager.action('synthetic-app', {'kind':'close_tab'})
+    assert manager.status('synthetic-app')['popup_active'] is False
+    assert manager.status('synthetic-app')['target_id'] == application_target
+    assert manager.status('synthetic-app')['page_url_sha256'] == hashlib.sha256(base.encode()).hexdigest()
+    assert manager.status('synthetic-app')['review_protected'] is True
+    assert manager.with_page('synthetic-app', lambda page: page.evaluate(
+        "fetch('/submit',{method:'POST'}).then(()=>false).catch(()=>true)")) is True
+    assert ('POST','/submit') not in seen
+
+
 def test_owner_native_login_submit_does_not_release_application_guard(manager, submission_site):
     from types import SimpleNamespace
     base, seen = submission_site
