@@ -67,12 +67,14 @@ Do not merge, deploy, activate services or timers, submit applications or contac
    use live candidate records as fixtures, send candidate data to unapproved model routes or hosted
    tracing, submit applications except through `jobwatch/apply/submit_confirm.py`, contact employers,
    or count model output as a person's choice or approval.
-8. **Finish.** Full suite green (or each failure shown to be pre-existing on `main`, with evidence);
+8. **Finish.** Required local checks and review complete; for a source release, the local full
+   suite is green (or each failure shown to be pre-existing on `main`, with evidence);
    push; open the PR with: summary, the checks run and their exact results, rulings, remaining
    limitations, what is unverified, and undo instructions (revert the merge commit; list any data
-   folders or tables the phase creates and how to remove them). Subscribe to the PR and fix CI or
-   review comments. GitHub Actions in this repository have not been starting; say so in the PR if
-   checks stay queued, and rely on the local full-suite result.
+   folders or tables the phase creates and how to remove them). Address review findings. Hosted
+   CI is optional, not a completion or merge gate. The owner has disabled it; do not re-enable it
+   unless explicitly requested. Disabled, absent, queued or failed CI does not block finishing.
+   This supersedes CI requirements in older phase plans without waiving required local checks.
 9. **Report.** End with the PR link, the full-suite line, and anything the owner must decide.
 
 ## Automating the sequence
