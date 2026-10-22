@@ -207,3 +207,234 @@ def test_wrong_input_types_raise_the_fixed_code(evaluation, policy):
 
 def test_company_defaults_to_empty_and_none_policy_is_legacy(evaluation, policy):
     assert outcome(evaluation, AD, policy, None) == ("draft", "eligible")
+
+
+# ----------------------------------------------------------------------------- hours, work rights and level (Task 5)
+from pipeline.agentic.contracts import Requirement, RequirementMatch, SourceCitation  # noqa: E402
+
+PLAIN = fact("experience", "x")                        # a policy with nothing in it
+LOCATION_QUOTE = "Melbourne"
+
+
+def rights(**value):
+    return fact("work_rights", value)
+
+
+def stated(*levels):
+    """A policy whose person states these levels (the policy reads 'mid' only as 'mid-level')."""
+    words = ["mid-level" if level == "mid" else level for level in levels]
+    return policy_of(fact("preference", {"seniority": words})) if levels else policy_of(PLAIN)
+
+
+def job(evaluation, ad, *, quote=LOCATION_QUOTE, **facts):
+    """The fixture evaluation for `ad` with some facts replaced; the cited location is `quote`."""
+    return retarget(evaluation, ad, quote, facts={**evaluation.facts.model_dump(), **facts})
+
+
+def with_blocker(ev, rid, text, quote):
+    """`ev` plus one blocker requirement that is not met (match 'missing'), quoting the ad, and one strong skill match
+    so that the job has candidate evidence."""
+    h = ev.run_key.ad_hash
+    skill = Requirement(id="skill", text="Accounting", tier="stated", importance="high",
+                        jd_signal=SourceCitation(source_id="ad", content_hash=h, quote="accounting"))
+    req = Requirement(id=rid, text=text, tier="stated", importance="critical", blocker=True,
+                      jd_signal=SourceCitation(source_id="ad", content_hash=h, quote=quote))
+    cv = SourceCitation(source_id="cv.md", content_hash="1" * 64, quote="Synthetic relevant experience")
+    return AgenticEvaluation.model_validate({
+        **ev.model_dump(), "global_score": 5.0,
+        "requirements": RequirementSet(ad_hash=h, requirements=(skill, req)),
+        "matches": (RequirementMatch(requirement_id="skill", match="strong", evidence=(cv,)),
+                    RequirementMatch(requirement_id=rid, match="missing", evidence=(),
+                                     risk="Unproven", mitigation="Ask the person"))})
+
+
+FULL_TIME_AD = "Accounting analyst based in Melbourne VIC. Full-time position." + RIGHTS
+GRADUATE_AD = "Full-time graduate program in accounting based in Melbourne VIC." + RIGHTS
+
+
+def test_no_hours_limit_never_archives_on_hours(evaluation, policy):
+    # The autouse live profile has a 48 hour limit; a policy that sets none must ignore it.
+    ev = job(evaluation, FULL_TIME_AD, hours="full_time_only", program=False)
+    assert outcome(ev, FULL_TIME_AD, policy, policy_of(PLAIN)) == ("draft", "eligible")
+    long_ad = "Accounting analyst based in Melbourne VIC. Part-time, 32 hours per week." + RIGHTS
+    assert outcome(job(evaluation, long_ad, program=False), long_ad, policy, policy_of(PLAIN)) == ("draft", "eligible")
+    # The same ad on the legacy path still meets the live limit.
+    assert outcome(ev, FULL_TIME_AD, policy, None) == ("archive", "hard_gate")
+
+
+def test_hours_limit_from_policy_archives_full_time_only(evaluation, policy):
+    limit = policy_of(fact("work_rights", "work rights up to 40 hours per fortnight"))
+    assert limit.work_rights["hours_limit_per_fortnight"] == 40
+    ev = job(evaluation, FULL_TIME_AD, hours="full_time_only", program=False)
+    assert outcome(ev, FULL_TIME_AD, policy, limit) == ("archive", "hard_gate")
+    # Hours stated in the ad beyond half the fortnight limit per week also archive; within it they do not.
+    over = "Accounting analyst based in Melbourne VIC. Part-time, 32 hours per week." + RIGHTS
+    assert outcome(job(evaluation, over, program=False), over, policy, limit) == ("archive", "hard_gate")
+    within = "Accounting analyst based in Melbourne VIC. Part-time, 20 hours per week." + RIGHTS
+    assert outcome(job(evaluation, within, program=False), within, policy, limit) == ("draft", "eligible")
+
+
+def test_graduate_exemption_needs_the_policy_to_allow_it(evaluation, policy):
+    ev = job(evaluation, GRADUATE_AD, hours="full_time_only", program=True)
+    allowed = policy_of(rights(hours_limit_per_fortnight=40, full_time_programs_ok=True))
+    not_allowed = policy_of(rights(hours_limit_per_fortnight=40, full_time_programs_ok=False))
+    unsaid = policy_of(rights(hours_limit_per_fortnight=40))
+    assert outcome(ev, GRADUATE_AD, policy, allowed, title="Graduate Accountant") == ("draft", "eligible")
+    assert outcome(ev, GRADUATE_AD, policy, not_allowed, title="Graduate Accountant") == ("archive", "hard_gate")
+    assert outcome(ev, GRADUATE_AD, policy, unsaid, title="Graduate Accountant") == ("archive", "hard_gate")
+    # The exemption is for graduate and vacation roles only.
+    plain = job(evaluation, FULL_TIME_AD, hours="full_time_only", program=False)
+    assert outcome(plain, FULL_TIME_AD, policy, allowed, title="Accountant") == ("archive", "hard_gate")
+
+
+@pytest.mark.parametrize("stated_levels,ad_level,title,years,expect", [
+    (("entry", "junior"), "mid", "Accountant", None, ("archive", "hard_gate")),
+    (("entry", "junior"), "entry", "Accountant", 3, ("archive", "hard_gate")),
+    (("mid",), "senior", "Accountant", None, ("archive", "hard_gate")),
+    (("mid",), "mid", "Senior Accountant", None, ("archive", "hard_gate")),
+    (("mid",), "mid", "Accountant", 3, ("draft", "eligible")),
+    (("senior",), "senior", "Senior Accountant", 8, ("draft", "eligible")),
+    ((), "senior", "Senior Accountant", 8, ("draft", "eligible")),
+])
+def test_seniority_follows_the_levels_the_person_stated(evaluation, policy, stated_levels, ad_level, title, years, expect):
+    dp = stated(*stated_levels)
+    assert dp.seniority == stated_levels
+    ev = job(evaluation, AD, seniority=ad_level, min_years=years, program=False)
+    assert outcome(ev, AD, policy, dp, title=title) == expect
+
+
+def test_years_stated_in_the_ad_count_only_for_a_junior_or_lower_seeker(evaluation, policy):
+    ad = "Accounting analyst based in Melbourne VIC. Requires 3 years experience." + RIGHTS
+    ev = job(evaluation, ad, program=False)
+    assert outcome(ev, ad, policy, stated("entry", "junior")) == ("archive", "hard_gate")
+    assert outcome(ev, ad, policy, stated("junior")) == ("archive", "hard_gate")
+    assert outcome(ev, ad, policy, stated("mid")) == ("draft", "eligible")
+    assert outcome(ev, ad, policy, stated()) == ("draft", "eligible")
+    preferred = "Accounting analyst based in Melbourne VIC. 3 years experience preferred." + RIGHTS
+    assert outcome(job(evaluation, preferred, program=False), preferred, policy, stated("entry")) == ("draft", "eligible")
+    one = "Accounting analyst based in Melbourne VIC. Requires 1 year of experience." + RIGHTS
+    assert outcome(job(evaluation, one, program=False), one, policy, stated("entry")) == ("draft", "eligible")
+
+
+def test_a_senior_title_in_the_ad_text_raises_the_ad_level(evaluation, policy):
+    ad = "We are hiring a senior accountant to join the Melbourne office." + RIGHTS
+    ev = job(evaluation, ad, seniority="entry", program=False)
+    assert outcome(ev, ad, policy, stated("entry", "junior")) == ("archive", "hard_gate")
+    assert outcome(ev, ad, policy, stated("mid")) == ("archive", "hard_gate")
+    assert outcome(ev, ad, policy, stated("senior")) == ("draft", "eligible")
+
+
+def test_entry_seeker_holds_when_ad_says_not_entry_level(evaluation, policy):
+    ad = "Accounting analyst based in Melbourne VIC. This is not an entry-level role." + RIGHTS
+    ev = job(evaluation, ad, seniority="entry", min_years=None, program=False)
+    for levels in (("entry",), ("junior",), ("entry", "junior")):
+        assert outcome(ev, ad, policy, stated(*levels)) == ("hold", "insufficient_evidence")
+    assert outcome(ev, ad, policy, stated()) == ("draft", "eligible")           # no stated level: no level rule
+    assert outcome(ev, ad, policy, stated("mid")) == ("draft", "eligible")       # the rule is for junior or lower
+    positive = "Junior accounting analyst based in Melbourne VIC. Not a senior role." + RIGHTS
+    assert outcome(job(evaluation, positive, program=False), positive, policy, stated("entry")) == ("draft", "eligible")
+
+
+CITIZENS_AD = "Graduate accounting analyst based in Melbourne VIC. Australian citizens and permanent residents only."
+CITIZEN_FACTS = {"work_rights": {"requirement": "citizen_or_pr",
+                                 "quote": "Australian citizens and permanent residents only"}}
+
+
+def test_citizen_or_pr_person_is_not_blocked_by_a_plain_citizenship_demand(evaluation, policy):
+    ev = job(evaluation, CITIZENS_AD, **CITIZEN_FACTS)
+    assert outcome(ev, CITIZENS_AD, policy, policy_of(rights(citizen_or_pr=True))) == ("draft", "eligible")
+    assert outcome(ev, CITIZENS_AD, policy, policy_of(rights(citizen_or_pr=False))) == ("archive", "hard_gate")
+    assert outcome(ev, CITIZENS_AD, policy, policy_of(PLAIN)) == ("archive", "hard_gate")
+    assert outcome(ev, CITIZENS_AD, policy, None) == ("archive", "hard_gate")     # legacy, as today
+    # The model's label alone (no regex hit in the ad) holds for everyone but a citizen.
+    soft = "Graduate accounting analyst based in Melbourne VIC. Eligibility to work is required."
+    label = job(evaluation, soft, work_rights={"requirement": "citizen_or_pr", "quote": "Eligibility to work is required"})
+    assert outcome(label, soft, policy, policy_of(rights(citizen_or_pr=True))) == ("draft", "eligible")
+    assert outcome(label, soft, policy, policy_of(rights(citizen_or_pr=False))) == ("hold", "verification_required")
+
+
+@pytest.mark.parametrize("requirement", ["citizen_only", "unrestricted_work_rights"])
+def test_citizen_is_not_blocked_by_other_citizenship_or_unrestricted_labels(evaluation, policy, requirement):
+    ad = "Graduate accounting analyst based in Melbourne VIC. Applicants must have unrestricted work rights in Australia."
+    ev = job(evaluation, ad, work_rights={"requirement": requirement,
+                                          "quote": "must have unrestricted work rights in Australia"})
+    assert outcome(ev, ad, policy, policy_of(rights(citizen_or_pr=True))) == ("draft", "eligible")
+    assert outcome(ev, ad, policy, policy_of(rights(citizen_or_pr=False)))[0] != "draft"
+
+
+@pytest.mark.parametrize("ad,facts", [
+    ("Graduate accounting analyst based in Melbourne VIC. Baseline security clearance required.",
+     {"requirement": "clearance", "quote": "Baseline security clearance required"}),
+    ("Graduate accounting analyst based in Melbourne VIC. Baseline security clearance required.",
+     {"requirement": "none_stated", "quote": ""}),                      # the model missed it; the rule did not
+    ("Graduate accounting analyst based in Melbourne VIC. Australian citizens only. Baseline security clearance required.",
+     {"requirement": "citizen_only", "quote": "Australian citizens only"}),   # the clearance is the second sentence
+    ("Graduate accounting analyst based in Melbourne VIC. Applicants must hold an NV1 clearance.",
+     {"requirement": "clearance", "quote": "hold an NV1 clearance"}),
+])
+def test_security_clearance_still_stops_a_citizen(evaluation, policy, ad, facts):
+    ev = job(evaluation, ad, work_rights=facts)
+    route, reason = outcome(ev, ad, policy, policy_of(rights(citizen_or_pr=True)))
+    assert route != "draft" and reason in {"hard_gate", "verification_required"}
+
+
+def test_a_clearance_label_without_a_quote_still_holds_a_citizen(evaluation, policy):
+    ad = "Graduate accounting analyst based in Melbourne VIC. Some roles need further checks."
+    ev = job(evaluation, ad, work_rights={"requirement": "clearance", "quote": "further checks"})
+    assert outcome(ev, ad, policy, policy_of(rights(citizen_or_pr=True))) == ("hold", "verification_required")
+
+
+def test_hours_and_program_exemption_come_from_the_policy_not_live_readers(evaluation, policy, monkeypatch):
+    """Task 4 review (IMPORTANT): the shared section of decide must not read the profile when a policy is set."""
+    def boom(name):
+        def raiser(*a, **k):
+            raise AssertionError(name)
+        return raiser
+    for name in ("hours_limit_per_fortnight", "full_time_programs_ok"):
+        monkeypatch.setattr(gate, name, boom(name))
+    ev = with_blocker(retarget(evaluation, AD, "Melbourne office"), "pre_check", "Pre-employment check", "accounting")
+    # A non-strong blocker sends decide through the full-time exemption; a policy with no hours limit must not read a file.
+    assert outcome(ev, AD, policy, policy_of(PLAIN)) == ("hold", "insufficient_evidence")
+
+    # The exemption that makes a 'full time' blocker pure logistics comes from the policy's own values.
+    ft = with_blocker(job(evaluation, GRADUATE_AD, hours="full_time_only", program=True),
+                      "full_time", "Full-time position", "Full-time")
+    allowed = policy_of(rights(hours_limit_per_fortnight=40, full_time_programs_ok=True))
+    not_allowed = policy_of(rights(hours_limit_per_fortnight=40, full_time_programs_ok=False))
+    assert outcome(ft, GRADUATE_AD, policy, allowed, title="Graduate Accountant") == ("draft", "eligible")
+    assert outcome(ft, GRADUATE_AD, policy, not_allowed, title="Graduate Accountant")[0] == "archive"
+
+
+def test_legacy_path_still_reads_the_live_profile_for_the_exemption(evaluation, policy):
+    ft = with_blocker(job(evaluation, GRADUATE_AD, hours="full_time_only", program=True),
+                      "full_time", "Full-time position", "Full-time")
+    assert outcome(ft, GRADUATE_AD, policy, None, title="Graduate Accountant") == ("draft", "eligible")   # live: limit 48, ok
+
+
+@pytest.mark.parametrize("title,ad,entry,senior_title,years", [
+    ("", "Accounting analyst based in Melbourne. Part-time.", False, False, None),
+    ("", "Accounting analyst based in Melbourne. Part-time. This is not an entry-level role.", False, False, None),
+    ("", "Junior accounting analyst based in Melbourne.", True, False, None),
+    ("", "Junior accounting analyst based in Melbourne. Part-time. Requires 3 years experience.", True, False, 3),
+    ("", "Senior accounting analyst role based in Melbourne. Part-time.", False, True, None),
+    ("", "Junior accounting analyst based in Melbourne. Part-time. 3 years experience preferred.", True, False, None),
+    ("", "Accounting role in Melbourne. Prior experience is not required. Junior applicants welcome.", True, False, None),
+    ("", "Accounting role in Melbourne. This is not a senior role; entry-level applicants welcome.", True, False, None),
+    ("", "Accounting role in Melbourne. No previous experience is required.", True, False, None),
+    ("Senior Accountant", "Accountant role in Melbourne.", False, True, None),
+    ("", "Graduate accounting analyst role based in Melbourne. Part-time, 24 hours per week.", True, False, None),
+    ("", "Accounting role in Melbourne. Minimum of 5-7 years of professional experience.", False, False, 5),
+    ("", "Accounting role in Melbourne. 1 year of experience.", False, False, 1),
+    ("", "We are hiring a senior accountant. Requires 2 years experience.", False, True, 2),
+])
+def test_legacy_helpers_keep_their_results(title, ad, entry, senior_title, years):
+    # The old _entry_signals returned (entry, senior) with senior = senior wording or a required 2+ years.
+    assert gate._level_signals(title, ad) == (entry, senior_title, years)
+    assert gate.ENTRY_MAX_YEARS == 2
+
+
+def test_hours_signals_take_the_limit_from_the_caller():
+    assert gate._hours_signals("32 hours per week.", 48) == (False, True)
+    assert gate._hours_signals("Part-time, 20 hours per week.", 48) == (True, False)
+    assert gate._hours_signals("Full-time, 38 hours per week.", None) == (False, False)
+    assert gate._hours_signals("Full-time role.", 40) == (False, True)

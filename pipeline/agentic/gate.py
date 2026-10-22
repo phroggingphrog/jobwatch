@@ -67,11 +67,20 @@ def _is_program(title: str, ad_text: str, claimed: bool) -> bool:
                           r"\b(?:internship|intern program|vacation program|vacation programme|cadetship|cadet program)\b", sample))
 
 
-def _full_time_exempt(title: str, ad_text: str) -> bool:
+_LIVE = object()   # "read the live profile": only a call that passes neither value (the legacy path's old call shape)
+
+
+def _full_time_exempt(title: str, ad_text: str, *, limit=_LIVE, ft_ok=_LIVE) -> bool:
     """Graduate and vacation roles may be full-time when the person's profile allows it
     (work_rights.full_time_programs_ok): they start after study or run in a uni break, so the person's hours limit
-    (work_rights.hours_limit_per_fortnight) does not bite. Not allowed unless the person says so."""
-    if hours_limit_per_fortnight() is None or not full_time_programs_ok():
+    (work_rights.hours_limit_per_fortnight) does not bite. Not allowed unless the person says so.
+    `limit` and `ft_ok` are the person's values, resolved once by `decide`; the policy path always passes them, so
+    only a bare two-argument call reads the live profile."""
+    if limit is _LIVE:
+        limit = hours_limit_per_fortnight()
+    if ft_ok is _LIVE:
+        ft_ok = full_time_programs_ok()
+    if limit is None or not ft_ok:
         return False
     if re.search(r"\b(?:graduate|vacation(?:er|ers)?|vacationer)\b", title, re.I):
         return True
@@ -108,10 +117,9 @@ def _general_work_rights(requirement) -> bool:
         r"citizen|permanent[ _-]resid|\bPR\b|clearance|baseline|NV1|NV2", text, re.I)
 
 
-def _hours_signals(ad_text: str) -> tuple[bool, bool]:
+def _hours_signals(ad_text: str, limit: float | None) -> tuple[bool, bool]:
     """Return (supports compatible hours, requires more than half the person's fortnight limit per week).
-    No limit set: nothing is excessive."""
-    limit = hours_limit_per_fortnight()
+    No limit set: nothing is excessive. The limit is the person's, passed in; this reads no profile."""
     weekly = limit / 2 if limit else None
     compatible = bool(re.search(r"\b(?:part[ -]time|casual|job[ -]share)\b", ad_text, re.I))
     excessive = False
@@ -127,7 +135,12 @@ def _hours_signals(ad_text: str) -> tuple[bool, bool]:
     return compatible, weekly is not None and (excessive or (full_time and not compatible))
 
 
-def _entry_signals(title: str, ad_text: str) -> tuple[bool, bool]:
+ENTRY_MAX_YEARS = 2   # an ad asking for this many years or more is not an entry-level role
+
+
+def _level_signals(title: str, ad_text: str) -> tuple[bool, bool, int | None]:
+    """(entry evidenced, senior title or wording, the most years of experience the ad requires or None).
+    Years the ad calls preferred, desirable, a bonus or optional do not count."""
     sample = title + "\n" + ad_text
     entry_term = r"(?:entry[ -]level|junior|graduate|intern(?:ship)?|trainee|cadet(?:ship)?)"
     entry_matches = re.finditer(
@@ -149,20 +162,44 @@ def _entry_signals(title: str, ad_text: str) -> tuple[bool, bool]:
         r"^\s*(?:senior|lead|principal)\s+\w+|"
         r"\b(?:senior|lead|principal)\s+\w+\s+(?:role|position)\b", ad_text, re.I,
     ))
+    years: int | None = None
     for match in re.finditer(
         r"\b(?:at least\s+|minimum(?:\s+of)?\s+)?(\d{1,2})(?:\s*[-–]\s*\d{1,2})?\s*\+?\s*years?['’]?\s+"
         r"(?:of\s+)?(?:relevant\s+|professional\s+|industry\s+|commercial\s+)?experience\b", ad_text, re.I,
     ):
         tail = ad_text[match.end():match.end()+40]
-        if int(match.group(1)) >= 2 and not re.match(r"\s*(?:is\s+)?(?:preferred|desirable|a bonus|optional)", tail, re.I):
-            senior = True
-    return entry, senior
+        if not re.match(r"\s*(?:is\s+)?(?:preferred|desirable|a bonus|optional)", tail, re.I):
+            years = max(years or 0, int(match.group(1)))
+    return entry, senior, years
+
+
+# What a citizen or permanent resident is still stopped by: a security clearance or vetting level.
+_CLEARANCE = re.compile(r"clearance|vetting|\bNV\s*-?\s*[12]\b|baseline|AGSVA|top secret|\bPV\b", re.I)
+_CITIZEN_LABELS = frozenset({"citizen_only", "citizen_or_pr", "unrestricted_work_rights"})
+
+
+def _rights_rule(ad_text: str, title: str, citizen_ok: bool) -> str | None:
+    """The ad's own citizenship/PR/clearance/unrestricted-rights sentence, found by rule. For a citizen or permanent
+    resident only a clearance sentence counts: a plain citizenship demand is met, so look past it for a clearance."""
+    for backstop in (rights_backstop, unrestricted_backstop):
+        text = ad_text
+        for _ in range(8):
+            sentence = backstop(text, title)
+            if sentence is None:
+                break
+            if not citizen_ok or _CLEARANCE.search(sentence):
+                return sentence
+            if sentence not in text:
+                break
+            text = text.replace(sentence, " ", 1)
+    return None
 
 
 def _rights_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, *,
                    citizen_ok: bool = False) -> AgenticGateDecision | None:
     """The person-independent checks: a real job, and the ad's work-rights wording.
-    `citizen_ok` is read by the policy path (Task 5); the legacy path never sets it."""
+    `citizen_ok` is set by the policy path when the person is an Australian citizen or permanent resident: then
+    a citizenship, PR or unrestricted-rights demand is met and only a security clearance still stops the job."""
     facts = evaluation.facts
     if not facts.real_job:
         return _archive(evaluation, "hard_gate")
@@ -172,12 +209,16 @@ def _rights_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, *,
     if (rights.quote and not quote_verified) or (rights.requirement != "none_stated" and not rights.quote):
         return _hold(evaluation, "verification_required")
     quote_blocking = quote_verified and blocking_quote(rights.quote)
-    rule = rights_backstop(ad_text, title) or unrestricted_backstop(ad_text, title)
+    if citizen_ok:
+        quote_blocking = quote_blocking and _CLEARANCE.search(rights.quote) is not None
+        rule = _rights_rule(ad_text, title, True)
+    else:
+        rule = rights_backstop(ad_text, title) or unrestricted_backstop(ad_text, title)
     if quote_blocking or rule:
         return _archive(evaluation, "hard_gate")
-    if rights.requirement in {"citizen_only", "citizen_or_pr", "clearance", "unrestricted_work_rights"}:
+    if rights.requirement in ({"clearance"} if citizen_ok else _CITIZEN_LABELS | {"clearance"}):
         return _hold(evaluation, "verification_required")
-    if rights.quote and blocking_quote(rights.quote):
+    if rights.quote and blocking_quote(rights.quote) and not (citizen_ok and not _CLEARANCE.search(rights.quote)):
         return _hold(evaluation, "verification_required")
     if re.search(r"\b(?:requires? sponsorship|sponsorship required|sponsored applicants only)\b", ad_text, re.I):
         return _archive(evaluation, "hard_gate")
@@ -185,7 +226,8 @@ def _rights_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, *,
 
 
 def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, policy: TargetPolicy,
-                          commute_km: int | None) -> AgenticGateDecision | None:
+                          commute_km: int | None, *, hours_limit: float | None,
+                          ft_ok: bool) -> AgenticGateDecision | None:
     # legacy baseline; delete after the owner switches the policy flag to profile
     facts = evaluation.facts
     ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
@@ -237,12 +279,12 @@ def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: st
         return _archive(evaluation, "policy_excluded")
 
     program = _is_program(title, ad_text, facts.program)
-    entry_evidenced, senior_evidenced = _entry_signals(title, ad_text)
-    if senior_evidenced:
+    entry_evidenced, senior_title, years = _level_signals(title, ad_text)
+    if senior_title or (years or 0) >= ENTRY_MAX_YEARS:
         return _archive(evaluation, "hard_gate")
     if facts.seniority in {"mid", "senior"}:
         return _archive(evaluation, "hard_gate")
-    if facts.min_years is not None and facts.min_years >= 2:
+    if facts.min_years is not None and facts.min_years >= ENTRY_MAX_YEARS:
         return _archive(evaluation, "hard_gate")
     # Owner 2026-10-19: an ad that does not say entry/junior/graduate passes when it asks for under 2 years and is not
     # senior (both archived above); the card says "level not stated".
@@ -250,9 +292,9 @@ def _legacy_person_checks(evaluation: AgenticEvaluation, ad_text: str, title: st
                                          f"{title}\n{ad_text}", re.I):
         return _hold(evaluation, "insufficient_evidence")  # the ad says it is NOT entry level
 
-    _, hours_excessive = _hours_signals(ad_text)
-    ft_exempt = _full_time_exempt(title, ad_text)
-    if hours_limit_per_fortnight() is not None:  # no limit set: hours never archive a job
+    _, hours_excessive = _hours_signals(ad_text, hours_limit)
+    ft_exempt = _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok)
+    if hours_limit is not None:  # no limit set: hours never archive a job
         if hours_excessive and not ft_exempt:
             return _archive(evaluation, "hard_gate")
         if facts.hours == "full_time_only" and not ft_exempt:
@@ -266,13 +308,25 @@ _REMOTE_QUOTE = re.compile(r"\b(?:remote|work from home|anywhere in Australia)\b
 _AUSTRALIA_QUOTE = re.compile(r"\b(?:Australia|Australian|worldwide|globally)\b", re.I)
 
 
-def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, company: str,
-                   dp: DecisionPolicy, commute_km: int | None) -> AgenticGateDecision | None:
-    """Exclusions, location and commute from the person's confirmed decision policy.
+_RANK = {"entry": 0, "junior": 1, "mid": 2, "senior": 3}
 
-    Reads no profile file and no Victoria constant: the regions, the commute limit and the exclusion rules all come
-    from `dp`. The stored location_fit values 'melbourne' and 'outside' are ignored; only 'remote_accessible' and
-    the verified quote matter. TargetPolicy.allowed_families is not consulted. Level and hours follow in Task 5."""
+
+def _policy_hours(dp: DecisionPolicy) -> tuple[float | None, bool]:
+    """(hours limit per fortnight, graduate programs allowed) as the person's policy states them; None = no limit."""
+    raw = dp.work_rights.get("hours_limit_per_fortnight")
+    limit = float(raw) if isinstance(raw, (int, float)) and not isinstance(raw, bool) and 0 < raw < float("inf") else None
+    return limit, dp.work_rights.get("full_time_programs_ok") is True
+
+
+def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, company: str,
+                   dp: DecisionPolicy, commute_km: int | None, *, hours_limit: float | None,
+                   ft_ok: bool) -> AgenticGateDecision | None:
+    """Exclusions, location, commute, level and hours from the person's confirmed decision policy.
+
+    Reads no profile file and no Victoria constant: the regions, the commute limit, the exclusion rules, the levels the
+    person wants and their hours limit all come from `dp`. The stored location_fit values 'melbourne' and 'outside'
+    are ignored; only 'remote_accessible' and the verified quote matter. TargetPolicy.allowed_families is not
+    consulted. A person who states no level or no hours limit is not held to one."""
     facts = evaluation.facts
     ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
     verified = _verified(evaluation.location_evidence, ad_text, ad_hash)
@@ -328,6 +382,27 @@ def _policy_checks(evaluation: AgenticEvaluation, ad_text: str, title: str, comp
     if (dp.max_commute_km is not None and commute_km is not None and commute_km > dp.max_commute_km
             and verdict != "remote" and not remote_ad):
         return _archive(evaluation, "hard_gate")
+
+    # (6) level, only when the person states the levels they want
+    ranks = [_RANK[level] for level in dp.seniority if level in _RANK]
+    if ranks:
+        entry_evidenced, senior_title, years = _level_signals(title, ad_text)
+        ad_rank = _RANK["senior"] if senior_title else _RANK.get(facts.seniority, -1)
+        if ad_rank > max(ranks):
+            return _archive(evaluation, "hard_gate")
+        if max(ranks) <= _RANK["junior"]:
+            if (facts.min_years is not None and facts.min_years >= ENTRY_MAX_YEARS) or (years or 0) >= ENTRY_MAX_YEARS:
+                return _archive(evaluation, "hard_gate")
+            if not entry_evidenced and re.search(r"\bnot\b[^.]{0,40}\b(?:entry|junior)|rather than an? (?:entry|junior)",
+                                                f"{title}\n{ad_text}", re.I):
+                return _hold(evaluation, "insufficient_evidence")  # the ad says it is NOT entry level
+
+    # (7) hours, only when the person states a limit
+    if hours_limit is not None:
+        _, hours_excessive = _hours_signals(ad_text, hours_limit)
+        if not _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok):
+            if hours_excessive or facts.hours == "full_time_only":
+                return _archive(evaluation, "hard_gate")
     return None
 
 
@@ -387,6 +462,12 @@ def decide(
         if requirement.jd_signal and not _verified(requirement.jd_signal, ad_text, ad_hash):
             return _hold(evaluation, "verification_required")
     requirements = {r.id: r for r in evaluation.requirements.requirements}
+    # The person's hours limit and graduate-program allowance, resolved once. The policy path takes them from the
+    # policy and reads no profile file; only the legacy path reads the live profile.
+    if decision_policy is None:
+        hours_limit, ft_ok = hours_limit_per_fortnight(), full_time_programs_ok()
+    else:
+        hours_limit, ft_ok = _policy_hours(decision_policy)
     unverified_blocker = False
     for match in evaluation.matches:
         if any(c.source_id not in {"master_resume.md", "cv.md", "profile.yaml"} for c in match.evidence):
@@ -400,12 +481,13 @@ def decide(
         if requirements[match.requirement_id].blocker and match.match != "strong":
             # "missing" means not demonstrated, not proven incompatible.
             # Preserve confirmed policy exclusions below before holding unknowns.
-            if _logistics(requirements[match.requirement_id], _full_time_exempt(title, ad_text)):
+            exempt = _full_time_exempt(title, ad_text, limit=hours_limit, ft_ok=ft_ok)
+            if _logistics(requirements[match.requirement_id], exempt):
                 # Logistics are not candidate gaps (2026-10-12: Sol marked "application documents", "location" and
                 # "full time" as blockers on Morrows). Jobwatch writes the CV and letter itself, and location and
                 # hours have their own rules below; graduate/vacation roles may bypass the hours limit (see _full_time_exempt).
                 continue
-            if (match.match == "partial" and match.evidence and _full_time_exempt(title, ad_text)
+            if (match.match == "partial" and match.evidence and exempt
                     and _general_work_rights(requirements[match.requirement_id])):
                 # Graduate/vacation roles bypass the visa hours limit when the profile says so, so a general right-to-work
                 # requirement met only "partially" by the person's visa does not hold them. Citizenship, PR and
@@ -431,11 +513,14 @@ def decide(
         except Exception:
             return _hold(evaluation, "verification_required")
 
-    early = _rights_checks(evaluation, ad_text, title)
+    citizen_ok = decision_policy is not None and decision_policy.work_rights.get("citizen_or_pr") is True
+    early = _rights_checks(evaluation, ad_text, title, citizen_ok=citizen_ok)
     if early is None and decision_policy is None:
-        early = _legacy_person_checks(evaluation, ad_text, title, policy, commute_km)
+        early = _legacy_person_checks(evaluation, ad_text, title, policy, commute_km,
+                                      hours_limit=hours_limit, ft_ok=ft_ok)
     elif early is None:
-        early = _policy_checks(evaluation, ad_text, title, company, decision_policy, commute_km)
+        early = _policy_checks(evaluation, ad_text, title, company, decision_policy, commute_km,
+                               hours_limit=hours_limit, ft_ok=ft_ok)
     if early is not None:
         return early
 
