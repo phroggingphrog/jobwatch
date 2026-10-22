@@ -1,6 +1,6 @@
 # Finish Jobwatch backend roadmap
 
-**Status: execution underway; no release is claimed.** Phases 1–5 are merged. This
+**Status: backend source roadmap delivered through reviewed PRs #23, #24 and #25.** Phases 1–5 are merged. This
 plan covers the three remaining sequential, reviewed and merged releases. The
 owner-approved direction recorded for 2026-10-23 is binding where it differs
 from the historical Phase 6/7 plans and cross-plan contract.
@@ -116,3 +116,16 @@ live fitting.
 Rollback reverts source changes through reviewed PRs while preserving all
 historical choices, confirmed profile versions, feedback, fits, packages and
 reports. Do not delete or rewrite those records as part of rollback.
+
+
+## Source completion record
+
+Browser PR #23: 3655 passed, 11 skipped. Phase 6 PR #24: 3758 passed, 11 skipped;
+confirmed-profile API/chat selection through verified package retrieval is covered.
+Phase 7 PR #25: 3804 passed, 11 skipped, with independent review findings resolved
+and real synthetic R/JAGS 2 passed under unchanged gates. Hosted CI stayed disabled.
+The [Phase 7 verification report](../../audits/2026-10-23-evaluation-monitoring.md)
+records exact timing, limitations, rollback and an extra smoke harness opening the
+installed database before isolation; its prior schema was not recorded and the
+schema delta is unknown. Source completion does not establish deployment, live
+quality, or a real blind study (#6). Preserve historical records on rollback.

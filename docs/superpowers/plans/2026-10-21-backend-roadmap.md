@@ -14,8 +14,7 @@ has disabled it; earlier CI requirements in this roadmap and its plans are super
 
 The [remaining-roadmap execution plan](2026-10-23-finish-backend-roadmap.md)
 supersedes older launch/workflow assumptions. Phases 1–5 and the browser repair
-(PR #23, issue #17) are merged. Phase 6 source is in release review; Phase 7 starts
-after its reviewed merge. Each release uses a local `codex/` branch, required local
+(PR #23, issue #17) are merged. Phase 6 is merged in PR #24; Phase 7 is delivered in reviewed PR #25 with passing local checks. Each release uses a local `codex/` branch, required local
 checks and independent review, followed by the owner-authorized merge. Source
 completion excludes deployment, live fitting/migration and the real blind study.
 

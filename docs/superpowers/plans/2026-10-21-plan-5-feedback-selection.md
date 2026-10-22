@@ -1,5 +1,13 @@
 # Plan 5: Feedback and selection — Implementation Plan
 
+> **Historical plan:** the owner-approved [remaining-roadmap plan](2026-10-23-finish-backend-roadmap.md)
+> supersedes conflicting interfaces, run-key assumptions and workflow below.
+> Phase 6 source behavior is documented in [the worked example](../../examples/feedback-selection.md)
+> and the [backend contract](../../../pipeline/agentic/CHAT.md).
+> Hosted CI is disabled and optional; required local checks and independent review
+> govern completion. Preserve this original plan as design history.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let a person act on the explained shortlist through the native API: reject a job with a reason whose meaning is kept, turn an explicit exclusion into a confirmed rule that the gate, discovery and shortlist enforce at once, answer occasional targeted comparisons and questions, and select jobs and approve their preparation, with every one of those writes made by the person and never by a model.

@@ -215,17 +215,16 @@ jobwatch baseline show bl-20261021T154735Z-b76dfaea
 
 ## Undo
 
-A baseline is a folder, and nothing else reads it. No database row, migration, stored artifact,
-run key, preference set or profile file is created or changed, and removing a baseline triggers no
-re-evaluation and no paid call.
+A baseline is a private historical folder. Phase 7 replay, grouped splits and reports
+read it, so source rollback must preserve it together with labels, split and access
+history, results, fits and reports. Revert source through the normal reviewed release
+path; do not delete baseline folders or downgrade schema metadata as a rollback step.
 
-```bash
-rm -rf <user_dir>/baselines/<baseline_id>     # one baseline
-rm -rf <user_dir>/baselines                   # all of this person's baselines
-```
-
-`<user_dir>` is the person's own folder. A freeze that fails part-way leaves nothing visible: it
-writes into a staging folder and renames it into place only when everything is written.
+Freezing does not change a production posting, run, preference set or approved profile.
+A freeze that fails part-way removes its staging folder before anything is published.
+After a baseline has been split, full `baseline show` inspection requires
+`--allow-holdout` and records audited access; use development-only monitoring for
+routine checks. See [the evaluation example](evaluation-monitoring.md).
 
 ## Limits and what is not verified
 

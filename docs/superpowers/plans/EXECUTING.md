@@ -11,8 +11,8 @@ rejected running another setup workflow for this repository.
 |---|---|---|
 | Phases 1–5 | Merged | Historical phase reports remain unchanged. |
 | Browser reliability | Merged in PR #23; full local suite passed | #17 closed. |
-| Phase 6 feedback and selected preparation | Implementation and release verification | #21. |
-| Phase 7 evaluation and monitoring | Starts after Phase 6 merges | #22. |
+| Phase 6 feedback and selected preparation | Merged in PR #24; local suite and review passed | #21 closed. |
+| Phase 7 evaluation and monitoring | Reviewed PR #25; local suite 3804 passed, 11 skipped | #22; merge tracked by PR #25. |
 
 The browser [verification report](../../audits/2026-10-23-browser-popup.md)
 records 3655 passed, 11 skipped and the independent review. The earlier Phase 5
@@ -48,3 +48,14 @@ required checks pass, and confirmed profile through selected package retrieval
 works through native API/chat. Blind quality study and live operations remain
 separate. Revert source for rollback while preserving approved versions, feedback,
 genuine choices, fits, selections, packages and evaluation records.
+
+
+## Completion evidence
+
+The approved backend source roadmap is delivered through PRs #23, #24 and #25.
+Phase 6 verified confirmed-profile API/chat selection through protected package
+retrieval. Phase 7 added evaluation tools and completed independent review and the
+full local suite; real synthetic R/JAGS passed under unchanged gates. See the
+[Phase 7 audit](../../audits/2026-10-23-evaluation-monitoring.md), including its
+installed-database access incident and unknown schema delta. A real blind study
+remains open in #6. No deployment, service/timer activation or live fitting follows.

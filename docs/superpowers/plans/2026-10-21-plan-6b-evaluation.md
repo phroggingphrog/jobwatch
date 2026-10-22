@@ -1,5 +1,13 @@
 # Plan 6b: Evaluation and monitoring — Implementation Plan
 
+> **Historical plan:** the owner-approved [remaining-roadmap plan](2026-10-23-finish-backend-roadmap.md)
+> supersedes conflicting interfaces, run-key assumptions and workflow below.
+> Phase 7 source behavior is documented in [the worked example](../../examples/evaluation-monitoring.md)
+> and the [backend contract](../../../pipeline/agentic/CHAT.md).
+> Hosted CI is disabled and optional; required local checks and independent review
+> govern completion. Preserve this original plan as design history.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replay the frozen baseline through the baseline and the revised pipeline, measure the brief's criteria on leakage-safe development and untouched holdout splits against explicit owner labels, and produce reproducible private reports, bounded automated comparisons, eligible local model fits and a full-suite CI job, without claiming improvement the evidence does not show.

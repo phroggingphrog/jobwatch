@@ -259,3 +259,10 @@ three current eligible jobs plus none; only genuine human comparison answers tra
 preferences. Selection binds current entries and authorizes canonical preparation
 through a durable outbox. Impression and outcome statistics never become choices or
 ranking propensities. See [the backend contract](CHAT.md#feedback-and-selected-preparation-phase-6).
+
+Phase 7 frozen evaluation calls the same canonical gate and ranking functions with
+pinned profile, evidence, ad, configuration and relevance inputs. Offline ordering
+is always provisional. Human-label minimums, condensed ordering metrics and private
+report limits are described in [the backend contract](CHAT.md#frozen-evaluation-and-bounded-monitoring-phase-7).
+Deterministic citation checks remain integrity indicators, not independent human
+qualification labels. No synthetic pass establishes recommendation quality.
