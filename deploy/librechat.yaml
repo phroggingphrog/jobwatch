@@ -19,7 +19,7 @@ endpoints:
         X-Jobwatch-Conversation: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
       models:
         default: [jobwatch-agent]
-        fetch: false
+        fetch: true
       titleConvo: false
       summarize: false
       modelDisplayLabel: Jobwatch

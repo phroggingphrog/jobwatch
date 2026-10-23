@@ -200,3 +200,21 @@ def test_reviewed_submit_uses_native_approval_resume_without_stranding_thread(cl
     subsequent=turn(client,'next')
     assert subsequent.status_code==200,subsequent.text
     assert subsequent.json()['id']!=response['id']
+
+
+def test_top_selector_catalog_and_only_saved_model_is_accepted(client, monkeypatch):
+    from pipeline.agentic import client_api
+    from jobwatch import model_choice
+    from jobwatch import users
+    def catalog_for_person(person, config):
+        assert users.current() == person
+        return {'options': [{'id': 'openai/sol'}, {'id': 'openai/luna'}], 'catalog_available': True}
+    monkeypatch.setattr(client_api, 'model_catalog', catalog_for_person)
+    catalog = client.get('/v1/models', headers=headers()).json()['data']
+    assert [row['id'] for row in catalog] == ['jobwatch-agent', 'openai/sol', 'openai/luna']
+    def saved_model(role, person):
+        assert users.current() == person
+        return 'openai/luna'
+    monkeypatch.setattr(model_choice, 'get_model', saved_model)
+    assert turn(client, model='openai/luna').status_code == 200
+    assert turn(client, model='openai/sol').status_code == 422

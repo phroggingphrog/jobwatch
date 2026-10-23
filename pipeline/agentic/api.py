@@ -314,7 +314,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     feedback_api.mount(app, require, get_config)
     if os.environ.get('JOBWATCH_LIBRECHAT_ENABLED') == 'true':
         from pipeline.agentic import librechat
-        librechat.mount(app, require)
+        librechat.mount(app, require, get_config)
 
     if os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true':
         from pipeline.agentic import client_api

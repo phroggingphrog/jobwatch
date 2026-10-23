@@ -147,7 +147,7 @@ def _answer(run, controls_url, *, inline=False):
     return text.strip() or 'The Jobwatch conversation turn completed.'
 
 
-def mount(app, require):
+def mount(app, require, get_config):
     """Enabled explicitly at release; the normal native contract stays unchanged."""
     read, write = require('read'), require('run')
     controls_url = os.environ.get('JOBWATCH_AGENT_PUBLIC_URL', '').rstrip('/')
@@ -156,12 +156,22 @@ def mount(app, require):
 
     @app.get('/v1/models')
     def models(principal=Depends(read)):
-        return {'object': 'list', 'data': [{'id': MODEL, 'object': 'model', 'created': 0, 'owned_by': 'jobwatch'}]}
+        from pipeline.agentic.client_api import model_catalog
+        from jobwatch import users
+        with users.use(principal.person):
+            catalog = model_catalog(principal.person, get_config(principal.person))
+        return {'object': 'list', 'data': [{'id': name, 'object': 'model', 'created': 0, 'owned_by': 'jobwatch'}
+            for name in dict.fromkeys([MODEL, *[row['id'] for row in catalog['options']]])]}
 
     @app.post('/v1/chat/completions')
     async def completion(body: Completion, request: Request,
                          x_jobwatch_conversation: str = Header(), principal=Depends(write)):
-        if body.model != MODEL or not _ID.fullmatch(x_jobwatch_conversation):
+        from jobwatch import model_choice, users
+        # The authenticated LibreChat server saves the explicit selector choice
+        # through the human-scoped model API before forwarding this request.
+        with users.use(principal.person):
+            selected_model = model_choice.get_model('chat', principal.person)
+        if body.model not in (MODEL, selected_model) or not _ID.fullmatch(x_jobwatch_conversation):
             raise HTTPException(422, 'invalid_client_request')
         continuation = body.messages[-1].role == 'tool'
         if continuation:

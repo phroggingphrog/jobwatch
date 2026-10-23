@@ -83,7 +83,14 @@ the website is never the fallback. Historical messages retain their saved
 resources; new views identify their current bundle with a versioned resource URI.
 Refreshing or reopening a card does not start paid work or reuse an approval.
 
-Use **Models** to select configured names for all tasks or individual roles,
+Use LibreChat’s top model selector under **Jobwatch** to choose a configured
+gateway model. The authenticated server saves that explicit global choice for
+your account before the next message; the backend accepts only your saved model
+or the legacy `jobwatch-agent` adapter label. Keep `models.fetch: true` so the
+selector loads the gateway catalog. This does not expose Jobwatch credentials or
+change other providers’ API-key controls.
+
+Use the card’s **Models** controls to select configured names for all tasks or individual roles,
 then **Save models** and confirm. New choices affect new work; embeddings and
 canonical route restrictions remain unchanged. Unsaved fields/selections survive
 reconnects. The `jobwatch-agent` endpoint label names the backend adapter, not
