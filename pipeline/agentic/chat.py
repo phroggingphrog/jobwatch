@@ -145,6 +145,17 @@ def _identity(args, name=None):
         args.get('prompt_id',args.get('selection_id',hashlib.sha256(json.dumps(args,sort_keys=True).encode()).hexdigest())))))
 
 
+def _human_text(m):
+    """The text of one human message: its string content, or the text parts of a content list. '' if it has no text.
+    Model summaries are never human messages (the summarisation middleware is excluded), so this stays the person."""
+    content = getattr(m, 'content', None)
+    if type(content) is str:
+        return content
+    if type(content) is list:
+        return ''.join(p['text'] for p in content
+                       if type(p) is dict and p.get('type') == 'text' and type(p.get('text')) is str)
+    return ''
+
 def _approval_binding(name, args, config):
     """Bind an approval to actual evidence/config, not an LLM description."""
     from pipeline.agentic.service import enabled, snapshot_inventory
@@ -602,8 +613,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                 'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
 
     def _said(*texts):
-        """Fail closed: every string must be a clause the person wrote this turn, or a span of one that their own
-        words affirm, so a negated clause never yields its opposite ("I am not a citizen" never says "a citizen")."""
+        """Fail closed: every string must be a clause the person wrote in this conversation, or a span of one that their
+        own words affirm, so a negated clause never yields its opposite ("I am not a citizen" never says "a citizen")."""
         from jobwatch.candidate import intake
         from jobwatch.candidate.policy import person_asserted
         heard = scope.human_texts if scope else ()
@@ -641,7 +652,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
     @tool
     def profile_start(upload_ids: list[str], use_existing_files: bool = False) -> dict:
         """Start drafting the person's profile from their uploaded documents (upload ids) and, if use_existing_files, from their
-        existing profile files. Returns at once: the documents are read in the background and the open questions are ready now."""
+        existing profile files. Returns at once: the documents are read in the background and the open questions are ready now.
+        Only when the person has no open draft; otherwise use profile_reread."""
         from jobwatch.candidate import intake
         if type(upload_ids) is not list or any(type(i) is not str for i in upload_ids):
             raise RuntimeErrorSafe('invalid_request')
@@ -661,8 +673,30 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             return _refused(exc)
 
     @tool
+    def profile_reread() -> dict:
+        """Read the person's already-uploaded documents again into their open draft after a failed read. Keeps everything the
+        person has said. Use this, not profile_start, when a draft exists."""
+        from jobwatch.candidate import intake
+        try:
+            if scope and scope.parse_starts:
+                return {'status': 'refused', 'reason': 'one_parse_per_turn'}
+            intake.require_route(person, llm)                                           # candidate data goes only to paid routes
+            p = _open()
+            ids = intake.upload_ids_for(person, p.uploads)
+            reader = model_choice.get_model('reader', person)
+            tokens = intake.estimate_parse_tokens(person, ids)
+            if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
+                scope.reserve(reader, 'profile_parse', tokens, 4000)
+                scope.parse_starts += 1
+            return _draft(intake.add_uploads(person, p.id, ids, llm))
+        except intake.IntakeError as exc:
+            return _refused(exc)
+
+    @tool
     def profile_status() -> dict:
-        """Show the person's draft profile: facts with basis and source quotes, open questions and whether the documents are still being read."""
+        """Show the person's draft profile: facts with basis and source quotes, open questions and whether the documents are still being read.
+        parse_error model_unavailable or parse_timeout means the AI reading service failed, not the person's documents;
+        offer profile_reread."""
         from jobwatch.candidate import intake
         try:
             return _draft(_open())
@@ -680,7 +714,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
     @tool
     def profile_answer(question_id: str, text: str) -> dict:
         """Record the person's answer in the unconfirmed draft. text must be the person's
-        own words from their latest message, copied faithfully; never invent, infer or paraphrase a fact, and never answer
+        own words from this conversation, copied faithfully; never invent, infer or paraphrase a fact, and never answer
         for them."""
         from jobwatch.candidate import intake
         try:
@@ -693,8 +727,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
     @tool
     def profile_correct(edits: list[dict]) -> dict:
         """Record corrections in the unconfirmed draft: {op:'add',section,value} |
-        {op:'set',fact_id,basis:'evidence',value} | {op:'remove',fact_id}. Values must be what the person said in their
-        latest message; never invent or infer a fact."""
+        {op:'set',fact_id,basis:'evidence',value} | {op:'remove',fact_id}. Values must be what the person said in this
+        conversation; never invent or infer a fact."""
         from jobwatch.candidate import intake
         try:
             if type(edits) is not list:
@@ -766,7 +800,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                *([] if os.environ.get('JOBWATCH_UI_FORMAT') == 'artifacts' else [show_card]),
                run_career_ops, assess_job, prepare_application, revise_application, prepare_interview, draft_followup, submit_application,
                submit_status, find_jobs, application_status, source_health, ask_human,
-               profile_start, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
+               profile_start, profile_reread, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
                       'ask_human': {'allowed_decisions': ['respond']}},
         subagents=[{'name': 'career-reader', 'description': 'Inspect full saved job ads and existing run/defer outcomes.',
@@ -1001,15 +1035,16 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                         value = {'messages': [{'role': 'user', 'content': message}]}
                         if not previous.values:
                             value['files'] = {p: create_file_data(content) for p, content in skill_files().items()}
-                    # What the person wrote, set by the server for the profile tools: this turn's message, else the last human
-                    # message in the thread plus any human answer to ask_human. Nothing here comes from the model.
+                    # What the person wrote, set by the server for the profile tools: every human message in the thread
+                    # (their own words wherever in the conversation they said them), this turn's message and any human
+                    # answer to ask_human. Nothing here comes from the model.
+                    past = tuple(t for t in (_human_text(m) for m in (previous.values or {}).get('messages', [])
+                                             if getattr(m, 'type', None) == 'human') if t)[-50:]
                     if message is not None:
-                        execution.human_texts = (message,)
+                        execution.human_texts = past + (message,)
                     else:
-                        past = [m for m in (previous.values or {}).get('messages', []) if getattr(m, 'type', None) == 'human']
-                        execution.human_texts = tuple(
-                            [c for c in (past[-1].content,) if type(c) is str] if past else []) + tuple(
-                            d['message'] for d in (decisions or []) if d.get('type') == 'respond' and type(d.get('message')) is str)
+                        execution.human_texts = past + tuple(
+                            d['message'] for d in (decisions or []) if d.get('type') == 'respond' and type(d['message']) is str)
                     execution.check()
                     if upload_ids or attachment_receipts:
                         store.put(attachment_namespace, thread_id, {'upload_ids': available_uploads, 'receipts': available_receipts})

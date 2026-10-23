@@ -22,6 +22,7 @@ import threading
 import time
 import contextvars
 import functools
+import logging
 import zipfile
 import stat
 from datetime import datetime, timezone
@@ -36,11 +37,13 @@ from .. import users
 from ..apply.evidence import norm
 from ..apply import paths as apaths
 from ..apply.paths import ensure_dir
-from ..llm import LLM
+from ..llm import LLM, DeadlineExceeded, LLMError
 from ..model_choice import get_model
 from ._private_io import read_regular_file
 from . import projection
 from .evidence import _ALLOWED, snapshot_evidence
+
+log = logging.getLogger(__name__)
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_TEXT_BYTES = 12 * 1024 * 1024          # extracted text can outgrow its PDF a little
@@ -53,7 +56,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
          "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words",
-         "gateway_not_allowed", "model_not_allowed")
+         "gateway_not_allowed", "model_not_allowed", "model_unavailable", "parse_timeout")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -378,6 +381,19 @@ def _load_docs(person: str, upload_ids: list[str]) -> tuple[list[tuple[str, list
         raise IntakeError("no_extractable_text")
     return docs, blocks
 
+def upload_ids_for(person: str, shas) -> list[str]:
+    """The upload ids behind the stored sha256 digests a draft already holds, so the same documents can be read again
+    into that draft. The first id (sorted) for each digest; every digest must still have a saved upload."""
+    index = _read_json(_root(person) / "uploads.json", {})
+    by_sha = {}
+    for uid in sorted(index):
+        meta = index[uid]
+        if isinstance(meta, dict) and isinstance(meta.get("sha256"), str):
+            by_sha.setdefault(meta["sha256"], uid)
+    shas = list(shas)
+    if not shas or any(sha not in by_sha for sha in shas):
+        raise IntakeError("upload_not_found")
+    return list(dict.fromkeys(by_sha[sha] for sha in shas))
 
 def require_route(person: str, llm: LLM) -> None:
     """Candidate text goes only to the approved paid route (local gateway, paid reader model): the check every parse path
@@ -515,14 +531,22 @@ def _parse_worker(person: str, proposal_id: str, base_version, docs, blocks, llm
                 result, error = _model_parse(person, docs, blocks, llm, deadline), ""
             except IntakeError as exc:
                 result, error = None, exc.code
-            except Exception:                                   # a gateway or parser failure: a fixed code, no private text
+            except DeadlineExceeded as exc:                  # the reader had its whole budget: a timeout, not the documents
+                log.warning("profile parse failed: %s", type(exc).__name__)
+                result, error = None, "parse_timeout"
+            except LLMError as exc:                          # the reader route failed: name it, the documents are not at fault
+                log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
+                result, error = None, "parse_timeout" if getattr(exc, "code", "") == "deadline" else "model_unavailable"
+            except Exception as exc:                         # a gateway or parser failure: a fixed code, no private text
+                log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
                 result, error = None, "parse_failed"
             try:
                 _finish_parse(person, proposal_id, base_version, shas, result, error)
-            except Exception:
+            except Exception as exc:
+                log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
                 _finish_parse(person, proposal_id, base_version, shas, None, "parse_failed")
-    except Exception:
-        pass                                                    # a daemon thread has nowhere to raise to; the slot is freed below
+    except Exception as exc:                        # a daemon thread has nowhere to raise to; the slot is freed below
+        log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
     finally:
         _release(person)
 

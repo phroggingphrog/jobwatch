@@ -1137,6 +1137,9 @@ def test_a_spent_day_does_no_collection(world, monkeypatch):
 ONBOARD_CV = b'Alex Example\nAccounts Assistant\n\nExperience\nLedger Co, Accounts Assistant, 2021 - 2023\n'
 ONBOARD_PARSE = {'facts': [{'section': 'experience', 'value': 'Accounts Assistant, Ledger Co', 'basis': 'evidence', 'upload': 1,
                             'sources': [{'line': 5, 'quote': 'Ledger Co, Accounts Assistant, 2021 - 2023'}]}], 'questions': []}
+REREAD_PARSE = {'facts': [*ONBOARD_PARSE['facts'],
+                          {'section': 'experience', 'value': 'Accounts Assistant', 'basis': 'evidence', 'upload': 1,
+                           'sources': [{'line': 2, 'quote': 'Accounts Assistant'}]}], 'questions': []}
 
 
 def _onboarding_llm(script):
@@ -1376,7 +1379,7 @@ def test_profile_chat_retires_a_legacy_per_answer_approval(onboarding, monkeypat
             draft = intake.load_proposal(person, prop.id)
         stated = {(f.section, f.value) for f in draft.facts if f.actor == 'person'}
         assert ('availability', 'I can start now') in stated
-        assert ('employment_status', 'between roles') not in stated
+        assert ('employment_status', 'between roles') in stated        # the person's own words from their first turn count
         assert intake.current_version(person) is None
 
 
@@ -1545,9 +1548,58 @@ def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkey
     assert result['status'] == 'complete' and 'career focus' in tool_msg.lower()
 
 
+def test_profile_reread_keeps_answers_and_adds_document_facts(onboarding):
+    """A failed read is fixed in the same draft: the person's answers stay and the documents are read into it again."""
+    from jobwatch import model_choice, users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    person, prop, config = onboarding
+    with users.use(person):
+        ids = intake.upload_ids_for(person, prop.uploads)
+        broken = LLM(transport=lambda *a: (502, {}), keys=['synthetic'], base_url=model_choice.SERVER_URL)
+        failed = _settled(person, intake.add_uploads(person, prop.id, ids, broken).id)
+    assert failed.parse_error == 'model_unavailable' and failed.status == 'draft'     # the cause is named, the draft is usable
+    replies, seen = iter([{'tool': 'profile_reread', 'arguments': {}}, {'answer': 'Reading them again.'}]), []
+    def transport(url, headers, body, timeout):
+        if body['messages'][-1]['content'].startswith('Allowed tool schemas: '):
+            seen.append(body)
+            return 200, {'choices': [{'message': {'content': json.dumps(next(replies))}}], 'usage': {}}
+        return 200, {'choices': [{'message': {'content': json.dumps(REREAD_PARSE)}}], 'usage': {}}
+    llm = LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    chat.dispatch(person=person, thread_id='reread', config=config, llm=llm, message='read my CV again')
+    assert 'upload_not_found' not in _tool_texts(seen)
+    with users.use(person):
+        again = _settled(person, prop.id)
+        assert intake.open_proposal(person).id == prop.id                            # the same draft, not a new one
+    stated = {(f.section, f.value) for f in again.facts if f.actor == 'person'}
+    parsed = {(f.section, f.value) for f in again.facts if f.actor == 'parser'}
+    assert ('career_focus', 'Bookkeeping') in stated                                # what the person said is untouched
+    assert ('experience', 'Accounts Assistant') in parsed                           # the documents were read this time
+    assert again.parse_error == ''
+
 def _tool_texts(seen):
     return json.dumps([m['content'] for body in seen for m in body['messages']])
 
+
+def test_profile_answer_accepts_the_persons_words_from_an_earlier_turn(onboarding):
+    """The person's own words count wherever they said them in this conversation, not only in the newest message."""
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    person, prop, config = onboarding
+    said = 'I am unemployed and available immediately'
+    llm, _ = _onboarding_llm([{'answer': 'Noted.'}])
+    chat.dispatch(person=person, thread_id='earlier-turn', config=config, llm=llm, message=said)
+    with users.use(person):
+        target = next(q.id for q in intake.load_proposal(person, prop.id).questions if q.section == 'employment_status')
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': said}},
+        {'answer': 'Saved.'}])
+    chat.dispatch(person=person, thread_id='earlier-turn', config=config, llm=llm, message='??')
+    assert 'not_person_words' not in _tool_texts(seen)                              # their own words, one turn back
+    with users.use(person):
+        recorded = intake.load_proposal(person, prop.id)
+    assert ('employment_status', said) in {(f.section, f.value) for f in recorded.facts if f.actor == 'person'}
 
 def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
     from jobwatch import users
