@@ -161,6 +161,11 @@ class ModelRequest(BaseModel):
     picks: dict[str, str] = Field(min_length=1, max_length=6)
 
 
+class BrowserControlRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    posting_id: int = Field(gt=0, lt=2**63)
+
+
 def mount(app, require, get_config):
     read, approve = require('read'), require('approve')
     origin = os.environ.get('JOBWATCH_APP_ORIGIN', '')
@@ -234,6 +239,47 @@ def mount(app, require, get_config):
                 except intake.IntakeError:
                     pass  # incomplete drafts still show questions and evidence
             return result
+
+    @app.post('/api/agent/client/browser/control')
+    def browser_control(body: BrowserControlRequest, principal=Depends(approve)):
+        with users.use(principal.person):
+            if not hasattr(app.state, 'application_service'):
+                raise HTTPException(503, 'browser_unavailable')
+            service = app.state.application_service(principal.person)
+            job, _ = service.app_context(body.posting_id)
+            state = service.sessions.status(str(job['application_id']))
+            if state.get('state') != 'ready' or not state.get('review_protected'):
+                raise HTTPException(409, 'browser_not_ready')
+            value = _ticket(principal.person, 'browser', {'posting_id': body.posting_id,
+                'application_id': str(job['application_id']), 'target_id': state['target_id']})
+            return {'url': origin + '/api/agent/client/browser/action', 'ticket': value, 'expires_in': 300}
+
+    @app.post('/api/agent/client/browser/action')
+    async def browser_action(request: Request):
+        headers = cors(request)
+        try:
+            raw = (await request.body()).decode('utf-8')
+            token, text = raw.split('\n', 1)
+            person, binding = ticket(token, 'browser')
+            value = json.loads(text)
+            if type(value) is not dict or value.get('kind') not in ('click', 'key', 'type', 'scroll', 'close_tab'):
+                raise HTTPException(422, 'invalid_browser_action')
+            if not hasattr(app.state, 'application_service'):
+                raise HTTPException(503, 'browser_unavailable')
+            def perform():
+                with users.use(person):
+                    service = app.state.application_service(person)
+                    session = service.sessions.status(binding['application_id'])
+                    if session.get('target_id') != binding['target_id'] or not session.get('review_protected'):
+                        raise HTTPException(409, 'browser_session_changed')
+                    value['_confirmed_only'] = True
+                    service.sessions.action(binding['application_id'], value)
+            await asyncio.to_thread(perform)
+            return JSONResponse({'ok': True}, headers=headers)
+        except HTTPException as exc:
+            return JSONResponse({'error': exc.detail}, status_code=exc.status_code, headers=headers)
+        except Exception:
+            return JSONResponse({'error': 'browser_action_unavailable'}, status_code=409, headers=headers)
 
     @app.get('/api/agent/client/models')
     def models(principal=Depends(read)):

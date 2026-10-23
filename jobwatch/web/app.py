@@ -71,7 +71,8 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     from .browser_session import BrowserSessionManager
     from .prepare_routes import register as register_preparation
-    sessions = BrowserSessionManager()          # per signed-in person (users.user_dir()), not one fixed root
+    from jobwatch.apply.browser_remote import RemoteBrowserSessions
+    sessions = RemoteBrowserSessions() if os.environ.get('JOBWATCH_NATIVE_BROWSER_URL') else BrowserSessionManager()
 
     def for_each_person(fn):
         """Run background work once per person, as that person (their DB, folders and browser sessions)."""

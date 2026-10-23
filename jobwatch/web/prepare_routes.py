@@ -42,7 +42,9 @@ from jobwatch.apply.browser import package_is_current
 
 def register(app, config, conn_factory, render, sessions):
     from jobwatch.apply.browser import BrowserService
-    service = BrowserService(config, conn_factory, sessions)
+    import os
+    from jobwatch.apply.browser_remote import RemoteBrowserService
+    service = RemoteBrowserService() if os.environ.get('JOBWATCH_NATIVE_BROWSER_URL') else BrowserService(config, conn_factory, sessions)
     app_context = service.app_context
     auto_fill_ready = service.auto_fill_ready
     browser_status = service.browser_status
@@ -90,45 +92,7 @@ def register(app, config, conn_factory, render, sessions):
     @app.post('/job/{posting_id}/answers')
     async def answer_missing(request: Request, posting_id: int):
         form = await request.form(max_fields=250)
-        state = preparation_context(posting_id)
-        if state['browser']['automation_active']:
-            raise HTTPException(409, 'Wait for preparation to finish before updating answers.')
-        prepared = state['prepared'] or {}
-        if (not prepared or prepared.get('status') != 'needs_owner'
-                or prepared.get('reason') != 'missing_profile_facts'
-                or not prepared.get('run_id') or form.get('preparation_run_id') != prepared['run_id']):
-            raise HTTPException(400, 'These questions have changed. Refresh and try again.')
-        questions = {item['question_id']: item for item in prepared.get('missing', [])}
-        supplied = [(key[7:], value) for key, value in form.items() if key.startswith('answer_')]
-        if not supplied or {ident for ident, _ in supplied} != set(questions):
-            raise HTTPException(400, 'These questions have changed. Refresh and try again.')
-        replies = []
-        try:
-            for ident, value in supplied:
-                question = questions[ident]
-                if question.get('type') == 'checkbox' or question.get('kind') == 'radio':
-                    if value not in ('true', 'false'):
-                        raise ValueError
-                    value = value == 'true'
-                elif question.get('multiple') or question.get('type') == 'select-multiple':
-                    value = form.getlist('answer_' + ident)
-                    if not value or len(set(value)) != len(value) or any(not item.strip() for item in value):
-                        raise ValueError
-                elif not isinstance(value, str) or not value.strip() or len(form.getlist('answer_' + ident)) != 1:
-                    raise ValueError
-                options = question.get('options') or []
-                allowed = {str(option.get('value', option.get('label', ''))) if isinstance(option, dict) else str(option)
-                           for option in options}
-                selected = value if isinstance(value, list) else [value]
-                if allowed and any(str(item) not in allowed for item in selected):
-                    raise ValueError
-                maximum = question.get('maxlength')
-                if isinstance(value, str) and (len(value) > 8000 or type(maximum) is int and maximum > 0 and len(value) > maximum):
-                    raise ValueError
-                replies.append((ident, value))
-        except Exception:
-            raise HTTPException(400, 'Check each answer matches the available choices.') from None
-        start_preparation(posting_id, intake=(dict(prepared), replies))
+        service.answer_missing(posting_id, form)
         return RedirectResponse(f'/job/{posting_id}/prepare', status_code=303)
 
 

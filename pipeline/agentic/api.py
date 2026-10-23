@@ -75,7 +75,7 @@ class InteractionResponse(_Body):
     answer: str | None = Field(default=None, max_length=4000)
 
 
-def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=dispatch):
+def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=dispatch, browser_sessions=None):
     credentials = credentials if credentials is not None else credentials_from_env()
     if not credentials or any(not isinstance(token, str) or len(token) < 32 or not users.valid_name(p.person)
             or not p.scopes <= {'read', 'run', 'interact', 'approve'} for token, p in credentials.items()):
@@ -210,11 +210,15 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
             stopping.clear()
             task = asyncio.create_task(worker())
             app.state.worker = task
+            browser_task = asyncio.create_task(app.state.browser_worker(stopping)) if hasattr(app.state, 'browser_worker') else None
             try:
                 yield
             finally:
                 stopping.set()
                 await task
+                if browser_task:
+                    await browser_task
+                    app.state.browser_sessions.close_all()
         finally:
             os.close(fd)
 
@@ -298,6 +302,9 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     @app.exception_handler(Exception)
     async def failed(request, exc):
         return JSONResponse({'error': 'service_unavailable'}, status_code=503)
+
+    from pipeline.agentic import browser_api
+    browser_api.mount(app, require, get_config, sessions=browser_sessions)
 
     profile_api.mount(app, require, get_config, llm_factory)
     discovery_api.mount(app, require, get_config)

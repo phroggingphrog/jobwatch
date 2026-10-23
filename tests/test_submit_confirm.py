@@ -11,10 +11,10 @@ from jobwatch.web.browser_session import BrowserSessionError
 from tests.test_browser_session import manager, submission_site  # noqa: F401 - fixtures
 
 
-def _ready(manager, base, tmp_path):
+def _ready(manager, base, tmp_path, application_id='synthetic-app'):
     """Fill the synthetic form to the review page and build the prepared record a real fill writes."""
     from jobwatch.apply.prefill_workflow import discover_application, fill_application, plan_from_discovery
-    manager.open('synthetic-app', base)
+    manager.open(application_id, base)
 
     def fill(page):
         discovery = discover_application(page, allowed_hosts=['127.0.0.1'])
@@ -22,8 +22,8 @@ def _ready(manager, base, tmp_path):
         return fill_application(page, {key: {'value': 'Synthetic', 'owner_verified': True}}, {},
                                 plan=plan_from_discovery(discovery), expires_at=datetime.now(timezone.utc) + timedelta(minutes=1),
                                 screenshot_dir=tmp_path / 'review')
-    assert manager.prepare('synthetic-app', fill).result(timeout=10).status == 'ready_for_owner'
-    status = manager.status('synthetic-app')
+    assert manager.prepare(application_id, fill).result(timeout=10).status == 'ready_for_owner'
+    status = manager.status(application_id)
 
     def record(page):
         return {'status': 'ready_for_owner', 'run_id': 'a' * 32, 'package_hash': 'p' * 64, 'attached_documents': {'cv': 'c'},
@@ -31,7 +31,7 @@ def _ready(manager, base, tmp_path):
                 'page_url_sha256': hashlib.sha256(page.url.encode()).hexdigest(),
                 'final_control': {'selector': '#submit', 'label': 'submit application', 'url': page.url, 'frame_path': []},
                 'form_state': sc.form_state(page)}
-    return manager.with_page('synthetic-app', record)
+    return manager.with_page(application_id, record)
 
 
 def test_a_confirmed_digest_presses_the_recognised_submit_once(manager, submission_site, tmp_path):

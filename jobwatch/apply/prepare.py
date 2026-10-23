@@ -131,9 +131,33 @@ def latest_preparation(data_root: Path, application_id: str) -> dict | None:
         run_id = json.loads(private_bytes(pointer))['run_id']
         if not re.fullmatch(r'[0-9a-f]{32}', run_id) or (base / run_id).is_symlink():
             raise ValueError()
-        return json.loads(private_bytes(base / run_id / 'prepared.json'))
+        prepared = json.loads(private_bytes(base / run_id / 'prepared.json'))
+        review_path = base / run_id / 'owner-review.json'
+        if review_path.exists():
+            from .submit_confirm import digest
+            review = json.loads(private_bytes(review_path))
+            if (set(review) != {'original_digest','owner_revision','form_state'} or
+                    review['original_digest'] != digest(prepared) or type(review['owner_revision']) is not int or
+                    review['owner_revision'] < prepared['owner_revision'] or
+                    not isinstance(review['form_state'],str) or not review['form_state']):
+                raise ValueError()
+            prepared.update(owner_revision=review['owner_revision'],form_state=review['form_state'])
+        return prepared
     except Exception:
         raise PreparationRefused('private_preparation_unavailable') from None
+
+
+def record_owner_review(data_root: Path, application_id: str, *, expected: dict, current: dict):
+    """Keep the preparation immutable. Only a fresh exact human form review may update this overlay."""
+    from .submit_confirm import digest
+    if latest_preparation(data_root,application_id) != expected or not digest(current):
+        raise PreparationRefused('review changed')
+    if {k:v for k,v in expected.items() if k not in ('owner_revision','form_state')} != {k:v for k,v in current.items() if k not in ('owner_revision','form_state')}:
+        raise PreparationRefused('review changed')
+    base=Path(data_root)/'browser'/hashlib.sha256(application_id.encode()).hexdigest()/expected['run_id']
+    original=json.loads(private_bytes(base/'prepared.json'))
+    safe_write_text(base/'owner-review.json',json.dumps({'original_digest':digest(original),
+        'owner_revision':current['owner_revision'],'form_state':current['form_state']},sort_keys=True))
 
 
 def record_owner_answer(data_root: Path, application_id: str, *, question_id: str, value) -> None:

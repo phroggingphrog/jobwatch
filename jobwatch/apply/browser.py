@@ -1,7 +1,6 @@
 """Shared application browser workflow, independent of either frontend."""
 from __future__ import annotations
 
-import logging
 import hashlib
 import json
 import sqlite3
@@ -10,9 +9,7 @@ import uuid
 from pathlib import Path
 from urllib.parse import urlparse
 
-from fastapi import Form, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
-from starlette.concurrency import run_in_threadpool
+from fastapi import HTTPException
 
 from jobwatch import ledger
 from jobwatch import db as dbm
@@ -258,3 +255,109 @@ class BrowserService:
                 conn.close()
             if row is not None:
                 self.settle_submit(row['posting_id'], aid)
+
+    def review(self, posting_id, *, expected=None):
+        """Read live fields; explicitly rebind a corrected form only to the snapshot the human saw."""
+        from jobwatch.apply.prepare import record_owner_review
+        from jobwatch.apply.submit_confirm import form_state, record_control
+        job, package = self.app_context(posting_id)
+        aid = str(job['application_id'])
+        prepared = latest_preparation(paths.data_dir(), aid)
+        with self.conn_factory() as conn:
+            current_package = bool(package and package_is_current(conn, self.config, posting_id, package))
+        conn.close()
+        if not prepared or not current_package:
+            raise HTTPException(409, 'application_not_ready')
+        manifest_hash = hashlib.sha256(json.dumps(package['manifest'], sort_keys=True,
+            separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
+        if prepared.get('package_hash') != manifest_hash or prepared.get('status') != 'ready_for_owner':
+            raise HTTPException(409, 'application_not_ready')
+        def capture(page):
+            status = self.sessions.status(aid)
+            if (status.get('target_id') != prepared.get('session_id') or
+                    status.get('page_url_sha256') != prepared.get('page_url_sha256')):
+                raise HTTPException(409, 'application_changed')
+            control = record_control(page, prepared['final_control'])
+            if control != prepared['final_control']:
+                raise HTTPException(409, 'final_control_changed')
+            before = form_state(page)
+            fields = []
+            for frame in page.frames:
+                try:
+                    if frame.locator('[contenteditable="true"], [role="combobox"]:not(input):not(select)').count():
+                        raise HTTPException(409, 'unsupported_form_review')
+                    rows = frame.evaluate('''() => Array.from(document.querySelectorAll('input,select,textarea'))
+                      .filter(e=>e.type!=='hidden'&&!/^(g-recaptcha|h-captcha|cf-turnstile)-response$/.test(e.name||e.id||''))
+                      .map(e=>({label:(e.labels?.[0]?.innerText||e.getAttribute('aria-label')||e.name||e.id||e.tagName).slice(0,500),
+                        type:e.type||e.tagName,value:e.type==='password'?'[private]':
+                        (e.type==='checkbox'||e.type==='radio')?(e.checked?'Selected':'Not selected'):
+                        e.type==='file'?Array.from(e.files||[]).map(f=>f.name).join(', '):
+                        e.tagName==='SELECT'?Array.from(e.selectedOptions).map(o=>o.textContent).join(', '):e.value||''}))''')
+                except HTTPException:
+                    raise
+                except Exception:
+                    raise HTTPException(409, 'form_review_unavailable') from None
+                fields.extend(rows)
+            if len(fields) > 500 or sum(len(str(v['value'])) for v in fields) > 100000 or before != form_state(page):
+                raise HTTPException(409, 'form_review_changed')
+            current = dict(prepared, owner_revision=status['owner_revision'], form_state=before)
+            digest = submit_confirm.digest(current)
+            if not digest:
+                raise HTTPException(409, 'submit_not_confirmable')
+            if expected is not None:
+                if expected != digest:
+                    raise HTTPException(409, 'form_review_changed')
+                record_owner_review(paths.data_dir(),aid,expected=prepared,current=current)
+            return {'posting_id': posting_id, 'employer': job['company'], 'title': job['title'], 'url': page.url,
+                    'fields': fields, 'documents': prepared['attached_documents'], 'review_digest': digest,
+                    'confirmed_digest': digest if expected is not None or submit_confirm.digest(prepared) == digest else None}
+        def inspected(page):
+            # Browser task failures deliberately hide exception details. Carry only our fixed
+            # refusal codes across that boundary, never page content or arbitrary exceptions.
+            try:
+                return capture(page)
+            except HTTPException as exc:
+                return {'status':'blocked','reason':exc.detail}
+        result = self.sessions.with_page(aid, inspected, timeout=30)
+        if expected is not None and result.get('status') == 'blocked':
+            raise HTTPException(409,result['reason'])
+        return result
+
+
+    def answer_missing(self, posting_id, form):
+        state = self.preparation_context(posting_id)
+        if state['browser']['automation_active']:
+            raise HTTPException(409, 'Wait for preparation to finish before updating answers.')
+        prepared = state['prepared'] or {}
+        if not prepared or prepared.get('status') != 'needs_owner' or prepared.get('reason') != 'missing_profile_facts' or (not prepared.get('run_id')) or (form.get('preparation_run_id') != prepared['run_id']):
+            raise HTTPException(400, 'These questions have changed. Refresh and try again.')
+        questions = {item['question_id']: item for item in prepared.get('missing', [])}
+        supplied = [(key[7:], value) for key, value in form.items() if key.startswith('answer_')]
+        if not supplied or {ident for ident, _ in supplied} != set(questions):
+            raise HTTPException(400, 'These questions have changed. Refresh and try again.')
+        replies = []
+        try:
+            for ident, value in supplied:
+                question = questions[ident]
+                if question.get('type') == 'checkbox' or question.get('kind') == 'radio':
+                    if value not in ('true', 'false'):
+                        raise ValueError
+                    value = value == 'true'
+                elif question.get('multiple') or question.get('type') == 'select-multiple':
+                    value = form.getlist('answer_' + ident)
+                    if not value or len(set(value)) != len(value) or any((not item.strip() for item in value)):
+                        raise ValueError
+                elif not isinstance(value, str) or not value.strip() or len(form.getlist('answer_' + ident)) != 1:
+                    raise ValueError
+                options = question.get('options') or []
+                allowed = {str(option.get('value', option.get('label', ''))) if isinstance(option, dict) else str(option) for option in options}
+                selected = value if isinstance(value, list) else [value]
+                if allowed and any((str(item) not in allowed for item in selected)):
+                    raise ValueError
+                maximum = question.get('maxlength')
+                if isinstance(value, str) and (len(value) > 8000 or (type(maximum) is int and maximum > 0 and (len(value) > maximum))):
+                    raise ValueError
+                replies.append((ident, value))
+        except Exception:
+            raise HTTPException(400, 'Check each answer matches the available choices.') from None
+        self.start_preparation(posting_id, intake=(dict(prepared), replies))

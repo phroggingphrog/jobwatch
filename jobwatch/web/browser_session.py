@@ -240,6 +240,8 @@ class _Session:
             # authorize transmission of the employer's application form.
             if (page is self.application_page and not self.owner_checkpoint and not verification and
                     FINAL_LABEL.fullmatch(label)):
+                if action.get('_confirmed_only'):
+                    raise BrowserSessionError('submit_confirmation_required')
                 self._release_review(page)
                 self._arm_submit_watch(page)
                 return callback(page)

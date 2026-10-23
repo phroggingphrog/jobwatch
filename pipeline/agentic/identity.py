@@ -39,6 +39,8 @@ def credentials():
         rows = conn.execute('SELECT person,chat_key,human_key FROM identities').fetchall()
     result = {}
     for row in rows:
+        if row['person'] == users.DEFAULT_USER:
+            continue  # owner token rotation follows the deployment credentials, not a cached enrollment
         result[row['chat_key']] = Principal(row['person'])
         result[row['human_key']] = Principal(row['person'], frozenset({'read', 'interact', 'approve'}))
     return result
@@ -74,6 +76,10 @@ def mount(app, base_credentials):
                 chat, human = (owner_run[0], owner_human[0]) if owner else (secrets.token_urlsafe(40), secrets.token_urlsafe(40))
                 conn.execute('INSERT INTO identities VALUES(?,?,?,?)', (body.subject, person, chat, human))
                 row = dict(person=person, chat_key=chat, human_key=human)
+            if body.subject == owner_subject:
+                conn.execute('UPDATE identities SET chat_key=?,human_key=? WHERE subject=?',
+                             (owner_run[0], owner_human[0], body.subject))
+                row = dict(person=users.DEFAULT_USER, chat_key=owner_run[0], human_key=owner_human[0])
             # Finish initialization before publishing credentials, also on a retried enrollment.
             users.create_user_dirs(row['person'])
             conn.commit()
