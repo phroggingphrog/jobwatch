@@ -11,7 +11,6 @@ import json
 import os
 import re
 import sqlite3
-import string
 import threading
 import time
 from contextvars import Context
@@ -532,14 +531,13 @@ def _build(person, conn, config, llm, selected, saver, store):
                 'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
 
     def _said(*texts):
-        """Fail closed: every string must be inside what the person wrote this turn (casefold, collapsed whitespace, no edge punctuation)."""
+        """Fail closed: every string must be a clause the person wrote this turn, or a span of one that their own
+        words affirm, so a negated clause never yields its opposite ("I am not a citizen" never says "a citizen")."""
         from jobwatch.candidate import intake
-        def norm(x):
-            return ' '.join(x.casefold().split()).strip(string.punctuation + ' ')
-        heard = [norm(t) for t in (scope.human_texts if scope else ())]
+        from jobwatch.candidate.policy import person_asserted
+        heard = scope.human_texts if scope else ()
         for text in texts:
-            n = norm(text) if type(text) is str else ''
-            if not n or not any(n in h for h in heard):
+            if not person_asserted(text, heard):
                 raise intake.IntakeError('not_person_words')
 
     def _leaves(value):

@@ -449,3 +449,19 @@ def test_denied_australian_citizenship_does_not_disprove_permanent_residency():
     assert rights['citizen'] is False
     assert rights.get('permanent_resident') is None
     assert rights.get('citizen_or_pr') is None
+
+
+# A span of the person's words is only theirs when their own clause affirms it: a model that lifts
+# "a citizen" out of "I am not a citizen" is quoting the opposite of what they said.
+def test_person_asserted_keeps_the_negation_that_governs_a_span():
+    from jobwatch.candidate.policy import person_asserted
+    said = ['I am not a citizen and I am not willing to relocate interstate.']
+    assert person_asserted('I am not a citizen and I am not willing to relocate interstate', said)
+    assert not person_asserted('a citizen', said)
+    assert not person_asserted('willing to relocate interstate', said)
+    assert not person_asserted('', said)
+    assert not person_asserted({'visa': 'a citizen'}, said)
+    plain = ['My work rights are Citizen. I know excel.']
+    assert person_asserted(' citizen. ', plain) and person_asserted('Excel', plain)
+    assert not person_asserted('Permanent resident', plain)
+    assert not person_asserted('citizen', ['I hope to become a citizen one day'])

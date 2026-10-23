@@ -1340,6 +1340,39 @@ def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
     assert ('skill', 'Excel') in stated and got.revision == prop.revision + 2
 
 
+def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
+    """Substring containment let the model record "a citizen" from "I am not a citizen" as the person's
+    own work-rights fact. The span must be affirmed by the clause it came from."""
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    person, prop, config = onboarding
+    with users.use(person):
+        questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
+    target = questions['work_rights']
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': 'a citizen'}},
+        {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'work_rights',
+                                                            'value': {'visa': 'a citizen'}}]}},
+        {'answer': 'Understood.'}])
+    chat.dispatch(person=person, thread_id='negated-span', config=config, llm=llm,
+                  message='I am not a citizen and I am not willing to relocate interstate.')
+    assert _tool_texts(seen).count('not_person_words') >= 2
+    with users.use(person):
+        after = intake.load_proposal(person, prop.id)
+    assert after.revision == prop.revision and after.facts == prop.facts        # nothing was recorded
+    llm, seen = _onboarding_llm([                                               # the whole clause is theirs
+        {'tool': 'profile_answer', 'arguments': {'question_id': target,
+                                                 'text': 'I am not a citizen and I am not willing to relocate interstate'}},
+        {'answer': 'Recorded.'}])
+    chat.dispatch(person=person, thread_id='negated-span-2', config=config, llm=llm,
+                  message='I am not a citizen and I am not willing to relocate interstate.')
+    with users.use(person):
+        recorded = intake.load_proposal(person, prop.id)
+    stated = {(f.section, f.value) for f in recorded.facts if f.actor == 'person'}
+    assert ('work_rights', 'I am not a citizen and I am not willing to relocate interstate') in stated
+
+
 def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):
     from jobwatch import users
     from jobwatch.candidate import intake

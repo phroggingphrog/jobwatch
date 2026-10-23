@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from jobwatch import users, db
 from jobwatch.candidate import intake, rules
 from jobwatch.candidate.contracts import digest
-from jobwatch.candidate.policy import rules_from_fact
+from jobwatch.candidate.policy import person_asserted, rules_from_fact
 from pipeline.agentic import feedback, shortlist, selection
 from pipeline.agentic.chat import job_connection
 from pipeline.agentic.runtime import RuntimeErrorSafe
@@ -100,7 +100,7 @@ def tools(config,scope,identity,approval_binding):
         if (binding is None or _tool_arguments(name,args)!=_tool_arguments(name,binding['arguments'])
                 or binding!=approval_binding(name,binding['arguments'],config)):
             raise RuntimeErrorSafe('approval_inputs_changed')
-        if name=='answer_question' and not any(args['text'] in text for text in scope.human_texts):
+        if name=='answer_question' and not person_asserted(args['text'],scope.human_texts):
             raise RuntimeErrorSafe('not_person_words')
         # All strings are the literal payload in the approved interrupt. They
         # remain human answers/preferences, never authoritative profile facts.
