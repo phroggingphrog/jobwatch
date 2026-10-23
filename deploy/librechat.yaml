@@ -19,6 +19,7 @@ endpoints:
       baseURL: "${JOBWATCH_AGENT_BASE_URL}"
       headers:
         X-Jobwatch-Conversation: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+        X-Jobwatch-Uploads: "{{LIBRECHAT_BODY_JOBWATCHUPLOADIDS}}"
       models:
         default: [jobwatch-agent]
         fetch: true

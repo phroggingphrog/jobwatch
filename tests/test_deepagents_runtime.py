@@ -116,6 +116,43 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
     print('RESULT: planning, skill read, specialist, SQLite reopen/resume, approval, defer, cross-thread memory and person isolation exercised; synthetic transport only.')
 
 
+@pytest.mark.parametrize('message', ['Please use my attached CV.', ''])
+def test_chat_receives_owned_upload_references_without_changing_human_words(tmp_path, monkeypatch, message):
+    from jobwatch import users, model_choice
+    from jobwatch.candidate import intake
+    from pipeline.agentic.chat import dispatch
+    from pipeline.agentic.execution import Execution
+
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
+    monkeypatch.setattr(model_choice, 'get_model', lambda role, *args: 'claude/sonnet')
+    for person in ('fixture-a', 'fixture-b'):
+        users.create_user_dirs(person)
+    upload = intake.save_upload('fixture-a', 'cv.txt', b'Synthetic document evidence only.', 'cv')
+    llm, seen = transport_llm([{'answer': 'What kind of work are you looking for?'},
+                              {'answer': 'I can use the document you attached.'}])
+    llm.base_url = model_choice.SERVER_URL
+    execution = Execution('synthetic-attachment-turn')
+    result = dispatch(person='fixture-a', thread_id='uploaded', message=message,
+                      upload_ids=[upload['upload_id']], config={'agentic': {'enabled': False}},
+                      llm=llm, execution=execution)
+    assert result['status'] == 'complete'
+    assert result['answer'] == 'What kind of work are you looking for?'
+    assert result['tools'] == [] and result['interactions'] == []
+    assert upload['upload_id'] in seen[0][1]['messages'][0]['content']
+    assert 'Synthetic document evidence only.' not in json.dumps(seen)
+    assert execution.human_texts == (message,)
+    assert intake.current_version('fixture-a') is None
+    followup = dispatch(person='fixture-a', thread_id='uploaded', message='Use the document I attached.',
+                        config={'agentic': {'enabled': False}}, llm=llm)
+    assert followup['status'] == 'complete'
+    assert upload['upload_id'] in seen[1][1]['messages'][0]['content']
+    with pytest.raises(RuntimeErrorSafe, match='upload_not_found'):
+        dispatch(person='fixture-b', thread_id='foreign', message='Use a file.',
+                 upload_ids=[upload['upload_id']], config={'agentic': {'enabled': False}}, llm=llm)
+    assert len(seen) == 2  # cross-person references fail before a model sees them
+
+
 def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
     """Exercise the real native API and graph with isolated synthetic transport."""
     import sqlite3

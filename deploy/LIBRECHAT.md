@@ -66,9 +66,12 @@ Submit. The applicable capability endpoints accept sandbox `Origin: null`;
 ordinary native bearer routes gain no cross-origin access. Uploads use a simple
 POST capability envelope and retain the 10 MiB limit. File contents never enter
 model tool arguments. Normal LibreChat attachment uploads are enabled for Jobwatch.
-The native intake remains authoritative for source documents and confirmed profile
-facts; enabling the host attachment control alone does not establish that a file
-was imported into native intake.
+The authenticated LibreChat server resolves the attached file IDs against the owner's
+stored files, streams their original bytes into native intake, and sends the resulting
+person-bound IDs through `X-Jobwatch-Uploads`. Apply the matching LibreChat bridge and
+the header in `librechat.yaml` together. The host retains its attachment chips while
+the model receives native upload references rather than file contents. Intake remains
+authoritative; an upload neither confirms profile facts nor approves an operation.
 
 Serve only `/api/mcp/sandbox` on a dedicated sandbox hostname from LibreChat;
 return 404 elsewhere on that hostname. Set LibreChat's
@@ -77,11 +80,12 @@ different origin from the chat. Preserve the existing Access policies.
 
 ## Conversation controls
 
-Choose the Jobwatch preset and ask to set up your profile. The newest relevant
-Jobwatch card opens automatically; earlier cards collapse. Other MCP servers keep
-their existing behavior. Profile, model settings, job results, work progress,
-documents and application review use fixed components and canonical backend data.
-Pending questions and decisions appear first. Failure summaries stay inside chat;
+Choose the Jobwatch preset and ask to set up your profile. Routine Q&A and onboarding
+questions stay in plain chat. Generated interfaces serve explicit interactive requests
+or useful evidence displays. Requested canonical views, model settings, application
+review and required human decisions retain native cards; these open automatically
+when requested and earlier cards collapse. Other MCP servers keep their existing
+behavior. Failure summaries stay inside chat;
 the website is never the fallback. Historical messages retain their saved
 resources; new views identify their current bundle with a versioned resource URI.
 Refreshing or reopening a card does not start paid work or reuse an approval.

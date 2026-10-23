@@ -302,6 +302,15 @@ submission authority; canonical human review and confirmed Submit remain separat
 This direction supersedes the earlier requirement for a dashboard-style MCP App as
 the ordinary conversation interface. Existing saved resources remain readable.
 
+Owner's follow-up on 2026-10-24:
+
+> if its QnA it can just ask its directly
+
+Ask routine Q&A and onboarding questions directly in chat. Do not render a form or
+open an app merely to collect an answer. Fix the normal chat attachment handoff;
+reserve generated UI for explicit interactive requests or useful evidence displays.
+Canonical review and exact-input human approvals retain their native interfaces.
+
 ## Owner-controlled OmniRoute model selection
 
 Owner direction on 2026-10-24:

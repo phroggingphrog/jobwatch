@@ -81,7 +81,7 @@ def _current_run(store, ident):
     raise HTTPException(409, 'resume_chain_too_long')
 
 
-def _message(body):
+def _message(body, *, allow_empty=False):
     # Prior assistant/system/tool text cannot issue instructions or decisions.
     message = body.messages[-1]
     if message.role != 'user':
@@ -91,12 +91,29 @@ def _message(body):
         if any(p.get('type') != 'text' or not isinstance(p.get('text'), str) for p in content):
             raise HTTPException(422, 'use_jobwatch_profile_upload')
         content = '\n'.join(p['text'] for p in content)
-    if not isinstance(content, str) or not content.strip() or len(content) > 16000:
+    if content is None and allow_empty:
+        content = ''
+    if not isinstance(content, str) or (not content.strip() and not allow_empty) or len(content) > 16000:
         raise HTTPException(422, 'invalid_message')
     return content
 
 
-def _enqueue(person, conversation, body):
+def _uploads(person, raw):
+    """References arrive from LibreChat's authenticated file bridge, never model text."""
+    if not raw:
+        return [], []
+    ids = raw.split(',')
+    if len(ids) > 20 or len(set(ids)) != len(ids) or any(not re.fullmatch(r'[a-f0-9]{16}', v) for v in ids):
+        raise HTTPException(422, 'invalid_upload_references')
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    with users.use(person):
+        # Canonical validation resolves only this authenticated person's private intake.
+        docs, _ = intake._load_docs(person, ids)
+    return ids, [sha for sha, _ in docs]
+
+
+def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=()):
     with APIStore(person) as store:
         store.conn.execute('CREATE TABLE IF NOT EXISTS client_threads('
                            'client_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES api_threads(id))')
@@ -109,10 +126,10 @@ def _enqueue(person, conversation, body):
                 thread = uuid.uuid4().hex
                 store.conn.execute('INSERT INTO api_threads VALUES(?,?,?)', (thread, time.time(), skill_version()))
                 store.conn.execute('INSERT INTO client_threads VALUES(?,?)', (conversation, thread))
-        message = _message(body)
+        message = _message(body, allow_empty=bool(upload_ids))
         # Retransmission returns the original run. A pending decision is only shown;
         # no message (including "approve") can consume an interaction.
-        key = fingerprint([m.model_dump() for m in body.messages])
+        key = fingerprint([[m.model_dump() for m in body.messages], list(upload_hashes)]) if upload_hashes else fingerprint([m.model_dump() for m in body.messages])
         previous = store.conn.execute('SELECT id FROM api_runs WHERE request_key=?',
                                       (fingerprint([thread, key]),)).fetchone()
         if previous:
@@ -121,8 +138,13 @@ def _enqueue(person, conversation, body):
             "('queued','running','waiting_for_input','waiting_for_approval','interrupted') ORDER BY created DESC LIMIT 1",
             (thread,)).fetchone()
         if active:
+            if upload_ids:
+                raise HTTPException(409, 'conversation_busy')
             return store.public_run(active[0])
-        return store.public_run(store.enqueue(thread, {'message': message}, key))
+        payload = {'message': message}
+        if upload_ids:
+            payload['upload_ids'] = list(upload_ids)
+        return store.public_run(store.enqueue(thread, payload, key))
 
 
 def _answer(run, controls_url, *, inline=False):
@@ -165,7 +187,7 @@ def mount(app, require, get_config):
 
     @app.post('/v1/chat/completions')
     async def completion(body: Completion, request: Request,
-                         x_jobwatch_conversation: str = Header(), principal=Depends(write)):
+                         x_jobwatch_conversation: str = Header(), x_jobwatch_uploads: str = Header(default=''), principal=Depends(write)):
         from jobwatch import model_choice, users
         # The authenticated LibreChat server saves the explicit selector choice
         # through the human-scoped model API before forwarding this request.
@@ -177,8 +199,9 @@ def mount(app, require, get_config):
         if continuation:
             run = await asyncio.to_thread(_continuation, principal.person, x_jobwatch_conversation, body)
         else:
-            _message(body)
-            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body)
+            upload_ids, upload_hashes = await asyncio.to_thread(_uploads, principal.person, x_jobwatch_uploads)
+            _message(body, allow_empty=bool(upload_ids))
+            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body, upload_ids, upload_hashes)
         from pipeline.agentic.genui import enabled as genui_enabled
         genui = genui_enabled()
         view = _view_tool(body) if not continuation else None

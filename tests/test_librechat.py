@@ -43,6 +43,56 @@ def turn(client, text='hello', token=RUN, conversation='synthetic-conversation',
         json={'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': text}], **extra})
 
 
+def test_native_attachment_references_survive_enqueue_and_worker(client):
+    import hashlib
+    from jobwatch.candidate import intake
+    data = b'Synthetic original CV\nTesting experience only.\n'
+    saved = client.post('/api/agent/profile/uploads', headers={'Authorization': 'Bearer ' + RUN},
+                        files={'file': ('cv.txt', data)}, data={'kind': 'evidence'})
+    assert saved.status_code == 201
+    uid = saved.json()['upload_id']
+    assert saved.json()['sha256'] == hashlib.sha256(data).hexdigest()
+    request = {'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': ''}]}
+    bound = {**headers(), 'X-Jobwatch-Uploads': uid}
+    response = client.post('/v1/chat/completions', headers=bound, json=request)
+    assert response.status_code == 200
+    assert client.calls[0]['upload_ids'] == [uid]
+    assert client.calls[0]['message'] == ''
+    assert client.calls[0]['human_decision'] is False
+    assert intake.open_proposal('fixture-a') is None
+    assert client.post('/v1/chat/completions', headers=bound, json=request).json()['id'] == response.json()['id']
+    assert len(client.calls) == 1
+    # Retried transfers of identical original bytes do not start a second model turn.
+    again = client.post('/api/agent/profile/uploads', headers={'Authorization': 'Bearer ' + RUN},
+                        files={'file': ('cv.txt', data)}, data={'kind': 'evidence'}).json()['upload_id']
+    assert client.post('/v1/chat/completions', headers={**headers(), 'X-Jobwatch-Uploads': again}, json=request).json()['id'] == response.json()['id']
+    assert len(client.calls) == 1
+    assert client.post('/v1/chat/completions', headers={**headers(OTHER), 'X-Jobwatch-Uploads': uid}, json=request).status_code == 404
+    assert client.post('/v1/chat/completions', headers=headers(conversation='empty'), json=request).status_code == 422
+    assert client.post('/v1/chat/completions', headers={**headers(), 'X-Jobwatch-Uploads': 'not-an-id'}, json=request).status_code == 422
+
+
+def test_attachment_references_do_not_allow_nontext_or_assistant_turns(client):
+    saved = client.post('/api/agent/profile/uploads', headers={'Authorization': 'Bearer ' + RUN},
+                        files={'file': ('cv.txt', b'Synthetic source evidence.')}, data={'kind': 'evidence'}).json()
+    bound = {**headers(), 'X-Jobwatch-Uploads': saved['upload_id']}
+    for role, content in [('assistant', ''), ('user', [{'type': 'file', 'file': {'file_id': 'made-up'}}])]:
+        response = client.post('/v1/chat/completions', headers=bound,
+            json={'model': 'jobwatch-agent', 'messages': [{'role': role, 'content': content}]})
+        assert response.status_code == 422
+    assert not client.calls
+
+
+def test_new_attachment_during_pending_approval_is_explicitly_refused(client):
+    turn(client, 'prepare')
+    uid = client.post('/api/agent/profile/uploads', headers={'Authorization': 'Bearer ' + RUN},
+        files={'file': ('cv.txt', b'Synthetic source evidence.')}, data={'kind': 'evidence'}).json()['upload_id']
+    response = client.post('/v1/chat/completions', headers={**headers(), 'X-Jobwatch-Uploads': uid},
+        json={'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': ''}]})
+    assert response.status_code == 409 and response.json() == {'detail': 'conversation_busy'}
+    assert len(client.calls) == 1
+
+
 def test_durable_identity_retry_and_stream(client):
     first = turn(client).json()
     assert first['choices'][0]['message']['content'].startswith('Synthetic Jobwatch response')
@@ -257,12 +307,16 @@ def test_genui_keeps_native_approval_and_question_boundary(client, monkeypatch):
     assert question['finish_reason'] == 'tool_calls'
 
 
-def test_genui_guidance_is_optional_and_machine_readable(monkeypatch):
+def test_genui_guidance_keeps_routine_questions_in_plain_chat(monkeypatch):
     from pipeline.agentic.genui import guidance
+    from pipeline.agentic.chat import SYSTEM
     monkeypatch.delenv('JOBWATCH_GENUI_ENABLED', raising=False)
     assert guidance() == ''
     monkeypatch.setenv('JOBWATCH_GENUI_ENABLED', 'true')
     text = guidance()
-    schema = json.loads(text.split('```schemaJson\n')[-1].split('\n```')[0])
-    assert schema['componentName'] == 'Page'
+    assert 'ask one or two questions directly in plain text' in text
+    assert 'Do not render a form, schemaJson block, dashboard or app merely to collect an answer' in text
+    assert 'person explicitly asks for an interactive interface' in text
+    assert 'Do not use ask_human for routine missing facts' in text
+    assert 'ask one or two questions directly in chat' in SYSTEM
     assert 'Never implement approve/Submit' in text

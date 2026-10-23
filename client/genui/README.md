@@ -6,7 +6,9 @@ hashes. No DSH service or dashboard is required.
 
 `pipeline.agentic.genui.guidance` teaches the native agent the same `schemaJson`
 answer format. `JOBWATCH_GENUI_ENABLED=true` enables it at release. Plain Markdown
-remains valid. Ordinary replies finish as inline text/schema; canonical view requests
+is the default for Q&A and onboarding: ask directly and wait for the next message.
+Use generated interfaces for explicit interactive requests or useful evidence displays,
+without opening an app merely to collect an answer. Canonical view requests
 and pending human decisions still use the existing protected native interfaces.
 
 A compatible frontend parses schemaJson fences into components, validates bounded
