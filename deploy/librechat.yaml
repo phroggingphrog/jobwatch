@@ -33,7 +33,7 @@ endpoints:
 fileConfig:
   endpoints:
     Jobwatch:
-      disabled: true
+      disabled: false
 mcpAppSandbox:
   url: "https://<dedicated-sandbox-host>/api/mcp/sandbox"
   autoOpenServers: [jobwatch]

@@ -65,7 +65,10 @@ browser controls bind one person/application/session for five minutes and cannot
 Submit. The applicable capability endpoints accept sandbox `Origin: null`;
 ordinary native bearer routes gain no cross-origin access. Uploads use a simple
 POST capability envelope and retain the 10 MiB limit. File contents never enter
-model tool arguments. Generic LibreChat attachments stay disabled for Jobwatch.
+model tool arguments. Normal LibreChat attachment uploads are enabled for Jobwatch.
+The native intake remains authoritative for source documents and confirmed profile
+facts; enabling the host attachment control alone does not establish that a file
+was imported into native intake.
 
 Serve only `/api/mcp/sandbox` on a dedicated sandbox hostname from LibreChat;
 return 404 elsewhere on that hostname. Set LibreChat's
