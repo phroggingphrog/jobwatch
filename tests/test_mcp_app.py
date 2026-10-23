@@ -87,7 +87,8 @@ def test_actual_mcp_http_auth_resource_and_app_only_scope(native):
         action=next(t for t in tools if t['name']=='jobwatch_action')
         assert action['_meta']['ui']['visibility']==['app']
         view=next(t for t in tools if t['name']=='jobwatch_view')
-        assert view['_meta']['ui']['resourceUri']=='ui://jobwatch/panel.html'
+        uri=view['_meta']['ui']['resourceUri']
+        assert uri.startswith('ui://jobwatch/panel-') and uri.endswith('.html')
         args={'name':'jobwatch_view','arguments':{'run_id':run}}
         assert not rpc(client,RUN,'tools/call',args)['result'].get('isError')
         assert rpc(client,OTHER,'tools/call',args)['result']['isError']
@@ -99,6 +100,9 @@ def test_actual_mcp_http_auth_resource_and_app_only_scope(native):
         assert result['_meta']['jobwatch']['ticket']
         assert 'ticket' not in str(result.get('content'))
         page=rpc(client,HUMAN,'resources/read',{'uri':'ui://jobwatch/panel.html'})['result']['contents'][0]
+        current=rpc(client,HUMAN,'resources/read',{'uri':uri})['result']['contents'][0]
+        assert current['text']==page['text']
+        assert 'This listing is not an actual job vacancy.' in current['text']
         assert page['mimeType']=='text/html;profile=mcp-app'
         assert HUMAN not in page['text'] and RUN not in page['text']
         state=rpc(client,HUMAN,'resources/read',{'uri':'jobwatch://runs/'+run})['result']

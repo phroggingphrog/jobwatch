@@ -22,7 +22,10 @@ from pipeline.agentic.api import credentials_from_env
 from pipeline.agentic.runtime import RuntimeErrorSafe
 from pipeline.agentic.cards import CardKind, TITLES, resolve
 
-UI = 'ui://jobwatch/panel.html'
+# LibreChat persists resolved app resources with historical messages. New views
+# must name the current bundle instead of silently reusing an older saved UI.
+_BUNDLE = Path(__file__).with_name('jobwatch-app.html')
+UI = 'ui://jobwatch/panel-' + hashlib.sha256(_BUNDLE.read_bytes()).hexdigest()[:16] + '.html'
 ID = re.compile(r'[A-Za-z0-9_-]{1,100}')
 
 
@@ -144,7 +147,13 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
                                                   'frameDomains': [], 'baseUriDomains': []}}})
     def panel():
         auth('read')
-        return Path(__file__).with_name('jobwatch-app.html').read_text()
+        return _BUNDLE.read_text()
+
+    # Keep the original resource available for historical integrations.
+    server.resource('ui://jobwatch/panel.html', name='Jobwatch legacy panel',
+        mime_type='text/html;profile=mcp-app',
+        meta={'ui': {'prefersBorder': True, 'csp': {'connectDomains': [origin],
+            'resourceDomains': [], 'frameDomains': [], 'baseUriDomains': []}}})(panel)
 
     @server.resource('jobwatch://runs/{run_id}', mime_type='application/json')
     async def run_resource(run_id: str):
