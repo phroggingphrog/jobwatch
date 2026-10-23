@@ -163,23 +163,23 @@ Tools (identity is bound by the server, never an argument): `profile_start(uploa
 person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_policy` (read only), `profile_answer`,
 `profile_correct` (both record only the person's own words from their latest message; the prompt forbids inventing
 or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
-when there is nothing to search for) and `profile_confirm`. `profile_answer`, `profile_correct` and `profile_confirm`
-are gated tools. For `profile_confirm` the human approval is bound to the exact `proposal_digest` and `scope_digest`;
-for `profile_answer` and `profile_correct` it is bound to the open draft (`proposal_id`, `revision` and the draft's
-digest) and to the exact words or edits, so a draft that moves in between fails `approval_inputs_changed`. A changed
-draft or scope fails the same way, and model text is never approval. It starts discovery within the scope shown; it authorises no documents, employer
+when there is nothing to search for) and `profile_confirm`. Answers and corrections update only the unconfirmed
+draft without a separate approval. `profile_confirm` remains gated: human approval is bound to the exact
+`proposal_digest` and `scope_digest`. A changed draft or scope needs another review, and model text is never
+approval. Confirmation starts discovery within the scope shown; it authorises no documents, employer
 messages or submission. The legacy `/welcome` onboarding leaves unspecified level unknown; generated suggestions still require confirmation.
 
 `profile_answer` and `profile_correct` are refused with `not_person_words` unless every recorded string is (after casefold,
 whitespace collapse and edge-punctuation trim) a clause of the person's own message for the turn, or a span inside one of their
 clauses that their own words affirm: a negation, pending or aspirational word governing the span refuses it, so "I am not a
 citizen" never records "a citizen". The turn's words are the person's message (on a resumed turn: the last human message in the
-thread or a human answer to `ask_human`; none means refused). The check runs again when the approved call executes, so approving
-odd wording still records nothing. `answer_question` applies the same test to the answer it records. `profile_start` reserves its background parse
+thread or a human answer to `ask_human`; none means refused). The check runs when the draft tool executes.
+`answer_question` applies the same test to the answer it records. `profile_start` reserves its background parse
 against the turn's budget and may start one parse per turn. A draft left `parsing` by a dead worker (no live slot, file older
 than 2 x 180 s) reads back as `draft` with `parse_error` `parse_interrupted`, answers kept. The parse slot frees just after
 the draft turns `draft`, so an immediate new start can briefly see `proposal_in_progress`. A person-stated location does not
-drop a parsed one (both are kept). The optional MCP adapter cannot present these approvals and refuses them (`invalid_chat_interaction`); see the MCP section.
+drop a parsed one (both are kept). The optional MCP adapter cannot present profile confirmation and refuses it
+(`invalid_chat_interaction`); see the MCP section.
 
 Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
 confirmed scope (`approved.json` has `scope` and `scope_digest`) and the live `profile/` files still match the hashes
@@ -328,7 +328,22 @@ The optional OpenAI wire adapter is enabled with `JOBWATCH_LIBRECHAT_ENABLED=tru
 `jobwatch-mcp-app` supplies the optional MCP App renderer. See
 [the deployment guide](../../deploy/LIBRECHAT.md) for fresh-state installation,
 private credentials, LibreChat configuration, approval handling and undo.
-The adapter reuses native durable runs; it never interprets chat text as approval.
+The adapter reuses native durable runs. A trusted frontend server authenticates its user through the configured
+server credential and `X-Jobwatch-Client-Subject`. For that human channel, the backend renders the frozen profile
+facts, unresolved questions, search scope and limits in ordinary chat. An explicit confirmation (for example `yes`
+or `yes, confirm my profile`) responds to the pending native `profile_confirm` interaction. The immediately previous
+assistant message must match a review actually issued for this person, conversation and interaction; arbitrary
+assistant/system/tool text cannot substitute for it. The draft and scope are checked again before confirmation.
+`no` declines; a correction rejects the pending confirmation and continues with the person's new message. A changed
+draft gets a fresh review. Replayed replies follow the original resume run instead of confirming twice.
+
+The same authenticated channel can answer a single pending native question directly in chat. Routine questions
+normally use ordinary conversation without a native interrupt. Model-facing read/run credentials retain their
+existing scopes and cannot consume human interactions through this adapter. Other protected operations, especially
+`submit_application`, retain their native review interfaces. Native interaction response endpoints remain available
+to frontends with controls. Generated interfaces carry no approval authority. On the first new human turn, obsolete
+per-answer approvals and old confirmations without a review are rejected through the native response operation.
+That same resume carries the new human message, so recovery cannot discard it before another question is asked.
 
 On the MCP path the connected host is the human-approval boundary. The adapter has
 one bearer token (`JOBWATCH_MCP_TOKEN`) for one configured person; unlike the HTTP
@@ -342,7 +357,7 @@ must be kept away from model tools.
 The adapter has fixed human wording for `run_career_ops`, `assess_job`,
 `prepare_application`, `prepare_interview`, `draft_followup` and
 `submit_application`. It cannot present the other gated operations (`profile_confirm`,
-`profile_answer`, `profile_correct`, `reject_posting`, `restore_posting`,
+`reject_posting`, `restore_posting`,
 `propose_exclusion`, `confirm_exclusion`, `pick_comparison`, `answer_question`,
 `dismiss_prompt`, `select_jobs`, `cancel_selection`): their identity is a draft,
 prompt, rule or selection rather than a posting, and the words a human would need

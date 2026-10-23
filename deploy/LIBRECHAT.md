@@ -17,9 +17,13 @@ Enable `JOBWATCH_UI_FORMAT=artifacts` on the backend. The bot endpoint receives 
 file bytes in standard OpenAI-compatible content parts and grants read/run scope to a
 trusted server credential plus its authenticated subject. The existing identity registry
 preserves the owner mapping and isolates other accounts. The client stores no Jobwatch
-human credential. Native Artifacts provide local interactive previews; they cannot
-approve operations, confirm profile facts, fill an employer form or Submit. Gated
-operations remain paused when protected human review is unavailable in this client.
+human credential. Routine profile answers update the unconfirmed draft directly. The backend
+shows the exact profile and search scope in chat and accepts an explicit reply from the
+authenticated user against that review. Preserve the preceding assistant review in conversation
+history when forwarding the reply. Corrections or changed inputs require another review.
+Native interaction controls remain an alternative over the same operation. Native Artifacts
+provide local interactive previews; they carry no approval authority and cannot fill an employer
+form or Submit. Other gated operations remain paused without their required human review.
 
 Configure attachment delivery as `provider` for Jobwatch, with MIME types `.*` and the
 10 MiB aggregate/20-file limit in the sample. Receipt and reading are separate: arbitrary

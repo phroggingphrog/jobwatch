@@ -356,3 +356,22 @@ Preserve current data and owner identity. This supersedes the earlier custom-cli
 fixed-card requirements. Protected operations remain paused when a client cannot provide
 the required authenticated human review; do not manufacture an approval through chat or
 an Artifact.
+
+Owner's correction on 2026-10-24:
+
+> my approval why need a screen if you can just parse it from tghe conversations
+
+> profile confirmation should be able. from user chat and interactionn for chatbot front end
+
+> why it wouldn't render anything if they tryna have an approval screen
+
+> this is a design flaw
+
+Routine answers and corrections update the unconfirmed draft directly from the person's
+own words. Profile confirmation works through authenticated human conversation as well
+as native interaction controls: show the actual draft and search scope in chat, then bind
+an explicit human reply to that exact review. A separate screen is not required. The
+backend authenticates the human channel and checks the current inputs; the model and
+Artifacts cannot grant approval. A correction or changed draft needs another review.
+This supersedes the per-answer approval and screen-only profile-confirmation design.
+Other protected operations, including final Submit, retain their existing review paths.

@@ -81,7 +81,8 @@ Onboarding: to set up a profile, guide the person. Ask for their CV and other do
 with use_existing_files) and call profile_start; the documents are read in the background, so ask the open questions one or two
 at a time meanwhile and use profile_status to see the draft and parse state. profile_answer and profile_correct record ONLY the
 person's own words from their latest message, copied faithfully: never invent, infer or paraphrase a fact into an answer, never
-answer for them, and ask again if they have not said it. Show profile_confirmation before profile_confirm. profile_confirm needs
+answer for them, and ask again if they have not said it. These tools update only the unconfirmed draft and need no separate
+approval. Show profile_confirmation before profile_confirm. profile_confirm needs
 the person's own approval of that exact draft and scope; it starts discovery within the scope shown and does not authorise
 documents, employer messages or submission. If profile_incomplete is reported, ask for their career focus and experience.
 To answer, return {\"answer\":\"text\"}; to use a tool return
@@ -121,7 +122,7 @@ def job_connection(config, *, write=False):
 
 
 GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'revise_application', 'prepare_interview', 'draft_followup', 'submit_application',
-         'profile_confirm','profile_answer','profile_correct','reject_posting','restore_posting','propose_exclusion',
+         'profile_confirm','reject_posting','restore_posting','propose_exclusion',
          'confirm_exclusion','pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
 
 
@@ -164,14 +165,22 @@ def _approval_binding(name, args, config):
             raise AgenticError('profile_not_ready')
         try:
             shown = intake.confirmation(users.current(), args['proposal_id'], config)
+            proposal = intake.load_proposal(users.current(), args['proposal_id'])
         except intake.IntakeError:
             raise AgenticError('profile_not_ready') from None
+        if intake.digest(proposal) != shown['proposal_digest']:
+            raise AgenticError('profile_not_ready')
         if not shown['scope'].basis:
             raise AgenticError('profile_not_ready')                # nothing to search for: no approval is offered
         value.update(snapshot=shown['proposal_digest'] + ':' + shown['scope_digest'])
         return {'digest': hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(), 'run_key': value['snapshot'],
                 'operation': name, 'arguments': args, 'proposal_digest': shown['proposal_digest'],
-                'scope_digest': shown['scope_digest']}
+                'scope_digest': shown['scope_digest'], 'subject': {
+                    'revision': proposal.revision,
+                    'facts': [f.model_dump(mode='json') for f in proposal.facts],
+                    'questions': [q.model_dump(mode='json') for q in proposal.questions],
+                    'scope': shown['scope'].model_dump(mode='json'),
+                    'authorises': shown['authorises'], 'does_not_authorise': shown['does_not_authorise']}}
     if name in ('profile_answer', 'profile_correct'):
         # Bound to the open draft the words go into and to the exact words, so an approval cannot be replayed
         # against a different draft or different wording.
@@ -592,13 +601,6 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                            'note': f.note, 'sources': [{'line': r.line, 'quote': r.quote} for r in f.sources]} for f in p.facts],
                 'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
 
-    def _approved(name, args):
-        """The person's approval for exactly these words and this draft, re-derived at call time."""
-        binding = scope.approvals.get((name, _identity(args, name))) if scope else None
-        if (binding is None or _tool_arguments(name, args) != _tool_arguments(name, binding['arguments'])
-                or binding != _approval_binding(name, binding['arguments'], config)):
-            raise RuntimeErrorSafe('approval_inputs_changed')
-
     def _said(*texts):
         """Fail closed: every string must be a clause the person wrote this turn, or a span of one that their own
         words affirm, so a negated clause never yields its opposite ("I am not a citizen" never says "a citizen")."""
@@ -677,11 +679,10 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
 
     @tool
     def profile_answer(question_id: str, text: str) -> dict:
-        """Record the person's answer to an open question, after they approve those exact words. text must be the person's
+        """Record the person's answer in the unconfirmed draft. text must be the person's
         own words from their latest message, copied faithfully; never invent, infer or paraphrase a fact, and never answer
         for them."""
         from jobwatch.candidate import intake
-        _approved('profile_answer', {'question_id': question_id, 'text': text})
         try:
             _said(text)
             return _draft(_on_latest(lambda p: intake.answer(person, p.id, expected_revision=p.revision,
@@ -691,11 +692,10 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
 
     @tool
     def profile_correct(edits: list[dict]) -> dict:
-        """Record corrections the person asked for, after they approve them: {op:'add',section,value} |
+        """Record corrections in the unconfirmed draft: {op:'add',section,value} |
         {op:'set',fact_id,basis:'evidence',value} | {op:'remove',fact_id}. Values must be what the person said in their
         latest message; never invent or infer a fact."""
         from jobwatch.candidate import intake
-        _approved('profile_correct', {'edits': edits})
         try:
             if type(edits) is not list:
                 raise intake.IntakeError('invalid_edit')
@@ -822,6 +822,10 @@ def _chat_interactions(values, config=None) -> list[dict]:
                 events.append({'type': 'approval', 'interaction_id': action.get('id') or f'approval-{index}',
                                'posting_id': args.get('posting_id'), 'operation': name, 'binding': binding,
                                'summary': action.get('description', 'Run Career Ops for this job.')})
+            elif name in ('profile_answer', 'profile_correct'):
+                # Checkpoints made before conversational intake may still contain
+                # these obsolete approvals. Reject them before accepting a new turn.
+                events.append({'type': 'invalid_action', 'operation': name})
             else:
                 events.append({'type': 'unsupported', 'interaction_id': action.get('id') or f'action-{index}'})
     return events
@@ -839,8 +843,12 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
     """
     if not users.valid_name(person) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', thread_id or ''):
         raise RuntimeErrorSafe('invalid_request')
-    if (message is None) == (decisions is None) or (message is not None and
+    if (message is None and decisions is None) or (message is not None and
             (type(message) is not str or (not message.strip() and not upload_ids and not attachment_receipts) or len(message) > 16000)):
+        raise RuntimeErrorSafe('invalid_request')
+    if message is not None and decisions is not None and (human_decision is not True
+            or type(decisions) is not list or any(d != {'type': 'reject'} for d in decisions)
+            or upload_ids or attachment_receipts):
         raise RuntimeErrorSafe('invalid_request')
     if attachment_receipts is not None and (message is None or type(attachment_receipts) is not list
             or len(attachment_receipts) > 20 or any(type(r) is not dict
@@ -969,11 +977,13 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                             raise RuntimeErrorSafe('invalid_decisions')
                         for index, (decision, item) in enumerate(zip(decisions, interactions)):
                             if item['type'] == 'invalid_action':
-                                raise RuntimeErrorSafe('approval_inputs_changed')
+                                if decision.get('type') != 'reject':
+                                    raise RuntimeErrorSafe('approval_inputs_changed')
+                                continue  # declining an obsolete/unbindable call authorises nothing
                             if item['type'] == 'approval':
                                 if decision.get('type') not in ('approve', 'reject'):
                                     raise RuntimeErrorSafe('invalid_decisions')
-                                if approval_bindings is not None and (len(approval_bindings) != len(interactions)
+                                if decision['type'] == 'approve' and approval_bindings is not None and (len(approval_bindings) != len(interactions)
                                         or approval_bindings[index] != item['binding']):
                                     raise RuntimeErrorSafe('approval_inputs_changed')
                                 if decision['type'] == 'approve':
@@ -983,7 +993,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                                     execution.approvals[(item['operation'], identity)] = item['binding']
                             elif decision.get('type') != 'respond' or type(decision.get('message')) is not str:
                                 raise RuntimeErrorSafe('invalid_decisions')
-                        value = Command(resume={'decisions': decisions})
+                        value = Command(resume={'decisions': decisions},
+                            update={'messages': [{'role': 'user', 'content': message}]} if message is not None else None)
                     elif recover and same_invocation:
                         value = None
                     else:

@@ -49,3 +49,30 @@ def test_standard_endpoint_binds_trusted_client_subject_without_human_scope(monk
     assert c.get('/v1/models', headers={**friend, 'Authorization': 'Bearer ' + RUN}).status_code == 401
     assert c.get('/api/agent/capabilities', headers=owner).status_code == 401
     assert c.post('/api/agent/threads', headers=owner).status_code == 401
+
+
+def test_trusted_chat_confirmation_cannot_approve_an_application_submit(monkeypatch):
+    monkeypatch.setenv('JOBWATCH_LIBRECHAT_ENABLED', 'true')
+    monkeypatch.setenv('JOBWATCH_UI_FORMAT', 'artifacts')
+    monkeypatch.setenv('JOBWATCH_LIBRECHAT_IDENTITY_KEY', BRIDGE)
+    monkeypatch.setenv('JOBWATCH_LIBRECHAT_OWNER_SUBJECT', 'synthetic-owner')
+    calls = []
+    def dispatch(**kwargs):
+        calls.append(kwargs)
+        return {'status': 'interrupted', 'checkpoint_id': 'synthetic-submit', 'interactions': [
+            {'type': 'approval', 'operation': 'submit_application', 'posting_id': 1,
+             'binding': {'synthetic': 'reviewed-employer-form'}}]}
+    app = create_api(credentials={RUN: Principal('owner'),
+        HUMAN: Principal('owner', frozenset({'read', 'interact', 'approve'}))}, config={}, dispatcher=dispatch)
+    headers = {'Authorization': 'Bearer ' + BRIDGE, 'X-Jobwatch-Client-Subject': 'synthetic-owner',
+        'X-Jobwatch-Conversation': 'synthetic-submit'}
+    messages = [{'role': 'user', 'content': 'Submit the application.'}]
+    with TestClient(app) as client:
+        first = client.post('/v1/chat/completions', headers=headers,
+            json={'model': 'jobwatch-agent', 'messages': messages}).json()
+        response = client.post('/v1/chat/completions', headers=headers,
+            json={'model': 'jobwatch-agent', 'messages': [*messages, first['choices'][0]['message'],
+                {'role': 'user', 'content': 'yes'}]}).json()
+        assert response['id'] == first['id']
+        assert 'requires a verified human approval interface' in response['choices'][0]['message']['content']
+        assert len(calls) == 1 and calls[0]['human_decision'] is False

@@ -726,13 +726,16 @@ focus) is refused when confirming with `409 {"error": "profile_incomplete"}`.
 The chat agent runs the same flow as a conversation. The person gives their documents (or offers
 the files already in their `profile/`); the agent calls `profile_start`, which begins the background
 parse, and meanwhile asks the open questions one at a time. `profile_answer` and `profile_correct`
-record only the person's own words from their latest message, and each is a gated tool: the person
-approves the exact words and the draft they go into. Anything the agent made up is refused with
+record only the person's own words from their latest message into the unconfirmed draft, without
+a separate approval for each answer. Anything the agent made up is refused with
 `not_person_words`, and so is a span lifted out of a clause the person negated ("a citizen" from
 "I am not a citizen"). When the draft is ready the agent calls `profile_confirmation`
 and shows the scope, daily limits and what is not authorised. `profile_confirm` is a gated tool:
 the person's approval is bound to the exact `proposal_digest` and `scope_digest`, and a changed
-draft fails with `approval_inputs_changed`. See "Guided onboarding in the chat agent" in CHAT.md.
+draft needs another review. An authenticated chatbot frontend can show the actual draft and scope
+in conversation and accept the person's explicit reply against that review; no separate screen
+is required. Native interaction controls use the same confirmation operation. See "Guided
+onboarding in the chat agent" in CHAT.md.
 
 ## CLI for existing installs
 

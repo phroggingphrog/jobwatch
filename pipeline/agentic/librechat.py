@@ -114,8 +114,10 @@ def _uploads(person, raw):
     return ids, [sha for sha, _ in docs]
 
 
-def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=(), attachment_receipts=()):
+def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=(), attachment_receipts=(), *, human_chat=False, config=None):
     with APIStore(person) as store:
+        from pipeline.agentic import profile_conversation
+        profile_conversation.tables(store)
         store.conn.execute('CREATE TABLE IF NOT EXISTS client_threads('
                            'client_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES api_threads(id))')
         # One native thread per client conversation, in the authenticated person's DB.
@@ -128,11 +130,15 @@ def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=(), attach
                 store.conn.execute('INSERT INTO api_threads VALUES(?,?,?)', (thread, time.time(), skill_version()))
                 store.conn.execute('INSERT INTO client_threads VALUES(?,?)', (conversation, thread))
         message = _message(body, allow_empty=bool(upload_ids or attachment_receipts), standard_files=True)
-        # Retransmission returns the original run. A pending decision is only shown;
-        # no message (including "approve") can consume an interaction.
+        # Retransmission returns the original run, including a human chat response.
         key = fingerprint([[m.model_dump() for m in body.messages], list(upload_hashes)]) if upload_hashes else fingerprint([m.model_dump() for m in body.messages])
         previous = store.conn.execute('SELECT id FROM api_runs WHERE request_key=?',
                                       (fingerprint([thread, key]),)).fetchone()
+        if previous:
+            return _current_run(store, previous[0])
+        response_key = fingerprint([thread, key])
+        previous = store.conn.execute('SELECT resume_run FROM client_chat_reviews WHERE response_key=?',
+            (response_key,)).fetchone()
         if previous:
             return _current_run(store, previous[0])
         active = store.conn.execute("SELECT id FROM api_runs WHERE thread_id=? AND state IN "
@@ -141,7 +147,12 @@ def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=(), attach
         if active:
             if upload_ids or attachment_receipts:
                 raise HTTPException(409, 'conversation_busy')
-            return store.public_run(active[0])
+            current = store.public_run(active[0])
+            if human_chat and current['state'] in ('waiting_for_input', 'waiting_for_approval'):
+                resumed = profile_conversation.respond(store, person, conversation, current, body, message, response_key, config)
+                if resumed:
+                    return resumed
+            return current
         payload = {'message': message}
         if upload_ids:
             payload['upload_ids'] = list(upload_ids)
@@ -150,11 +161,14 @@ def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=(), attach
         return store.public_run(store.enqueue(thread, payload, key))
 
 
-def _answer(run, controls_url, *, inline=False):
+def _answer(run, controls_url, *, inline=False, human_chat=False):
     result = run.get('result') or {}
     text = result.get('answer') or ''
     artifacts = os.environ.get('JOBWATCH_UI_FORMAT') == 'artifacts'
     if run['state'] in ('waiting_for_input', 'waiting_for_approval'):
+        from pipeline.agentic.profile_conversation import prompt
+        if human_chat and (question := prompt(run)) is not None:
+            return question
         text += ('\n\nThis action is paused. It requires a verified human approval interface; '
                  'this chat cannot authorize it with a message or generated Artifact. '
                  if artifacts else '\n\nRespond in the Jobwatch panel below. ' if inline else
@@ -185,7 +199,11 @@ def mount(app, require, get_config, *, client_principal=None):
             if x_jobwatch_client_subject is not None:
                 if client_principal is None or request.url.path not in ('/v1/models', '/v1/chat/completions'):
                     raise HTTPException(401, 'authentication_required')
-                return client_principal(authorization, x_jobwatch_client_subject)
+                principal = client_principal(authorization, x_jobwatch_client_subject)
+                # This flag comes only from authenticated frontend-server transport,
+                # never JSON messages or the model-facing read/run credential.
+                request.state.human_chat = True
+                return principal
             return fallback(authorization)
         return resolve
     read, write = auth('read'), auth('run')
@@ -213,6 +231,7 @@ def mount(app, require, get_config, *, client_principal=None):
         if body.model not in (MODEL, selected_model) or not _ID.fullmatch(x_jobwatch_conversation):
             raise HTTPException(422, 'invalid_client_request')
         continuation = body.messages[-1].role == 'tool'
+        human_chat = bool(getattr(request.state, 'human_chat', False)) and not continuation
         if continuation:
             run = await asyncio.to_thread(_continuation, principal.person, x_jobwatch_conversation, body)
         else:
@@ -224,7 +243,8 @@ def mount(app, require, get_config, *, client_principal=None):
             file_ids, receipts = await asyncio.to_thread(attachments.receive, principal.person, files)
             upload_ids += file_ids
             upload_hashes += [r['sha256'] for r in receipts]
-            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body, upload_ids, upload_hashes, receipts)
+            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body, upload_ids, upload_hashes, receipts,
+                human_chat=human_chat, config=get_config(principal.person))
         if continuation:
             receipts = []
         from pipeline.agentic.genui import enabled as genui_enabled
@@ -265,10 +285,14 @@ def mount(app, require, get_config, *, client_principal=None):
                 return {'role': 'assistant', 'content': '', 'tool_calls': [{
                     'id': 'call_' + run['id'], 'type': 'function', 'function': {
                         'name': view, 'arguments': json.dumps({'run_id': run['id']})}}]}
-            content = _answer(value, controls_url, inline=inline)
+            content = _answer(value, controls_url, inline=inline, human_chat=human_chat)
             for receipt in receipts:
                 if not receipt['readable']:
                     content += '\n\nReceived ' + json.dumps(receipt['filename']) + '. The original file is saved, but its contents could not be read (' + receipt['reason'].replace('_', ' ') + ').'
+            if human_chat:
+                from pipeline.agentic.profile_conversation import remember
+                with APIStore(principal.person) as store:
+                    remember(store, x_jobwatch_conversation, value, content)
             return {'role': 'assistant', 'content': content}
 
         if body.stream:

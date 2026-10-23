@@ -93,7 +93,8 @@ def mount(app, base_credentials):
 
     def client_principal(authorization, subject):
         # Configuration supplies the stable authenticated subject and server secret.
-        # This adapter never exports either credential or grants human authority.
+        # This resolver exports no credentials or scopes. The chat adapter separately
+        # accepts human replies only from this authenticated frontend-server channel.
         from pipeline.agentic.api import Principal
         return Principal(resolve(subject, authorization)['person'])
 

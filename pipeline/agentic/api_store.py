@@ -221,7 +221,7 @@ class APIStore:
                               (state, encoded(result) if result else None, error, time.time(), ident))
             self.event(ident, state, {'reason': error} if error else {})
 
-    def respond(self, interaction_id, response):
+    def respond(self, interaction_id, response, *, message=None):
         with self.transaction():
             row = self.conn.execute('SELECT * FROM api_interactions WHERE id=?', (interaction_id,)).fetchone()
             if row is None:
@@ -231,9 +231,10 @@ class APIStore:
                     raise Conflict('interaction_consumed')
                 return row['resume_run'], json.loads(row['payload'])
             run = self.raw_run(row['run_id'])
-            if run['state'] not in ('waiting_for_input', 'waiting_for_approval') or row['expires'] <= time.time():
-                raise Conflict('interaction_expired')
             item = json.loads(row['payload'])
+            rejecting = item['type'] == 'approval' and response.get('decision') == 'reject'
+            if run['state'] not in ('waiting_for_input', 'waiting_for_approval') or (row['expires'] <= time.time() and not rejecting):
+                raise Conflict('interaction_expired')
             if item['type'] == 'approval':
                 if response['decision'] not in ('approve', 'reject') or response.get('answer') is not None:
                     raise Conflict('invalid_approval')
@@ -250,7 +251,10 @@ class APIStore:
             rows = self.conn.execute('SELECT * FROM api_interactions WHERE run_id=? ORDER BY position', (row['run_id'],)).fetchall()
             resume = None
             if all(r['response'] is not None for r in rows):
-                if any(r['expires'] <= time.time() for r in rows):
+                # Declining an expired approval grants no authority and lets an
+                # authenticated conversation recover. Expired approvals/answers
+                # that would authorise work still fail closed.
+                if any(r['expires'] <= time.time() and json.loads(r['response']).get('decision') != 'reject' for r in rows):
                     raise Conflict('interaction_expired')
                 decisions = []
                 for r in rows:
@@ -263,6 +267,8 @@ class APIStore:
                 previous = json.loads(run['result_json'])
                 payload = {'decisions': decisions, 'expected_checkpoint': previous.get('checkpoint_id'),
                            'approval_bindings': [json.loads(r['payload']).get('binding') for r in rows]}
+                if message is not None:
+                    payload['message'] = message
                 resume = self._insert(run['thread_id'], payload, fingerprint(['resume', row['run_id']]))
                 self.conn.execute('UPDATE api_interactions SET resume_run=? WHERE run_id=?', (resume, row['run_id']))
             self.event(row['run_id'], 'interaction_answered', {'interaction_id': interaction_id})

@@ -54,14 +54,20 @@ over-infer, and a CV gap alone does not establish unemployment.
   sources, and asks only the remaining gaps. `profile_answer` and `profile_correct`
   record a value only if it is a clause of the person's own words from their latest
   message, or a span their own clause affirms (`not_person_words` otherwise, so a
-  negated clause never yields its opposite), and each is a gated tool whose human
-  approval is bound to the open draft and the exact words, so the model can neither
-  answer for the person nor record anything they did not approve. The
+  negated clause never yields its opposite). These tools update only the unconfirmed
+  draft without a separate approval. The
   confirmation is shown with its scope and limits; `profile_confirm` is a gated
   tool whose human approval is bound to the exact proposal and scope digests, so a
   changed draft fails and model text is never approval. A scope with nothing to
   search for (no evidence-backed experience, skill or career focus) is refused as
   `profile_incomplete`.
+- Owner correction on 2026-10-24: profile confirmation also works inside an authenticated
+  human conversation. The backend shows frozen facts, open questions, search scope and
+  limits, then binds the person's explicit reply to the exact review it issued for that
+  person and conversation. Changed inputs require a fresh review; a correction declines
+  the pending confirmation and continues the conversation. Native interaction controls
+  remain supported. This replaces per-answer approvals and the separate-screen requirement;
+  model-facing credentials and generated interfaces still cannot grant approval.
 - An existing hand-made profile is never overwritten. Adopting it
   (`jobwatch profile adopt`) records it as version 1 for overwrite protection and
   history only: **adoption authorises nothing**. An adopted owner onboards through a
