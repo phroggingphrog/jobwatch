@@ -118,7 +118,7 @@ exact decisions, shortlist explanations and verified document previews.
 Downloads use a separate short-lived capability. No external controls-page link
 is needed for this flow; `/agent` remains a separately authenticated fallback.
 
-Open **Agent models** inside the panel to set the paid model ID for each role.
+Use the visible **Models** button inside the panel. Choose a named model from the configured gateway for all tasks, or expand **Choose by task** for individual roles, then **Save models** and confirm LibreChat’s exact tool dialog. No model IDs need to be typed. Unsaved choices survive refresh; selectors pause while a save awaits confirmation. The catalog uses the configured gateway credential and filters existing paid-route restrictions; if it cannot be loaded, current models remain visible with a retry message.
 The canonical per-person settings and existing route restrictions apply; new
 choices affect new work. Qwen3 Embedding 8B remains the evidence embedding route.
 The `jobwatch-agent` label in LibreChat selects the backend adapter, while these

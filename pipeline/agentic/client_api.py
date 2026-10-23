@@ -28,6 +28,41 @@ from pipeline.agentic.runtime import RuntimeErrorSafe
 UPLOAD = '/api/agent/client/upload'
 DOWNLOAD = '/api/agent/client/download'
 
+_MODEL_CATALOG = {}
+
+
+def model_catalog(person, config):
+    """List the configured paid gateway, never another credential or provider."""
+    from pipeline.agentic.service import configured_llm
+    import requests
+    try:
+        llm = configured_llm(config)
+        require_route(llm, model_choice.get_model('chat', person))
+        cache_key = (person, llm.base_url, hashlib.sha256(llm._keys[0].encode()).digest())
+        cached = _MODEL_CATALOG.get(cache_key)
+        if cached and time.monotonic() - cached[0] < 300:
+            return cached[1]
+        with requests.Session() as session:
+            session.trust_env = False
+            response = session.get(llm.base_url + '/models', timeout=3, allow_redirects=False,
+                headers={'Authorization': 'Bearer ' + llm._keys[0]})
+        response.raise_for_status()
+        options = []
+        for row in response.json()['data']:
+            model = row.get('id')
+            try:
+                require_route(llm, model)
+            except RuntimeErrorSafe:
+                continue
+            options.append({'id': model, 'label': model.split('/', 1)[1].replace('-', ' ').title(),
+                            'provider': model.split('/', 1)[0].title()})
+        result = {'options': sorted({r['id']: r for r in options}.values(), key=lambda r: r['id']),
+                  'catalog_available': True}
+        _MODEL_CATALOG[cache_key] = (time.monotonic(), result)
+        return result
+    except Exception:
+        return {'options': [], 'catalog_available': False}
+
 
 @contextmanager
 def _db():
@@ -205,7 +240,8 @@ def mount(app, require, get_config):
         with users.use(principal.person):
             return {'roles': {role: {'label': label, 'model': model_choice.get_model(role, principal.person)}
                               for role, (label, _) in model_choice.ROLES.items()},
-                    'embedding': 'openrouter/qwen/qwen3-embedding-8b'}
+                    'embedding': 'openrouter/qwen/qwen3-embedding-8b',
+                    **model_catalog(principal.person, get_config(principal.person))}
 
     @app.post('/api/agent/client/models')
     def set_models(body: ModelRequest, principal=Depends(approve)):

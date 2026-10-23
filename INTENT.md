@@ -30,6 +30,12 @@ and documents inside the conversation through an embedded MCP App. Jobwatch
 retains server-bound identity, native orchestration and exact-input approval;
 model-facing tools must not acquire the human UI's decision authority.
 
+Owner follow-up on 2026-10-23:
+
+> bruh i dont want that i ask you to be fully interactrive for the user this is too much for general user base
+
+The embedded client must make ordinary tasks interactive and discoverable for general users. Model choices use visible controls and selectable configured names; users should not need to type gateway model IDs or understand internal routing. A panel that fails to load does not satisfy this requirement.
+
 Owner direction on 2026-10-23:
 
 > can we not include CI as the rules for it to be finished
