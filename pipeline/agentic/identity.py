@@ -13,15 +13,14 @@ from fastapi import Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from jobwatch import users
 from jobwatch.apply.paths import ensure_dir
+from pipeline.agentic.private_sqlite import connect as private_connect
 
 
 @contextmanager
 def registry():
     root = ensure_dir(users.base_dir() / 'agent-api')
     path = root / 'identities.sqlite'
-    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    os.close(fd)
-    conn = sqlite3.connect(path, timeout=15)
+    conn = private_connect(path, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute('CREATE TABLE IF NOT EXISTS identities(subject TEXT PRIMARY KEY,person TEXT UNIQUE NOT NULL, '
                  'chat_key TEXT UNIQUE NOT NULL,human_key TEXT UNIQUE NOT NULL)')

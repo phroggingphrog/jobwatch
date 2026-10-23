@@ -4,13 +4,13 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
-import os
 import sqlite3
 import time
 import uuid
 
 from jobwatch import users
 from jobwatch.apply.paths import ensure_dir
+from pipeline.agentic.private_sqlite import connect as private_connect
 
 
 class Conflict(Exception):
@@ -33,10 +33,7 @@ class APIStore:
             raise ValueError('invalid_person')
         root = ensure_dir(users.user_dir(person) / 'career-chat')
         path = root / 'state.sqlite'
-        fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        os.close(fd)
-        os.chmod(path, 0o600)
-        self.conn = sqlite3.connect(path, timeout=10)
+        self.conn = private_connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute('PRAGMA foreign_keys=ON')
         self.conn.execute('PRAGMA journal_mode=WAL')

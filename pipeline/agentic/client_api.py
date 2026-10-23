@@ -24,6 +24,7 @@ from pipeline.agentic.api_store import APIStore
 from pipeline.agentic.persistence import _read_artifact
 from pipeline.agentic.execution import require_route
 from pipeline.agentic.runtime import RuntimeErrorSafe
+from pipeline.agentic.private_sqlite import connect as private_connect
 
 UPLOAD = '/api/agent/client/upload'
 DOWNLOAD = '/api/agent/client/download'
@@ -69,9 +70,7 @@ def _db():
     root = users.base_dir() / 'agent-api'
     ensure_dir(root)
     path = root / 'app-tickets.sqlite'
-    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-    os.close(fd)
-    conn = sqlite3.connect(path, timeout=10)
+    conn = private_connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute('CREATE TABLE IF NOT EXISTS tickets(hash TEXT PRIMARY KEY, person TEXT NOT NULL, '
                  'kind TEXT NOT NULL, payload TEXT NOT NULL, expires REAL NOT NULL, used INTEGER NOT NULL DEFAULT 0)')

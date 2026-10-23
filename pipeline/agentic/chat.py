@@ -823,9 +823,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                 except BlockingIOError:
                     raise RuntimeErrorSafe('person_busy') from None
                 path = root / 'state.sqlite'
-                fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
-                os.close(fd)
-                connection = sqlite3.connect(path, check_same_thread=False)
+                from pipeline.agentic.private_sqlite import connect as private_connect
+                connection = private_connect(path, timeout=5, check_same_thread=False)
                 try:
                     lock = threading.RLock()
                     saver, store = ChatSaver(connection, lock), ChatStore(connection, lock)
