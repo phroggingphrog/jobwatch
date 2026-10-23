@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+pytest.importorskip('playwright.sync_api',  # module-level: collection used to error without the
+                    reason='the prefill tests need the browser extra')  # browser extra, not skip
 from playwright.sync_api import ElementHandle, sync_playwright
 
 from jobwatch.apply import prefill

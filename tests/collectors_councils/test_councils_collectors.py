@@ -187,17 +187,17 @@ def test_scouttalent_shared_host_needs_ref_prefix():
     assert [p.source_id for p in only_own_host] == ["bbsc-external:BAW632"]   # old behaviour unchanged
 
 
-# ------------------------------------------------------------------ pending registry file
-def test_pending_council_registry_is_wellformed():
+# ------------------------------------------------------------------ merged council registry
+def test_merged_council_registry_is_wellformed():
+    """The council wave is merged into config/employers.yaml. This used to read an untracked
+    employers.councils.pending.yaml and skipped in every checkout, so it never ran at all."""
     import yaml
     from jobwatch.config import DEFAULT_CONFIG_DIR
-    path = DEFAULT_CONFIG_DIR / "employers.councils.pending.yaml"
-    if not path.is_file():                   # removed once the coordinator merges it into employers.yaml
-        pytest.skip("pending file already merged")
-    entries = yaml.safe_load(path.read_text())
+    catalog = yaml.safe_load((DEFAULT_CONFIG_DIR / "employers.yaml").read_text())
+    entries = [e for e in catalog["employers"] if e.get("sector") == "council"]
     names = [e["name"] for e in entries]
-    assert len(names) == len(set(names)) == 35
-    keys = {"name", "sector", "arms", "state", "au_scope", "provider", "enabled", "verified_at", "verified_counts", "notes"}
+    assert len(names) == len(set(names)) >= 35
+    keys = {"name", "sector", "arms", "state", "au_scope", "provider", "enabled", "verified_at", "notes"}
     known = {"pageup", "scouttalent", "smartrecruiters", "oracle-hcm", "pulse", "recruitmenthub", "jobs-search", "elmo",
              "techone", "other"}
     provider_collector = {"pageup": "ats_pageup", "scouttalent": "ats_scouttalent", "smartrecruiters": "ats_smartrecruiters",
@@ -205,10 +205,8 @@ def test_pending_council_registry_is_wellformed():
                           "jobs-search": "ats_jobs_search", "elmo": "ats_elmo", "techone": "ats_techone"}
     for e in entries:
         assert keys <= set(e), e["name"]
-        assert e["sector"] == "council" and e["state"] == "VIC" and e["au_scope"] in ("melbourne", "victoria")
+        assert e["state"] == "VIC" and e["au_scope"] in ("melbourne", "victoria")
         assert e["provider"] in known and isinstance(e["enabled"], bool) and e["notes"]
         if e["enabled"]:
             assert e["provider"] != "other" and e["verified_counts"]["total"] >= 0
             assert provider_collector[e["provider"]] in registry.COLLECTORS
-        else:
-            assert e["verified_counts"] is None

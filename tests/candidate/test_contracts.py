@@ -78,20 +78,6 @@ def test_hide_input_in_errors_on_validation_failure() -> None:
     assert private_marker not in err_repr
 
 
-@pytest.mark.skip(reason="strict schemas removed, owner 2026-10-19")
-def test_unknown_claim_property_rejected() -> None:
-    valid_hash = "a" * 64
-    with pytest.raises(ValueError):
-        EvidenceItem(
-            id="cv.L3",
-            kind="skill",
-            source_file="cv.md",
-            source_hash=valid_hash,
-            line=3,
-            end_line=3,
-            quote="Ledger reconciliation",
-            invented=True,
-        )
 
 
 def test_malformed_hashes_rejected() -> None:
@@ -586,41 +572,6 @@ def test_crosswalk_validation() -> None:
         Crosswalk(soc="13-2011", anzsco_codes=("2211",))
 
 
-@pytest.mark.skip(reason="strict schemas removed, owner 2026-10-19")
-def test_mapping_contract() -> None:
-    m = Mapping(
-        evidence_id="cv.L1",
-        source_hash="5" * 64,
-        reference_hash="6" * 64,
-        dwa_id="test.accounts",
-        method="shortlist-v1",
-        state="confirmed",
-    )
-    assert m.evidence_id == "cv.L1"
-    assert m.state == "confirmed"
-
-    # Invalid state rejected
-    with pytest.raises(ValueError):
-        Mapping(
-            evidence_id="cv.L1",
-            source_hash="5" * 64,
-            reference_hash="6" * 64,
-            dwa_id="test.accounts",
-            method="shortlist-v1",
-            state="invalid_state",
-        )
-
-    # Raw rationale forbidden
-    with pytest.raises(ValueError):
-        Mapping(
-            evidence_id="cv.L1",
-            source_hash="5" * 64,
-            reference_hash="6" * 64,
-            dwa_id="test.accounts",
-            method="shortlist-v1",
-            state="confirmed",
-            rationale="Some LLM thoughts",
-        )
 
 
 def test_occupation_fit_and_archetype_and_analysis_result() -> None:
@@ -934,50 +885,20 @@ def test_arbitrary_mapping_key_never_appears_in_validation_error(factory, marker
     assert marker not in repr(exc_info.value)
 
 
-@pytest.mark.skip(reason="strict schemas removed, owner 2026-10-19")
-def test_unknown_field_name_never_appears_in_validation_error() -> None:
+def test_an_unknown_field_name_is_dropped_and_never_surfaces() -> None:
+    """Strict schemas were removed on the owner's direction (2026-10-19), so an unknown field no longer
+    raises. The privacy half of the guarantee still has to hold: the name and value must not survive."""
     marker = "PRIVATE_UNKNOWN_FIELD_PROBE"
-    with pytest.raises(ValidationError) as exc_info:
-        Occupation(
-            code="221111", title="Accountant", family="accounting",
-            dwa_weights={"dwa.1": 1.0}, gwa_ratings={"gwa.1": 4.0}, **{marker: "x"},
-        )
-    assert marker not in str(exc_info.value)
-    assert marker not in repr(exc_info.value)
-
-
-@pytest.mark.skip(reason="strict schemas removed, owner 2026-10-19")
-def test_numeric_weights_and_ratings_reject_bool() -> None:
-    valid_fit_kwargs = dict(
-        code="221111",
-        family="accounting",
-        evidence_ids=("cv.L1",),
-        gap_dwa_ids=(),
-        mapping_states=("confirmed",),
-        recommendation_status="candidate_path",
+    occupation = Occupation(
+        code="221111", title="Accountant", family="accounting",
+        dwa_weights={"dwa.1": 1.0}, gwa_ratings={"gwa.1": 4.0}, **{marker: "sensitive"},
     )
-    # OccupationFit rejects bool for coverage, similarity, proximity
-    with pytest.raises(ValidationError):
-        OccupationFit(dwa_coverage=True, gwa_similarity=0.5, proximity=0.5, **valid_fit_kwargs)
-    with pytest.raises(ValidationError):
-        OccupationFit(dwa_coverage=0.5, gwa_similarity=False, proximity=0.5, **valid_fit_kwargs)
-    with pytest.raises(ValidationError):
-        OccupationFit(dwa_coverage=0.5, gwa_similarity=0.5, proximity=True, **valid_fit_kwargs)
+    assert not hasattr(occupation, marker)
+    for rendered in (str(occupation), repr(occupation), str(occupation.model_dump()), occupation.model_dump_json()):
+        assert marker not in rendered and "sensitive" not in rendered
+    with pytest.raises(ValidationError) as exc_info:           # a real validation error still hides it
+        Occupation(code="221111", title="Accountant", family="accounting",
+                   dwa_weights={"dwa.1": "not-a-number"}, gwa_ratings={"gwa.1": 4.0}, **{marker: "sensitive"})
+    assert marker not in str(exc_info.value) and marker not in repr(exc_info.value)
 
-    # Occupation rejects bool for dwa_weights and gwa_ratings
-    with pytest.raises(ValidationError):
-        Occupation(
-            code="221111",
-            title="Accountant",
-            family="accounting",
-            dwa_weights={"dwa.1": True},
-            gwa_ratings={"gwa.1": 4.0},
-        )
-    with pytest.raises(ValidationError):
-        Occupation(
-            code="221111",
-            title="Accountant",
-            family="accounting",
-            dwa_weights={"dwa.1": 1.0},
-            gwa_ratings={"gwa.1": True},
-        )
+

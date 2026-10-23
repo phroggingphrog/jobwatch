@@ -257,13 +257,6 @@ def test_three_failures_go_to_the_dead_letter_queue_and_can_be_retried(world):
     assert stage(conn, pid) == "ready"
 
 
-@pytest.mark.skip(reason="strict schemas removed, owner 2026-10-19")
-def test_the_model_cannot_add_a_route_or_any_extra_key(world):
-    conn, add, run, _ = world
-    pid = add("Accounts Assistant")
-    run(Gateway(evaluate={"Accounts Assistant": {**score(), "next_stage": "drafting"}}))
-    assert stage(conn, pid) == "dlq"
-    assert "next_stage" in conn.execute("SELECT error FROM pipeline_dlq").fetchone()[0]
 
 
 def test_a_failed_draft_is_retried_three_times_then_dead_lettered(world):
