@@ -1478,3 +1478,22 @@ def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, mon
     with users.use(person):
         assert len(list((users.user_dir(person) / 'intake' / 'proposals').glob('*.json'))) == 1
         _settled(person, intake.open_proposal(person).id)
+
+
+def test_the_agent_api_refuses_to_bind_a_non_loopback_address(monkeypatch):
+    """The web board has always required a loopback bind; the agent API passed --host straight to uvicorn."""
+    import uvicorn
+    from pipeline.agentic import api
+    monkeypatch.setattr(uvicorn, 'run', lambda *a, **k: pytest.fail('served despite the bind guard'))
+    reached = []
+    def refuse_credentials(*a, **k):
+        reached.append(True)
+        raise RuntimeError('synthetic: no private credentials in a test')
+    monkeypatch.setattr(api, 'create_api', refuse_credentials)
+    for host in ('0.0.0.0', '::', '192.168.1.10'):
+        with pytest.raises(SystemExit) as exc:
+            api.main(['--host', host])
+        assert 'non-loopback' in str(exc.value) and not reached
+    with pytest.raises(SystemExit):                      # loopback gets past the guard to the credential check
+        api.main(['--host', '127.0.0.1'])
+    assert reached == [True]

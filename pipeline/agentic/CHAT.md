@@ -8,7 +8,8 @@ work, and LangGraph persistence/HITL run inside the backend.
 ## Install and start
 
 From an isolated checkout, install the locked runtime with `uv sync --frozen`.
-Run `uv run --no-sync jobwatch-agent --host 127.0.0.1 --port 8914`.
+Run `uv run --no-sync jobwatch-agent --host 127.0.0.1 --port 8914`. Only a loopback
+bind is accepted; `0.0.0.0`, `::` and any LAN or public address exit without serving.
 The endpoint is a standalone FastAPI application using existing dependencies; it
 does not start the board, browser auto-fill loop, DSH or collection timers.
 
