@@ -5,6 +5,17 @@ candidate-free. Changes to the product goal require the owner's explicit directi
 
 ## Development completion
 
+Owner deployment direction on 2026-10-23:
+
+> I want to deploy and run the current job watch from the repo as its finished, and use libre chat as its UI
+
+> clean start
+
+Deploy the current backend with fresh runtime state and LibreChat as its client.
+Preserve existing data separately. LibreChat does not replace native Jobwatch
+operations or turn model text into approval. Deployment requires its own local
+release checks and observable runtime evidence.
+
 Owner direction on 2026-10-23:
 
 > can we not include CI as the rules for it to be finished

@@ -1,0 +1,23 @@
+# Merge this endpoint into the existing LibreChat configuration.
+# JOBWATCH_AGENT_BASE_URL must be reachable from the LibreChat server/container.
+# Each person enters their own read/run bearer in LibreChat's API-key dialog.
+# Never put an approval token here or configure a shared owner credential.
+version: 1.3.17
+endpoints:
+  custom:
+    - name: Jobwatch
+      apiKey: user_provided
+      baseURL: "${JOBWATCH_AGENT_BASE_URL}"
+      headers:
+        X-Jobwatch-Conversation: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+      models:
+        default: [jobwatch-agent]
+        fetch: false
+      titleConvo: false
+      summarize: false
+      modelDisplayLabel: Jobwatch
+      tokenConfig:
+        jobwatch-agent:
+          context: 16000
+          prompt: 0
+          completion: 0

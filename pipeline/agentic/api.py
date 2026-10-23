@@ -285,6 +285,9 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     shortlist_api.mount(app, require, get_config)
     from pipeline.agentic import feedback_api
     feedback_api.mount(app, require, get_config)
+    if os.environ.get('JOBWATCH_LIBRECHAT_ENABLED') == 'true':
+        from pipeline.agentic import librechat
+        librechat.mount(app, require)
 
     @app.get('/health')
     def health():

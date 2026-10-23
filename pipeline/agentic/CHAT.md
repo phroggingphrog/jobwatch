@@ -314,6 +314,14 @@ MCP is optional (`uv sync --extra mcp`, `jobwatch-mcp`). Its experimental adapte
 calls the same dispatcher and bound approval contract. It is not required to
 install or use the native API.
 
+### LibreChat client
+
+The optional OpenAI wire adapter and separately authenticated controls page are
+enabled with `JOBWATCH_LIBRECHAT_ENABLED=true`. See
+[the deployment guide](../../deploy/LIBRECHAT.md) for fresh-state installation,
+private credentials, LibreChat configuration, approval handling and undo.
+The adapter reuses native durable runs; it never interprets chat text as approval.
+
 ## GitHub source workflow
 
 The private source repository is `phroggingphrog/jobwatch`. It starts from a
