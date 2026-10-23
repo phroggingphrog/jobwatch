@@ -665,7 +665,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             reader = model_choice.get_model('reader', person)
             tokens = intake.estimate_parse_tokens(person, ids)
             if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
-                scope.reserve(reader, 'profile_parse', tokens, 4000)
+                scope.reserve(reader, 'profile_parse', tokens, 16000)
                 scope.parse_starts += 1
             current = intake.current_version(person)
             return _draft(intake.start_proposal(person, ids, llm, base_version=current['version'] if current else None))
@@ -686,7 +686,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             reader = model_choice.get_model('reader', person)
             tokens = intake.estimate_parse_tokens(person, ids)
             if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
-                scope.reserve(reader, 'profile_parse', tokens, 4000)
+                scope.reserve(reader, 'profile_parse', tokens, 16000)
                 scope.parse_starts += 1
             return _draft(intake.add_uploads(person, p.id, ids, llm))
         except intake.IntakeError as exc:

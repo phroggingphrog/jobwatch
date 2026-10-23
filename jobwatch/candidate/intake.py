@@ -416,7 +416,8 @@ def _model_parse(person: str, docs, blocks, llm: LLM, deadline: float | None) ->
     """The one paid call: checked facts (ids f1..) and the model's questions (ids q1..), nothing added by us."""
     res = llm.chat(get_model("reader", person), [
         {"role": "system", "content": PROMPT % {"sections": ", ".join(SECTIONS)}},
-        {"role": "user", "content": "\n\n".join(blocks)}], json_mode=True, deadline=deadline)
+        {"role": "user", "content": "\n\n".join(blocks)}], json_mode=True, deadline=deadline,
+        max_tokens=16000)                    # a reasoning reader spends most of the budget thinking before any JSON
     if not isinstance(res.data, dict):
         raise IntakeError("parse_failed")
     facts: list[ProfileFact] = []
