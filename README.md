@@ -38,6 +38,8 @@ mkdir -p ~/.config/jobwatch && cp .env.example ~/.config/jobwatch/settings.env  
 
 Systemd user units (fast/slow collection, outcomes, digest, web) are in `systemd/`; copy them to
 `~/.config/systemd/user/` and enable the timers. See `SETUP.md` for first sign-in and connecting accounts.
+For a first run on a new server, [docs/service-bring-up.md](docs/service-bring-up.md) puts these steps in
+order with a check at each one, before any unit is enabled at boot.
 
 ## Settings (`~/.config/jobwatch/settings.env`)
 
