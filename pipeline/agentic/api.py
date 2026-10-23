@@ -80,7 +80,15 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     if not credentials or any(not isinstance(token, str) or len(token) < 32 or not users.valid_name(p.person)
             or not p.scopes <= {'read', 'run', 'interact', 'approve'} for token, p in credentials.items()):
         raise RuntimeErrorSafe('api_credentials_invalid')
-    people = sorted({p.person for p in credentials.values()})
+    from pipeline.agentic import identity
+
+    def all_credentials():
+        return {**credentials, **identity.credentials()}
+
+    def known_people():
+        return sorted({p.person for p in all_credentials().values()})
+
+    people = known_people()
     hashes = [(hashlib.sha256(t.encode()).digest(), p) for t, p in credentials.items()]
     stopping = asyncio.Event()
 
@@ -170,7 +178,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     async def worker():
         while not stopping.is_set():
             worked = False
-            for person in people:
+            for person in known_people():
                 with users.use(person):
                     cfg=get_config(person)
                     if job_database(cfg).exists():
@@ -214,7 +222,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         value = authorization.removeprefix('Bearer ') if authorization and authorization.startswith('Bearer ') else ''
         digest = hashlib.sha256(value.encode()).digest()
         principal = None
-        for expected, possible in hashes:
+        current_hashes = hashes + [(hashlib.sha256(key.encode()).digest(), p) for key,p in identity.credentials().items()]
+        for expected, possible in current_hashes:
             if hmac.compare_digest(digest, expected):
                 principal = possible
         return principal
@@ -269,6 +278,8 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 raise HTTPException(403, 'scope_required')
             return principal
         return authenticate
+
+    identity.mount(app, credentials)
 
     read, write, interact = require('read'), require('run'), require('interact')
 

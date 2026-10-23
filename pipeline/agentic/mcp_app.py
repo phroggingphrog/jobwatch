@@ -27,11 +27,12 @@ ID = re.compile(r'[A-Za-z0-9_-]{1,100}')
 class Verifier(TokenVerifier):
     def __init__(self, credentials):
         super().__init__(required_scopes=['jobwatch'])
-        self.hashes = [(hashlib.sha256(k.encode()).digest(), p) for k, p in credentials.items()]
+        self.credentials = credentials
 
     async def verify_token(self, token):
         digest = hashlib.sha256(token.encode()).digest()
-        for expected, p in self.hashes:
+        for key, p in self.credentials().items():
+            expected = hashlib.sha256(key.encode()).digest()
             if hmac.compare_digest(digest, expected):
                 return AccessToken(token=token, client_id='jobwatch-app', subject=p.person,
                                    scopes=['jobwatch', *p.scopes])
@@ -47,7 +48,11 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
     origin = origin or os.environ.get('JOBWATCH_APP_ORIGIN', '')
     if not re.fullmatch(r'https://[A-Za-z0-9.-]+(?::[0-9]+)?', origin):
         raise RuntimeErrorSafe('app_origin_required')
-    server = FastMCP('Jobwatch', auth=Verifier(credentials), mask_error_details=True,
+    def all_credentials():
+        from pipeline.agentic import identity
+        return {**credentials, **identity.credentials()}
+
+    server = FastMCP('Jobwatch', auth=Verifier(all_credentials), mask_error_details=True,
         instructions='Jobwatch owns its agent. jobwatch_view renders an existing native run; it cannot approve work.')
 
     def auth(scope):
@@ -55,7 +60,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
         if token is None or scope not in token.scopes:
             raise RuntimeErrorSafe('scope_required')
         # Resolve again from server configuration. No person or credential is accepted in tool arguments.
-        for key, principal in credentials.items():
+        for key, principal in all_credentials().items():
             if hmac.compare_digest(key, token.token):
                 return key, principal
         raise RuntimeErrorSafe('authentication_required')
@@ -66,7 +71,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
             # Only an authenticated human app operation can delegate a paid native command.
             if not human:
                 raise RuntimeErrorSafe('human_required')
-            candidates = [k for k, q in credentials.items() if q.person == p.person and 'run' in q.scopes
+            candidates = [k for k, q in all_credentials().items() if q.person == p.person and 'run' in q.scopes
                           and 'approve' not in q.scopes and 'interact' not in q.scopes]
             if len(candidates) != 1:
                 raise RuntimeErrorSafe('run_credential_required')
