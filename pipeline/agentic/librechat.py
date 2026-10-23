@@ -179,13 +179,15 @@ def mount(app, require, get_config):
         else:
             _message(body)
             run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body)
+        from pipeline.agentic.genui import enabled as genui_enabled
+        genui = genui_enabled()
         view = _view_tool(body) if not continuation else None
         inline = bool(view or continuation or os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true')
 
         async def settled():
             current = run
-            if view:
-                return current  # mount the panel immediately; it reads durable progress itself
+            if view and not genui:
+                return current  # legacy resources keep their existing progress behavior
             end = time.monotonic() + 850
             while current['state'] in ('queued', 'running') and time.monotonic() < end:
                 if await request.is_disconnected():
@@ -203,8 +205,14 @@ def mount(app, require, get_config):
             return 'data: ' + json.dumps(dict(id=ident, object='chat.completion.chunk', created=created,
                 model=MODEL, choices=[dict(index=0, delta=delta, finish_reason=finish)])) + '\n\n'
 
+        def needs_view(value):
+            # Generated UI has no human authority. Preserve the native boundary for
+            # approvals, legacy interrupts and explicit canonical view requests.
+            return bool(view and (not genui or value['state'] in ('waiting_for_input', 'waiting_for_approval')
+                or any(o.get('status') == 'view' for o in (value.get('result') or {}).get('outcomes', []))))
+
         def message(value):
-            if view:
+            if needs_view(value):
                 return {'role': 'assistant', 'content': '', 'tool_calls': [{
                     'id': 'call_' + run['id'], 'type': 'function', 'function': {
                         'name': view, 'arguments': json.dumps({'run_id': run['id']})}}]}
@@ -223,10 +231,10 @@ def mount(app, require, get_config):
                     if value is not None:
                         result = message(value)
                         delta = {k: v for k, v in result.items() if k != 'role'}
-                        if view:
+                        if needs_view(value):
                             delta['tool_calls'][0]['index'] = 0
                         yield chunk(delta)
-                        yield chunk({}, 'tool_calls' if view else 'stop')
+                        yield chunk({}, 'tool_calls' if needs_view(value) else 'stop')
                         yield 'data: [DONE]\n\n'
                 finally:
                     if not task.done():
@@ -237,7 +245,7 @@ def mount(app, require, get_config):
         if value is None:
             raise HTTPException(499, 'client_disconnected')
         return dict(id=ident, object='chat.completion', created=created, model=MODEL,
-                    choices=[dict(index=0, message=message(value), finish_reason='tool_calls' if view else 'stop')])
+                    choices=[dict(index=0, message=message(value), finish_reason='tool_calls' if needs_view(value) else 'stop')])
 
     @app.get('/api/agent/client/runs')
     def runs(principal=Depends(read)):

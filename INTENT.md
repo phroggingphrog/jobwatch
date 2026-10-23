@@ -284,3 +284,20 @@ a valid genuine-choice fit can personalise within evidence tiers. The owner sele
 explicit historical-choice migration tooling that preserves original records; no live
 migration or fitting follows from implementation. The approved scope and interfaces
 are recorded in the [Phase 5 plan](docs/superpowers/plans/2026-10-22-phase-5-execution.md).
+
+## Contextual inline interfaces
+
+Owner's latest direction on 2026-10-24:
+
+> i ask you to port the DSH GEN UI and see how it works and make the agent can do it right
+
+> not by making an APP but by rendering based on what it needs
+
+Render the interface appropriate to each reply, mixed with normal conversation, using
+DSH GenUI's SchemaJSON components and renderer. Ordinary onboarding questions can be
+focused forms rather than a persistent dashboard. Keep the backend portable: another
+frontend can consume the same answer format through its own renderer. Preserve normal
+host file attachments and model selection. Generated interfaces carry no approval or
+submission authority; canonical human review and confirmed Submit remain separate.
+This direction supersedes the earlier requirement for a dashboard-style MCP App as
+the ordinary conversation interface. Existing saved resources remain readable.

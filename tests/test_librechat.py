@@ -230,3 +230,39 @@ def test_model_snapshot_preserves_role_overrides_without_reloading_config(monkey
     assert choices['chat'] == 'openai/sol'
     assert choices['writer'] == 'openai/luna'
     assert choices['reviewer'] == 'claude/sonnet'
+
+
+def test_genui_waits_for_answer_without_mounting_dashboard(client, monkeypatch):
+    monkeypatch.setenv('JOBWATCH_GENUI_ENABLED', 'true')
+    first = turn(client, tools=[VIEW]).json()['choices'][0]
+    assert first['finish_reason'] == 'stop'
+    assert first['message']['content'] == 'Synthetic Jobwatch response'
+    assert 'tool_calls' not in first['message']
+    streamed = turn(client, tools=[VIEW], stream=True)
+    assert 'Synthetic Jobwatch response' in streamed.text
+    assert 'tool_calls' not in streamed.text
+    assert len(client.calls) == 1
+
+
+def test_genui_keeps_native_approval_and_question_boundary(client, monkeypatch):
+    monkeypatch.setenv('JOBWATCH_GENUI_ENABLED', 'true')
+    first = turn(client, 'prepare', tools=[VIEW]).json()['choices'][0]
+    assert first['finish_reason'] == 'tool_calls'
+    assert first['message']['tool_calls'][0]['function']['name'] == VIEW['function']['name']
+    assert len(client.calls) == 1
+    again = turn(client, 'approve', tools=[VIEW]).json()['choices'][0]
+    assert again['finish_reason'] == 'tool_calls'
+    assert len(client.calls) == 1
+    question = turn(client, 'question', conversation='genui-question', tools=[VIEW]).json()['choices'][0]
+    assert question['finish_reason'] == 'tool_calls'
+
+
+def test_genui_guidance_is_optional_and_machine_readable(monkeypatch):
+    from pipeline.agentic.genui import guidance
+    monkeypatch.delenv('JOBWATCH_GENUI_ENABLED', raising=False)
+    assert guidance() == ''
+    monkeypatch.setenv('JOBWATCH_GENUI_ENABLED', 'true')
+    text = guidance()
+    schema = json.loads(text.split('```schemaJson\n')[-1].split('\n```')[0])
+    assert schema['componentName'] == 'Page'
+    assert 'Never implement approve/Submit' in text

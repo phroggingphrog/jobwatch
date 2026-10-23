@@ -745,7 +745,8 @@ def _build(person, conn, config, llm, selected, saver, store):
 
     permissions = [FilesystemPermission(operations=['write'], paths=['/skills/**'], mode='deny')]
     boundary = _PrivateBoundary(person)
-    return create_deep_agent(model=model, system_prompt=SYSTEM, backend=backend, store=store,
+    from pipeline.agentic.genui import guidance as genui_guidance
+    return create_deep_agent(model=model, system_prompt=SYSTEM + genui_guidance(), backend=backend, store=store,
         checkpointer=saver, skills=['/skills/'], memory=['/memories/AGENTS.md'],
         permissions=permissions, middleware=[TodoListMiddleware(), boundary,
             FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],

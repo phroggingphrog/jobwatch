@@ -1,0 +1,13 @@
+{
+  "name": "dsh-genui",
+  "version": "0.3.1",
+  "upstream": "https://github.com/lhuans/dsh-genui",
+  "license": "MIT",
+  "source": "owner-installed DSH vanilla profile package",
+  "files": {
+    "genui-runtime.js": "e5e740c9504a9fc1c3b20406bdb89e86bf5d3ffb6c79931071cb90a325bfeedf",
+    "LICENSE": "b1ea60400ea37f72e4ba48abcb33340397edac165dee0e00335f857d08692ad2",
+    "package.json": "2080e6a25b2a461a7caf03411e022e83bd6282abacc2fe4f54ea0b03b49ca862",
+    "authoring-reference.txt": "5162b16999d4118287a469ef78ddcebbe32dc3d30e1e88b4bf4b057684bb1c63"
+  }
+}
