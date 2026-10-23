@@ -329,3 +329,30 @@ OpenAI/Claude/Google provider prefix. The owner controls the concrete subscripti
 and model behind each combo in OmniRoute. Preserve the configured gateway,
 per-person settings, existing excluded route classes and independent embedding
 policy. Select observed working routes and report unavailable combo paths clearly.
+
+## Vanilla clients and native generated interfaces
+
+Owner direction on 2026-10-24:
+
+> can we revert into vanilla librechat because jobwatch suppose to be front end agnostic for the bot endpoint like hermes but it should be able to received file,a account conenctions and does librechat have genui-dsh like or codex interactive ui render abilities or not
+
+> there shuoldnt be jobwatch cards because how it works suppose to be how codex render its interactive ui and dsh render genui plugin
+
+The owner selected:
+
+> Vanilla LibreChat with native Artifacts
+
+On attachment errors:
+
+> it should support all files or what this is annoying
+
+Use standard LibreChat and its native Artifacts, without Jobwatch-specific cards or a
+DSH renderer fork. Jobwatch owns the portable bot endpoint, isolated account mapping,
+file receipt and canonical operations. Accept and retain original files within explicit
+size limits; distinguish receipt from successful reading. Read supported documents and
+bounded ZIP contents; unreadable files receive an honest explanation without rejecting
+the whole conversation. Files and generated interfaces never confer approval authority.
+Preserve current data and owner identity. This supersedes the earlier custom-client and
+fixed-card requirements. Protected operations remain paused when a client cannot provide
+the required authenticated human review; do not manufacture an approval through chat or
+an Artifact.

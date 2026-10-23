@@ -1,11 +1,42 @@
-# Jobwatch with an independent LibreChat frontend
+# Jobwatch with vanilla LibreChat
 
 LibreChat and the website are separate clients of Jobwatch's authoritative native
 backend. The optional OpenAI wire adapter forwards conversation turns to durable
 Jobwatch runs; it does not add a second supervisor. Jobwatch owns evidence,
 identity, model routes, budgets, approval and confirmed submission.
 
-## Release and private configuration
+
+## Current deployment direction (2026-10-24)
+
+Use vanilla LibreChat and the standard configuration in [librechat.yaml](librechat.yaml).
+Preserve existing volumes and configuration for unrelated endpoints, MCP servers,
+agents and skills. Remove only Jobwatch-specific enrollment, automatic-card settings
+and MCP preset attachments. Keep the independent Jobwatch website and backend.
+
+Enable `JOBWATCH_UI_FORMAT=artifacts` on the backend. The bot endpoint receives original
+file bytes in standard OpenAI-compatible content parts and grants read/run scope to a
+trusted server credential plus its authenticated subject. The existing identity registry
+preserves the owner mapping and isolates other accounts. The client stores no Jobwatch
+human credential. Native Artifacts provide local interactive previews; they cannot
+approve operations, confirm profile facts, fill an employer form or Submit. Gated
+operations remain paused when protected human review is unavailable in this client.
+
+Configure attachment delivery as `provider` for Jobwatch, with MIME types `.*` and the
+10 MiB aggregate/20-file limit in the sample. Receipt and reading are separate: arbitrary
+originals are retained, known documents/ZIP members become unconfirmed intake evidence,
+and unsupported or corrupt content receives an explanation within the conversation.
+
+Before rollout, run the required local checks, an independent review and a synthetic
+vanilla-client upload/Artifact journey. Pin the official image digest, back up active
+configuration and record the backend revision. Restart only the authorized chat/API
+services, retain all current data and provide a rollback to the saved image/configuration.
+Do not run the historical whole-backend rollback to change only the chat frontend.
+
+The following sections describe the previous custom-client installation and its
+historical verification. They are retained for rollback context; they do not override
+this vanilla-client direction.
+
+## Historical custom-client release and private configuration
 
 1. Use an isolated checkout. Install existing locked dependencies with
    `uv sync --frozen --extra dev --extra browser --extra mcp`. Run the required

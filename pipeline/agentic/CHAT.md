@@ -685,3 +685,32 @@ configured loopback gateway. The existing free/stealth/Opus/Astra exclusions and
 separate embedding allowlist remain. Gateway routing remains authoritative for
 whether an ID exists and which subscription serves it; the native catalog lists
 available routes. Per-person role choices remain runtime settings.
+
+## Standard chat clients (2026-10-24)
+
+The owner selected vanilla LibreChat with native Artifacts and no Jobwatch cards.
+`JOBWATCH_UI_FORMAT=artifacts` authors native Artifact markup and disables new
+`show_card` tools and automatic MCP view calls. Old resources remain readable.
+Artifacts never grant human approval; a gated action stays paused when its client
+cannot supply protected human review.
+
+`POST /v1/chat/completions` accepts standard text/file content parts containing
+`file.filename` and base64 `file.file_data` data URIs. Inline image/audio/video data
+is retained too; remote URLs and unresolved file IDs are not fetched. The aggregate
+original-byte limit is 10 MiB per turn, at most 20 files. The full request envelope,
+including retained message/file history, is separately bounded at 64 MiB. Standard clients should
+route attachments to the provider, preserving original bytes rather than extracting
+text before transmission. Unknown or corrupt formats are retained with an explicit
+unreadable receipt, not rejected as a failed conversation. Supported documents and
+bounded ZIPs enter canonical intake as unconfirmed evidence. ZIP extraction reads
+members in memory, with at most 100 entries and 20 MiB expanded content; it never
+extracts paths onto disk or executes content.
+
+A trusted chat host can use its configured server bearer credential and
+`X-Jobwatch-Client-Subject` on `/v1/models` and `/v1/chat/completions`. LibreChat can
+supply `{{LIBRECHAT_USER_ID}}` from its authenticated user through ordinary YAML
+configuration. The existing private identity registry preserves the owner's mapping
+and provisions isolated friends. This server credential never enters browser/model
+text and this adapter grants only read/run scope. It cannot approve operations or
+authenticate other native API routes. Existing per-person bearer clients continue
+to work. Never use an unauthenticated browser/model field as a trusted subject.

@@ -9,6 +9,22 @@ def enabled() -> bool:
 
 
 def guidance() -> str:
+    if os.environ.get('JOBWATCH_UI_FORMAT') == 'artifacts':
+        return '''
+Use normal chat for questions and onboarding. When the person asks for an interactive visualization
+or a substantial reusable view, return an ordinary native Artifact, mixed with concise prose:
+:::artifact{identifier="descriptive-stable-id" type="text/html" title="Descriptive title"}
+````html
+<!doctype html><html><body><!-- Complete self-contained HTML, CSS and JavaScript here. --></body></html>
+````
+:::
+Use available evidence only. Keep interaction local: no external resources, network requests,
+credentials, account linking, fake upload controls, host messages or approval/Submit buttons.
+Artifacts are illustrative and have no authority to alter canonical state. Ask for follow-up answers
+directly in chat; a local form cannot send a message or approve anything. Do not emit schemaJson
+or call show_card. This client has no Jobwatch-specific cards. If protected human review is
+unavailable, explain that the requested operation remains paused; never imply chat text approved it.
+'''
     if not enabled():
         return ''
     return '''

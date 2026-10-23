@@ -1,6 +1,10 @@
 """Synthetic client contract: durable turns, identity and human-only decisions."""
 import json
 import time
+import base64
+import hashlib
+import io
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,6 +45,101 @@ def headers(token=RUN, conversation='synthetic-conversation'):
 def turn(client, text='hello', token=RUN, conversation='synthetic-conversation', **extra):
     return client.post('/v1/chat/completions', headers=headers(token, conversation),
         json={'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': text}], **extra})
+
+
+def attached(name, data):
+    return {'type': 'file', 'file': {'filename': name,
+        'file_data': 'data:application/octet-stream;base64,' + base64.b64encode(data).decode()}}
+
+
+def test_standard_files_receive_originals_without_a_frontend_bridge(client):
+    data = b'Synthetic original CV\nTesting only.'
+    body = {'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': [attached('cv.txt', data)]}]}
+    response = client.post('/v1/chat/completions', headers=headers(), json=body)
+    assert response.status_code == 200, response.text
+    assert len(client.calls[0]['upload_ids']) == 1
+    assert client.calls[0]['attachment_receipts'][0]['sha256'] == hashlib.sha256(data).hexdigest()
+    assert client.calls[0]['human_decision'] is False
+    assert client.post('/v1/chat/completions', headers=headers(), json=body).json()['id'] == response.json()['id']
+    assert len(client.calls) == 1
+
+
+def test_zip_and_unreadable_files_do_not_break_normal_chat(client):
+    data = io.BytesIO()
+    with zipfile.ZipFile(data, 'w') as archive:
+        archive.writestr('documents/cv.txt', 'Synthetic document\nTesting experience.')
+    body = {'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': [
+        attached('source-data.zip', data.getvalue()), attached('drawing.unknown', b'\x00\xff\x01'),
+        {'type': 'text', 'text': 'Use my documents.'}]}]}
+    response = client.post('/v1/chat/completions', headers=headers(), json=body)
+    assert response.status_code == 200, response.text
+    receipts = client.calls[0]['attachment_receipts']
+    assert [r['readable'] for r in receipts] == [True, False]
+    assert receipts[1]['reason'] == 'unsupported_reading'
+    assert len(client.calls[0]['upload_ids']) == 1
+    assert 'drawing.unknown' in response.json()['choices'][0]['message']['content']
+
+
+@pytest.mark.parametrize('kind', ['unknown', 'corrupt-zip', 'empty-zip', 'traversal-zip', 'large-zip', 'image', 'invalid-text'])
+def test_unreadable_file_only_turns_are_received_without_running_contents(client, kind):
+    data, name = b'\x00\xff\x01', 'drawing.unknown'
+    if kind.endswith('zip'):
+        name = 'bundle.zip'
+        if kind != 'corrupt-zip':
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr('../outside.txt' if kind == 'traversal-zip' else 'large.txt',
+                                 b'x' * (21 * 1024 * 1024) if kind == 'large-zip' else b'' if kind == 'empty-zip' else b'Synthetic')
+            data = buffer.getvalue()
+    if kind == 'invalid-text':
+        name, data = 'bad.txt', b'\xff' * (5 * 1024 * 1024)
+    part = attached(name, data)
+    if kind == 'image':
+        part = {'type': 'image_url', 'image_url': {'url': 'data:image/png;base64,' + base64.b64encode(data).decode()}}
+    response = client.post('/v1/chat/completions', headers=headers(), json={
+        'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': [part]}], 'stream': True})
+    assert response.status_code == 200, response.text
+    assert 'The original file is saved' in response.text
+    assert client.calls[0]['attachment_receipts'][0]['readable'] is False
+    assert not client.calls[0].get('upload_ids')
+    assert client.calls[0]['human_decision'] is False
+
+
+def test_standard_file_larger_than_old_json_cap_is_received(client):
+    response = client.post('/v1/chat/completions', headers=headers(), json={
+        'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': [attached('data.unknown', b'x' * 100000)]}]})
+    assert response.status_code == 200
+    assert client.calls[0]['attachment_receipts'][0]['bytes'] == 100000
+
+
+def test_prior_originals_do_not_consume_the_new_turn_attachment_allowance(client):
+    response = client.post('/v1/chat/completions', headers=headers(), json={
+        'model': 'jobwatch-agent', 'messages': [
+            {'role': 'user', 'content': [attached('old.bin', b'x' * (8 * 1024 * 1024))]},
+            {'role': 'assistant', 'content': 'Received the original.'},
+            {'role': 'user', 'content': [attached('new.bin', b'y' * (3 * 1024 * 1024))]}]})
+    assert response.status_code == 200, response.text
+    assert len(client.calls[0]['attachment_receipts']) == 1
+    assert client.calls[0]['attachment_receipts'][0]['filename'] == 'new.bin'
+
+
+def test_file_urls_and_bad_base64_cannot_fetch_or_enqueue(client):
+    for content in [attached('../cv.txt', b'Synthetic'), {'type': 'file', 'file': {'filename': 'cv.txt',
+            'file_data': 'https://private.invalid/secret'}}, {'type': 'file', 'file': {'filename': 'cv.txt',
+            'file_data': 'data:text/plain;base64,%%%'}}]:
+        response = client.post('/v1/chat/completions', headers=headers(), json={
+            'model': 'jobwatch-agent', 'messages': [{'role': 'user', 'content': [content]}]})
+        assert response.status_code == 422
+    assert not client.calls
+
+
+def test_artifact_mode_never_emits_jobwatch_card_calls(client, monkeypatch):
+    monkeypatch.setenv('JOBWATCH_UI_FORMAT', 'artifacts')
+    tools = [{'type': 'function', 'function': {'name': 'jobwatch_view'}}]
+    response = turn(client, 'prepare', tools=tools).json()['choices'][0]['message']
+    assert not response.get('tool_calls')
+    assert 'approval' in response['content'].lower()
+    assert 'panel below' not in response['content'].lower()
 
 
 def test_native_attachment_references_survive_enqueue_and_worker(client):

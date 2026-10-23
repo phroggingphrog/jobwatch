@@ -81,16 +81,17 @@ def _current_run(store, ident):
     raise HTTPException(409, 'resume_chain_too_long')
 
 
-def _message(body, *, allow_empty=False):
+def _message(body, *, allow_empty=False, standard_files=False):
     # Prior assistant/system/tool text cannot issue instructions or decisions.
     message = body.messages[-1]
     if message.role != 'user':
         raise HTTPException(422, 'last_message_must_be_user')
     content = message.content
     if isinstance(content, list):
-        if any(p.get('type') != 'text' or not isinstance(p.get('text'), str) for p in content):
+        if any((p.get('type') != 'text' or not isinstance(p.get('text'), str))
+               and not (standard_files and p.get('type') in ('file', 'image_url', 'video_url', 'input_audio')) for p in content):
             raise HTTPException(422, 'use_jobwatch_profile_upload')
-        content = '\n'.join(p['text'] for p in content)
+        content = '\n'.join(p['text'] for p in content if p.get('type') == 'text')
     if content is None and allow_empty:
         content = ''
     if not isinstance(content, str) or (not content.strip() and not allow_empty) or len(content) > 16000:
@@ -113,7 +114,7 @@ def _uploads(person, raw):
     return ids, [sha for sha, _ in docs]
 
 
-def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=()):
+def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=(), attachment_receipts=()):
     with APIStore(person) as store:
         store.conn.execute('CREATE TABLE IF NOT EXISTS client_threads('
                            'client_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES api_threads(id))')
@@ -126,7 +127,7 @@ def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=()):
                 thread = uuid.uuid4().hex
                 store.conn.execute('INSERT INTO api_threads VALUES(?,?,?)', (thread, time.time(), skill_version()))
                 store.conn.execute('INSERT INTO client_threads VALUES(?,?)', (conversation, thread))
-        message = _message(body, allow_empty=bool(upload_ids))
+        message = _message(body, allow_empty=bool(upload_ids or attachment_receipts), standard_files=True)
         # Retransmission returns the original run. A pending decision is only shown;
         # no message (including "approve") can consume an interaction.
         key = fingerprint([[m.model_dump() for m in body.messages], list(upload_hashes)]) if upload_hashes else fingerprint([m.model_dump() for m in body.messages])
@@ -138,20 +139,25 @@ def _enqueue(person, conversation, body, upload_ids=(), upload_hashes=()):
             "('queued','running','waiting_for_input','waiting_for_approval','interrupted') ORDER BY created DESC LIMIT 1",
             (thread,)).fetchone()
         if active:
-            if upload_ids:
+            if upload_ids or attachment_receipts:
                 raise HTTPException(409, 'conversation_busy')
             return store.public_run(active[0])
         payload = {'message': message}
         if upload_ids:
             payload['upload_ids'] = list(upload_ids)
+        if attachment_receipts:
+            payload['attachment_receipts'] = list(attachment_receipts)
         return store.public_run(store.enqueue(thread, payload, key))
 
 
 def _answer(run, controls_url, *, inline=False):
     result = run.get('result') or {}
     text = result.get('answer') or ''
+    artifacts = os.environ.get('JOBWATCH_UI_FORMAT') == 'artifacts'
     if run['state'] in ('waiting_for_input', 'waiting_for_approval'):
-        text += ('\n\nRespond in the Jobwatch panel below. ' if inline else
+        text += ('\n\nThis action is paused. It requires a verified human approval interface; '
+                 'this chat cannot authorize it with a message or generated Artifact. '
+                 if artifacts else '\n\nRespond in the Jobwatch panel below. ' if inline else
                  '\n\nReconnect the interactive Jobwatch card to answer here. ')
         for item in run['interactions']:
             if not item['answered']:
@@ -159,7 +165,8 @@ def _answer(run, controls_url, *, inline=False):
     elif run.get('error'):
         text += '\n\nJobwatch stopped: ' + run['error'] + '.'
     elif run['state'] in ('queued', 'running'):
-        text += ('\n\nJobwatch is working. Progress appears in the panel.' if inline else
+        text += ('\n\nJobwatch is still working.' if artifacts else
+                 '\n\nJobwatch is working. Progress appears in the panel.' if inline else
                  '\n\nJobwatch is still working. Reconnect the interactive card for progress.')
     elif run['state'] != 'completed':
         text += '\n\nJobwatch run status: ' + run['state'] + '.'
@@ -169,9 +176,19 @@ def _answer(run, controls_url, *, inline=False):
     return text.strip() or 'The Jobwatch conversation turn completed.'
 
 
-def mount(app, require, get_config):
+def mount(app, require, get_config, *, client_principal=None):
     """Enabled explicitly at release; the normal native contract stays unchanged."""
-    read, write = require('read'), require('run')
+    def auth(scope):
+        fallback = require(scope)
+        def resolve(request: Request, authorization: str | None = Header(default=None),
+                    x_jobwatch_client_subject: str | None = Header(default=None)):
+            if x_jobwatch_client_subject is not None:
+                if client_principal is None or request.url.path not in ('/v1/models', '/v1/chat/completions'):
+                    raise HTTPException(401, 'authentication_required')
+                return client_principal(authorization, x_jobwatch_client_subject)
+            return fallback(authorization)
+        return resolve
+    read, write = auth('read'), auth('run')
     controls_url = os.environ.get('JOBWATCH_AGENT_PUBLIC_URL', '').rstrip('/')
     if controls_url and not re.fullmatch(r'https://[A-Za-z0-9.-]+(?::[0-9]+)?', controls_url):
         raise ValueError('invalid_agent_public_url')
@@ -199,12 +216,21 @@ def mount(app, require, get_config):
         if continuation:
             run = await asyncio.to_thread(_continuation, principal.person, x_jobwatch_conversation, body)
         else:
+            from pipeline.agentic import attachments
+            content = body.messages[-1].content
+            files = attachments.decode(content) if isinstance(content, list) else []
+            _message(body, allow_empty=bool(files or x_jobwatch_uploads), standard_files=True)
             upload_ids, upload_hashes = await asyncio.to_thread(_uploads, principal.person, x_jobwatch_uploads)
-            _message(body, allow_empty=bool(upload_ids))
-            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body, upload_ids, upload_hashes)
+            file_ids, receipts = await asyncio.to_thread(attachments.receive, principal.person, files)
+            upload_ids += file_ids
+            upload_hashes += [r['sha256'] for r in receipts]
+            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body, upload_ids, upload_hashes, receipts)
+        if continuation:
+            receipts = []
         from pipeline.agentic.genui import enabled as genui_enabled
-        genui = genui_enabled()
-        view = _view_tool(body) if not continuation else None
+        artifacts = os.environ.get('JOBWATCH_UI_FORMAT') == 'artifacts'
+        genui = genui_enabled() or artifacts
+        view = _view_tool(body) if not continuation and not artifacts else None
         inline = bool(view or continuation or os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true')
 
         async def settled():
@@ -239,7 +265,11 @@ def mount(app, require, get_config):
                 return {'role': 'assistant', 'content': '', 'tool_calls': [{
                     'id': 'call_' + run['id'], 'type': 'function', 'function': {
                         'name': view, 'arguments': json.dumps({'run_id': run['id']})}}]}
-            return {'role': 'assistant', 'content': _answer(value, controls_url, inline=inline)}
+            content = _answer(value, controls_url, inline=inline)
+            for receipt in receipts:
+                if not receipt['readable']:
+                    content += '\n\nReceived ' + json.dumps(receipt['filename']) + '. The original file is saved, but its contents could not be read (' + receipt['reason'].replace('_', ' ') + ').'
+            return {'role': 'assistant', 'content': content}
 
         if body.stream:
             async def stream():

@@ -1,28 +1,19 @@
-# Merge into the existing LibreChat configuration. Requires a LibreChat build
-# with Jobwatch authenticated-account enrollment and automatic MCP Apps support.
-# All URLs and credentials below are server-side configuration.
+# Merge into vanilla LibreChat's existing configuration. No Jobwatch frontend fork.
+# Credentials and authenticated subject templates are resolved by the chat server.
 version: 1.3.17
 interface:
   modelSelect: true
-jobwatch:
-  enabled: true
-  baseUrl: "http://<private-bridge>:18914"
-  identityKeyEnv: JOBWATCH_LIBRECHAT_IDENTITY_KEY
-  mcpServerName: jobwatch
-  endpointName: Jobwatch
-  enrollmentTimeoutMs: 10000
-  enrollmentCacheSeconds: 300
 endpoints:
   custom:
     - name: Jobwatch
-      apiKey: user_provided
+      apiKey: "${JOBWATCH_LIBRECHAT_IDENTITY_KEY}"
       baseURL: "${JOBWATCH_AGENT_BASE_URL}"
       headers:
+        X-Jobwatch-Client-Subject: "{{LIBRECHAT_USER_ID}}"
         X-Jobwatch-Conversation: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
-        X-Jobwatch-Uploads: "{{LIBRECHAT_BODY_JOBWATCHUPLOADIDS}}"
       models:
         default: [jobwatch-agent]
-        fetch: true
+        fetch: false
       titleConvo: false
       summarize: false
       modelDisplayLabel: Jobwatch
@@ -35,37 +26,11 @@ fileConfig:
   endpoints:
     Jobwatch:
       disabled: false
-mcpAppSandbox:
-  url: "https://<dedicated-sandbox-host>/api/mcp/sandbox"
-  autoOpenServers: [jobwatch]
-mcpSettings:
-  apps: true
-  allowedAddresses: ["<private-bridge>:18918"]
-mcpServers:
-  jobwatch:
-    type: streamable-http
-    url: "http://<private-bridge>:18918/mcp"
-    startup: false
-    headers:
-      Authorization: "Bearer {{JOBWATCH_DECISION_KEY}}"
-    requestHeaders:
-      Authorization: "Bearer {{JOBWATCH_CHAT_KEY}}"
-    # Required for LibreChat to load the automatically enrolled encrypted values.
-    # These are populated by the server; users do not enter credentials.
-    customUserVars:
-      JOBWATCH_CHAT_KEY:
-        title: Jobwatch chat key
-        description: Server-managed read and run credential.
-      JOBWATCH_DECISION_KEY:
-        title: Jobwatch decision key
-        description: Server-managed human-action credential.
-modelSpecs:
-  enforce: false
-  prioritize: false
-  list:
-    - name: jobwatch
-      label: Jobwatch
-      mcpServers: [jobwatch]
-      preset:
-        endpoint: Jobwatch
-        model: jobwatch-agent
+      supportedMimeTypes: [".*"]
+      fileSizeLimit: 10
+      totalSizeLimit: 10
+      fileLimit: 20
+      defaultLLMDeliveryPath:
+        fallback: provider
+# Jobwatch owns its configured role models. Native Artifacts need no Jobwatch MCP
+# server or model preset. Keep unrelated endpoints/MCP/agent/skill settings intact.

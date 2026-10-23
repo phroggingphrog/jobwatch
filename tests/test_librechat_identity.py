@@ -34,3 +34,18 @@ def test_concurrent_enrollment_is_idempotent_and_does_not_accept_identity_fields
     assert all(r==rows[0] for r in rows)
     assert enroll(c,'../owner').status_code==422
     assert c.post('/api/agent/librechat/enroll',headers={'Authorization':'Bearer '+BRIDGE},json={'subject':'friend','person':'owner'}).status_code==422
+
+
+def test_standard_endpoint_binds_trusted_client_subject_without_human_scope(monkeypatch):
+    monkeypatch.setenv('JOBWATCH_LIBRECHAT_ENABLED', 'true')
+    c = setup(monkeypatch)
+    owner = {'Authorization': 'Bearer ' + BRIDGE, 'X-Jobwatch-Client-Subject': 'synthetic-owner'}
+    friend = {**owner, 'X-Jobwatch-Client-Subject': 'synthetic-friend'}
+    assert c.get('/v1/models', headers=owner).status_code == 200
+    assert c.get('/v1/models', headers=friend).status_code == 200
+    assert enroll(c, 'synthetic-owner').json()['person'] == 'owner'
+    assert enroll(c, 'synthetic-friend').json()['person'] != 'owner'
+    assert c.get('/v1/models', headers={'Authorization': 'Bearer ' + BRIDGE}).status_code == 401
+    assert c.get('/v1/models', headers={**friend, 'Authorization': 'Bearer ' + RUN}).status_code == 401
+    assert c.get('/api/agent/capabilities', headers=owner).status_code == 401
+    assert c.post('/api/agent/threads', headers=owner).status_code == 401

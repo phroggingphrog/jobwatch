@@ -22,6 +22,8 @@ import threading
 import time
 import contextvars
 import functools
+import zipfile
+import stat
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from enum import StrEnum
@@ -44,7 +46,7 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_TEXT_BYTES = 12 * 1024 * 1024          # extracted text can outgrow its PDF a little
 MAX_JSON_BYTES = 8 * 1024 * 1024
 PROMPT_CHARS = 30000                       # per upload, as onboarding.build_profile
-EXTENSIONS = (".pdf", ".docx", ".txt", ".md")
+EXTENSIONS = (".pdf", ".docx", ".txt", ".md", ".csv", ".json", ".yaml", ".yml", ".xml", ".html", ".zip")
 KINDS = ("cv", "letter", "evidence")
 CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_found",
          "proposal_not_found", "parse_failed", "extractor_unavailable", "unreadable_document",
@@ -161,6 +163,38 @@ class Proposal(_Model):
 # ----------------------------------------------------------------------------- text extraction
 def _extract(ext: str, data: bytes) -> str:
     """Text of one document. Distinguishes a missing extractor and an unreadable file from 'no text'."""
+    if ext == '.zip':
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                entries = archive.infolist()
+                if len(entries) > 100 or sum(i.file_size for i in entries) > 20 * 1024 * 1024:
+                    raise IntakeError('too_large')
+                text = []
+                for info in entries:
+                    path = Path(info.filename)
+                    if (info.flag_bits & 1 or path.is_absolute() or '..' in path.parts
+                            or '\\' in info.filename or stat.S_ISLNK(info.external_attr >> 16)):
+                        raise IntakeError('unreadable_document')
+                    suffix = path.suffix.lower()
+                    if info.is_dir() or suffix not in EXTENSIONS or suffix == '.zip':
+                        continue
+                    if info.file_size > MAX_UPLOAD_BYTES:
+                        raise IntakeError('too_large')
+                    with archive.open(info) as member:
+                        raw = member.read(MAX_UPLOAD_BYTES + 1)
+                    if len(raw) > MAX_UPLOAD_BYTES:
+                        raise IntakeError('too_large')
+                    extracted = _extract(suffix, raw)
+                    if not extracted.strip():
+                        continue
+                    text.append('Archive document: ' + info.filename + '\n' + extracted)
+                    if sum(len(t.encode('utf-8')) for t in text) > MAX_TEXT_BYTES:
+                        raise IntakeError('too_large')
+                return '\n\n'.join(text)
+        except IntakeError:
+            raise
+        except Exception:
+            raise IntakeError('unreadable_document') from None
     if ext == ".pdf":
         try:
             from pypdf import PdfReader
@@ -241,6 +275,8 @@ def save_upload(person: str, filename: str, data: bytes, kind: Literal["cv", "le
     sha = hashlib.sha256(data).hexdigest()
     text = _extract(ext, data)              # refused here, so the person hears the true reason at upload time;
                                             # a document that parses but has no text is kept and refused by propose()
+    if len(text.encode('utf-8', 'replace')) > MAX_TEXT_BYTES:
+        raise IntakeError('too_large')
     root = _root(person)
     with _locked(person):
         _write_private(root / "uploads" / (sha + ext), data)
@@ -578,7 +614,8 @@ def upload_profile_files(person: str) -> list[str]:
     with users.use(person):
         pdir = apaths.profile_dir()
         for name in _ALLOWED:
-            if Path(name).suffix not in EXTENSIONS:
+            # Offer source documents, not canonical profile/configuration YAML.
+            if Path(name).suffix not in ('.pdf', '.docx', '.txt', '.md'):
                 continue
             try:
                 canonical, raw = read_profile_source(pdir, name, MAX_UPLOAD_BYTES)

@@ -62,24 +62,39 @@ def mount(app, base_credentials):
     if len(owner_run) != 1 or len(owner_human) != 1:
         raise ValueError('librechat_owner_credentials_required')
 
-    @app.post('/api/agent/librechat/enroll')
-    def enroll(body: Enrollment, authorization: str | None = Header(default=None)):
+    def resolve(subject, authorization):
         if not hmac.compare_digest(authorization or '', 'Bearer ' + secret):
             raise HTTPException(401, 'authentication_required')
+        try:
+            subject = Enrollment(subject=subject).subject
+        except ValueError:
+            raise HTTPException(401, 'authentication_required') from None
         with registry() as conn:
             conn.execute('BEGIN IMMEDIATE')
-            row = conn.execute('SELECT * FROM identities WHERE subject=?', (body.subject,)).fetchone()
+            row = conn.execute('SELECT * FROM identities WHERE subject=?', (subject,)).fetchone()
             if row is None:
-                owner = body.subject == owner_subject
-                person = users.DEFAULT_USER if owner else 'lc-' + hashlib.sha256(body.subject.encode()).hexdigest()[:24]
+                owner = subject == owner_subject
+                person = users.DEFAULT_USER if owner else 'lc-' + hashlib.sha256(subject.encode()).hexdigest()[:24]
                 chat, human = (owner_run[0], owner_human[0]) if owner else (secrets.token_urlsafe(40), secrets.token_urlsafe(40))
-                conn.execute('INSERT INTO identities VALUES(?,?,?,?)', (body.subject, person, chat, human))
+                conn.execute('INSERT INTO identities VALUES(?,?,?,?)', (subject, person, chat, human))
                 row = dict(person=person, chat_key=chat, human_key=human)
-            if body.subject == owner_subject:
+            if subject == owner_subject:
                 conn.execute('UPDATE identities SET chat_key=?,human_key=? WHERE subject=?',
-                             (owner_run[0], owner_human[0], body.subject))
+                             (owner_run[0], owner_human[0], subject))
                 row = dict(person=users.DEFAULT_USER, chat_key=owner_run[0], human_key=owner_human[0])
             # Finish initialization before publishing credentials, also on a retried enrollment.
             users.create_user_dirs(row['person'])
             conn.commit()
             return {key: row[key] for key in ('person', 'chat_key', 'human_key')}
+
+    @app.post('/api/agent/librechat/enroll')
+    def enroll(body: Enrollment, authorization: str | None = Header(default=None)):
+        return resolve(body.subject, authorization)
+
+    def client_principal(authorization, subject):
+        # Configuration supplies the stable authenticated subject and server secret.
+        # This adapter never exports either credential or grants human authority.
+        from pipeline.agentic.api import Principal
+        return Principal(resolve(subject, authorization)['person'])
+
+    return client_principal
