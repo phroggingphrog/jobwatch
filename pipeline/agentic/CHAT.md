@@ -316,8 +316,9 @@ install or use the native API.
 
 ### LibreChat client
 
-The optional OpenAI wire adapter and separately authenticated controls page are
-enabled with `JOBWATCH_LIBRECHAT_ENABLED=true`. See
+The optional OpenAI wire adapter is enabled with `JOBWATCH_LIBRECHAT_ENABLED=true`.
+`JOBWATCH_MCP_APP_ENABLED=true` adds the native embedded-app support;
+`jobwatch-mcp-app` supplies the optional MCP App renderer. See
 [the deployment guide](../../deploy/LIBRECHAT.md) for fresh-state installation,
 private credentials, LibreChat configuration, approval handling and undo.
 The adapter reuses native durable runs; it never interprets chat text as approval.
