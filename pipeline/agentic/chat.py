@@ -18,7 +18,7 @@ from contextvars import Context
 from contextlib import contextmanager
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from deepagents import (create_deep_agent, FilesystemPermission, HarnessProfile,
@@ -72,6 +72,7 @@ person says. Final Submit
 happens only by the owner's own click or through submit_application, which needs the owner's
 approval of that exact reviewed form and only queues the press; check it with submit_status.
 Never call submit_application unless the owner asked to submit that job.
+The chat is a complete frontend. Use show_card for settings, profile, jobs, documents or application review; never direct the person to the Jobwatch website or ask them for model IDs or API keys.
 Onboarding: to set up a profile, guide the person. Ask for their CV and other documents (or offer their existing profile files
 with use_existing_files) and call profile_start; the documents are read in the background, so ask the open questions one or two
 at a time meanwhile and use profile_status to see the draft and parse state. profile_answer and profile_correct record ONLY the
@@ -115,7 +116,7 @@ def job_connection(config, *, write=False):
         connection.close()
 
 
-GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview', 'draft_followup', 'submit_application',
+GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'revise_application', 'prepare_interview', 'draft_followup', 'submit_application',
          'profile_confirm','reject_posting','restore_posting','propose_exclusion','confirm_exclusion',
          'pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
 
@@ -287,6 +288,14 @@ def _build(person, conn, config, llm, selected, saver, store):
             return {'posting_id': posting_id, 'posting': captured[0], 'full_ad': captured[1],
                     'text_kind': captured[2], 'run_key': row['run_key'] if row else None,
                     'status': row['status'] if row else 'not_run', 'reason': row['reason'] if row else None}
+
+    @tool
+    def show_card(kind: Literal['profile','models','jobs','progress','documents','application']) -> dict:
+        """Present the relevant interactive Jobwatch card inside this conversation. Read-only; never approves an action."""
+        value={'status':'view','card':kind}
+        if scope:
+            scope.outcomes.append(value)
+        return value
 
     @tool
     def run_career_ops(posting_id: int) -> dict:
@@ -484,6 +493,38 @@ def _build(person, conn, config, llm, selected, saver, store):
             return value or {'status': 'deferred', 'reason': 'no_output'}
 
     @tool
+    def revise_application(posting_id: int, instructions: str) -> dict:
+        """Revise a prepared package using the person's requested changes. Requires exact human approval;
+        changes never become candidate facts, and all documents must pass the canonical review again."""
+        from pipeline.agentic import revisions
+        from pipeline.agentic.service import run_agentic_job, _config, snapshot_inventory
+        binding = scope.approvals.get(('revise_application',posting_id)) if scope else None
+        args = {'posting_id':posting_id,'instructions':instructions}
+        if binding is None or binding['arguments'] != args or binding != _approval_binding('revise_application',args,config):
+            raise RuntimeErrorSafe('approval_inputs_changed')
+        if not any(instructions in text for text in scope.human_texts):
+            raise RuntimeErrorSafe('not_person_words')
+        cfg = _config(config)
+        for role in ('worker_model','evaluator_model','reviewer_model','answer_model'):
+            _route(llm,cfg[role])
+        if cfg['embedding_model'] is not None:
+            invocation.require_route(llm,cfg['embedding_model'],embedding=True)
+        with job_connection(config,write=True) as jobs:
+            if not jobs.execute('SELECT 1 FROM applications WHERE posting_id=?',(posting_id,)).fetchone():
+                raise RuntimeErrorSafe('application_missing')
+            revisions.record(posting_id,instructions,binding['digest']+':'+scope.run_id)
+            inventory=snapshot_inventory(jobs,config,posting_ids=[posting_id],limit=1)
+            if not inventory:
+                raise RuntimeErrorSafe('posting_missing')
+            stage=run_agentic_job(posting_id,config,jobs,llm=llm,llm_drafter=llm,llm_reviewer=llm,
+                operation='prepare',expected_run_key=inventory[0]['run_key'])
+            row=jobs.execute('SELECT run_key,status,reason FROM agentic_runs WHERE posting_id=? ORDER BY generation DESC LIMIT 1',(posting_id,)).fetchone()
+            outcome={'posting_id':posting_id,'stage':str(stage) if stage else None,'run_key':row[0] if row else None,
+                     'status':row[1] if row else 'deferred','reason':row[2] if row else 'not_admitted'}
+            scope.outcomes.append(outcome)
+            return outcome
+
+    @tool
     def prepare_interview(posting_id: int) -> dict:
         """Prepare cited private interview material using the existing service, after human approval."""
         return auxiliary('prepare_interview', posting_id)
@@ -496,7 +537,7 @@ def _build(person, conn, config, llm, selected, saver, store):
     @tool
     def submit_application(posting_id: int) -> dict:
         """Press the employer's final Submit on the filled application, after a human approves that exact reviewed
-        form. Only queues: the web board presses within 15 minutes if the live form is still unchanged."""
+        form. Only queues: the shared browser backend presses within 15 minutes if the live form is still unchanged."""
         from jobwatch.apply import submit_confirm
         binding = scope.approvals.get(('submit_application', posting_id)) if scope else None
         if binding is None or binding != _approval_binding('submit_application', binding['arguments'], config):
@@ -682,7 +723,7 @@ def _build(person, conn, config, llm, selected, saver, store):
             FilesystemMiddleware(backend=backend, tools=['ls', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
                                  _permissions=permissions)],
         tools=[*feedback_chat.tools(config,scope,_identity,_approval_binding),
-               run_career_ops, assess_job, prepare_application, prepare_interview, draft_followup, submit_application,
+               show_card, run_career_ops, assess_job, prepare_application, revise_application, prepare_interview, draft_followup, submit_application,
                submit_status, find_jobs, application_status, source_health, ask_human,
                profile_start, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},

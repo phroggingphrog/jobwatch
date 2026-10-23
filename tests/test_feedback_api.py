@@ -78,6 +78,8 @@ def test_native_selection_persists_pending_identity_retry_and_cancellation(froze
         assert selected['state']=='pending_dispatch' and selected['run_id'] is None
         assert api.post(path,json=body,headers=headers()).json()['id']==selected['id']
         assert api.post(path,json={**body,'posting_ids':[43]},headers=headers()).status_code==409
+        assert api.get(path,headers=headers()).json()['selections'][0]['id']==selected['id']
+        assert api.get(path,headers=headers(OTHER)).json()=={'selections':[]}
         path+='/'+selected['id']
         assert api.get(path,headers=headers(OTHER)).status_code==404
         assert api.post(path+'/cancel',headers=headers()).json()['state']=='cancelled'

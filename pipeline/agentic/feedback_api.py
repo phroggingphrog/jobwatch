@@ -138,6 +138,26 @@ def mount(app,require,get_config):
         with jobs(principal,write=True) as (conn,config):
             return confirm_rule(conn,config,proposal_id,body.rule_digest)
 
+    @app.get('/api/agent/selections')
+    def selections(principal=Depends(read)):
+        with users.use(principal.person):
+            config=get_config(principal.person)
+            if not job_database(config).exists():
+                return {'selections':[]}
+        with jobs(principal) as (conn,config):
+            if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
+                return {'selections':[]}
+            ids=[row[0] for row in conn.execute('SELECT id FROM selection_requests WHERE person=? ORDER BY created_at DESC LIMIT 10',(principal.person,))]
+            rows=[]
+            from pipeline.agentic.api_store import APIStore
+            with APIStore(principal.person) as store:
+                for ident in ids:
+                    row=selection.status(conn,ident)
+                    if row['run_id']:
+                        row['run']=store.public_run(row['run_id'])
+                    rows.append(row)
+            return {'selections':rows}
+
     @app.post('/api/agent/selections',status_code=202)
     def select(body:Selected,key:str=Header(alias='Idempotency-Key'),principal=Depends(approve)):
         with jobs(principal,write=True) as (conn,config):

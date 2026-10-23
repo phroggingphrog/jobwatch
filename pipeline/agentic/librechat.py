@@ -130,7 +130,7 @@ def _answer(run, controls_url, *, inline=False):
     text = result.get('answer') or ''
     if run['state'] in ('waiting_for_input', 'waiting_for_approval'):
         text += ('\n\nRespond in the Jobwatch panel below. ' if inline else
-                 '\n\nJobwatch needs your response in the protected controls page. ')
+                 '\n\nReconnect the interactive Jobwatch card to answer here. ')
         for item in run['interactions']:
             if not item['answered']:
                 text += '\n\n' + (item.get('question') or ('Review operation: ' + str(item.get('operation', 'career work'))))
@@ -138,13 +138,12 @@ def _answer(run, controls_url, *, inline=False):
         text += '\n\nJobwatch stopped: ' + run['error'] + '.'
     elif run['state'] in ('queued', 'running'):
         text += ('\n\nJobwatch is working. Progress appears in the panel.' if inline else
-                 '\n\nJobwatch is still working. Check its controls page for progress.')
+                 '\n\nJobwatch is still working. Reconnect the interactive card for progress.')
     elif run['state'] != 'completed':
         text += '\n\nJobwatch run status: ' + run['state'] + '.'
     for outcome in result.get('outcomes') or []:
-        text += '\n\nOutcome: ' + json.dumps(outcome, ensure_ascii=False)
-    if controls_url and not inline:
-        text += f'\n\n[Jobwatch controls, uploads and documents]({controls_url}/agent#run={run["id"]})'
+        if outcome.get('status') != 'view':
+            text += '\n\n' + str(outcome.get('reason') or outcome.get('status') or 'Work updated').replace('_',' ')
     return text.strip() or 'The Jobwatch conversation turn completed.'
 
 

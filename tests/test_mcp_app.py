@@ -148,3 +148,24 @@ def test_panel_follows_canonical_selection_when_child_is_dispatched(monkeypatch)
         selected.update(state='completed',run_id=child['id'],run=child)
         assert read()['selections'][0]['run']['artifacts']==child['artifacts']
         assert seen==['Bearer '+HUMAN]*2
+
+
+def test_focused_card_kinds_are_fixed_and_reopening_is_read_only(native):
+    _,api=native
+    with APIStore('app-one') as store:
+        thread=store.create_thread('synthetic')['id']
+        run=store.enqueue(thread,{'message':'synthetic'},'card-fixture')
+    server=create_server(credentials=CREDS,origin=ORIGIN,transport=httpx.ASGITransport(app=api))
+    with TestClient(server.http_app(path='/mcp',stateless_http=True)) as client:
+        shown=rpc(client,HUMAN,'tools/call',{'name':'jobwatch_view','arguments':{'run_id':run,'card_kind':'models'}})['result']
+        assert shown['structuredContent']['card_kind']=='models'
+        assert isinstance(shown['structuredContent']['created'],(float,int))
+        for _ in range(2):
+            state=rpc(client,HUMAN,'resources/read',{'uri':f'jobwatch://cards/{run}/models/0'})['result']
+            value=json.loads(state['contents'][0]['text'])
+            assert value['card']['kind']=='models' and 'models' in value and 'shortlist' not in value
+        bad=rpc(client,HUMAN,'tools/call',{'name':'jobwatch_view','arguments':{'run_id':run,'card_kind':'executable-script'}})
+        assert bad.get('error') or bad.get('result',{}).get('isError')
+        assert rpc(client,OTHER,'resources/read',{'uri':f'jobwatch://cards/{run}/models/0'}).get('error')
+        with APIStore('app-one') as store:
+            assert store.conn.execute('SELECT count(*) FROM api_runs').fetchone()[0]==1

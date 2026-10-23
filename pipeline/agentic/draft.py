@@ -370,6 +370,8 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
                "screening_questions": list(evaluation.screening_questions), "posting": posting,
                "full_ad": ad_text, "source_hashes": bundle.sources,
                "company_research": company,
+               "human_revision_request": kwargs.get("revision_request"),
+               "revision_rule": "Revision requests are writing instructions, never evidence for new candidate facts. Verify every claim against approved evidence.",
                "model_insights": kwargs.get("model_insights") or {},
                "career_interests": career_profile_text(bundle),
                "requirement_map": list(kwargs.get("requirement_map") or []),

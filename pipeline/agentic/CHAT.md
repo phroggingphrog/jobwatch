@@ -223,13 +223,14 @@ specialists, per-person advisory memory, skills and human interrupts. Existing
 bounded evaluator/writer/reviewer role graphs own canonical assessment and package
 work. Their model transport, route checks and invocation budgets are shared with
 the supervisor. No shell or arbitrary host filesystem is exposed. `submit_application` is
-the only Submit path: it is approval-gated (approve scope), bound to the reviewed browser
-fill's confirmation digest, and only queues a `submit_requests` row; the web process presses
+and the in-chat application card both use the same confirmed-Submit operation: each is
+approval-gated (approve scope), bound to the reviewed browser fill's confirmation digest,
+and only queues a `submit_requests` row; the shared browser owner presses
 within 15 minutes if the live form still matches, and `submit_status` reports the outcome
-(pending, pressed, submitted, unsure, refused, expired). The web process trusts rows in the
+(pending, pressed, submitted, unsure, refused, expired). The shared browser owner trusts rows in the
 person's jobs DB: code running as the agent API can write that DB, so the approval scope
 protects the chat path, not a compromised agent process. The approval shows the posting id,
-not the filled answers; review the fill on the board first.
+while the application card reads actual live values and attachments before its separate final Submit confirmation.
 
 `find_jobs`, `application_status` and `source_health` support read-only discovery.
 The reader can retrieve canonical evidence by source name, hash and explicit line
@@ -606,3 +607,41 @@ records the full local suite (3804 passed, 11 skipped), independent review and r
 synthetic sampler checks. It discloses a temporary smoke-harness installed-database
 access and unknown schema delta; source completion is not a no-live-access certificate
 or a claim of deployment or measured recommendation quality.
+
+## Complete LibreChat frontend
+
+LibreChat and the website are separate frontends. The fixed MCP App uses
+`jobwatch_view(run_id, card_kind, subject_id)` and `jobwatch://cards/...` to show
+profile, models, jobs, progress, documents or application review. An automatic view
+resolves canonical pending work first. Subjects are validated against the authenticated
+person's native state. Historical `jobwatch://runs/...` resources retain their legacy
+shape. Reopening cards only reads existing runs and never starts paid work.
+
+A trusted server-to-server connection enrolls `POST /api/agent/librechat/enroll`
+using `JOBWATCH_LIBRECHAT_IDENTITY_KEY`. The deployment pins
+`JOBWATCH_LIBRECHAT_OWNER_SUBJECT` to the existing owner's signed-in LibreChat ID.
+Other IDs provision isolated people atomically. Only LibreChat's authenticated server
+supplies that subject; users, models and app tools cannot choose it. Distinct encrypted
+chat and human credentials remain server-side. The deployment-level LibreChat `jobwatch`
+configuration enables this connection; `mcpAppSandbox.autoOpenServers` allows automatic
+cards only for the configured server. Defaults preserve other MCP apps.
+
+`JOBWATCH_NATIVE_BROWSER_ENABLED=true` enables the shared native browser service.
+The website uses it through loopback `JOBWATCH_NATIVE_BROWSER_URL`; without that
+setting it remains independently usable with its existing local browser owner.
+`/api/agent/applications` exposes only the person's application state; per-application
+`open`, `answers`, `frame`, `review` and `submit` operations require human scope for
+browser access/mutations. An in-chat five-minute control capability binds one person,
+application and browser target, permits bounded browser input, and cannot authorize
+final Submit. No browser debugging port is exposed. The exact reviewed form includes
+employer, URL, actual values and attached documents. Unsupported/custom unreadable
+controls block review. Human corrections use a separate private review overlay;
+original preparation records stay immutable. Final Submit still uses
+`jobwatch/apply/submit_confirm.py`, one-use confirmation, expiry and press-time checks.
+Uncertain outcomes block automatic retries.
+
+Document revision requests are separately human-approved, scoped to one posting and
+included in its exact pipeline run key. They remain writing instructions, never profile
+facts. Canonical route, budget, claim verification, review and packaging gates apply.
+The client retains unsaved form/model choices through API reconnects and provides a
+text fallback inside chat; it never directs a user to the website as the fallback.

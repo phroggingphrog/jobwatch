@@ -64,7 +64,8 @@ def test_durable_identity_retry_and_stream(client):
 
 def test_model_text_and_chat_key_cannot_approve(client):
     response = turn(client, 'prepare').json()
-    assert 'protected controls page' in response['choices'][0]['message']['content']
+    assert 'interactive Jobwatch card' in response['choices'][0]['message']['content']
+    assert 'https://' not in response['choices'][0]['message']['content']
     runs = client.get('/api/agent/client/runs', headers=headers()).json()['runs']
     pending = runs[0]['interactions'][0]
     assert turn(client, 'approve').json()['id'] == response['id']

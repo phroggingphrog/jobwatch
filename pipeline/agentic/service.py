@@ -201,11 +201,14 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
     from jobwatch.candidate import intake
     approved = intake.current_version(users.current())
     confirmed_hash = digest(approved) if approved else None
+    from pipeline.agentic.revisions import fingerprint
+    revision_hash = fingerprint(posting_id)
     return RunKey(posting_id=posting_id, ad_hash=content_hash(text.encode()), evidence_hash=bundle.bundle_hash,
                   rubric_version=RUBRIC_VERSION, candidate_hash=candidate_hash,
                   config_hash=digest({'policy': policy.model_dump(mode='json'), 'runtime': cfg,
                                       'implementation': IMPLEMENTATION_VERSION,
                                       'confirmed_profile': confirmed_hash,
+                                      **({'revision':revision_hash} if revision_hash else {}),
                                       'location_reference': LOCATION_REFERENCE_HASH, 'posting': posting}))
 
 
@@ -554,12 +557,15 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     company = run_company_researcher(ad_text, _research(posting, budget, cfg), budget,
                         llm_drafter or llm, model=cfg['worker_model'], run_key=key)
                     adapter.save_artifact(claim, 'company_research', company)
+                from pipeline.agentic.revisions import current as current_revision
+                revision_request = current_revision(posting_id)
                 artifacts = _restore_package(saved_package, evaluation) if saved_package is not None else draft_and_review(
                     key, evaluation, budget, llm_drafter=llm_drafter or llm, llm_reviewer=llm_reviewer or llm,
                     return_bundle=True, evidence_bundle=bundle, posting=posting, ad_text=ad_text,
                     worker_model=cfg['worker_model'], reviewer_model=cfg['reviewer_model'],
                     requirement_map=requirement_map, jev_facts=facts, jev_config=config,
                     company_research=company, model_insights=models,
+                    revision_request=revision_request,
                     research=_research(posting, budget, cfg))  # the writer researches the employer too (owner 2026-10-20)
                 adapter.save_artifact(claim, 'package_bundle', _package_payload(artifacts))
                 if saved_package is None:

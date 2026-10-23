@@ -36,6 +36,36 @@ Owner follow-up on 2026-10-23:
 
 The embedded client must make ordinary tasks interactive and discoverable for general users. Model choices use visible controls and selectable configured names; users should not need to type gateway model IDs or understand internal routing. A panel that fails to load does not satisfy this requirement.
 
+Owner's approved complete-frontend direction on 2026-10-23:
+
+> yes that what I mean so theres no need to direct it to the website because the job watch website IS SEPARETELY DIFFERENT FRONT END than this one
+
+> Make LibreChat a complete Jobwatch frontend
+
+LibreChat and the website are separate frontends over the same authoritative backend.
+Use fixed, focused conversation cards for profile setup, configured model choices,
+explained job results, progress/questions/decisions, verified documents/revisions and
+live employer form review. Automatically open the newest relevant card only for the
+configured Jobwatch server. Connect each authenticated LibreChat account automatically
+to its own isolated Jobwatch identity; preserve the existing owner's mapping and keep
+credentials server-side. Friends must not enter or share Jobwatch API keys.
+
+The in-chat application card must show the live employer browser, actual form values
+and attachments, allow scoped human corrections/login/verification where supported,
+and offer separately confirmed final Submit through the canonical confirmed-Submit
+operation. Both frontends share browser ownership and submission processing. Model
+text cannot approve, changed review needs fresh confirmation, and uncertain submissions
+must never be retried automatically. Unsupported flows remain blocked with a clear
+reason inside chat. Preserve old conversation resources and useful text fallbacks;
+never use the Jobwatch website as the fallback.
+
+Completion requires a working authenticated public LibreChat journey with synthetic
+employer submission and safe refusal cases, two simultaneous isolated accounts,
+required local checks and independent review. A passing loopback preview is insufficient.
+Reproduce the reported loading timeout and fix its demonstrated cause; extending the
+timeout alone is insufficient. Deploy backend/browser ownership before enabling cards,
+preserve data, retain the independent website and prepare rollback for both repos.
+
 Owner direction on 2026-10-23:
 
 > can we not include CI as the rules for it to be finished
@@ -238,8 +268,8 @@ textarea fields read back from the page. Hidden inputs and captcha responses are
 of it, and contenteditable or custom widgets are not read; an owner click or keypress in the
 page still voids a confirmation, scrolling does not. It is refused if any bound part changed,
 after one use, or 15 minutes after a chat approval. A chat approval names the posting and
-binds to the fill, but does not show its answers: review the fill on the board before
-approving. See `jobwatch/apply/submit_confirm.py`.
+binds to the fill. Review the actual form and attachments in the in-chat application card
+or the independent website before approving. See `jobwatch/apply/submit_confirm.py`.
 
 ## Ranked and explained shortlists
 

@@ -6,6 +6,7 @@ import hmac
 import io
 import json
 import os
+import base64
 from pathlib import Path
 import re
 from typing import Literal
@@ -19,6 +20,7 @@ from fastmcp.tools import ToolResult
 
 from pipeline.agentic.api import credentials_from_env
 from pipeline.agentic.runtime import RuntimeErrorSafe
+from pipeline.agentic.cards import CardKind, TITLES, resolve
 
 UI = 'ui://jobwatch/panel.html'
 ID = re.compile(r'[A-Za-z0-9_-]{1,100}')
@@ -65,7 +67,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
                 return key, principal
         raise RuntimeErrorSafe('authentication_required')
 
-    async def native(path, *, method='GET', body=None, human=False, run=False):
+    async def native(path, *, method='GET', body=None, human=False, run=False, request_key=None):
         key, p = auth('approve' if human else 'read')
         if run:
             # Only an authenticated human app operation can delegate a paid native command.
@@ -78,7 +80,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
             key = candidates[0]
         async with httpx.AsyncClient(base_url=base_url, transport=transport, timeout=30,
                                      follow_redirects=False) as client:
-            res = await client.request(method, path, json=body, headers={'Authorization': 'Bearer ' + key})
+            res = await client.request(method, path, json=body, headers={'Authorization': 'Bearer ' + key, **({'Idempotency-Key':request_key} if request_key else {})})
         if res.status_code >= 300:
             # Native responses contain fixed safe codes. Never surface response bodies or credentials.
             raise RuntimeErrorSafe('native_request_failed_' + str(res.status_code))
@@ -89,7 +91,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
             raise RuntimeErrorSafe('invalid_id')
         return value
 
-    async def state(run_id):
+    async def state(run_id, kind="auto", subject="0", legacy=False):
         run = (await native('/api/agent/runs/' + ident(run_id))).json()
         for _ in range(64):
             if run['state'] != 'resumed':
@@ -109,17 +111,33 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
             if outcome.get('status') == 'selected' and outcome.get('selection_id'):
                 selection = (await native('/api/agent/selections/' + ident(outcome['selection_id']))).json()
                 selections.append(selection)
-        return {'run': run, 'profile': profile,
-                'selections': selections,
-                'models': (await native('/api/agent/client/models')).json(),
-                'shortlist': (await native('/api/agent/shortlist')).json()}
+        chosen = resolve(run,requested=kind,has_profile=bool((profile.get('current') or {}).get('version')))
+        if not legacy and chosen in ('progress','documents'):
+            recent=(await native('/api/agent/selections')).json()['selections']
+            selections=list({v['id']:v for v in [*selections,*recent]}.values())
+        value = {'run':run,'card':{'kind':chosen,'title':TITLES[chosen],'subject_id':subject},
+                 'profile':profile,'selections':selections}
+        if chosen == 'models' or legacy:
+            value['models'] = (await native('/api/agent/client/models')).json()
+        if chosen == 'jobs' or legacy:
+            value['shortlist'] = (await native('/api/agent/shortlist')).json()
+        if not legacy and chosen in ('application','documents'):
+            res = await native('/api/agent/applications')
+            value['applications'] = res.json()['applications']
+            if chosen == 'application' and subject != '0':
+                if not subject.isdecimal():
+                    raise RuntimeErrorSafe('invalid_subject')
+                value['application'] = (await native('/api/agent/applications/'+subject)).json()
+        return value
+
 
     @server.tool(name='jobwatch_view', title='Jobwatch', annotations={'readOnlyHint': True},
                  meta={'ui': {'resourceUri': UI}, 'ui/resourceUri': UI})
-    async def view(run_id: str):
+    async def view(run_id: str, card_kind: CardKind = "auto", subject_id: str = "0"):
         """Show the authenticated person's existing Jobwatch run inside the conversation."""
         run = (await native('/api/agent/runs/' + ident(run_id))).json()
-        return ToolResult(structured_content={'run_id': run['id'], 'state': run['state']})
+        return ToolResult(structured_content={'run_id': run['id'], 'state': run['state'], 'card_kind':card_kind,
+            'subject_id':ident(subject_id),'created':run['created'],'card_title':TITLES[card_kind]})
 
     @server.resource(UI, name='Jobwatch panel', mime_type='text/html;profile=mcp-app',
         meta={'ui': {'prefersBorder': True, 'csp': {'connectDomains': [origin], 'resourceDomains': [],
@@ -130,7 +148,22 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
 
     @server.resource('jobwatch://runs/{run_id}', mime_type='application/json')
     async def run_resource(run_id: str):
-        return json.dumps(await state(run_id))
+        return json.dumps(await state(run_id,legacy=True))
+
+    @server.resource('jobwatch://cards/{run_id}/{kind}/{subject}', mime_type='application/json')
+    async def card_resource(run_id: str, kind: str, subject: str):
+        if kind not in TITLES:
+            raise RuntimeErrorSafe('invalid_card')
+        return json.dumps(await state(ident(run_id),kind,ident(subject)))
+
+    @server.resource('jobwatch://browser/{posting_id}/{part}', mime_type='application/json')
+    async def browser_resource(posting_id: str, part: str):
+        auth('approve')
+        if not posting_id.isdecimal() or part not in ('frame','review','status'):
+            raise RuntimeErrorSafe('invalid_browser_resource')
+        path='/api/agent/applications/'+posting_id+('' if part=='status' else '/'+part)
+        res=await native(path,human=True)
+        return json.dumps({'jpeg':base64.b64encode(res.content).decode()} if part=='frame' else res.json())
 
     @server.resource('jobwatch://artifacts/{artifact_id}', mime_type='application/json')
     async def artifact_resource(artifact_id: str):
@@ -146,7 +179,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
                  meta={'ui': {'visibility': ['app']}}, annotations={'readOnlyHint': False})
     async def action(action: Literal['respond', 'cancel', 'retry', 'cancel_selection', 'models', 'upload_ticket',
                                     'parse_uploads', 'profile_answer', 'profile_edit', 'profile_confirm',
-                                    'download_ticket'], arguments: dict):
+                                    'download_ticket', 'select_jobs','browser_open','browser_control','browser_review','browser_submit','browser_answers'], arguments: dict):
         """Human app action only. LibreChat displays the exact arguments before confirmation."""
         auth('approve')  # visibility is a host hint; scope is the actual security boundary
         a = dict(arguments)
@@ -170,6 +203,23 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
             if a:
                 raise RuntimeErrorSafe('invalid_arguments')
             res = await native('/api/agent/client/artifacts/' + ident(target) + '/download-ticket', method='POST', human=True)
+        elif action == 'select_jobs':
+            request_key=a.pop('request_key',None)
+            if not request_key:
+                raise RuntimeErrorSafe('request_key_required')
+            res=await native('/api/agent/selections',method='POST',body=a,human=True,request_key=request_key)
+        elif action.startswith('browser_'):
+            pid=a.pop('posting_id',None)
+            if type(pid) is not int or not 0 < pid < 2**63:
+                raise RuntimeErrorSafe('invalid_posting')
+            request_key=a.pop('request_key',None)
+            if action == 'browser_control':
+                if a:
+                    raise RuntimeErrorSafe('invalid_arguments')
+                res=await native('/api/agent/client/browser/control',method='POST',body={'posting_id':pid},human=True)
+            else:
+                suffix={'browser_open':'open','browser_review':'review','browser_submit':'submit','browser_answers':'answers'}[action]
+                res=await native('/api/agent/applications/'+str(pid)+'/'+suffix,method='POST',body=a,human=True,request_key=request_key)
         elif action == 'parse_uploads':
             path = ('/api/agent/profile/proposals/' + ident(target) + '/uploads' if target else '/api/agent/profile/proposals')
             res = await native(path, method='POST', body=a, human=True, run=True)
