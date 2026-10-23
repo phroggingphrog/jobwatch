@@ -45,8 +45,9 @@ Client `user`/`person` fields never select an identity.
 
 Select **Jobwatch → jobwatch-agent** in LibreChat and enter the chat key. Start
 with “Help me set up my profile.” The agent guides intake. Native upload IDs
-from `/agent` can be pasted into the conversation; do not assume LibreChat's
-generic file/RAG attachment process imports a canonical Jobwatch profile.
+from `/agent` can be pasted into the conversation. Generic file attachments are
+disabled for this endpoint so candidate documents use the canonical native upload
+and approved parsing route rather than LibreChat's separate file/RAG pipeline.
 
 Open the **Jobwatch controls, uploads and documents** link in a response. Enter
 the chat key and the separate decision key there. They stay in page memory,

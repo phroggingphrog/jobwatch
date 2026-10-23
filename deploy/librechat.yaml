@@ -21,3 +21,7 @@ endpoints:
           context: 16000
           prompt: 0
           completion: 0
+fileConfig:
+  endpoints:
+    Jobwatch:
+      disabled: true
