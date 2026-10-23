@@ -37,180 +37,28 @@ REFUSAL_TEXT = {
     'browser_closed': 'Nothing was submitted: the application browser is closed.'}
 
 
-def package_is_current(conn, config, posting_id, package):
-    """Bind UI readiness to today's exact ad, profile, policy and runtime inputs."""
-    try:
-        rows = snapshot_inventory(conn, config, posting_ids=[posting_id], limit=1)
-        posting = conn.execute('SELECT url FROM postings WHERE id=?', (posting_id,)).fetchone()
-        return bool(rows and posting and rows[0]['run_key'] == package['run_key']
-                    and observation_current(latest_observation(conn, posting_id),
-                        posting_id=posting_id, url=posting[0], ad_hash=rows[0]['ad_hash']))
-    except Exception:
-        return False
+from jobwatch.apply.browser import package_is_current
 
 
 def register(app, config, conn_factory, render, sessions):
-    def browser_status(aid):
-        try:
-            status = sessions.status(aid)
-            return dict(status, open=status.get('state') == 'ready')
-        except Exception:
-            return {'open': False, 'automation_active': False}
+    from jobwatch.apply.browser import BrowserService
+    service = BrowserService(config, conn_factory, sessions)
+    app_context = service.app_context
+    auto_fill_ready = service.auto_fill_ready
+    browser_status = service.browser_status
+    confirmed_submit = service.confirmed_submit
+    context = service.context
+    preparation_context = service.preparation_context
+    process_submit_requests = service.process_submit_requests
+    settle_open_sessions = service.settle_open_sessions
+    settle_submit = service.settle_submit
+    start_preparation = service.start_preparation
 
-    def context(posting_id):
-        if not 0 < posting_id < 2**63:
-            raise HTTPException(404, 'No such application')
-        conn = conn_factory()
-        try:
-            row = conn.execute('SELECT p.id,p.title,p.company,p.url,p.source,p.description,a.id AS application_id,a.status '
-                               'FROM postings p LEFT JOIN applications a ON a.posting_id=p.id WHERE p.id=?',
-                               (posting_id,)).fetchone()
-            if row is None:
-                raise HTTPException(404, 'No such application')
-            job = dict(row)
-            try:
-                package = latest_result(conn, posting_id)
-                if package is not None:
-                    package = dict(package, inputs_current=package_is_current(conn, config, posting_id, package))
-            except Exception:
-                package = None
-            return job, package
-        finally:
-            conn.close()
 
-    def app_context(posting_id):
-        job, package = context(posting_id)
-        if not job['application_id']:
-            raise HTTPException(409, 'Prepare the application documents first.')
-        return job, package
 
-    def settle_submit(posting_id, aid, result=None):
-        """After Submit was pressed (by the owner, or for their confirmation): confident confirmation -> Applied (same
-        write as the status select); unsure -> a 'submit_unsure' event, which the job page turns into a one-line question."""
-        result = result or (sessions.take_submit_result(aid) if aid else None)
-        if not result:
-            return
-        conn = conn_factory()
-        try:
-            row = conn.execute('SELECT id,status FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
-            if row is not None:
-                submit_confirm.verdict(conn, row['id'], result)  # an approved chat request learns the outcome too
-            if row is None or row['status'] in (*SUBMITTED, 'hired'):
-                return
-            last = conn.execute("SELECT kind FROM application_events WHERE application_id=? ORDER BY id DESC LIMIT 1",
-                                (row['id'],)).fetchone()
-            source = 'submit-confirmed' if last and last['kind'] == 'submit_confirmed' else 'submit-detected'
-            if result == 'confident':
-                act.set_status(conn, posting_id, 'applied', source=source)
-            else:
-                ledger.upsert(conn, 'applications', 'application_events', {
-                    'application_id': row['id'], 'at': dbm.ts(), 'kind': 'submit_unsure', 'from_status': row['status'],
-                    'to_status': None, 'actor': 'jobwatch', 'source': source, 'detail_json': '{}'})
-        finally:
-            conn.close()
 
-    def preparation_context(posting_id, error=''):
-        job, package = context(posting_id)
-        aid = str(job['application_id']) if job['application_id'] else None
-        if aid:
-            settle_submit(posting_id, aid)
-            job, package = context(posting_id)
-        browser = browser_status(aid)
-        prepared = latest_preparation(paths.data_dir(), aid) if aid else None
-        if prepared and package and package.get('manifest'):
-            package_hash = hashlib.sha256(json.dumps(package['manifest'], sort_keys=True,
-                separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
-            if prepared.get('package_hash') != package_hash:
-                prepared = None
-        can_prepare = bool(package and package.get('inputs_current') and package.get('status') == 'ready' and package.get('manifest')
-                           and package.get('cv_pdf') and package.get('letter_pdf')
-                           and job['status'] not in (*SUBMITTED, 'hired', 'rejected'))
-        if not can_prepare:
-            prepared = None
-        if prepared and (not browser['open'] or browser.get('last_error')
-                         or prepared.get('session_id') != browser.get('target_id')
-                         or prepared.get('owner_revision') != browser.get('owner_revision')
-                         or prepared.get('page_url_sha256') != browser.get('page_url_sha256')):
-            prepared = None
-        return dict(job=job, package=package, browser=browser, prepared=prepared, can_prepare=can_prepare,
-                    confirm_digest=submit_confirm.digest(prepared) if browser['open'] else None, error=error)
 
-    def start_preparation(posting_id, *, intake=None):
-        job, package = app_context(posting_id)
-        if not preparation_context(posting_id)['can_prepare']:
-            raise HTTPException(409, 'A verified application package is needed before filling.')
-        aid = str(job['application_id'])
-        if not browser_status(aid)['open']:
-            raise HTTPException(409, 'Open the application browser first.')
-        try:
-            worker_llm, reviewer_llm = configured_llm(config), configured_llm(config)
-            runtime_config = _config(config)
-        except Exception:
-            raise HTTPException(503, 'The configured model connection is unavailable.')
-        def fill(page):
-            current_job, current_package = context(posting_id)
-            if (not current_package or not current_package.get('inputs_current')
-                    or current_package.get('status') != 'ready' or current_package['run_key'] != package['run_key']):
-                raise ValueError('application_inputs_changed')
-            if intake is not None:
-                expected, replies = intake
-                current = latest_preparation(paths.data_dir(), aid) or {}
-                browser = browser_status(aid)
-                if (current.get('run_id') != expected['run_id'] or current.get('status') != 'needs_owner'
-                        or current.get('reason') != 'missing_profile_facts'
-                        or current.get('package_hash') != expected['package_hash']
-                        or current.get('session_id') != browser.get('target_id')
-                        or current.get('owner_revision') != browser.get('owner_revision')
-                        or current.get('page_url_sha256') != browser.get('page_url_sha256')):
-                    raise ValueError('application_inputs_changed')
-                # The manager now holds the preparation lock: owner browser
-                # controls cannot race these explicit replies or the next fill.
-                for ident, value in replies:
-                    record_owner_answer(paths.data_dir(), aid, question_id=ident, value=value)
-            run_id = uuid.uuid4().hex
-            checkpoints = ensure_dir(paths.data_dir() / 'browser' / 'budgets')
-            run_key = hashlib.sha256((package['run_key'] + run_id).encode()).hexdigest()
-            batch = BatchBudget('browser-' + run_id, token_ceiling=runtime_config['batch_token_ceiling'],
-                                deadline=time.time() + runtime_config['batch_seconds'])
-            def persist(value, **kwargs):
-                safe_write_text(checkpoints / (run_id + '.json'), value.model_dump_json())
-                return value
-            budget = JobBudget(run_key, batch, persist=persist, token_ceiling=runtime_config['job_token_ceiling'],
-                               deadline=time.time() + runtime_config['job_seconds'])
-            try:
-                return prepare_application(page, application_id=aid, package_manifest=package['manifest'],
-                    document_paths={'cv': Path(package['cv_pdf']), 'letter': Path(package['letter_pdf'])},
-                    profile_root=paths.profile_dir(), data_root=paths.data_dir(), job=job,
-                    budget=budget, llm=worker_llm, reviewer=reviewer_llm,
-                    worker_model=runtime_config['answer_model'], reviewer_model=runtime_config['reviewer_model'],
-                    allowed_hosts=[urlparse(page.url).hostname], owner_authorized=True)
-            finally:
-                batch.release(budget)
-        try:
-            sessions.prepare(aid, fill)
-        except Exception:
-            raise HTTPException(409, 'The application browser is busy or unavailable.') from None
 
-    def auto_fill_ready():
-        """Owner: 'it should be automatic'. Fill every READY job up to (never including) Submit."""
-        conn = conn_factory()
-        try:
-            ids = [r[0] for r in conn.execute("SELECT DISTINCT posting_id FROM agentic_runs WHERE status='ready'")]
-        except sqlite3.OperationalError:            # no agentic_runs table yet (nothing drafted): nothing is ready
-            return
-        finally:
-            conn.close()
-        for pid in ids:
-            try:
-                job, _ = context(pid)
-                aid = job['application_id']
-                if not aid or latest_preparation(paths.data_dir(), str(aid)) or not preparation_context(pid)['can_prepare']:
-                    continue
-                if not browser_status(str(aid))['open']:
-                    sessions.open(str(aid), job['url'])
-                start_preparation(pid)
-            except Exception:
-                continue
 
     app.state.auto_fill_ready = auto_fill_ready
 
@@ -283,79 +131,12 @@ def register(app, config, conn_factory, render, sessions):
         start_preparation(posting_id, intake=(dict(prepared), replies))
         return RedirectResponse(f'/job/{posting_id}/prepare', status_code=303)
 
-    def confirmed_submit(posting_id, confirm, source):
-        """Press final Submit for the fill the owner confirmed (board button or approved chat request). Returns None
-        when pressed, else a fixed reason; nothing is pressed unless the live page still matches `confirm`."""
-        state = preparation_context(posting_id)
-        prepared = state['prepared']
-        if not state['browser']['open']:
-            return 'browser_closed'
-        if state['browser']['automation_active'] or not confirm or submit_confirm.digest(prepared) != confirm:
-            return 'submit_confirmation_stale'
-        aid = str(state['job']['application_id'])
-        try:
-            sessions.confirm_submit(aid, confirm, prepared)
-        except BrowserSessionError as exc:
-            return str(exc) if str(exc) in REFUSALS else 'press_unknown'
-        except Exception:                       # e.g. the wait timed out: the press may or may not have happened
-            return 'press_unknown'
-        conn = conn_factory()                   # recorded only once pressed, so a refusal leaves no 'confirmed' trace
-        try:
-            ledger.upsert(conn, 'applications', 'application_events', {
-                'application_id': int(aid), 'at': dbm.ts(), 'kind': 'submit_confirmed', 'from_status': state['job']['status'],
-                'to_status': None, 'actor': 'owner', 'source': source,
-                'detail_json': json.dumps({'confirmation': confirm[:16], 'run_id': prepared['run_id']})})
-        finally:
-            conn.close()
-        return None
 
     app.state.confirmed_submit = confirmed_submit
 
-    def process_submit_requests():
-        """Chat-approved Submits (submit_confirm.submit_requests, queued by the agent API): pressed only through
-        confirmed_submit's live check, then the page is watched and the outcome recorded for submit_status."""
-        conn = conn_factory()
-        try:
-            rows = submit_confirm.pending(conn)
-        except sqlite3.Error:
-            return
-        finally:
-            conn.close()
-        for row in rows:
-            status, reason = 'refused', None
-            try:
-                job, _ = context(row['posting_id'])
-                if time.time() >= row['expires_at']:
-                    status = 'expired'
-                elif job['application_id'] != row['application_id']:
-                    reason = 'application_changed'
-                else:
-                    reason = confirmed_submit(row['posting_id'], row['digest'], 'agent-api')
-                    if reason is None:
-                        status = 'pressed'      # the page verdict closes it (settle_submit -> submit_confirm.verdict)
-                    elif reason == 'press_unknown':
-                        status = 'unsure'
-            except Exception:  # noqa: BLE001 - one request never stops the others; fixed reason only
-                reason = reason or 'submit_failed'
-            conn = conn_factory()
-            try:
-                submit_confirm.settle(conn, row['id'], status, reason)
-            finally:
-                conn.close()
 
     app.state.process_submit_requests = process_submit_requests
 
-    def settle_open_sessions():
-        """Record a Submit seen in an open browser even when no prepare page is polling (the page used to be the only
-        place settle_submit ran)."""
-        for aid in getattr(sessions, 'open_applications', lambda: [])():
-            conn = conn_factory()
-            try:
-                row = conn.execute('SELECT posting_id FROM applications WHERE id=?', (int(aid),)).fetchone()
-            finally:
-                conn.close()
-            if row is not None:
-                settle_submit(row['posting_id'], aid)
 
     app.state.settle_open_sessions = settle_open_sessions
 

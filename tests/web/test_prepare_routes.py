@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jobwatch.web import prepare_routes
+from jobwatch.apply import browser as browser_service
 from tests.web.test_agentic import _client, OK
 
 
@@ -63,9 +64,9 @@ def setup(tmp_path, monkeypatch, *, package=True):
     manifest = {'pdfs': {'cv': 'a' * 64, 'letter': 'b' * 64}, 'verification': {'review': True}}
     result = {'run_key': 'c' * 64, 'status': 'ready', 'manifest': manifest, 'cv_pdf': '/synthetic/cv.pdf',
               'letter_pdf': '/synthetic/letter.pdf', 'candidate': None, 'evaluation': None}
-    monkeypatch.setattr(prepare_routes, 'latest_result', lambda conn, pid: result if package else None)
-    monkeypatch.setattr(prepare_routes, 'package_is_current', lambda *a: True)
-    monkeypatch.setattr(prepare_routes, 'configured_llm', lambda config: object())
+    monkeypatch.setattr(browser_service, 'latest_result', lambda conn, pid: result if package else None)
+    monkeypatch.setattr(browser_service, 'package_is_current', lambda *a: True)
+    monkeypatch.setattr(browser_service, 'configured_llm', lambda config: object())
     return client, browser, manifest
 
 
@@ -75,8 +76,8 @@ def pending_state(monkeypatch, manifest, questions=None):
              'review_answers': [], 'session_id': 'synthetic-target', 'owner_revision': 0,
              'page_url_sha256': 'synthetic-page', 'package_hash': hashlib.sha256(json.dumps(
                  manifest, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()}
-    monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
-    monkeypatch.setattr(prepare_routes, 'prepare_application', lambda *a, **kwargs: None)
+    monkeypatch.setattr(browser_service, 'latest_preparation', lambda *a: state)
+    monkeypatch.setattr(browser_service, 'prepare_application', lambda *a, **kwargs: None)
     return state
 
 
@@ -152,7 +153,7 @@ def test_new_package_invalidates_old_ready_preparation(tmp_path, monkeypatch):
     browser.opened = True
     state = {'status': 'ready_for_owner', 'reason': '', 'missing': [], 'review_answers': [], 'package_hash': 'old',
              'session_id': 'synthetic-target', 'owner_revision': 0, 'page_url_sha256': 'synthetic-page'}
-    monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
+    monkeypatch.setattr(browser_service, 'latest_preparation', lambda *a: state)
     assert 'Filled and ready for your review' not in client.get(f'/job/{client.pid}/prepare').text
     state['package_hash'] = hashlib.sha256(json.dumps(manifest, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
     assert 'Filled and ready for your review' in client.get(f'/job/{client.pid}/prepare').text
@@ -163,7 +164,7 @@ def test_owner_intake_accepts_only_current_question_ids_and_restarts_filling(tmp
     browser.opened = True
     state = pending_state(monkeypatch, manifest)
     saved = []
-    monkeypatch.setattr(prepare_routes, 'record_owner_answer', lambda *a, **k: saved.append(k))
+    monkeypatch.setattr(browser_service, 'record_owner_answer', lambda *a, **k: saved.append(k))
     url = f'/job/{client.pid}/answers'
     assert client.post(url, data={'preparation_run_id': state['run_id'], 'answer_unknown': 'invented'}).status_code == 400
     assert not saved
@@ -182,7 +183,7 @@ def test_owner_intake_preserves_multiple_choices_and_boolean_controls(tmp_path, 
         {'question_id': 'days', 'question': 'Available days?', 'type': 'select', 'multiple': True},
         {'question_id': 'consent', 'question': 'Consent?', 'type': 'radio', 'kind': 'radio'}])
     saved = []
-    monkeypatch.setattr(prepare_routes, 'record_owner_answer', lambda *a, **k: saved.append(k))
+    monkeypatch.setattr(browser_service, 'record_owner_answer', lambda *a, **k: saved.append(k))
     response = client.post(f'/job/{client.pid}/answers', data={'preparation_run_id': state['run_id'],
         'answer_days': ['Monday', 'Tuesday'], 'answer_consent': 'false'}, follow_redirects=False)
     assert response.status_code == 303
@@ -196,7 +197,7 @@ def test_stale_intake_never_saves_answers_or_starts_filling(tmp_path, monkeypatc
     browser.opened = True
     state = pending_state(monkeypatch, manifest)
     posted = {'preparation_run_id': state['run_id'], 'answer_known': '2026-11-02'}
-    if changed == 'profile': monkeypatch.setattr(prepare_routes, 'package_is_current', lambda *a: False)
+    if changed == 'profile': monkeypatch.setattr(browser_service, 'package_is_current', lambda *a: False)
     elif changed == 'package': state['package_hash'] = 'changed'
     elif changed == 'session': state['session_id'] = 'old-target'
     elif changed == 'revision': state['owner_revision'] = 9
@@ -206,7 +207,7 @@ def test_stale_intake_never_saves_answers_or_starts_filling(tmp_path, monkeypatc
     elif changed == 'questions': state['missing'][0]['question_id'] = 'replaced'
     elif changed == 'status': state['status'] = 'ready_for_owner'
     saved = []
-    monkeypatch.setattr(prepare_routes, 'record_owner_answer', lambda *a, **k: saved.append(k))
+    monkeypatch.setattr(browser_service, 'record_owner_answer', lambda *a, **k: saved.append(k))
     assert client.post(f'/job/{client.pid}/answers', data=posted).status_code == 400
     assert not saved and not browser.preparations
 
@@ -217,11 +218,11 @@ def test_queued_intake_rechecks_binding_before_any_answer_save(tmp_path, monkeyp
     browser.opened = True
     state = pending_state(monkeypatch, manifest)
     saved = []
-    monkeypatch.setattr(prepare_routes, 'record_owner_answer', lambda *a, **k: saved.append(k))
+    monkeypatch.setattr(browser_service, 'record_owner_answer', lambda *a, **k: saved.append(k))
     response = client.post(f'/job/{client.pid}/answers', data={'preparation_run_id': state['run_id'],
         'answer_known': '2026-11-02'}, follow_redirects=False)
     assert response.status_code == 303
-    if changed == 'profile': monkeypatch.setattr(prepare_routes, 'package_is_current', lambda *a: False)
+    if changed == 'profile': monkeypatch.setattr(browser_service, 'package_is_current', lambda *a: False)
     elif changed == 'run': state['run_id'] = 'b' * 32
     elif changed == 'revision': browser.actions.append({'kind': 'type'})
     with pytest.raises(ValueError, match='application_inputs_changed'):
@@ -236,7 +237,7 @@ def test_missing_fact_batch_is_validated_before_any_save(tmp_path, monkeypatch):
         {'question_id': 'date', 'question': 'When can you start?', 'type': 'date'},
         {'question_id': 'day', 'question': 'Which day?', 'type': 'select', 'options': [{'value': 'Monday'}]}])
     saved = []
-    monkeypatch.setattr(prepare_routes, 'record_owner_answer', lambda *a, **k: saved.append(k))
+    monkeypatch.setattr(browser_service, 'record_owner_answer', lambda *a, **k: saved.append(k))
     response = client.post(f'/job/{client.pid}/answers', data={'preparation_run_id': state['run_id'],
         'answer_date': '2026-11-02', 'answer_day': 'Invalid choice'})
     assert response.status_code == 400 and not saved and not browser.preparations
@@ -249,7 +250,7 @@ def test_evaluation_displays_actual_evidence_risk_and_mitigation_with_escaping(t
         'matches': [{'requirement_id': 'r1', 'match': 'partial',
             'evidence': [{'source_id': 'master_resume.md', 'quote': 'Used Excel <script>unsafe()</script>'}],
             'risk': 'Payroll experience is unproven', 'mitigation': 'Show supervised practice'}]}
-    monkeypatch.setattr(prepare_routes, 'latest_result', lambda *a: {'evaluation': evaluation})
+    monkeypatch.setattr(browser_service, 'latest_result', lambda *a: {'evaluation': evaluation})
     response = client.get(f'/job/{client.pid}/evaluation')
     assert response.status_code == 200
     assert 'Partial' in response.text and 'Payroll experience is unproven' in response.text
@@ -271,7 +272,7 @@ def test_current_profile_or_ad_change_holds_preparation(tmp_path, monkeypatch):
         import time
         posting = dict(conn.execute('SELECT * FROM postings WHERE id=42').fetchone())
         observation = observe_posting(posting, deadline=time.monotonic()+30)
-        monkeypatch.setattr(prepare_routes, 'latest_observation', lambda *a: observation)
+        monkeypatch.setattr(browser_service, 'latest_observation', lambda *a: observation)
         assert prepare_routes.package_is_current(conn, config, 42, package)
         adtext.save_text(conn, 42, 'Changed full job description ' * 40, 'synthetic-full'); conn.commit()
         assert not prepare_routes.package_is_current(conn, config, 42, package)
@@ -300,7 +301,7 @@ def test_preparation_requires_fresh_active_source_bound_observation(tmp_path, mo
                 observation.model_copy(update={'checked_at': (datetime.now(timezone.utc)+timedelta(hours=1)).isoformat()}),
                 observation.model_copy(update={'url_hash': '0'*64}),
                 observation.model_copy(update={'ad_hash': '0'*64})):
-            monkeypatch.setattr(prepare_routes, 'latest_observation', lambda *a: invalid)
+            monkeypatch.setattr(browser_service, 'latest_observation', lambda *a: invalid)
             assert not prepare_routes.package_is_current(conn, config, 42, package)
     finally:
         conn.close()
@@ -309,7 +310,7 @@ def test_preparation_requires_fresh_active_source_bound_observation(tmp_path, mo
 def test_held_or_missing_package_cannot_display_old_ready_state(tmp_path, monkeypatch):
     client, browser, _ = setup(tmp_path, monkeypatch, package=False)
     browser.opened = True
-    monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: {'status': 'ready_for_owner', 'missing': [], 'review_answers': []})
+    monkeypatch.setattr(browser_service, 'latest_preparation', lambda *a: {'status': 'ready_for_owner', 'missing': [], 'review_answers': []})
     assert 'Filled and ready for your review' not in client.get(f'/job/{client.pid}/prepare').text
 
 
@@ -342,7 +343,7 @@ def ready_state(monkeypatch, manifest):
     state = dict(pending_state(monkeypatch, manifest), status='ready_for_owner', reason='', missing=[],
                  attached_documents={'cv': 'a' * 64}, form_state='f' * 64,
                  final_control={'selector': '#submit', 'label': 'submit application', 'url': 'https://x', 'frame_path': []})
-    monkeypatch.setattr(prepare_routes, 'latest_preparation', lambda *a: state)
+    monkeypatch.setattr(browser_service, 'latest_preparation', lambda *a: state)
     return state
 
 
