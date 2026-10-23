@@ -11,6 +11,8 @@ import yaml
 import pytest
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
+pytest.importorskip('playwright.sync_api',  # module-level: collection used to error without the
+                    reason='the prefill tests need the browser extra')  # browser extra, not skip
 from playwright.sync_api import sync_playwright
 
 def get_free_port():

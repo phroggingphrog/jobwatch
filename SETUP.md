@@ -4,6 +4,7 @@ Jobwatch is for a few people on one server. Everyone gets their own folder, prof
 Nothing is shared between people, and nothing is submitted unless you press Submit or confirm that exact filled form.
 
 1. `uv sync`, copy `.env.example` to `.env`, fill it in (see below), then `uv run jobwatch web`.
+   (Running the backend as a service instead: [docs/service-bring-up.md](docs/service-bring-up.md).)
 2. Open the board, sign in as the first person (password from `JOBWATCH_OWNER_PASSWORD`). Friends sign up with `JOBWATCH_INVITE_CODE`.
 3. First sign-in opens "Welcome": upload your CV. Jobwatch builds your profile, your job-search keywords (for your field, not anyone else's) and then asks the rest as question cards.
 4. Connect accounts (Seek, LinkedIn, Indeed): log in once in the browser window Jobwatch opens. Each person has their own browser folder.

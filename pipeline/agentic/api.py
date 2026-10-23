@@ -504,6 +504,11 @@ def main(argv=None):
                 after = batch[-1]['id']
         print(json.dumps(evaluate_tools(events, args.expected_tools)))
         return
+    from jobwatch.origin_guard import OriginRejected, check_bind
+    try:
+        check_bind(args.host)                 # loopback only, as the web board already requires
+    except OriginRejected as exc:
+        raise SystemExit(str(exc)) from None
     try:
         app = create_api()
     except Exception:

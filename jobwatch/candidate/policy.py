@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import string
 from typing import Iterable, Literal
 
 from pydantic import model_validator
@@ -177,6 +178,33 @@ def _negated(part: str) -> bool:
     """A negation word rules the part out, except "not far", which describes where the person is (any place after it
     is welcome). "not near" and "not close" are negations like any other, so "not near Sydney" rules Sydney out."""
     return bool(_NEGATION.search(_NOT_FAR.sub(" ", part)))
+
+
+def _spoken(text: str) -> str:
+    return " ".join(text.casefold().split()).strip(string.punctuation + " ")
+
+
+def person_asserted(candidate: str, texts: Iterable[str]) -> bool:
+    """True when `candidate` is something the person actually asserted in `texts`.
+
+    A whole clause of theirs is theirs. A span inside one of their clauses counts only when no negation,
+    pending or aspirational word governs it, so "a citizen" is never taken from "I am not a citizen".
+    """
+    if type(candidate) is not str:
+        return False
+    wanted = _spoken(candidate)
+    if not wanted:
+        return False
+    for text in texts:
+        if type(text) is not str:
+            continue
+        for clause in _clauses(text):
+            spoken = _spoken(clause)
+            if wanted == spoken:
+                return True
+            if wanted in spoken and _affirmed(re.compile(re.escape(wanted)), spoken):
+                return True
+    return False
 
 
 def _places_in(text: str) -> tuple[set[str], bool, bool]:

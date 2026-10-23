@@ -128,6 +128,21 @@ def _state(ctx: Context, *, person: str, operation: str, thread_id: str | None) 
     return state
 
 
+def _requests(interactions: list[dict]) -> tuple[dict, list[str]]:
+    """Elicitation requests for every interaction, or the operations this adapter has no wording for."""
+    requests, unpresentable = {}, []
+    for index, item in enumerate(interactions):
+        try:
+            key, request = _input_request(item, index)
+        except RuntimeErrorSafe as exc:
+            if getattr(exc, 'code', None) != 'invalid_chat_interaction':
+                raise
+            unpresentable.append(str(item.get('operation') or item.get('type')))
+            continue
+        requests[key] = request
+    return requests, unpresentable
+
+
 def _turn(*, person: str, operation: str, message: str, ctx: Context,
           thread_id: str | None = None) -> dict | InputRequiredResult:
     state = _state(ctx, person=person, operation=operation, thread_id=thread_id)
@@ -141,20 +156,39 @@ def _turn(*, person: str, operation: str, message: str, ctx: Context,
         thread_id = thread_id or secrets.token_urlsafe(32)
         result = dispatch(person=person, thread_id=thread_id, message=message)
 
-    if result.get('status') == 'interrupted':
+    refused: list[str] = []
+    for _ in range(4):
+        if result.get('status') != 'interrupted':
+            break
         interactions = result.get('interactions') or []
         if not interactions or len(interactions) > 8:
             raise RuntimeErrorSafe('unsupported_chat_interaction')
-        input_requests = dict(_input_request(item, index) for index, item in enumerate(interactions))
-        request_state = json.dumps({'version': 1, 'person': person, 'operation': operation,
-                                    'thread_id': thread_id, 'interactions': interactions,
-                                    'checkpoint_id': result.get('checkpoint_id')},
-                                   separators=(',', ':'), sort_keys=True)
-        return InputRequiredResult(inputRequests=input_requests, requestState=request_state)
+        input_requests, unpresentable = _requests(interactions)
+        if not unpresentable:
+            request_state = json.dumps({'version': 1, 'person': person, 'operation': operation,
+                                        'thread_id': thread_id, 'interactions': interactions,
+                                        'checkpoint_id': result.get('checkpoint_id')},
+                                       separators=(',', ':'), sort_keys=True)
+            return InputRequiredResult(inputRequests=input_requests, requestState=request_state)
+        # This adapter has no human wording for some of these operations, so it cannot put them to a person.
+        # Reject the round rather than raising: a rejection authorizes nothing, while raising left the interrupt
+        # checkpointed and no later message on this thread could get past it. The native HTTP API presents them.
+        refused.extend(unpresentable)
+        result = dispatch(person=person, thread_id=thread_id, human_decision=True,
+            expected_checkpoint=result.get('checkpoint_id'),
+            approval_bindings=[item.get('binding') for item in interactions],
+            decisions=[{'type': 'reject'} if item['type'] == 'approval' else
+                       {'type': 'respond', 'message': 'This client cannot ask the person for that. '
+                        'Do not infer or invent the answer.'} for item in interactions])
+    else:
+        raise RuntimeErrorSafe('unsupported_chat_interaction')
 
-    return {'schema_version': 1, 'type': 'assistant_message', 'status': 'complete',
-            'thread_id': thread_id, 'answer': result.get('answer', ''),
-            'todos': result.get('todos', []), 'tools': result.get('tools', [])}
+    answer = {'schema_version': 1, 'type': 'assistant_message', 'status': 'complete',
+              'thread_id': thread_id, 'answer': result.get('answer', ''),
+              'todos': result.get('todos', []), 'tools': result.get('tools', [])}
+    if refused:
+        answer['refused_operations'] = sorted(set(refused))
+    return answer
 
 
 def create_server(*, token: str | None = None, person: str | None = None) -> FastMCP:

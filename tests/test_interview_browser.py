@@ -281,8 +281,10 @@ def test_default_public_browser_bounds_required_large_ats_script(monkeypatch, sc
 def test_close_label_with_no_date_states_no_deadline():
     from datetime import datetime, timezone
     from jobwatch.interview_browser import _closing_date
-    _closing_date("Advertised:\n01 Sep 2026\nApplications close:\n← Back to search results\nApply now",
-                  datetime(2026, 10, 12, tzinfo=timezone.utc))  # PageUp open-until-filled: no exception
+    text = "Advertised:\n01 Sep 2026\nApplications close:\n← Back to search results\nApply now"
+    # PageUp open-until-filled: no deadline at all, so no date is inferred however late it is read.
+    for day in (12, 29, 31):
+        assert _closing_date(text, datetime(2026, 10, day, tzinfo=timezone.utc)) is None
 
 
 def test_same_host_redirect_is_handed_to_the_browser_other_hosts_are_not():
@@ -334,9 +336,12 @@ def test_pageup_redirect_for_a_gone_vacancy_is_closed(location,closed):
 # Regression: ISSUE-001 — "28th of October 2026" read "of" as the month and crashed (TypeError), so the ad was
 # marked unreadable. Found by /qa on 2026-10-19 (posting 7535, careers.vic.gov.au).
 def test_closing_date_with_of_between_day_and_month():
-    from jobwatch.interview_browser import _closing_date
-    _closing_date("Application close date: Wednesday 28th of October 2026\n",
-                  datetime(2026, 10, 19, tzinfo=timezone.utc))  # still open: no exception
+    import pytest
+    from jobwatch.interview_browser import InterviewAdUnavailable, _closing_date
+    text = "Application close date: Wednesday 28th of October 2026\n"
+    assert _closing_date(text, datetime(2026, 10, 19, tzinfo=timezone.utc)) is None     # still open
+    with pytest.raises(InterviewAdUnavailable, match='interview_ad_closed'):            # the date was read
+        _closing_date(text, datetime(2026, 10, 29, tzinfo=timezone.utc))
 
 
 # Regression: Workday "Applications close: Monday 26th October at 11:55 PM; Melbourne time zone." was read as an
