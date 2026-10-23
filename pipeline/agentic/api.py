@@ -175,20 +175,25 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                     with job_connection(get_config(person),write=True) as jobs:
                         selection.finish_error(jobs,payload['selection_id'],code)
 
+    def claim_work(person):
+        # Configuration parsing and SQLite reconciliation must not block the
+        # HTTP event loop while the durable worker polls every account.
+        with users.use(person):
+            cfg = get_config(person)
+            if job_database(cfg).exists():
+                with job_connection(cfg, write=True) as jobs:
+                    if jobs.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
+                        from pipeline.agentic import selection
+                        selection.reconcile(jobs)
+                        selection.dispatch_pending(jobs, cfg)
+            with APIStore(person) as store:
+                return store.claim_next()
+
     async def worker():
         while not stopping.is_set():
             worked = False
-            for person in known_people():
-                with users.use(person):
-                    cfg=get_config(person)
-                    if job_database(cfg).exists():
-                        with job_connection(cfg,write=True) as jobs:
-                            if jobs.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
-                                from pipeline.agentic import selection
-                                selection.reconcile(jobs)
-                                selection.dispatch_pending(jobs,cfg)
-                with APIStore(person) as store:
-                    row = store.claim_next()
+            for person in await asyncio.to_thread(known_people):
+                row = await asyncio.to_thread(claim_work, person)
                 if row is not None:
                     worked = True
                     await asyncio.to_thread(process, person, row)

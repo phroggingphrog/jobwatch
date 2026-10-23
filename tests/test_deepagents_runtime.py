@@ -851,3 +851,35 @@ def test_event_stream_never_ends_without_the_terminal_event(tmp_path, monkeypatc
             monkeypatch.setattr(APIStore, name, hooked(name, finalize))
         text = client.get('/api/agent/runs/' + ident + '/events', headers=headers).text
     assert state['done'] and 'event: completed' in text, text
+
+
+def test_api_health_remains_available_while_polling_blocks(tmp_path, monkeypatch):
+    """A blocked idle-store poll must not block the HTTP event loop."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from fastapi.testclient import TestClient
+    from pipeline.agentic.api import create_api, Principal
+    from pipeline.agentic.api_store import APIStore
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.delenv('JOBWATCH_LIBRECHAT_IDENTITY_KEY', raising=False)
+    monkeypatch.delenv('JOBWATCH_NATIVE_BROWSER_ENABLED', raising=False)
+    entered, release = threading.Event(), threading.Event()
+    original = APIStore.claim_next
+    def blocked(self):
+        entered.set()
+        release.wait(5)
+        return original(self)
+    monkeypatch.setattr(APIStore, 'claim_next', blocked)
+    app = create_api(credentials={'s' * 40: Principal('fixture-poll')}, config={})
+    try:
+        with TestClient(app) as client:
+            assert entered.wait(2)
+            with ThreadPoolExecutor() as pool:
+                request = pool.submit(client.get, '/health')
+                try:
+                    assert request.result(timeout=2).status_code == 200
+                    assert not release.is_set()
+                finally:
+                    release.set()
+    finally:
+        release.set()

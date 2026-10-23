@@ -272,9 +272,9 @@ def mount(app, require, get_config, *, sessions=None):
                 last_fill = time.monotonic()
             for person in users.list_users():
                 with users.use(person):
-                    if not job_database(get_config(person)).exists():
+                    s = await asyncio.to_thread(service, person)
+                    if not job_database(s.config).exists():
                         continue
-                    s = service(person)
                     try:
                         if fill:
                             await asyncio.to_thread(s.auto_fill_ready)
