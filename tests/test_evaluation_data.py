@@ -1,7 +1,8 @@
 """Invented frozen records only; no real person or model calls."""
 import json
 import pytest
-from pipeline.agentic import baseline, eval_data
+from jobwatch import users
+from pipeline.agentic import baseline, eval_data, evaluate_runs
 from pipeline.agentic.contracts import AgenticError
 from tests.baseline_support import world, frozen  # noqa:F401
 
@@ -94,3 +95,69 @@ def test_config_drift_rejects_staging_before_publication(frozen,monkeypatch):
     assert baseline.list_baselines()==[]
     assert not list(baseline._baselines_root().glob('.staging-*'))
     assert not frozen.ro.in_transaction
+
+
+def test_freezing_cannot_write_through_a_writable_connection(frozen):
+    """Break: rely on the CLI opening ?mode=ro for the documented read-only freeze."""
+    import sqlite3
+    seen={}
+    original=baseline.freeze_baseline
+    def watched(conn,config,**kwargs):
+        seen['query_only']=conn.execute('PRAGMA query_only').fetchone()[0]
+        try:
+            conn.execute("UPDATE postings SET title='rewritten' WHERE id=42")
+        except sqlite3.OperationalError as exc:
+            seen['refused']=str(exc)
+        return original(conn,config,**kwargs)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(baseline,'freeze_baseline',watched)
+        record=eval_data.freeze_cases(frozen.conn,frozen.config)       # a writable connection
+    assert record.case_ids and seen['query_only']==1 and 'readonly' in seen['refused']
+    assert frozen.conn.execute('SELECT title FROM postings WHERE id=42').fetchone()[0]!='rewritten'
+    assert frozen.conn.execute('PRAGMA query_only').fetchone()[0]==0   # restored for the caller
+
+
+def test_a_baseline_frozen_before_phase_7_is_unavailable_not_corrupt(frozen):
+    """content_sha256 does not cover evaluation_inputs_sha256, so dropping the key is a faithful
+    pre-Phase-7 manifest. Break: treat a missing frozen context as a corrupt baseline."""
+    record=eval_data.freeze_cases(frozen.ro,frozen.config)
+    folder=baseline._baseline_dir(record.baseline_id)
+    body=json.loads((folder/'baseline.json').read_text())
+    body.pop('evaluation_inputs_sha256')
+    (folder/'evaluation_inputs.json').unlink()
+    (folder/'baseline.json').write_text(json.dumps(body))
+    assert baseline._read_record(folder,record.baseline_id).evaluation_inputs_sha256 is None
+    with pytest.raises(AgenticError,match='frozen_context_unavailable'):
+        eval_data.load_inputs(record.baseline_id)
+    with pytest.raises(AgenticError,match='frozen_context_unavailable'):
+        eval_data.create_split(record.baseline_id)
+    with pytest.raises(AgenticError,match='split_unavailable'):
+        evaluate_runs.replay(record.baseline_id,labels=False)
+
+
+def test_split_seed_partition_and_person_are_validated(frozen):
+    record=eval_data.freeze_cases(frozen.ro,frozen.config)
+    for seed in ('1729',1.5,-1,2**32,True):
+        with pytest.raises(AgenticError,match='invalid_split_seed'):
+            eval_data.create_split(record.baseline_id,seed=seed)
+    eval_data.create_split(record.baseline_id)
+    with pytest.raises(AgenticError,match='invalid_holdout_operation'):
+        eval_data.audit_holdout(record.baseline_id,'export',allow_holdout=True)
+    with users.use('someone-else'):                       # another person has no such baseline at all
+        with pytest.raises(AgenticError,match='baseline_not_found'):
+            eval_data.record_for(record.baseline_id)
+    import shutil
+    users.create_user_dirs('someone-else')
+    with users.use('someone-else'):
+        theirs=baseline._baselines_root()/record.baseline_id
+    shutil.copytree(baseline._baseline_dir(record.baseline_id),theirs)   # a copied baseline keeps its owner
+    with users.use('someone-else'):
+        with pytest.raises(AgenticError,match='evaluation_person_mismatch'):
+            eval_data.record_for(record.baseline_id)
+
+
+def test_write_once_refuses_a_divergent_rewrite(frozen,tmp_path):
+    eval_data.write_once(tmp_path/'once.json',{'a':1})
+    eval_data.write_once(tmp_path/'once.json',{'a':1})               # same bytes is not a conflict
+    with pytest.raises(AgenticError,match='evaluation_conflict'):
+        eval_data.write_once(tmp_path/'once.json',{'a':2})

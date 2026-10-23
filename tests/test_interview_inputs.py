@@ -79,10 +79,16 @@ def test_separate_connections_reject_stale_revision(conn):
     finally:second.close()
 
 
-@pytest.mark.skip(reason="strict schemas removed, owner 2026-10-19")
 def test_aggregate_limit_and_unknown_fields_cannot_be_persisted(conn):
     for unchecked in [InterviewInputs.model_construct(invite='x'*20000,panelist_profiles='x'*20000,story_bank='x'*20000,coffee_chat='x'),
                       InterviewInputs.model_construct(invite=42)]:
         with pytest.raises(AgenticError):save_inputs(conn,1,unchecked,expected_revision=0)
+    # Strict schemas were removed on the owner's direction (2026-10-19), so an unknown stored key is no
+    # longer rejected. What must still hold is that it cannot reach the loaded inputs or any output.
     conn.execute("INSERT INTO interview_inputs VALUES(1,'now',1,?)",('{"private_unknown":"sensitive"}',));conn.commit()
+    loaded,revision=load_inputs(conn,1)
+    assert (loaded,revision)==(InterviewInputs(),1)
+    assert 'sensitive' not in repr(loaded) and 'sensitive' not in str(loaded.model_dump())
+    assert not hasattr(loaded,'private_unknown')
+    conn.execute("UPDATE interview_inputs SET inputs_json='{',revision=1 WHERE posting_id=1");conn.commit()
     with pytest.raises(AgenticError,match='^interview_inputs_invalid$'):load_inputs(conn,1)

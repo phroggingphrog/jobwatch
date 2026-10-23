@@ -111,11 +111,16 @@ def freeze_cases(conn, config, *, posting_ids=None, limit=500):
     if conn.in_transaction:
         raise AgenticError('transaction_active')
     with intake._locked(users.current(),'versions.lock'):
-        conn.execute('BEGIN')  # stable read snapshot; connection is read-only in CLI
+        # Freezing reads the database and nothing else. The CLI opens ?mode=ro; query_only makes that an
+        # invariant of the freeze for any caller, and it cannot be set once a transaction is open.
+        was_query_only=conn.execute('PRAGMA query_only').fetchone()[0]
+        conn.execute('PRAGMA query_only=ON')
+        conn.execute('BEGIN')  # stable read snapshot
         try:
             return baseline.freeze_baseline(conn,config,posting_ids=posting_ids,limit=limit)
         finally:
             conn.rollback()
+            conn.execute(f'PRAGMA query_only={"ON" if was_query_only else "OFF"}')
 
 
 def record_for(baseline_id):

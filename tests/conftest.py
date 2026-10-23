@@ -6,6 +6,7 @@ os.environ["JOBWATCH_SETTINGS"] = os.devnull
 os.environ['JOBWATCH_LLM_BASE_URL'] = 'http://127.0.0.1:1/v1'
 os.environ['JOBWATCH_LLM_MODEL'] = 'openai/sol'
 os.environ.setdefault("JOBWATCH_PUBLIC_HOST", "jobs.example.com")
+import shutil
 import json
 from unittest import mock
 from pathlib import Path
@@ -115,6 +116,17 @@ def _cv_printer_without_browser(monkeypatch, request):
     """Drafts print the CV through career-ops' template in Chromium; tests keep the old in-process printer
     (the draft module's render_pdf, which many tests replace) unless marked real_cv_printer."""
     if request.node.get_closest_marker("real_cv_printer"):
+        # The marker only means "do not install the stand-in". It is not a gate, so without the browser
+        # extra or its Chromium build the test used to error instead of skipping.
+        pytest.importorskip("playwright.sync_api", reason="real_cv_printer needs the browser extra")
+        if not shutil.which("pdftotext") or not shutil.which("pdfinfo"):
+            pytest.skip("real_cv_printer needs poppler (pdftotext, pdfinfo)")
+        try:
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as play:
+                play.chromium.launch(headless=True).close()
+        except Exception as exc:                                    # no downloaded browser, no sandbox
+            pytest.skip(f"real_cv_printer needs a launchable Chromium: {type(exc).__name__}")
         return
     from pipeline.agentic import draft
 

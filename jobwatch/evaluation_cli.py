@@ -78,12 +78,9 @@ def _handle(args):
         print(json.dumps({key:value[key] for key in ('baseline_id','split_hash','seed','development','holdout')},sort_keys=True))
     elif action in ('replay','run','monitor'):
         monitor=action=='monitor'
-        if monitor and (args.limit>500 or args.seconds>300):
-            from pipeline.agentic.contracts import AgenticError
-            raise AgenticError('monitor_limits_exceeded')
         result=evaluate_runs.replay(args.baseline_id,partition=getattr(args,'partition','development'),
             allow_holdout=getattr(args,'allow_holdout',False),limit=args.limit,seconds=args.seconds,
-            paid=args.paid,budget_tokens=args.budget_tokens,fit=args.fit,labels=not monitor)
+            paid=args.paid,budget_tokens=args.budget_tokens,fit=args.fit,labels=not monitor,monitor=monitor)
         print(json.dumps(dict(result_id=result['result_id'],status=result['status'],processed=result['processed'],
             requested=result['requested'],stop_reason=result['stop_reason'],usage=result['usage']),sort_keys=True))
     elif action=='report':

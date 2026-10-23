@@ -251,56 +251,6 @@ def test_snapshot_readers_preserve_full_sources_and_refuse_unknown_names(tmp_pat
         assert evidence.handler(evidence.arguments_model(ids=["cv.L4"]), {}) == profile.evidence
 
 
-@pytest.mark.skip(reason="evidence text is inline for the writer now (owner 2026-10-20); old read-back flow")
-def test_large_unused_profile_does_not_block_writer_and_reviewer_at_default_budget(tmp_path, monkeypatch):
-    """A real graph can read a complete long source without duplicating every evidence row."""
-    import json
-    from jobwatch.candidate.evidence import snapshot_evidence
-    from jobwatch.llm import LLM
-    from pipeline.agentic import draft
-    from pipeline.agentic.runtime import BatchBudget, JobBudget
-    root = tmp_path / "profile"
-    root.mkdir()
-    source = "# Synthetic Candidate\n\n## Experience\n- Automated reporting with Python\n" + "".join(
-        f"- Synthetic verified item {n:03d} " + "additional supporting detail " * 3 + "\n" for n in range(239))
-    (root / "cv.md").write_text(source)
-    bundle = snapshot_evidence(root)
-    ev = _evaluation(bundle.bundle_hash)
-    proposal = _proposal({"evaluation": ev.model_dump(), "evaluation_hash": draft._evaluation_hash(ev)})
-    choices = iter([
-        {"tool": "read_primary_sources", "arguments": {"filenames": ["cv.md"]}},
-        {"tool": "read_candidate_evidence", "arguments": {"ids": ["cv.L4"]}},
-        {"tool": "submit_draft", "arguments": {"proposal": proposal}},
-        {"tool": "read_primary_sources", "arguments": {"filenames": ["cv.md"]}},
-        {"tool": "submit_review", "arguments": {"verdict": "approve",
-         "criteria": dict.fromkeys(REQUIRED_CRITERIA, True), "feedback": []}},
-    ])
-    calls = []
-    def transport(url, headers, body, timeout):
-        calls.append(body)
-        return 200, {"choices": [{"message": {"content": json.dumps(next(choices))}}],
-                     "usage": {"prompt_tokens": 4000, "completion_tokens": 500}}
-    llm = LLM(transport=transport, keys=["synthetic"])
-    monkeypatch.setattr(draft, "render_pdf", lambda *a, **k: (b"verified synthetic PDF", {}))
-    monkeypatch.setattr(draft, "verify_pdf", lambda *a: {"ok": True, "failures": []})
-    budget = JobBudget(ev.run_key.value, BatchBudget("large-synthetic"))
-    # Model usage already charged for candidate assessment and evaluation.
-    reservation = budget.reserve("evaluator", 15_000, 1)
-    budget.dispatched(reservation)
-    budget.settle(reservation, 15_000)
-    result = draft.draft_and_review(ev.run_key, ev, budget, llm, llm, evidence_bundle=bundle,
-                                   posting={"company": "Python", "title": "Developer"},
-                                   ad_text="Python developer", return_bundle=True)
-    assert result.manifest.verification["review"] is True
-    assert len(calls) == 5 and budget.charged_tokens == 37_500
-    initial_writer = json.loads(calls[0]["messages"][-1]["content"])
-    initial_reviewer = json.loads(calls[3]["messages"][-1]["content"])
-    assert len(initial_writer["evidence_inventory"]) == len(initial_reviewer["evidence_inventory"]) == 240
-    assert len(initial_reviewer["candidate_evidence"]) == 1
-    assert initial_writer["full_ad"] == "Python developer"
-    for index in (1, 4):
-        tool_result = json.loads(calls[index]["messages"][-1]["content"])
-        assert json.loads(tool_result["result"])[0]["text"] == source
 
 
 def test_screening_answer_is_never_taken_by_position_when_its_question_is_missing(tmp_path):

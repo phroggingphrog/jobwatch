@@ -13,6 +13,10 @@ from pipeline.agentic import baseline, eval_data, ranking, service
 from pipeline.agentic.contracts import AgenticError, AgenticEvaluation, RunKey
 from pipeline.agentic.runtime import validate_model_payload
 
+# Monitoring maxima. Enforced here, not only in the CLI, so a library caller gets the bound the docs promise.
+MONITOR_LIMIT = 500
+MONITOR_SECONDS = 300
+
 LIMITATIONS = ['frozen_historical_sample','synthetic_success_not_recommendation_quality',
     'exposure_and_selection_bias','no_recorded_propensities','pending_outcomes_censored',
     'citation_checks_not_independent_qualification','provisional_only_no_personalised_quality']
@@ -125,10 +129,15 @@ def _paid_evaluation(case,inputs,dp,ex,batch,llm):
 
 
 def replay(baseline_id, *, partition='development', allow_holdout=False, limit=500, seconds=300,
-           paid=False,budget_tokens=None,fit=False,labels=True,llm=None,clock=time.monotonic):
+           paid=False,budget_tokens=None,fit=False,labels=True,monitor=False,llm=None,clock=time.monotonic):
     if (type(limit) is not int or not 1<=limit<=10000 or type(seconds) not in (int,float)
             or not math.isfinite(seconds) or not 0<seconds<=3600):
         raise AgenticError('invalid_evaluation_limits')
+    if monitor:
+        if limit>MONITOR_LIMIT or seconds>MONITOR_SECONDS:
+            raise AgenticError('monitor_limits_exceeded')
+        labels=False                       # monitoring never reads the human-label log
+
     if type(paid) is not bool or (paid and (type(budget_tokens) is not int or budget_tokens<=0)) or (not paid and budget_tokens is not None):
         raise AgenticError('paid_budget_required')
     if fit and partition!='development':
