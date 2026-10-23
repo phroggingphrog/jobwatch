@@ -16,6 +16,20 @@ Preserve existing data separately. LibreChat does not replace native Jobwatch
 operations or turn model text into approval. Deployment requires its own local
 release checks and observable runtime evidence.
 
+Owner follow-ups:
+
+> stop the old jobwatch services isolated it
+
+> the jobwatch should render it in the chat like how CHATGPT MCP works not direct me into link
+
+> it shuld be configured and the agent shuold render intelligence ui like chatgpt how can we do this? make jobwatch mcp connector?
+
+Keep legacy services stopped and isolated from the fresh runtime. Configure
+LibreChat to render Jobwatch's relevant forms, decisions, progress, job results
+and documents inside the conversation through an embedded MCP App. Jobwatch
+retains server-bound identity, native orchestration and exact-input approval;
+model-facing tools must not acquire the human UI's decision authority.
+
 Owner direction on 2026-10-23:
 
 > can we not include CI as the rules for it to be finished

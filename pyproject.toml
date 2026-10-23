@@ -34,6 +34,7 @@ mcp = ["langchain[mcp]>=1.4.0,<2"]
 jobwatch = "jobwatch.cli:main"
 jobwatch-mcp = "pipeline.agentic.mcp_server:main"
 jobwatch-agent = "pipeline.agentic.api:main"
+jobwatch-mcp-app = "pipeline.agentic.mcp_app:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -54,4 +55,4 @@ markers = ["real_cv_printer: run the real Chromium CV printer instead of the in-
 
 "jobwatch.preferences" = ["*.R", "*.jags"]
 
-"pipeline.agentic" = ["data/*.json", "data/*.md", "skills/*/SKILL.md", "controls.html", "controls.js", "controls.css"]
+"pipeline.agentic" = ["data/*.json", "data/*.md", "skills/*/SKILL.md", "controls.html", "controls.js", "controls.css", "jobwatch-app.html"]

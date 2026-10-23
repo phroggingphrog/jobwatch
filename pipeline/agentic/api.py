@@ -229,7 +229,15 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
             # Every body-bearing method is capped at 64 KiB; only the profile upload has its own larger cap, and it
             # needs a bearer with run scope before we buffer 10 MiB.
             upload = request.method == 'POST' and request.url.path == profile_api.UPLOAD_PATH
-            cap, chunks, size = (profile_api.UPLOAD_BODY_CAP if upload else 65536), [], 0
+            app_upload = (os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true' and request.method == 'POST'
+                          and request.url.path == '/api/agent/client/upload')
+            if app_upload:
+                from pipeline.agentic.client_api import receive_upload
+                try:
+                    request._body = await receive_upload(request)
+                except HTTPException as exc:
+                    return JSONResponse({'error': exc.detail}, status_code=exc.status_code)
+            cap, chunks, size = (intake.MAX_UPLOAD_BYTES + 44 if app_upload else profile_api.UPLOAD_BODY_CAP if upload else 65536), [], 0
             if upload:
                 who = lookup(request.headers.get('authorization'))
                 if who is None:
@@ -240,12 +248,13 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
             declared = request.headers.get('content-length', '')
             if declared.isdigit() and int(declared) > cap:
                 return JSONResponse(too_large, status_code=413)
-            async for chunk in request.stream():
-                size += len(chunk)
-                if size > cap:
-                    return JSONResponse(too_large, status_code=413)
-                chunks.append(chunk)
-            request._body = b''.join(chunks)
+            if not app_upload:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > cap:
+                        return JSONResponse(too_large, status_code=413)
+                    chunks.append(chunk)
+                request._body = b''.join(chunks)
         response = await call_next(request)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -288,6 +297,10 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     if os.environ.get('JOBWATCH_LIBRECHAT_ENABLED') == 'true':
         from pipeline.agentic import librechat
         librechat.mount(app, require)
+
+    if os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true':
+        from pipeline.agentic import client_api
+        client_api.mount(app, require, get_config)
 
     @app.get('/health')
     def health():

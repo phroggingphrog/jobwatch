@@ -82,8 +82,7 @@ def mount(app, require, get_config, llm_factory):
     def model(person):
         llm = llm_factory(person) if llm_factory else None
         if llm is None:
-            from jobwatch.llm import LLM
-            llm = LLM()
+            llm = service.configured_llm(get_config(person))
         return llm
 
     @app.post(PREFIX + '/proposals', status_code=202)

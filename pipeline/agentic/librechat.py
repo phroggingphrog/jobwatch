@@ -18,17 +18,54 @@ from pipeline.agentic.chat import skill_version
 
 MODEL = 'jobwatch-agent'
 _ID = re.compile(r'[A-Za-z0-9_-]{1,100}')
+_VIEW = re.compile(r'(?:jobwatch_view(?:_mcp_jobwatch)?|view_mcp_jobwatch)')
 
 
 class ChatMessage(BaseModel):
     role: str
     content: str | list[dict] | None = None
+    tool_calls: list[dict] | None = None
+    tool_call_id: str | None = None
 
 
 class Completion(BaseModel):
     model: str
     messages: list[ChatMessage] = Field(min_length=1, max_length=200)
     stream: bool = False
+    tools: list[dict] = Field(default_factory=list, max_length=100)
+
+
+def _view_tool(body):
+    names = [t.get('function', {}).get('name', '') for t in body.tools if t.get('type') == 'function']
+    names = [n for n in names if _VIEW.fullmatch(n)]
+    return names[0] if len(names) == 1 else None
+
+
+def _continuation(person, conversation, body):
+    """Tool text is untrusted. Resolve only an own-conversation native run."""
+    last = body.messages[-1]
+    if last.role != 'tool' or len(body.messages) < 2:
+        raise HTTPException(422, 'invalid_tool_continuation')
+    previous = body.messages[-2]
+    calls = previous.tool_calls or []
+    if previous.role != 'assistant' or len(calls) != 1:
+        raise HTTPException(422, 'invalid_tool_continuation')
+    call = calls[0]
+    try:
+        ident = json.loads(call['function']['arguments'])['run_id']
+        if (call['id'] != last.tool_call_id or not _ID.fullmatch(ident)
+                or not _VIEW.fullmatch(call['function']['name'])):
+            raise ValueError
+        with APIStore(person) as store:
+            if not store.conn.execute("SELECT 1 FROM sqlite_master WHERE name='client_threads'").fetchone():
+                raise ValueError
+            row = store.conn.execute('SELECT r.id FROM api_runs r JOIN client_threads c '
+                'ON c.thread_id=r.thread_id WHERE r.id=? AND c.client_id=?', (ident, conversation)).fetchone()
+            if row is None:
+                raise ValueError
+            return _current_run(store, ident)
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(422, 'invalid_tool_continuation') from None
 
 
 def _current_run(store, ident):
@@ -88,23 +125,25 @@ def _enqueue(person, conversation, body):
         return store.public_run(store.enqueue(thread, {'message': message}, key))
 
 
-def _answer(run, controls_url):
+def _answer(run, controls_url, *, inline=False):
     result = run.get('result') or {}
     text = result.get('answer') or ''
     if run['state'] in ('waiting_for_input', 'waiting_for_approval'):
-        text += '\n\nJobwatch needs your response in the protected controls page. '
+        text += ('\n\nRespond in the Jobwatch panel below. ' if inline else
+                 '\n\nJobwatch needs your response in the protected controls page. ')
         for item in run['interactions']:
             if not item['answered']:
                 text += '\n\n' + (item.get('question') or ('Review operation: ' + str(item.get('operation', 'career work'))))
     elif run.get('error'):
         text += '\n\nJobwatch stopped: ' + run['error'] + '.'
     elif run['state'] in ('queued', 'running'):
-        text += '\n\nJobwatch is still working. Check its controls page for progress.'
+        text += ('\n\nJobwatch is working. Progress appears in the panel.' if inline else
+                 '\n\nJobwatch is still working. Check its controls page for progress.')
     elif run['state'] != 'completed':
         text += '\n\nJobwatch run status: ' + run['state'] + '.'
     for outcome in result.get('outcomes') or []:
         text += '\n\nOutcome: ' + json.dumps(outcome, ensure_ascii=False)
-    if controls_url:
+    if controls_url and not inline:
         text += f'\n\n[Jobwatch controls, uploads and documents]({controls_url}/agent#run={run["id"]})'
     return text.strip() or 'The Jobwatch conversation turn completed.'
 
@@ -125,8 +164,14 @@ def mount(app, require):
                          x_jobwatch_conversation: str = Header(), principal=Depends(write)):
         if body.model != MODEL or not _ID.fullmatch(x_jobwatch_conversation):
             raise HTTPException(422, 'invalid_client_request')
-        _message(body)
-        run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body)
+        continuation = body.messages[-1].role == 'tool'
+        if continuation:
+            run = await asyncio.to_thread(_continuation, principal.person, x_jobwatch_conversation, body)
+        else:
+            _message(body)
+            run = await asyncio.to_thread(_enqueue, principal.person, x_jobwatch_conversation, body)
+        view = _view_tool(body) if not continuation else None
+        inline = bool(view or continuation or os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true')
 
         async def settled():
             current = run
@@ -147,6 +192,13 @@ def mount(app, require):
             return 'data: ' + json.dumps(dict(id=ident, object='chat.completion.chunk', created=created,
                 model=MODEL, choices=[dict(index=0, delta=delta, finish_reason=finish)])) + '\n\n'
 
+        def message(value):
+            if view:
+                return {'role': 'assistant', 'content': '', 'tool_calls': [{
+                    'id': 'call_' + run['id'], 'type': 'function', 'function': {
+                        'name': view, 'arguments': json.dumps({'run_id': run['id']})}}]}
+            return {'role': 'assistant', 'content': _answer(value, controls_url, inline=inline)}
+
         if body.stream:
             async def stream():
                 yield chunk({'role': 'assistant', 'content': ''})
@@ -158,8 +210,12 @@ def mount(app, require):
                             yield ': jobwatch working\n\n'
                     value = await task
                     if value is not None:
-                        yield chunk({'content': _answer(value, controls_url)})
-                        yield chunk({}, 'stop')
+                        result = message(value)
+                        delta = {k: v for k, v in result.items() if k != 'role'}
+                        if view:
+                            delta['tool_calls'][0]['index'] = 0
+                        yield chunk(delta)
+                        yield chunk({}, 'tool_calls' if view else 'stop')
                         yield 'data: [DONE]\n\n'
                 finally:
                     if not task.done():
@@ -170,7 +226,7 @@ def mount(app, require):
         if value is None:
             raise HTTPException(499, 'client_disconnected')
         return dict(id=ident, object='chat.completion', created=created, model=MODEL,
-                    choices=[dict(index=0, message={'role': 'assistant', 'content': _answer(value, controls_url)}, finish_reason='stop')])
+                    choices=[dict(index=0, message=message(value), finish_reason='tool_calls' if view else 'stop')])
 
     @app.get('/api/agent/client/runs')
     def runs(principal=Depends(read)):
