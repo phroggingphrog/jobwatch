@@ -179,7 +179,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
                  meta={'ui': {'visibility': ['app']}}, annotations={'readOnlyHint': False})
     async def action(action: Literal['respond', 'cancel', 'retry', 'cancel_selection', 'models', 'upload_ticket',
                                     'parse_uploads', 'profile_answer', 'profile_edit', 'profile_confirm',
-                                    'download_ticket', 'select_jobs','browser_open','browser_control','browser_review','browser_submit','browser_answers'], arguments: dict):
+                                    'download_ticket', 'select_jobs','browser_open','browser_control','browser_review','browser_submit','browser_answers','browser_restart'], arguments: dict):
         """Human app action only. LibreChat displays the exact arguments before confirmation."""
         auth('approve')  # visibility is a host hint; scope is the actual security boundary
         a = dict(arguments)
@@ -218,7 +218,9 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
                     raise RuntimeErrorSafe('invalid_arguments')
                 res=await native('/api/agent/client/browser/control',method='POST',body={'posting_id':pid},human=True)
             else:
-                suffix={'browser_open':'open','browser_review':'review','browser_submit':'submit','browser_answers':'answers'}[action]
+                suffix={'browser_open':'open','browser_restart':'open','browser_review':'review','browser_submit':'submit','browser_answers':'answers'}[action]
+                if action == 'browser_restart':
+                    a['restart']=True
                 res=await native('/api/agent/applications/'+str(pid)+'/'+suffix,method='POST',body=a,human=True,request_key=request_key)
         elif action == 'parse_uploads':
             path = ('/api/agent/profile/proposals/' + ident(target) + '/uploads' if target else '/api/agent/profile/proposals')

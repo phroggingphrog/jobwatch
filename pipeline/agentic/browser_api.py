@@ -26,6 +26,13 @@ class ReviewBody(BaseModel):
     digest: str = Field(pattern=r'^[0-9a-f]{64}$')
 
 
+class OpenBody(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    restart: bool = False
+    preparation_run_id: str | None = Field(default=None, pattern=r'^[a-f0-9]{32}$')
+    package_key: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+
+
 class WebsiteOperation(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     operation: Literal['context','app_context','preparation_context','start_preparation','answer_missing','settle_submit','confirmed_submit',
@@ -63,8 +70,13 @@ def mount(app, require, get_config, *, sessions=None):
             outcome = submit_confirm.outcome(conn, posting_id)
         conn.close()
         prepared = value['prepared'] or {}
+        from jobwatch.apply.prepare import latest_preparation
+        previous = latest_preparation(paths.data_dir(), str(job['application_id'])) if job['application_id'] else None
         return {'posting_id': posting_id, 'title': job['title'], 'company': job['company'],
                 'application_id': job['application_id'], 'can_prepare': value['can_prepare'],
+                'restart_required':bool(previous and not prepared),
+                'previous_preparation_run_id':previous.get('run_id') if previous else None,
+                'package_key':(value['package'] or {}).get('run_key'),
                 'browser': value['browser'], 'status': prepared.get('status'),
                 'missing': prepared.get('missing', []), 'reason':prepared.get('reason'), 'preparation_run_id': prepared.get('run_id'), 'submission': outcome}
 
@@ -92,19 +104,42 @@ def mount(app, require, get_config, *, sessions=None):
             return state(principal.person, posting_id)
 
     @app.post(PREFIX+'/{posting_id}/open')
-    def open_application(posting_id: int, principal=Depends(human)):
+    def open_application(posting_id: int, body: OpenBody | None = None, principal=Depends(human)):
         with users.use(principal.person):
             s = service(principal.person)
-            job, _ = s.app_context(posting_id)
-            if not s.preparation_context(posting_id)['can_prepare']:
+            job, package = s.app_context(posting_id)
+            current = s.preparation_context(posting_id)
+            if not current['can_prepare']:
                 raise HTTPException(409, 'verified_package_required')
             aid = str(job['application_id'])
-            if not s.browser_status(aid)['open']:
-                sessions.open(aid, job['url'])
-            # Opening/retrying never starts the same preparation a second time.
             from jobwatch.apply.prepare import latest_preparation
-            if not latest_preparation(paths.data_dir(), aid) and not s.browser_status(aid)['automation_active']:
+            previous = latest_preparation(paths.data_dir(), aid)
+            body = body or OpenBody()
+            if body.restart:
+                conn = s.conn_factory()
+                try:
+                    outcome = submit_confirm.outcome(conn, posting_id)
+                finally:
+                    conn.close()
+                if outcome and outcome['status'] in ('pending','pressed','submitted','unsure'):
+                    raise HTTPException(409,'submission_already_pending_or_uncertain')
+                if (not previous or previous.get('run_id') != body.preparation_run_id or
+                        not package or package['run_key'] != body.package_key):
+                    raise HTTPException(409,'application_changed')
+                if current['browser']['automation_active']:
+                    raise HTTPException(409,'browser_busy')
+                # Only this separate host-confirmed action starts a fresh fill. Passive reopening
+                # and duplicate actions with an old preparation reference never repeat paid work.
+                if not current['browser']['open']:
+                    sessions.open(aid,job['url'])
                 s.start_preparation(posting_id)
+            else:
+                if previous and not current['prepared']:
+                    raise HTTPException(409,'restart_confirmation_required')
+                if not current['browser']['open']:
+                    sessions.open(aid,job['url'])
+                if not previous and not s.browser_status(aid)['automation_active']:
+                    s.start_preparation(posting_id)
             return state(principal.person, posting_id)
 
     @app.post(PREFIX+'/{posting_id}/answers', status_code=202)

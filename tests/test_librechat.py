@@ -18,9 +18,9 @@ def client(monkeypatch):
     calls = []
     def dispatch(**kw):
         calls.append(kw)
-        if kw.get('message') == 'prepare':
+        if kw.get('message') in ('prepare','submit'):
             return {'status': 'interrupted', 'checkpoint_id': 'synthetic-checkpoint', 'interactions': [
-                {'type': 'approval', 'operation': 'prepare_application', 'posting_id': 1,
+                {'type': 'approval', 'operation': 'submit_application' if kw.get('message')=='submit' else 'prepare_application', 'posting_id': 1,
                  'binding': {'synthetic': 'exact-inputs'}}]}
         if kw.get('message') == 'question':
             return {'status': 'interrupted', 'checkpoint_id': 'synthetic-question', 'interactions': [
@@ -176,3 +176,27 @@ def test_inline_view_is_emitted_while_native_work_is_running(monkeypatch):
         finally:
             release.set()
             future.result(timeout=3)
+
+
+def test_reviewed_submit_uses_native_approval_resume_without_stranding_thread(client):
+    import httpx
+    from pipeline.agentic.mcp_app import create_server
+    from tests.test_mcp_app import rpc
+    response=turn(client,'submit').json()
+    runs=client.get('/api/agent/client/runs',headers=headers()).json()['runs']
+    pending=runs[0]['interactions'][0]
+    assert pending['operation']=='submit_application'
+    credentials={RUN:Principal('fixture-a'),DECIDE:Principal('fixture-a',frozenset({'read','interact','approve'}))}
+    server=create_server(credentials=credentials,origin='https://jobs.example.com',transport=httpx.ASGITransport(app=client.app))
+    with TestClient(server.http_app(path='/mcp',stateless_http=True)) as mcp:
+        approved=rpc(mcp,DECIDE,'tools/call',{'name':'jobwatch_action','arguments':{'action':'respond','arguments':{'id':pending['id'],'decision':'approve'}}})
+        assert not approved['result'].get('isError')
+    deadline=time.monotonic()+3
+    while len(client.calls)<2 and time.monotonic()<deadline:
+        time.sleep(.01)
+    assert client.calls[-1]['human_decision'] is True
+    assert client.calls[-1]['decisions']==[{'type':'approve'}]
+    # The original approval was consumed, so a later message can use the same chat.
+    subsequent=turn(client,'next')
+    assert subsequent.status_code==200,subsequent.text
+    assert subsequent.json()['id']!=response['id']

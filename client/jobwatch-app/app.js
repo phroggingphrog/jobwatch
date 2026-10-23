@@ -2,7 +2,7 @@ import {App} from '@modelcontextprotocol/ext-apps';
 const app=new App({name:'Jobwatch',version:'2.0.0'},{}),$=id=>document.getElementById(id);
 let runId,rendered,busy=false,cardKind='auto',subjectId='0',currentApplication=null,frameBusy=false;
 let modelDraft={},modelSettingsOpen=false,modelSaving=false,modelNotice='';
-const previews=new Map(),drafts=new Map(),files=new Map(),selectedJobs=new Map(),controlGrants=new Map();
+const previews=new Map(),drafts=new Map(),files=new Map(),selectedJobs=new Map(),controlGrants=new Map(),operationKeys=new Map();
 let inputQueue=Promise.resolve();
 const short=value=>String(value??'').replaceAll('_',' ');
 function node(tag,text,parent,cls){const n=document.createElement(tag);n.textContent=text??'';if(cls)n.className=cls;parent.append(n);return n;}
@@ -57,7 +57,7 @@ function jobsCard(shortlist){
  for(const entry of shortlist.entries){const c=section(entry.posting?.title||'Job match',s);node('p',[entry.posting?.company,entry.posting?.location].filter(Boolean).join(' · '),c,'muted');node('span',short(entry.label),c,'badge');node('p',entry.rank_reason||entry.objective_fit,c);if(entry.uncertainty)node('p',entry.uncertainty,c,'notice');details('Evidence and open questions',{evidence:entry.evidence,requirements:entry.requirements,unresolved:entry.unresolved,conditions:entry.conditions},c);
   const row=node('label','Prepare documents for this job',c),check=node('input','',row);check.type='checkbox';check.checked=selectedJobs.has(entry.posting_id);check.onchange=()=>check.checked?selectedJobs.set(entry.posting_id,entry):selectedJobs.delete(entry.posting_id);
  }
- button('Prepare selected jobs',s,async()=>{const rows=[...selectedJobs.values()];if(!rows.length||rows.length>10)throw new Error('Choose between one and ten jobs.');const visible=new Map(shortlist.entries.map(e=>[e.posting_id,e]));if(rows.some(e=>visible.get(e.posting_id)?.entry_id!==e.entry_id))throw new Error('These matches changed. Refresh and choose again.');await action('select_jobs',{request_key:crypto.randomUUID(),posting_ids:rows.map(e=>e.posting_id),expected_entry_ids:Object.fromEntries(rows.map(e=>[e.posting_id,e.entry_id])),expected_run_keys:Object.fromEntries(rows.map(e=>[e.posting_id,e.run_key]))});selectedJobs.clear();await showCard('progress');},true);
+ button('Prepare selected jobs',s,async()=>{const rows=[...selectedJobs.values()];if(!rows.length||rows.length>10)throw new Error('Choose between one and ten jobs.');const visible=new Map(shortlist.entries.map(e=>[e.posting_id,e]));if(rows.some(e=>visible.get(e.posting_id)?.entry_id!==e.entry_id))throw new Error('These matches changed. Refresh and choose again.');const fingerprint=JSON.stringify(rows.map(e=>[e.posting_id,e.entry_id,e.run_key]).sort((a,b)=>a[0]-b[0]));if(!operationKeys.has(fingerprint))operationKeys.set(fingerprint,crypto.randomUUID());await action('select_jobs',{request_key:operationKeys.get(fingerprint),posting_ids:rows.map(e=>e.posting_id),expected_entry_ids:Object.fromEntries(rows.map(e=>[e.posting_id,e.entry_id])),expected_run_keys:Object.fromEntries(rows.map(e=>[e.posting_id,e.run_key]))});selectedJobs.clear();await showCard('progress');},true);
 }
 function progressCard(run,selections){
  if(!run.interactions.some(i=>!i.answered)){const s=section(['queued','running'].includes(run.state)?'Jobwatch is working':'Saved work');node('p',['queued','running'].includes(run.state)?'You can leave and return. Your progress is saved.':short(run.error||run.state),s);}
@@ -86,7 +86,11 @@ function applicationCard(application,applications){
  const pid=application.posting_id,s=section(application.title||'Employer application');node('p',application.company,s,'muted');
  const submission=application.submission;
  if(submission){node('p','Submission: '+short(submission.status),s,'notice');if(['pending','pressed','submitted','unsure'].includes(submission.status)){if(submission.status==='unsure')node('p','Jobwatch cannot confirm whether this was received. Check the employer’s page; it will not retry automatically.',s);}}
- if(!application.browser?.open){node('p','Open the employer’s application here to fill and review it.',s);if(application.can_prepare)button('Open and fill application',s,()=>action('browser_open',{posting_id:pid}),true);return;}
+ if(application.restart_required&&application.can_prepare&&!['pending','pressed','submitted','unsure'].includes(submission?.status)){
+  node('p','The previous form session or document package changed. Start a fresh fill, then review the new form before submitting.',s,'notice');
+  button('Fill application again',s,()=>action('browser_restart',{posting_id:pid,preparation_run_id:application.previous_preparation_run_id,package_key:application.package_key}),true);
+ }
+ if(!application.browser?.open){node('p','Open the employer’s application here to fill and review it.',s);if(application.can_prepare&&!application.restart_required)button('Open and fill application',s,()=>action('browser_open',{posting_id:pid}),true);return;}
  node('p',application.browser.automation_active?'Filling the form. Browser controls become available when Jobwatch pauses.':'Review the live employer page. Enable controls to sign in, handle verification or make corrections.',s);
  const img=node('img','',s);img.id='employer-browser';img.alt='Live employer application browser';img.tabIndex=0;img.style.width='100%';img.style.height='auto';img.setAttribute('aria-label','Employer application browser. Shift Escape leaves browser controls.');currentApplication=pid;
  if(!application.browser.automation_active){button('Enable browser controls',s,()=>enableControls(pid));
@@ -106,7 +110,11 @@ function applicationCard(application,applications){
  if(review?.status==='blocked'){node('p',({application_not_ready:'The form is not ready for review yet. Finish the pending questions or browser verification first.',application_changed:'The employer page changed. Fill and review this application again.',final_control_changed:'The employer’s submission control changed. A new review is required.',form_review_changed:'The form changed while it was being read. Read it again.',unsupported_form_review:'This employer uses form controls Jobwatch cannot safely review. Submission remains blocked here.',form_review_unavailable:'Jobwatch cannot read every part of this form safely. Submission remains blocked here.'})[review.reason]||'This form cannot be safely reviewed yet. Submission remains blocked here.',s,'notice');}
  else if(review){node('h3','The form you are reviewing',s);node('p',review.employer+' · '+review.url,s);for(const field of review.fields||[]){node('strong',field.label,s);node('p',field.value,s);}details('Attached documents',review.documents,s);
   if(!review.confirmed_digest)button('Update review after my corrections',s,async()=>{await action('browser_review',{posting_id:pid,digest:review.review_digest});previews.delete('review:'+pid);},true);
-  else if(!submission||!['pending','pressed','submitted','unsure'].includes(submission.status))button('Confirm final Submit',s,async()=>{await action('browser_submit',{posting_id:pid,digest:review.confirmed_digest,request_key:crypto.randomUUID()});previews.delete('review:'+pid);},true);
+  else if(!submission||!['pending','pressed','submitted','unsure'].includes(submission.status)){
+   const pending=lastState.run.interactions.find(i=>!i.answered&&i.operation==='submit_application'&&(i.binding?.arguments?.posting_id??i.posting_id)===pid);
+   if(pending&&pending.binding?.run_key!==review.confirmed_digest){node('p','The earlier Submit request is for a different form. Decline it before requesting a new confirmation.',s,'notice');button('Decline the outdated Submit request',s,()=>action('respond',{id:pending.id,decision:'reject'}));}
+   else button('Confirm final Submit',s,async()=>{if(pending)await action('respond',{id:pending.id,decision:'approve'});else await action('browser_submit',{posting_id:pid,digest:review.confirmed_digest,request_key:crypto.randomUUID()});previews.delete('review:'+pid);},true);
+  }
  }
  if(!application.browser.automation_active)button('Read current form and attachments',s,async()=>{previews.set('review:'+pid,await resource('jobwatch://browser/'+pid+'/review'));},true);
  void updateFrame();

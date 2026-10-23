@@ -152,3 +152,30 @@ def test_unreadable_custom_form_stays_blocked(native):
     assert review.json()['reason']=='unsupported_form_review'
     assert client.post('/api/agent/applications/1/submit',headers={**auth(),'Idempotency-Key':'unsupported'},json={'digest':'a'*64}).status_code==409
     assert seen==[('GET','/')]
+
+
+def test_expired_browser_requires_explicit_current_package_refill(native,monkeypatch):
+    client,manager,_,prepared=native
+    manager.close('1')
+    fills=[]
+    monkeypatch.setattr(workflow.BrowserService,'start_preparation',lambda self,pid,**kw:fills.append(pid))
+    status=client.get('/api/agent/applications/1',headers=auth()).json()
+    assert status['restart_required'] and status['previous_preparation_run_id']==prepared['run_id']
+    # Opening/refreshing cannot spend again. A distinct exact human action is required.
+    assert client.post('/api/agent/applications/1/open',headers=auth()).status_code==409
+    assert not fills
+    body={'restart':True,'preparation_run_id':status['previous_preparation_run_id'],'package_key':status['package_key']}
+    assert client.post('/api/agent/applications/1/open',headers=auth(),json={**body,'package_key':'0'*64}).status_code==409
+    restarted=client.post('/api/agent/applications/1/open',headers=auth(),json=body)
+    assert restarted.status_code==200,restarted.text
+    assert fills==[1] and restarted.json()['browser']['target_id']!=prepared['session_id']
+    # An uncertain submission may never be reset by refilling a browser.
+    from jobwatch import db
+    conn=db.connect(users.db_path())
+    try:
+        request=submit_confirm.queue(conn,posting_id=1,application_id=1,confirm_digest='d',approval='uncertain-test')
+        submit_confirm.settle(conn,request['request_id'],'unsure')
+    finally:
+        conn.close()
+    assert client.post('/api/agent/applications/1/open',headers=auth(),json=body).status_code==409
+    assert fills==[1]
