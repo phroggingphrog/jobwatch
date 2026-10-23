@@ -14,7 +14,10 @@ considered a chat host using MCP; the native API is the primary delivery choice.
 
 Expose an authenticated Jobwatch HTTP agent API. Jobwatch runs the orchestration
 through LangChain, LangGraph and Deep Agents, reusing existing canonical domain
-operations. MCP remains an optional adapter. A client presents structured progress,
+operations. MCP remains an optional adapter; on that path the connected host is the
+human-approval boundary and its single bearer token is also the approval
+credential, so the HTTP API is the path with a separate approve-scoped token.
+A client presents structured progress,
 outcomes, questions, approvals and authorized document references.
 
 ## Consequences

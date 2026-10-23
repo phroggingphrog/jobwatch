@@ -319,6 +319,28 @@ MCP is optional (`uv sync --extra mcp`, `jobwatch-mcp`). Its experimental adapte
 calls the same dispatcher and bound approval contract. It is not required to
 install or use the native API.
 
+On the MCP path the connected host is the human-approval boundary. The adapter has
+one bearer token (`JOBWATCH_MCP_TOKEN`) for one configured person; unlike the HTTP
+API it has no separate approve-scoped credential, so that single token is both the
+model-facing credential and the approval credential. An accepted elicitation
+(`action` `accept` with `approve` true) becomes the person's approval, including for
+`submit_application`, and the turn is resumed with `human_decision` set. Use the
+native HTTP API with `JOBWATCH_AGENT_APPROVAL_TOKEN` where the approval credential
+must be kept away from model tools.
+
+The adapter has fixed human wording for `run_career_ops`, `assess_job`,
+`prepare_application`, `prepare_interview`, `draft_followup` and
+`submit_application`. It cannot present the other gated operations (`profile_confirm`,
+`profile_answer`, `profile_correct`, `reject_posting`, `restore_posting`,
+`propose_exclusion`, `confirm_exclusion`, `pick_comparison`, `answer_question`,
+`dismiss_prompt`, `select_jobs`, `cancel_selection`): their identity is a draft,
+prompt, rule or selection rather than a posting, and the words a human would need
+are in the binding subject the adapter does not read. Such a round is rejected on
+the person's behalf (a rejection authorizes nothing) and the reply lists
+`refused_operations`, so the thread stays usable; previously the interrupt stayed
+checkpointed and every later message on that thread hit it again. The native HTTP
+API presents all of them.
+
 ## GitHub source workflow
 
 The private source repository is `phroggingphrog/jobwatch`. It starts from a
