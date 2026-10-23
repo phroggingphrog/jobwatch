@@ -11,7 +11,7 @@ from statistics import median
 
 MIN_LABELS = 10
 K_VALUES = (5, 10)
-METRICS_VERSION = 'evaluation-metrics-v1'
+METRICS_VERSION = 'evaluation-metrics-v2'
 
 
 def _label_value(label, field):
@@ -70,8 +70,11 @@ def _ordering(arm, labelled):
         positives = sum((_label_value(label, 'relevance') >= 2)
                         if _valid_relevance(_label_value(label, 'relevance'))
                         else _label_value(label, 'suitable') is True for _, label in selected)
-        precision[str(k)] = {'value': positives / len(selected) if selected else None,
-                             'count': positives, 'of': len(selected)}
+        # Standard precision@k: the denominator is k, so an arm that ranked fewer than k cases does not
+        # score as if it had ranked k. Dividing by len(selected) made a 3-item shortlist of 3 relevant
+        # cases beat a 10-item shortlist of 9, which is the opposite of the comparison this serves.
+        precision[str(k)] = {'status': 'measured' if len(selected) >= k else 'short_prefix',
+                             'value': positives / k, 'count': positives, 'of': k, 'ranked': len(selected)}
     return {'status': 'measured', 'labelled': len(labelled), 'labelled_ranked': len(ordered),
             'basis': 'condensed_human_labelled_ordering', 'precision_at': precision, 'ndcg_at': ndcg}
 

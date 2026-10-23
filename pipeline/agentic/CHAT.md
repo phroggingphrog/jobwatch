@@ -587,8 +587,10 @@ Default replay is zero-model and provisional, using the canonical gate, coverage
 labels and ordering with frozen inputs. It compares original baseline routes and
 advisory-score ordering against that current calculation. A baseline frozen after
 a gate revision remains labelled as such. Default limits are 500 cases and 300
-seconds. Monitoring enforces those maxima, is development-only and never reads the
-human-label log or holdout cases. It creates no timer or service.
+seconds. Monitoring enforces those maxima in `evaluate_runs.replay` itself, not only in
+the CLI, is development-only and never reads the human-label log or holdout cases.
+Precision at k divides by k and reports `short_prefix` with the arm's actual depth when it
+ranked fewer than k cases, so arms of different depth stay comparable. It creates no timer or service.
 
 A paid evaluation requires both `--paid` and a positive `--budget-tokens`; the
 canonical runtime, approved paid routes and remaining deadline enforce the budget.

@@ -40,7 +40,8 @@ _SIMPLE_METRIC = {'status': _STATUS, 'labelled': _COUNT, 'minimum': _COUNT, 'val
 _ORDERING = {
     **_SIMPLE_METRIC, 'basis': _BASIS, 'labelled_ranked': _COUNT,
     'coverage': {'labelled_cases': _COUNT, 'common_cases': _COUNT, 'fraction': _NUMBER},
-    'precision_at': {str(k): {'value': _NUMBER, 'count': _COUNT, 'of': _COUNT} for k in (5, 10)},
+    'precision_at': {str(k): {'status': frozenset({'measured', 'short_prefix'}), 'value': _NUMBER,
+                              'count': _COUNT, 'of': _COUNT, 'ranked': _COUNT} for k in (5, 10)},
     'ndcg_at': {str(k): {'status': _STATUS, 'value': _NUMBER} for k in (5, 10)},
 }
 _AGGREGATE = {'total': _NUMBER, 'recorded': _COUNT, 'missing': _COUNT}

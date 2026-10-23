@@ -94,3 +94,23 @@ def test_config_drift_rejects_staging_before_publication(frozen,monkeypatch):
     assert baseline.list_baselines()==[]
     assert not list(baseline._baselines_root().glob('.staging-*'))
     assert not frozen.ro.in_transaction
+
+
+def test_freezing_cannot_write_through_a_writable_connection(frozen):
+    """Break: rely on the CLI opening ?mode=ro for the documented read-only freeze."""
+    import sqlite3
+    seen={}
+    original=baseline.freeze_baseline
+    def watched(conn,config,**kwargs):
+        seen['query_only']=conn.execute('PRAGMA query_only').fetchone()[0]
+        try:
+            conn.execute("UPDATE postings SET title='rewritten' WHERE id=42")
+        except sqlite3.OperationalError as exc:
+            seen['refused']=str(exc)
+        return original(conn,config,**kwargs)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(baseline,'freeze_baseline',watched)
+        record=eval_data.freeze_cases(frozen.conn,frozen.config)       # a writable connection
+    assert record.case_ids and seen['query_only']==1 and 'readonly' in seen['refused']
+    assert frozen.conn.execute('SELECT title FROM postings WHERE id=42').fetchone()[0]!='rewritten'
+    assert frozen.conn.execute('PRAGMA query_only').fetchone()[0]==0   # restored for the caller

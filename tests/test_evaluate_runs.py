@@ -93,3 +93,15 @@ def test_result_tampering_and_holdout_export_audit(frozen):
     path.write_text('{}')
     with pytest.raises(AgenticError,match='evaluation_corrupt'):
         evaluate_runs.load_result(record.baseline_id,result['result_id'],allow_holdout=True)
+
+
+def test_monitoring_maxima_hold_for_a_library_caller_not_only_the_cli(frozen):
+    """Break: enforce the 500/300 monitoring caps in jobwatch/evaluation_cli.py alone."""
+    record=prepared(frozen)
+    assert (evaluate_runs.MONITOR_LIMIT,evaluate_runs.MONITOR_SECONDS)==(500,300)
+    for limit,seconds in ((evaluate_runs.MONITOR_LIMIT+1,300),(500,evaluate_runs.MONITOR_SECONDS+1),(10000,3600)):
+        with pytest.raises(AgenticError,match='monitor_limits_exceeded'):
+            evaluate_runs.replay(record.baseline_id,limit=limit,seconds=seconds,monitor=True)
+    watched=evaluate_runs.replay(record.baseline_id,limit=500,seconds=300,monitor=True,labels=True)
+    assert watched['labels_hash'] is None                       # monitoring never reads the label log
+    assert watched['usage']['model_calls']==0

@@ -38,7 +38,10 @@ def test_exact_missed_suitable_and_precision_with_frozen_rankings():
     assert metrics['baseline']['missed_suitable']['rate'] == 0.4
     assert metrics['current']['missed_suitable']['count'] == 0
     assert metrics['baseline']['ordering']['precision_at']['5']['value'] == 0.6
-    assert metrics['current']['ordering']['precision_at']['10']['value'] == 0.625
+    # Precision@10 over 8 ranked cases is 5/10, not 5/8: an arm is not credited for slots it left empty.
+    assert metrics['current']['ordering']['precision_at']['10'] == {
+        'status': 'short_prefix', 'value': 0.5, 'count': 5, 'of': 10, 'ranked': 8}
+    assert metrics['baseline']['ordering']['precision_at']['5']['status'] == 'measured'
     assert metrics['comparison']['missed_suitable'] == {'fixed': 2, 'broke': 0, 'delta': -2}
 
 
@@ -185,3 +188,21 @@ def test_nonfinite_usage_is_missing_and_label_notes_never_appear():
     assert result['current']['usage']['charged_tokens']['missing'] == 1
     assert result['current']['usage']['actual_tokens']['missing'] == 1
     assert 'PRIVATE-SYNTHETIC-NOTE' not in json.dumps(result, allow_nan=False)
+
+
+def test_precision_at_k_stays_comparable_between_arms_of_different_depth():
+    """Break: divide by the number of ranked cases, and a shallow shortlist outscores a deeper, better one."""
+    replay = replay_cases(12)
+    for index, case in enumerate(replay['cases'], 1):
+        case['baseline']['rank'] = index if index <= 3 else None        # 3 ranked, all relevant
+        case['current']['rank'] = index if index <= 10 else None        # 10 ranked, 9 relevant
+    labels = owner_labels(12, relevance=3)
+    labels['case-10']['relevance'] = 0
+    for index in range(11, 13):
+        labels[f'case-{index}']['relevance'] = 0
+    metrics = compute_metrics(replay, labels)
+    shallow = metrics['baseline']['ordering']['precision_at']['10']
+    deep = metrics['current']['ordering']['precision_at']['10']
+    assert shallow == {'status': 'short_prefix', 'value': 0.3, 'count': 3, 'of': 10, 'ranked': 3}
+    assert deep == {'status': 'measured', 'value': 0.9, 'count': 9, 'of': 10, 'ranked': 10}
+    assert deep['value'] > shallow['value']
