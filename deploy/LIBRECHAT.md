@@ -87,7 +87,9 @@ Use LibreChat’s top model selector under **Jobwatch** to choose a configured
 gateway model. The authenticated server saves that explicit global choice for
 your account before the next message; the backend accepts only your saved model
 or the legacy `jobwatch-agent` adapter label. Keep `models.fetch: true` so the
-selector loads the gateway catalog. This does not expose Jobwatch credentials or
+selector loads the gateway catalog. Keep `interface.modelSelect: true` and
+`modelSpecs.enforce: false` so normal provider/model navigation and provider
+API-key dialogs remain accessible. This does not expose Jobwatch credentials or
 change other providers’ API-key controls.
 
 Use the card’s **Models** controls to select configured names for all tasks or individual roles,

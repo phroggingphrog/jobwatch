@@ -218,3 +218,15 @@ def test_top_selector_catalog_and_only_saved_model_is_accepted(client, monkeypat
     monkeypatch.setattr(model_choice, 'get_model', saved_model)
     assert turn(client, model='openai/luna').status_code == 200
     assert turn(client, model='openai/sol').status_code == 422
+
+
+def test_model_snapshot_preserves_role_overrides_without_reloading_config(monkeypatch):
+    from pipeline.agentic.client_api import configured_models
+    from jobwatch import model_choice
+    monkeypatch.setattr(model_choice, 'chosen', lambda person: {'writer': 'openai/luna'})
+    monkeypatch.setattr(model_choice, '_from_config', lambda role: pytest.fail('configuration reloaded'))
+    choices = configured_models('fixture-a', {'chat': {'model': 'openai/sol'},
+        'pipeline': {'agentic': {'reviewer_model': 'claude/sonnet'}}})
+    assert choices['chat'] == 'openai/sol'
+    assert choices['writer'] == 'openai/luna'
+    assert choices['reviewer'] == 'claude/sonnet'

@@ -32,13 +32,26 @@ DOWNLOAD = '/api/agent/client/download'
 _MODEL_CATALOG = {}
 
 
+def configured_models(person, config):
+    """Resolve all role choices from one already-loaded configuration snapshot."""
+    settings = config.settings if hasattr(config, 'settings') else config
+    picks = model_choice.chosen(person)
+    result = {}
+    for role, (_, path) in model_choice.ROLES.items():
+        value = settings
+        for key in path:
+            value = value.get(key) if isinstance(value, dict) else None
+        result[role] = picks.get(role) or (value if isinstance(value, str) and value else model_choice.DEFAULT_MODEL)
+    return result
+
+
 def model_catalog(person, config):
     """List the configured paid gateway, never another credential or provider."""
     from pipeline.agentic.service import configured_llm
     import requests
     try:
         llm = configured_llm(config)
-        require_route(llm, model_choice.get_model('chat', person))
+        require_route(llm, configured_models(person, config)['chat'])
         cache_key = (person, llm.base_url, hashlib.sha256(llm._keys[0].encode()).digest())
         cached = _MODEL_CATALOG.get(cache_key)
         if cached and time.monotonic() - cached[0] < 300:
@@ -283,10 +296,12 @@ def mount(app, require, get_config):
     @app.get('/api/agent/client/models')
     def models(principal=Depends(read)):
         with users.use(principal.person):
-            return {'roles': {role: {'label': label, 'model': model_choice.get_model(role, principal.person)}
+            config = get_config(principal.person)
+            choices = configured_models(principal.person, config)
+            return {'roles': {role: {'label': label, 'model': choices[role]}
                               for role, (label, _) in model_choice.ROLES.items()},
                     'embedding': 'openrouter/qwen/qwen3-embedding-8b',
-                    **model_catalog(principal.person, get_config(principal.person))}
+                    **model_catalog(principal.person, config)}
 
     @app.post('/api/agent/client/models')
     def set_models(body: ModelRequest, principal=Depends(approve)):
