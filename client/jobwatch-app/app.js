@@ -51,6 +51,13 @@ function profileCard(profile,run){
  }else node('p',profile.current?.version?'Your confirmed profile is ready. You can add supporting evidence here.':'Add your CV and supporting documents. Jobwatch will guide you through confirmation before searching.',s);
  upload(s,profile);
 }
+function outcomeNotices(run){
+ const reasons={snapshot_changed:'The live ad refreshed the saved job details. The earlier approval no longer applies. Request a fresh assessment and review the new approval.',posting_check_required:'The job needs a fresh live-ad check before work can continue.',posting_unavailable:'The live job ad could not be reached. Nothing was prepared or submitted.',posting_identity_unverified:'Jobwatch could not verify that the live page belongs to this saved job.',profile_not_ready:'Confirm your profile and search scope before continuing.',profile_incomplete:'Your profile needs more information before this work can continue.',hard_gate:'This job does not meet the confirmed requirements.',policy_excluded:'This job is excluded by your confirmed search policy.',deadline_exceeded:'This work reached its time limit. Your saved progress is retained.',budget_exhausted:'This work reached its budget limit. No further paid work was started.'};
+ for(const outcome of run.result?.outcomes||[]){if(!['held','deferred','archived','failed'].includes(outcome.status)||!outcome.reason)continue;
+  const s=section(outcome.posting_id?'Job '+outcome.posting_id+' needs attention':'This work needs attention');node('p',reasons[outcome.reason]||'Jobwatch paused this work: '+short(outcome.reason)+'.',s,'notice');
+  if(outcome.reason==='snapshot_changed'&&Number.isSafeInteger(outcome.posting_id)&&outcome.posting_id>0)button('Request a fresh assessment',s,async()=>{const result=await app.sendMessage({role:'user',content:[{type:'text',text:'Please reassess posting '+outcome.posting_id+' using its updated saved ad.'}]});if(result.isError)throw new Error('The assessment request was not sent. You can try again.');},true);
+ }
+}
 function jobsCard(shortlist){
  const s=section('Jobs worth considering');
  if(!shortlist.entries?.length){node('p',shortlist.status==='stale'?'Your matches need updating. Ask Jobwatch to refresh them.':'Your matches will appear here after your confirmed profile has been assessed.',s);return;}
@@ -122,7 +129,7 @@ function applicationCard(application,applications){
 async function updateFrame(){if(currentApplication==null||frameBusy||!$('employer-browser'))return;frameBusy=true;const pid=currentApplication;try{const image=await resource('jobwatch://browser/'+pid+'/frame');if(currentApplication===pid&&$('employer-browser'))$('employer-browser').src='data:image/jpeg;base64,'+image.jpeg;}catch{$('status').textContent='The browser view is paused. Refresh to reconnect.';}finally{frameBusy=false;}}
 let lastState;
 function render(data){lastState=data;const {run,profile,selections=[],applications=[],card}=data,root=$('body');root.replaceChildren();currentApplication=null;document.querySelector('h1').textContent=card.title;$('phase').textContent=short(run.state);$('status').textContent=['queued','running'].includes(run.state)?'Jobwatch is working. This card updates automatically.':'Your saved Jobwatch work.';
- decisions(run,profile);
+ decisions(run,profile);outcomeNotices(run);
  if(card.kind==='profile')profileCard(profile,run);else if(card.kind==='models')renderModels(data.models,root);else if(card.kind==='jobs')jobsCard(data.shortlist);else if(card.kind==='documents')documentsCard(run,selections,applications);else if(card.kind==='application')applicationCard(data.application,applications);else progressCard(run,selections);
 }
 function upload(parent,profile){
