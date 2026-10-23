@@ -1,4 +1,8 @@
-"""SQLite store (WAL). Migrations are idempotent and tracked with PRAGMA user_version."""
+"""SQLite store (WAL). Migrations are idempotent and tracked with PRAGMA user_version.
+
+They are not all purely additive: v12 backfills postings.expires_at for every row that has none,
+so opening an older database through connect() can change data as well as schema.
+"""
 from __future__ import annotations
 
 import json

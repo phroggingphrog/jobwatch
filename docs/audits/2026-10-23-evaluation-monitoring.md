@@ -124,3 +124,35 @@ Rollback is a reviewed source revert preserving approved profile versions, feedb
 genuine choices, fits, selections/results, packages, baselines, human labels, splits,
 audit logs and evaluation reports. Do not delete histories or manually downgrade
 schema metadata. There is no automatic data rollback.
+
+
+## Post-merge verification (2026-10-23)
+
+Added after the merge; the findings above are unchanged.
+
+An independent session reproduced the release claim and then grilled the merged
+source. The full local suite on `8d28ebe` came to **3805 passed, 10 skipped in
+1241.43s**, which reconciles with the 3804/11 recorded above: installing the `mcp`
+extra lets `tests/test_deepagents_runtime.py:312` run instead of skipping (+1 pass,
+−1 skip). Reproducing it needed `--extra browser` as well as `--extra dev` — with the
+dev extra alone the suite aborted on 10 collection errors — and a Chromium build
+matching the pinned playwright. The release-required R/JAGS sampler check could not
+be run at all (no R, Rscript or JAGS), so the R-hat, ESS and MCSE figures above remain
+unreproduced here. The intermediate counts (103, 26, 5, 43, 2, 18/18) are not
+checkable from the tree; the stable-source claim is, and holds: `f94f8c1..8d28ebe`
+touches no `.py`.
+
+Two claims above were verified that no test covered: a baseline without a frozen
+context returns an explicit unavailable state, and a source change during a replay is
+refused. Three were weaker than written and are now repaired in source rather than
+reworded: the 500-case/300-second monitoring cap was enforced only in the CLI, the
+read-only freeze was a CLI convention, and precision@k divided by the number of ranked
+cases, which let a shallow shortlist outscore a deeper, better one.
+
+The verification incident above says "additive migrations". That understates the worst
+case: migration v12 also runs `UPDATE postings SET expires_at = ... WHERE expires_at IS
+NULL` and creates an index, so if the installed database was below v12 the attempt wrote
+posting expiry data, not only schema. There are 16 migrations, so the recorded schema 16
+means fully migrated. The prior version was not recorded, so the delta is still not
+established, and it cannot be re-examined from a clean container, which has no installed
+database.
