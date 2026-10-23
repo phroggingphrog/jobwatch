@@ -162,18 +162,23 @@ Tools (identity is bound by the server, never an argument): `profile_start(uploa
 person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_policy` (read only), `profile_answer`,
 `profile_correct` (both record only the person's own words from their latest message; the prompt forbids inventing
 or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
-when there is nothing to search for) and `profile_confirm`. `profile_confirm` is a gated tool: the human approval is
-bound to the exact `proposal_digest` and `scope_digest` (a changed draft or scope fails `approval_inputs_changed`),
-and model text is never approval. It starts discovery within the scope shown; it authorises no documents, employer
+when there is nothing to search for) and `profile_confirm`. `profile_answer`, `profile_correct` and `profile_confirm`
+are gated tools. For `profile_confirm` the human approval is bound to the exact `proposal_digest` and `scope_digest`;
+for `profile_answer` and `profile_correct` it is bound to the open draft (`proposal_id`, `revision` and the draft's
+digest) and to the exact words or edits, so a draft that moves in between fails `approval_inputs_changed`. A changed
+draft or scope fails the same way, and model text is never approval. It starts discovery within the scope shown; it authorises no documents, employer
 messages or submission. The legacy `/welcome` onboarding leaves unspecified level unknown; generated suggestions still require confirmation.
 
 `profile_answer` and `profile_correct` are refused with `not_person_words` unless every recorded string is (after casefold,
-whitespace collapse and edge-punctuation trim) inside the person's own message for the turn (on a resumed turn: the last human
-message in the thread or a human answer to `ask_human`; none means refused). `profile_start` reserves its background parse
+whitespace collapse and edge-punctuation trim) a clause of the person's own message for the turn, or a span inside one of their
+clauses that their own words affirm: a negation, pending or aspirational word governing the span refuses it, so "I am not a
+citizen" never records "a citizen". The turn's words are the person's message (on a resumed turn: the last human message in the
+thread or a human answer to `ask_human`; none means refused). The check runs again when the approved call executes, so approving
+odd wording still records nothing. `answer_question` applies the same test to the answer it records. `profile_start` reserves its background parse
 against the turn's budget and may start one parse per turn. A draft left `parsing` by a dead worker (no live slot, file older
 than 2 x 180 s) reads back as `draft` with `parse_error` `parse_interrupted`, answers kept. The parse slot frees just after
 the draft turns `draft`, so an immediate new start can briefly see `proposal_in_progress`. A person-stated location does not
-drop a parsed one (both are kept). The optional MCP adapter does not know `profile_confirm` and refuses it (`invalid_chat_interaction`).
+drop a parsed one (both are kept). The optional MCP adapter cannot present these approvals and refuses them (`invalid_chat_interaction`); see the MCP section.
 
 Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
 confirmed scope (`approved.json` has `scope` and `scope_digest`) and the live `profile/` files still match the hashes

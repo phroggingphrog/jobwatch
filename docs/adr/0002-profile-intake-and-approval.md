@@ -52,8 +52,11 @@ over-infer, and a CV gap alone does not establish unemployment.
   person's files (their existing `profile/` text files can be offered), starts the
   proposal, asks the open questions while it is read, shows what it found with
   sources, and asks only the remaining gaps. `profile_answer` and `profile_correct`
-  record a value only if it is the person's own words from their latest message
-  (`not_person_words` otherwise), so the model cannot answer for the person. The
+  record a value only if it is a clause of the person's own words from their latest
+  message, or a span their own clause affirms (`not_person_words` otherwise, so a
+  negated clause never yields its opposite), and each is a gated tool whose human
+  approval is bound to the open draft and the exact words, so the model can neither
+  answer for the person nor record anything they did not approve. The
   confirmation is shown with its scope and limits; `profile_confirm` is a gated
   tool whose human approval is bound to the exact proposal and scope digests, so a
   changed draft fails and model text is never approval. A scope with nothing to

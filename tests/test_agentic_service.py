@@ -1151,6 +1151,18 @@ def _onboarding_llm(script):
     return LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL), seen
 
 
+def _approve_through(turn, result, limit=8):
+    """Approve every interrupt until the turn finishes: recording the person's words is gated now."""
+    for _ in range(limit):
+        if result['status'] != 'interrupted':
+            return result
+        decisions = [{'type': 'approve'} if item['type'] == 'approval' else {'type': 'respond', 'message': 'yes'}
+                     for item in result['interactions']]
+        result = turn(decisions=decisions, human_decision=True, expected_checkpoint=result['checkpoint_id'],
+                      approval_bindings=[item.get('binding') for item in result['interactions']])
+    raise AssertionError('turn did not finish: %s' % result['status'])
+
+
 def _settled(person, pid, timeout=10):
     import time
     from jobwatch.candidate import intake
@@ -1275,7 +1287,8 @@ def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkey
         {'tool': 'profile_status', 'arguments': {}},
         {'tool': 'profile_confirmation', 'arguments': {}},
         {'answer': 'Tell me your work rights.'}])
-    result = chat.dispatch(person=person, thread_id='onb-tools', config=config, llm=llm, message='Help me set up my profile, I want Bookkeeping')
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='onb-tools', config=config, llm=llm, **kw)
+    result = _approve_through(turn, turn(message='Help me set up my profile, I want Bookkeeping'))
     assert result['status'] == 'complete' and result['tools'] == ['profile_start', 'profile_answer', 'profile_answer',
                                                                   'profile_status', 'profile_confirmation'], result
     with users.use(person):
@@ -1323,8 +1336,9 @@ def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
         {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'skill', 'value': 'Python'}]}},
         {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'preference', 'value': {'note': 'Remote only'}}]}},
         {'answer': 'Could you tell me your work rights?'}])
-    chat.dispatch(person=person, thread_id='words', config=config, llm=llm, message='My work rights are Citizen. I know excel.')
-    assert _tool_texts(seen).count('not_person_words') >= 3
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='words', config=config, llm=llm, **kw)
+    _approve_through(turn, turn(message='My work rights are Citizen. I know excel.'))
+    assert _tool_texts(seen).count('not_person_words') >= 3        # approved words are still checked at call time
     with users.use(person):
         now = intake.load_proposal(person, prop.id)
     assert now.revision == prop.revision and now.facts == prop.facts            # nothing was recorded
@@ -1332,7 +1346,8 @@ def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
         {'tool': 'profile_answer', 'arguments': {'question_id': 'q3', 'text': ' citizen. '}},
         {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'skill', 'value': 'Excel'}]}},
         {'answer': 'Noted.'}])
-    chat.dispatch(person=person, thread_id='words2', config=config, llm=llm, message='My work rights are Citizen. I know excel.')
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='words2', config=config, llm=llm, **kw)
+    _approve_through(turn, turn(message='My work rights are Citizen. I know excel.'))
     with users.use(person):
         got = intake.load_proposal(person, prop.id)
     stated = {(f.section, f.value) for f in got.facts if f.actor == 'person'}
@@ -1355,8 +1370,8 @@ def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
         {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'work_rights',
                                                             'value': {'visa': 'a citizen'}}]}},
         {'answer': 'Understood.'}])
-    chat.dispatch(person=person, thread_id='negated-span', config=config, llm=llm,
-                  message='I am not a citizen and I am not willing to relocate interstate.')
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='negated-span', config=config, llm=llm, **kw)
+    _approve_through(turn, turn(message='I am not a citizen and I am not willing to relocate interstate.'))
     assert _tool_texts(seen).count('not_person_words') >= 2
     with users.use(person):
         after = intake.load_proposal(person, prop.id)
@@ -1365,12 +1380,58 @@ def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
         {'tool': 'profile_answer', 'arguments': {'question_id': target,
                                                  'text': 'I am not a citizen and I am not willing to relocate interstate'}},
         {'answer': 'Recorded.'}])
-    chat.dispatch(person=person, thread_id='negated-span-2', config=config, llm=llm,
-                  message='I am not a citizen and I am not willing to relocate interstate.')
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='negated-span-2', config=config, llm=llm, **kw)
+    _approve_through(turn, turn(message='I am not a citizen and I am not willing to relocate interstate.'))
     with users.use(person):
         recorded = intake.load_proposal(person, prop.id)
     stated = {(f.section, f.value) for f in recorded.facts if f.actor == 'person'}
     assert ('work_rights', 'I am not a citizen and I am not willing to relocate interstate') in stated
+
+
+def test_recording_the_persons_words_needs_their_approval_bound_to_the_draft(onboarding):
+    """A recorded fact outranks the parsed CV, closes the question and reaches the employer-facing CV, so the
+    person approves the exact words and the exact draft they go into."""
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from pipeline.agentic import chat
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    person, prop, config = onboarding
+    assert 'profile_answer' in chat.GATED and 'profile_correct' in chat.GATED
+    with users.use(person):
+        questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
+    target = questions['work_rights']
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': 'My work rights are citizen'}},
+        {'answer': 'Recorded.'}])
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='gated-words', config=config, llm=llm, **kw)
+    first = turn(message='My work rights are citizen.')
+    item = first['interactions'][0]
+    assert first['status'] == 'interrupted' and item['type'] == 'approval' and item['operation'] == 'profile_answer'
+    assert item['binding']['proposal_id'] == prop.id and item['binding']['revision'] == prop.revision
+    assert item['binding']['arguments']['text'] == 'My work rights are citizen'
+    with users.use(person):
+        unchanged = intake.load_proposal(person, prop.id)
+    assert unchanged.facts == prop.facts                      # nothing is recorded while the approval is pending
+    done = _approve_through(turn, first)
+    assert done['status'] == 'complete', done
+    with users.use(person):
+        after = intake.load_proposal(person, prop.id)
+    assert ('work_rights', 'My work rights are citizen') in {(f.section, f.value) for f in after.facts if f.actor == 'person'}
+
+    # An approval does not carry over to a draft the person changed in between.
+    llm, seen = _onboarding_llm([
+        {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'skill', 'value': 'Excel'}]}},
+        {'answer': 'Done.'}])
+    turn = lambda **kw: chat.dispatch(person=person, thread_id='stale-draft', config=config, llm=llm, **kw)
+    pending = turn(message='I know Excel')
+    assert pending['status'] == 'interrupted'
+    with users.use(person):
+        moved = intake.load_proposal(person, prop.id)
+        intake.edit(person, prop.id, expected_revision=moved.revision,
+                    edits=[{'op': 'add', 'section': 'skill', 'value': 'Xero'}])
+    with pytest.raises(RuntimeErrorSafe):
+        turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=pending['checkpoint_id'],
+             approval_bindings=[i['binding'] for i in pending['interactions']])
 
 
 def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):
@@ -1386,8 +1447,9 @@ def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):
     turn = lambda **kw: chat.dispatch(person=person, thread_id='resumed', config=config, llm=llm, **kw)
     first = turn(message='I am between roles and want bookkeeping')
     assert first['status'] == 'interrupted'
-    second = turn(decisions=[{'type': 'reject'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
-                  approval_bindings=[i['binding'] for i in first['interactions']])
+    rejected = turn(decisions=[{'type': 'reject'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
+                    approval_bindings=[i['binding'] for i in first['interactions']])
+    second = _approve_through(turn, rejected)           # the two profile_answer calls each ask as well
     assert second['status'] == 'complete', second
     with users.use(person):
         got = intake.load_proposal(person, prop.id)

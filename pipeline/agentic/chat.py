@@ -115,8 +115,8 @@ def job_connection(config, *, write=False):
 
 
 GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview', 'draft_followup', 'submit_application',
-         'profile_confirm','reject_posting','restore_posting','propose_exclusion','confirm_exclusion',
-         'pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
+         'profile_confirm','profile_answer','profile_correct','reject_posting','restore_posting','propose_exclusion',
+         'confirm_exclusion','pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
 
 
 def _tool_arguments(name,args):
@@ -124,6 +124,10 @@ def _tool_arguments(name,args):
         return dict({'op':'add','kind':None,'value':None,'rule_id':None},**args)
     if name=='reject_posting':
         return dict({'reason_text':''},**args)
+    if name=='profile_answer':
+        return {'question_id':args.get('question_id'),'text':args.get('text')}
+    if name=='profile_correct':
+        return {'edits':args.get('edits')}
     return args
 
 
@@ -162,6 +166,17 @@ def _approval_binding(name, args, config):
         return {'digest': hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(), 'run_key': value['snapshot'],
                 'operation': name, 'arguments': args, 'proposal_digest': shown['proposal_digest'],
                 'scope_digest': shown['scope_digest']}
+    if name in ('profile_answer', 'profile_correct'):
+        # Bound to the open draft the words go into and to the exact words, so an approval cannot be replayed
+        # against a different draft or different wording.
+        from jobwatch.candidate import intake
+        proposal = intake.open_proposal(users.current())
+        if proposal is None or proposal.status != 'draft':
+            raise AgenticError('profile_not_ready')
+        value.update(snapshot=f"{proposal.id}:{proposal.revision}:{intake.digest(proposal)}")
+        return {'digest': hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(),
+                'run_key': value['snapshot'], 'operation': name, 'arguments': args,
+                'proposal_id': proposal.id, 'revision': proposal.revision}
     if name == 'submit_application':
         # Bound to the exact reviewed browser fill (jobwatch.apply.submit_confirm), not to evidence or a run key.
         from jobwatch.apply import prepare, submit_confirm
@@ -530,6 +545,13 @@ def _build(person, conn, config, llm, selected, saver, store):
                            'note': f.note, 'sources': [{'line': r.line, 'quote': r.quote} for r in f.sources]} for f in p.facts],
                 'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
 
+    def _approved(name, args):
+        """The person's approval for exactly these words and this draft, re-derived at call time."""
+        binding = scope.approvals.get((name, _identity(args, name))) if scope else None
+        if (binding is None or _tool_arguments(name, args) != _tool_arguments(name, binding['arguments'])
+                or binding != _approval_binding(name, binding['arguments'], config)):
+            raise RuntimeErrorSafe('approval_inputs_changed')
+
     def _said(*texts):
         """Fail closed: every string must be a clause the person wrote this turn, or a span of one that their own
         words affirm, so a negated clause never yields its opposite ("I am not a citizen" never says "a citizen")."""
@@ -608,9 +630,11 @@ def _build(person, conn, config, llm, selected, saver, store):
 
     @tool
     def profile_answer(question_id: str, text: str) -> dict:
-        """Record the person's answer to an open question. text must be the person's own words from their latest message, copied
-        faithfully; never invent, infer or paraphrase a fact, and never answer for them."""
+        """Record the person's answer to an open question, after they approve those exact words. text must be the person's
+        own words from their latest message, copied faithfully; never invent, infer or paraphrase a fact, and never answer
+        for them."""
         from jobwatch.candidate import intake
+        _approved('profile_answer', {'question_id': question_id, 'text': text})
         try:
             _said(text)
             return _draft(_on_latest(lambda p: intake.answer(person, p.id, expected_revision=p.revision,
@@ -620,9 +644,11 @@ def _build(person, conn, config, llm, selected, saver, store):
 
     @tool
     def profile_correct(edits: list[dict]) -> dict:
-        """Record corrections the person asked for: {op:'add',section,value} | {op:'set',fact_id,basis:'evidence',value} |
-        {op:'remove',fact_id}. Values must be what the person said in their latest message; never invent or infer a fact."""
+        """Record corrections the person asked for, after they approve them: {op:'add',section,value} |
+        {op:'set',fact_id,basis:'evidence',value} | {op:'remove',fact_id}. Values must be what the person said in their
+        latest message; never invent or infer a fact."""
         from jobwatch.candidate import intake
+        _approved('profile_correct', {'edits': edits})
         try:
             if type(edits) is not list:
                 raise intake.IntakeError('invalid_edit')
