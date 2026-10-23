@@ -154,3 +154,24 @@ def test_inline_tool_and_continuation_do_not_repeat_paid_work(client, name):
     frames = [json.loads(s[6:]) for s in streamed.text.splitlines() if s.startswith('data: {')]
     assert frames[1]['choices'][0]['delta']['tool_calls'][0]['index'] == 0
     assert frames[2]['choices'][0]['finish_reason'] == 'tool_calls'
+
+
+def test_inline_view_is_emitted_while_native_work_is_running(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    monkeypatch.setenv('JOBWATCH_LIBRECHAT_ENABLED', 'true')
+    release = Event()
+    def blocked(**kwargs):
+        release.wait(5)
+        return {'status': 'complete', 'answer': 'Finished synthetic work'}
+    app = create_api(credentials={RUN: Principal('fixture-progress')},
+        config={'pipeline': {'execution_mode': 'agentic'}}, dispatcher=blocked)
+    with TestClient(app) as api, ThreadPoolExecutor() as executor:
+        future = executor.submit(turn, api, tools=[VIEW])
+        try:
+            response = future.result(timeout=1)
+            assert response.json()['choices'][0]['finish_reason'] == 'tool_calls'
+            assert not release.is_set()
+        finally:
+            release.set()
+            future.result(timeout=3)

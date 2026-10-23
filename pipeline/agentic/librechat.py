@@ -175,6 +175,8 @@ def mount(app, require):
 
         async def settled():
             current = run
+            if view:
+                return current  # mount the panel immediately; it reads durable progress itself
             end = time.monotonic() + 850
             while current['state'] in ('queued', 'running') and time.monotonic() < end:
                 if await request.is_disconnected():

@@ -99,7 +99,13 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
                 break
             run = (await native('/api/agent/runs/' + ident(row[0]))).json()
         profile = (await native('/api/agent/client/profile')).json()
+        selections = []
+        for outcome in (run.get('result') or {}).get('outcomes') or []:
+            if outcome.get('status') == 'selected' and outcome.get('selection_id'):
+                selection = (await native('/api/agent/selections/' + ident(outcome['selection_id']))).json()
+                selections.append(selection)
         return {'run': run, 'profile': profile,
+                'selections': selections,
                 'models': (await native('/api/agent/client/models')).json(),
                 'shortlist': (await native('/api/agent/shortlist')).json()}
 
@@ -133,7 +139,7 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
 
     @server.tool(name='jobwatch_action', title='Confirm a Jobwatch action',
                  meta={'ui': {'visibility': ['app']}}, annotations={'readOnlyHint': False})
-    async def action(action: Literal['respond', 'cancel', 'retry', 'models', 'upload_ticket',
+    async def action(action: Literal['respond', 'cancel', 'retry', 'cancel_selection', 'models', 'upload_ticket',
                                     'parse_uploads', 'profile_answer', 'profile_edit', 'profile_confirm',
                                     'download_ticket'], arguments: dict):
         """Human app action only. LibreChat displays the exact arguments before confirmation."""
@@ -147,6 +153,10 @@ def create_server(*, credentials=None, base_url=None, origin=None, transport=Non
             if a:
                 raise RuntimeErrorSafe('invalid_arguments')
             res = await native('/api/agent/runs/' + ident(target) + '/' + action, method='POST', human=True, run=True)
+        elif action == 'cancel_selection':
+            if a:
+                raise RuntimeErrorSafe('invalid_arguments')
+            res = await native('/api/agent/selections/' + ident(target) + '/cancel', method='POST', human=True)
         elif action == 'models':
             res = await native('/api/agent/client/models', method='POST', body=a, human=True)
         elif action == 'upload_ticket':

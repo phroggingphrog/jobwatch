@@ -118,3 +118,33 @@ def test_simple_browser_upload_binds_capability_without_preflight(native):
     assert response.json()['sha256']==spec['sha256']
     assert client.post('/api/agent/client/upload',headers=h,content=body).status_code==401
     assert client.post('/api/agent/client/upload',headers=h,content=b'bad\n'+data).status_code==401
+
+
+def test_panel_follows_canonical_selection_when_child_is_dispatched(monkeypatch):
+    monkeypatch.setenv('JOBWATCH_LIBRECHAT_ENABLED','true')
+    monkeypatch.setenv('JOBWATCH_MCP_APP_ENABLED','true')
+    monkeypatch.setenv('JOBWATCH_APP_ORIGIN',ORIGIN)
+    api=create_api(credentials=CREDS,config={'pipeline':{'execution_mode':'agentic'}})
+    selected={'id':'selection-fixture','state':'pending_dispatch','run_id':None}
+    child={'id':'child-fixture','state':'completed','artifacts':[{'id':'doc-fixture','kind':'cv'}]}
+    seen=[]
+    class Routed(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            if request.url.path=='/api/agent/selections/selection-fixture':
+                seen.append(request.headers['authorization'])
+                assert request.method=='GET'
+                return httpx.Response(200,json=selected)
+            return await httpx.ASGITransport(app=api).handle_async_request(request)
+    with APIStore('app-one') as store:
+        thread=store.create_thread('synthetic')['id']
+        run=store.enqueue(thread,{'message':'synthetic'},'selection-fixture')
+        store.finish(run,{'outcomes':[{'status':'selected','selection_id':'selection-fixture','run_id':None}]})
+    server=create_server(credentials=CREDS,origin=ORIGIN,transport=Routed())
+    with TestClient(server.http_app(path='/mcp',stateless_http=True)) as client:
+        def read():
+            result=rpc(client,HUMAN,'resources/read',{'uri':'jobwatch://runs/'+run})['result']
+            return json.loads(result['contents'][0]['text'])
+        assert read()['selections'][0]['run_id'] is None
+        selected.update(state='completed',run_id=child['id'],run=child)
+        assert read()['selections'][0]['run']['artifacts']==child['artifacts']
+        assert seen==['Bearer '+HUMAN]*2
