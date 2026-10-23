@@ -43,7 +43,9 @@ def read_regular_file(path: Path, maximum_bytes: int) -> bytes:
     components = absolute.parts[1:]
     if not components:
         raise ValueError
-    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    # Traversal needs a directory handle, not permission to list its contents.
+    # O_PATH also works under service profiles that forbid reading the root directory.
+    directory_flags = getattr(os, "O_PATH", os.O_RDONLY) | os.O_DIRECTORY | os.O_NOFOLLOW
     file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
     parent_fd = os.open(os.path.sep, directory_flags)
     try:
