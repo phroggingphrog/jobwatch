@@ -32,7 +32,8 @@ def require_route(llm, model, *, embedding=False):
             or base_url.rstrip('/') != model_choice.SERVER_URL.rstrip('/')):
         raise RuntimeErrorSafe('gateway_not_allowed')
     allowed = embedding_model_allowed(model) if embedding else (
-        type(model) is str and bool(_PAID.fullmatch(model))
+        type(model) is str and model_choice.refusal(model) is None
+        and model != QWEN_EMBEDDING_MODEL
         and not any(x in model.lower() for x in ('free', 'stealth', 'opus', 'astra')))
     if not allowed:
         raise RuntimeErrorSafe('model_not_allowed')

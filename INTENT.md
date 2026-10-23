@@ -301,3 +301,22 @@ host file attachments and model selection. Generated interfaces carry no approva
 submission authority; canonical human review and confirmed Submit remain separate.
 This direction supersedes the earlier requirement for a dashboard-style MCP App as
 the ordinary conversation interface. Existing saved resources remain readable.
+
+## Owner-controlled OmniRoute model selection
+
+Owner direction on 2026-10-24:
+
+> just let me configure it myself via omniroute
+
+> can you change it and decide with the current omniroute combo
+
+> also deepseek flash and luna dont forget we can use that too
+
+> bypass and remove the block
+
+Choose Jobwatch role routes from the existing OmniRoute combos, including DeepSeek
+Flash and Luna. Accept valid combo names directly instead of requiring an
+OpenAI/Claude/Google provider prefix. The owner controls the concrete subscription
+and model behind each combo in OmniRoute. Preserve the configured gateway,
+per-person settings, existing excluded route classes and independent embedding
+policy. Select observed working routes and report unavailable combo paths clearly.

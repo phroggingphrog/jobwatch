@@ -675,3 +675,13 @@ included in its exact pipeline run key. They remain writing instructions, never 
 facts. Canonical route, budget, claim verification, review and packaging gates apply.
 The client retains unsaved form/model choices through API reconnects and provides a
 text fallback inside chat; it never directs a user to the website as the fallback.
+
+## Configured OmniRoute combo names
+
+The owner removed the provider-prefix restriction on 2026-10-24 so existing
+OmniRoute combos such as `deepseek-flash`, `distiller` and `openai/luna` can be
+selected directly. Chat/reader routes accept valid model or combo IDs on the exact
+configured loopback gateway. The existing free/stealth/Opus/Astra exclusions and
+separate embedding allowlist remain. Gateway routing remains authoritative for
+whether an ID exists and which subscription serves it; the native catalog lists
+available routes. Per-person role choices remain runtime settings.

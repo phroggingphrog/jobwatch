@@ -68,8 +68,9 @@ def model_catalog(person, config):
                 require_route(llm, model)
             except RuntimeErrorSafe:
                 continue
-            options.append({'id': model, 'label': model.split('/', 1)[1].replace('-', ' ').title(),
-                            'provider': model.split('/', 1)[0].title()})
+            options.append({'id': model,
+                            'label': model.split('/', 1)[-1].replace('-', ' ').title(),
+                            'provider': model.split('/', 1)[0].title() if '/' in model else 'OmniRoute'})
         result = {'options': sorted({r['id']: r for r in options}.values(), key=lambda r: r['id']),
                   'catalog_available': True}
         _MODEL_CATALOG[cache_key] = (time.monotonic(), result)

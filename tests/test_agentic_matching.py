@@ -89,3 +89,47 @@ def test_comparison_rejects_group_leakage_and_snapshot_mismatch(evaluation):
     case['predictions']['revised-version']['evaluation']['run_key']['evidence_hash'] = 'e'*64
     with pytest.raises(AgenticError, match='comparison_identity_mismatch'):
         compare_matching_runs([case])
+
+
+@pytest.mark.parametrize('model', ['deepseek-flash', 'deepseek-flash-fast', 'openai/luna', 'distiller', 'automated-model', 'my-paid-combo'])
+def test_owner_approved_paid_combos_use_only_the_configured_gateway(model):
+    from pipeline.agentic import chat
+    llm = LLM(keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    require_route(llm, model)
+    chat._route(llm, model)
+    other = LLM(keys=['synthetic'], base_url='https://unapproved.example/v1')
+    with pytest.raises(AgenticError, match='gateway_not_allowed'):
+        require_route(other, model)
+
+
+@pytest.mark.parametrize('model', ['deepseek-flash:free', 'deepseek-flash/free',
+                                  'free-stack', 'stealth-stack', '../bad-model', '', 'openai/astra', 'claude/opus'])
+def test_configured_combo_names_preserve_denied_route_boundaries(model):
+    llm = LLM(keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    with pytest.raises(AgenticError, match='model_not_allowed'):
+        require_route(llm, model)
+
+
+def test_chat_combo_exception_does_not_authorise_embeddings():
+    llm = LLM(keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    with pytest.raises(AgenticError, match='model_not_allowed'):
+        require_route(llm, 'deepseek-flash', embedding=True)
+
+
+def test_model_catalog_labels_paid_bare_combo_without_losing_other_options(monkeypatch):
+    from pipeline.agentic import client_api, service
+    llm = LLM(keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    monkeypatch.setattr(service, 'configured_llm', lambda config: llm)
+    monkeypatch.setattr(model_choice, 'chosen', lambda person: {})
+    client_api._MODEL_CATALOG.clear()
+    class Response:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            return {'data': [{'id': x} for x in ['openai/sol', 'deepseek-flash', 'openai/luna', 'free-stack']]}
+    monkeypatch.setattr('requests.Session.get', lambda *args, **kwargs: Response())
+    catalog = client_api.model_catalog('synthetic-catalog', {'chat': {'model': 'openai/sol'}})
+    assert catalog['catalog_available'] is True
+    assert {row['id'] for row in catalog['options']} == {'openai/sol', 'deepseek-flash', 'openai/luna'}
+    assert next(row for row in catalog['options'] if row['id'] == 'deepseek-flash') == {
+        'id': 'deepseek-flash', 'label': 'Deepseek Flash', 'provider': 'OmniRoute'}

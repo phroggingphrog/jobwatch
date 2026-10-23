@@ -1079,7 +1079,7 @@ def _bodies_after(fake_llm, run):
     return exc.value.code
 
 
-@pytest.mark.parametrize('model', ['openrouter/free-model', 'claude/opus-4', 'gpt-4o'])
+@pytest.mark.parametrize('model', ['openrouter/free-model', 'claude/opus-4', 'stealth-stack'])
 def test_every_parse_path_refuses_a_model_that_is_not_an_approved_paid_route(person, fake_llm, upload_id, model):
     draft = intake.propose(person, [upload_id], fake_llm)                 # allowed while the reader model is paid
     model_choice.set_models({'reader': model}, person)
