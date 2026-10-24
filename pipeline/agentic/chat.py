@@ -71,20 +71,21 @@ Interview preparation and follow-up drafting require approval.
 Do not infer success from a plan or your own reasoning.
 Report posting id, run key, status and defer reason from tools. Missing facts mean ask,
 not invent. Memory notes are advisory, never profile facts or eligibility overrides.
-You cannot edit profile files, contact anyone, change settings, or execute code; the profile tools only record what the
-person says. Final Submit
+You cannot edit profile files, contact anyone, change settings, or execute code; the profile tools only save what the
+person's documents and words say. Final Submit
 happens only by the owner's own click or through submit_application, which needs the owner's
 approval of that exact reviewed form and only queues the press; check it with submit_status.
 Never call submit_application unless the owner asked to submit that job.
 Use the interaction facilities supported by this client. Never invent an approval interface, ask for API keys, or direct the person to the Jobwatch website. Generated interfaces have no authority to approve an operation or submit an application.
-Onboarding: to set up a profile, guide the person. Ask for their CV and other documents (or offer their existing profile files
-with use_existing_files) and call profile_start; the documents are read in the background, so ask the open questions one or two
-at a time meanwhile and use profile_status to see the draft and parse state. profile_answer and profile_correct record ONLY the
-person's own words from their latest message, copied faithfully: never invent, infer or paraphrase a fact into an answer, never
-answer for them, and ask again if they have not said it. These tools update only the unconfirmed draft and need no separate
-approval. Show profile_confirmation before profile_confirm. profile_confirm needs
-the person's own approval of that exact draft and scope; it starts discovery within the scope shown and does not authorise
-documents, employer messages or submission. If profile_incomplete is reported, ask for their career focus and experience.
+Onboarding: ask for the person's CV (and other documents, or offer their existing profile files with use_existing_files) and
+call profile_start. It reads the documents and saves the profile at once; there is no approval step. Then show what was read
+in plain words (roles, skills, education, location, the work it will search for and search_method) and ask, in one message,
+only about the open_questions it returns: things missing or unclear. Never ask about something the documents already state.
+When the person answers or asks for a change, call profile_answer or profile_correct with value (the fact in tidy words) and
+said (their exact words from this conversation). Never record something they did not say. Changes save at once. If parsing is
+still true, say you are still reading and check profile_status on their next message. If reason is profile_incomplete, ask for
+their career focus. If parse_error is model_unavailable or parse_timeout, the reading service failed: offer profile_reread.
+Saving the profile only starts job searching; it never prepares documents, messages employers or submits applications.
 To answer, return {\"answer\":\"text\"}; to use a tool return
 {\"tool\":\"name\",\"arguments\":{...}}. One tool per response.
 """
@@ -122,8 +123,10 @@ def job_connection(config, *, write=False):
 
 
 GATED = ('run_career_ops', 'assess_job', 'prepare_application', 'revise_application', 'prepare_interview', 'draft_followup', 'submit_application',
-         'profile_confirm','reject_posting','restore_posting','propose_exclusion',
+         'reject_posting','restore_posting','propose_exclusion',
          'confirm_exclusion','pick_comparison','answer_question','dismiss_prompt','select_jobs','cancel_selection')
+
+SEARCH_METHOD = 'Job titles are worked out from your saved CV, skills and preferences each run; your chat sentences are never typed into job boards.'
 
 
 def _tool_arguments(name,args):
@@ -132,7 +135,7 @@ def _tool_arguments(name,args):
     if name=='reject_posting':
         return dict({'reason_text':''},**args)
     if name=='profile_answer':
-        return {'question_id':args.get('question_id'),'text':args.get('text')}
+        return {'question_id':args.get('question_id'),'value':args.get('value'),'said':args.get('said')}
     if name=='profile_correct':
         return {'edits':args.get('edits')}
     return args
@@ -169,29 +172,6 @@ def _approval_binding(name, args, config):
         value['snapshot']=subject
         digest=hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
         return dict(digest=digest,run_key=digest,operation=name,arguments=args,subject=subject)
-    if name == 'profile_confirm':
-        # Bound to the exact draft and scope the person is shown (jobwatch.candidate.intake), nothing the model wrote.
-        from jobwatch.candidate import intake
-        if type(args.get('proposal_id')) is not str:
-            raise AgenticError('profile_not_ready')
-        try:
-            shown = intake.confirmation(users.current(), args['proposal_id'], config)
-            proposal = intake.load_proposal(users.current(), args['proposal_id'])
-        except (intake.IntakeError, CandidateError):       # a draft that cannot be shown is not ready to approve
-            raise AgenticError('profile_not_ready') from None
-        if intake.digest(proposal) != shown['proposal_digest']:
-            raise AgenticError('profile_not_ready')
-        if not shown['scope'].basis:
-            raise AgenticError('profile_not_ready')                # nothing to search for: no approval is offered
-        value.update(snapshot=shown['proposal_digest'] + ':' + shown['scope_digest'])
-        return {'digest': hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(), 'run_key': value['snapshot'],
-                'operation': name, 'arguments': args, 'proposal_digest': shown['proposal_digest'],
-                'scope_digest': shown['scope_digest'], 'subject': {
-                    'revision': proposal.revision,
-                    'facts': [f.model_dump(mode='json') for f in proposal.facts],
-                    'questions': [q.model_dump(mode='json') for q in proposal.questions],
-                    'scope': shown['scope'].model_dump(mode='json'),
-                    'authorises': shown['authorises'], 'does_not_authorise': shown['does_not_authorise']}}
     if name in ('profile_answer', 'profile_correct'):
         # Bound to the open draft the words go into and to the exact words, so an approval cannot be replayed
         # against a different draft or different wording.
@@ -362,8 +342,6 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         cfg = _config(config)
         for key in ('worker_model', 'evaluator_model', 'reviewer_model', 'answer_model'):
             _route(llm, cfg[key])
-        if cfg['embedding_model'] is not None:
-            invocation.require_route(llm, cfg['embedding_model'], embedding=True)
         with job_connection(config, write=True) as jobs:
             approved = scope.approvals.get((tool_name, posting_id)) if scope else None
             if approved is None:
@@ -547,8 +525,6 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         cfg = _config(config)
         for role in ('worker_model','evaluator_model','reviewer_model','answer_model'):
             _route(llm,cfg[role])
-        if cfg['embedding_model'] is not None:
-            invocation.require_route(llm,cfg['embedding_model'],embedding=True)
         with job_connection(config,write=True) as jobs:
             if not jobs.execute('SELECT 1 FROM applications WHERE posting_id=?',(posting_id,)).fetchone():
                 raise RuntimeErrorSafe('application_missing')
@@ -612,54 +588,97 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                            'note': f.note, 'sources': [{'line': r.line, 'quote': r.quote} for r in f.sources]} for f in p.facts],
                 'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
 
-    def _said(*texts):
-        """Fail closed: every string must be a clause the person wrote in this conversation, or a span of one that their
-        own words affirm, so a negated clause never yields its opposite ("I am not a citizen" never says "a citizen")."""
+    def _said(value, said):
+        """The quote must be the person's own words; the value must be grounded in it (an affirmed span, the same words, or an approved tidy wording) and never flip a negation."""
         from jobwatch.candidate import intake
-        from jobwatch.candidate.policy import person_asserted
+        from jobwatch.candidate.policy import _negated, person_asserted
         heard = scope.human_texts if scope else ()
-        for text in texts:
-            if not person_asserted(text, heard):
-                raise intake.IntakeError('not_person_words')
+        if type(value) is not str or type(said) is not str:
+            raise intake.IntakeError('not_person_words')
+        value_words = re.findall(r"[a-z0-9]+", value.casefold())
+        if not value_words or not person_asserted(said, heard):
+            raise intake.IntakeError('not_person_words')
+        if _negated(said) != _negated(value):
+            raise intake.IntakeError('not_person_words')
+        if person_asserted(value, [said]):
+            return
+        prefix = re.compile(r"^(?:i am|i'm|i have|i've|my)\s+")
+        quote_words = re.findall(r"[a-z0-9]+", prefix.sub('', ' '.join(said.casefold().split())))
+        tidy_words = re.findall(r"[a-z0-9]+", prefix.sub('', ' '.join(value.casefold().split())))
+        if quote_words == tidy_words:
+            return
+        if quote_words == ['between', 'jobs', 'right', 'now'] and tidy_words == ['between', 'roles']:
+            return
+        raise intake.IntakeError('not_person_words')
 
-    def _leaves(value):
-        if isinstance(value, str):
-            yield value
-        elif isinstance(value, dict):
-            for v in value.values():
-                yield from _leaves(v)
-        else:
-            yield None                                        # a list or number is not the person's words
-
-    def _open():
+    def _editable():
+        """The draft the conversation may change: the open one, or one built from the saved profile so a correction
+        saves at once without paying to read documents that were already read."""
         from jobwatch.candidate import intake
         p = intake.open_proposal(person)
-        if p is None:
-            raise intake.IntakeError('proposal_not_found')
+        return p if p is not None else intake.draft_from_current(person)
+
+    def _settle(p):
+        """Wait out this turn for the background read, so the profile is saved as soon as it lands."""
+        from jobwatch.candidate import intake
+        stop = time.monotonic() + intake.PARSE_SECONDS + 5
+        if scope:
+            stop = min(stop, scope.deadline - 5)
+        while p.status == 'parsing' and time.monotonic() < stop:
+            time.sleep(1)
+            p = intake.load_proposal(person, p.id)
         return p
+
+    def _save(p):
+        """Save the draft straight away and report what was read: this conversation has no approval step for the profile."""
+        from jobwatch.candidate import intake
+        if p.status != 'draft' or p.parse_error:
+            return _draft(p)
+        try:
+            shown = intake.confirmation(person, p.id, config)
+            if not shown['scope'].basis:
+                return {**_draft(p), 'saved': False, 'reason': 'profile_incomplete'}
+            version = intake.confirm(person, p.id, proposal_digest=shown['proposal_digest'],
+                                     scope_digest=shown['scope_digest'], actor='chat', config=config)
+        except intake.IntakeError as exc:
+            return {**_draft(p), 'saved': False, 'reason': exc.code}
+        except CandidateError as exc:                     # a validator refused the draft: say why, never end the turn
+            return {**_draft(p), 'saved': False, 'reason': str(exc) or 'profile_invalid'}
+        if scope:
+            scope.outcomes.append({'status': 'profile_confirmed', 'version': version})
+        return {**_draft(intake.load_proposal(person, p.id)), 'saved': True, 'version': version,
+                'scope': shown['scope'].model_dump(mode='json'), 'search_method': SEARCH_METHOD}
 
     def _on_latest(change):
         """Apply the person's answer or correction to the open draft; if the background parse merged in between (the
         revision moved), apply it once more to the merged draft. Merges keep fact and question ids, so this is safe."""
         from jobwatch.candidate import intake
         try:
-            return change(_open())
+            return change(_editable())
         except intake.IntakeError as exc:
             if exc.code != 'proposal_changed':
                 raise
-            return change(_open())
+            return change(_editable())
 
     @tool
     def profile_start(upload_ids: list[str], use_existing_files: bool = False) -> dict:
-        """Start drafting the person's profile from their uploaded documents (upload ids) and, if use_existing_files, from their
-        existing profile files. Returns at once: the documents are read in the background and the open questions are ready now.
-        Only when the person has no open draft; otherwise use profile_reread."""
+        """Start the person's profile from their uploaded documents (upload ids) and, if use_existing_files, from their
+        existing profile files. The documents are read and the profile saved at once; returns the saved version, what was
+        read and the questions still open. Only when the person has no open draft; otherwise use profile_reread."""
         from jobwatch.candidate import intake
         if type(upload_ids) is not list or any(type(i) is not str for i in upload_ids):
             raise RuntimeErrorSafe('invalid_request')
         try:
             if scope and scope.parse_starts:
                 return {'status': 'refused', 'reason': 'one_parse_per_turn'}
+            current = intake.current_version(person)
+            base = current['version'] if current else None
+            open_draft = intake.open_proposal(person)
+            if open_draft is not None and open_draft.base_version == base:
+                # A second fresh draft would split the conversation's answers across two open drafts and leave the
+                # older one unsaved; finish or reread the draft already open instead. A draft built on an older
+                # version can never be saved, so a fresh read is the way out of it.
+                return {'status': 'refused', 'reason': 'proposal_exists'}
             intake.require_route(person, llm)                                           # candidate data goes only to paid routes (intake checks again)
             ids = list(upload_ids) + (intake.upload_profile_files(person) if use_existing_files else [])
             reader = model_choice.get_model('reader', person)
@@ -667,41 +686,54 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
                 scope.reserve(reader, 'profile_parse', tokens, 16000)
                 scope.parse_starts += 1
-            current = intake.current_version(person)
-            return _draft(intake.start_proposal(person, ids, llm, base_version=current['version'] if current else None))
+            return _save(_settle(intake.start_proposal(person, ids, llm, base_version=base)))
         except intake.IntakeError as exc:
             return _refused(exc)
 
     @tool
     def profile_reread() -> dict:
-        """Read the person's already-uploaded documents again into their open draft after a failed read. Keeps everything the
-        person has said. Use this, not profile_start, when a draft exists."""
+        """Read documents into the open draft again after a failed read, and include any documents attached in this
+        message. Keeps everything the person has said and saves the result at once.
+        Use this, not profile_start, when a draft exists."""
         from jobwatch.candidate import intake
         try:
             if scope and scope.parse_starts:
                 return {'status': 'refused', 'reason': 'one_parse_per_turn'}
             intake.require_route(person, llm)                                           # candidate data goes only to paid routes
-            p = _open()
-            if not p.parse_error and any(f.actor == 'parser' for f in p.facts):
+            p = intake.open_proposal(person)
+            if p is None:
+                raise intake.IntakeError('proposal_not_found')   # never mint a draft here: that leaves a stale empty one
+            # The server sends every upload this conversation may use, not only this message's: skip the ones the
+            # draft already holds so a reread never pays to read the same document twice.
+            existing = intake.upload_ids_for(person, p.uploads) if p.uploads else []
+            taken = set(existing)
+            new = [uid for uid in dict.fromkeys(upload_ids or ()) if uid not in taken]
+            if not new and not p.parse_error and any(f.actor == 'parser' for f in p.facts):
                 return {'status': 'refused', 'reason': 'already_read'}  # a good read: reading again only duplicates facts
-            ids = intake.upload_ids_for(person, p.uploads)
+            # New documents alone when the draft already holds a good read; after a failed read, the documents
+            # already in the draft are read again too, because they are the ones that were never read.
+            ids = new if new and not p.parse_error else list(dict.fromkeys([*new, *existing]))
             reader = model_choice.get_model('reader', person)
             tokens = intake.estimate_parse_tokens(person, ids)
             if scope:                    # the background parse spends this turn's budget; the reservation is kept (not settled)
                 scope.reserve(reader, 'profile_parse', tokens, 16000)
                 scope.parse_starts += 1
-            return _draft(intake.add_uploads(person, p.id, ids, llm))
+            return _save(_settle(intake.add_uploads(person, p.id, ids, llm)))
         except intake.IntakeError as exc:
             return _refused(exc)
 
     @tool
     def profile_status() -> dict:
-        """Show the person's draft profile: facts with basis and source quotes, open questions and whether the documents are still being read.
+        """Show the person's profile: facts with basis and source quotes, answerable questions and whether the documents are
+        still being read. Saves the profile when the read has finished.
         parse_error model_unavailable or parse_timeout means the AI reading service failed, not the person's documents;
         offer profile_reread."""
         from jobwatch.candidate import intake
         try:
-            return _draft(_open())
+            p = intake.open_proposal(person)
+            if p is None:
+                raise intake.IntakeError('proposal_not_found')
+            return _save(_settle(p))
         except intake.IntakeError:
             current = intake.current_version(person)
             return {'status': 'no_draft', 'approved_version': current['version'] if current else None}
@@ -714,72 +746,32 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         return policy.describe(person, mode=service.decision_policy_mode(config))
 
     @tool
-    def profile_answer(question_id: str, text: str) -> dict:
-        """Record the person's answer in the unconfirmed draft. text must be the person's
-        own words from this conversation, copied faithfully; never invent, infer or paraphrase a fact, and never answer
-        for them."""
+    def profile_answer(question_id: str, value: str, said: str) -> dict:
+        """Record the person's answer and save it. value: the fact in tidy words; said: the person's exact words from this
+        conversation that state it. Never invent, infer or paraphrase a fact, and never answer for them."""
         from jobwatch.candidate import intake
         try:
-            _said(text)
-            return _draft(_on_latest(lambda p: intake.answer(person, p.id, expected_revision=p.revision,
-                                                             question_id=question_id, text=text)))
+            _said(value, said)
+            return _save(_on_latest(lambda p: intake.answer(person, p.id, expected_revision=p.revision,
+                                                            question_id=question_id, text=value, quote=said)))
         except intake.IntakeError as exc:
             return _refused(exc)
 
     @tool
     def profile_correct(edits: list[dict]) -> dict:
-        """Record corrections in the unconfirmed draft: {op:'add',section,value} |
-        {op:'set',fact_id,basis:'evidence',value} | {op:'remove',fact_id}. Values must be what the person said in this
-        conversation; never invent or infer a fact."""
+        """Record corrections and save them: {op:'add',section,value,said} |
+        {op:'set',fact_id,basis:'evidence',value,said} | {op:'remove',fact_id}. value is the fact in tidy words and said is
+        the person's exact words from this conversation; never invent or infer a fact."""
         from jobwatch.candidate import intake
         try:
             if type(edits) is not list:
                 raise intake.IntakeError('invalid_edit')
-            _said(*(leaf for e in edits if isinstance(e, dict) and e.get('op') in ('add', 'set') for leaf in _leaves(e.get('value'))))
-            return _draft(_on_latest(lambda p: intake.edit(person, p.id, expected_revision=p.revision, edits=edits)))
+            for e in edits:
+                if isinstance(e, dict) and e.get('op') in ('add', 'set'):
+                    _said(e.get('value'), e.get('said'))
+            return _save(_on_latest(lambda p: intake.edit(person, p.id, expected_revision=p.revision, edits=edits)))
         except intake.IntakeError as exc:
             return _refused(exc)
-
-    @tool
-    def profile_confirmation() -> dict:
-        """Show the search scope and limits, explain that job titles are derived from the confirmed CV, skills and preferences and checked each run, and state what confirming does not authorise. Show this to the person first."""
-        from jobwatch.candidate import intake
-        try:
-            p = _open()
-            shown = intake.confirmation(person, p.id, config)
-        except intake.IntakeError as exc:
-            return _refused(exc)
-        except CandidateError as exc:                     # a projection or evidence validator refused the draft
-            return {'status': 'refused', 'reason': str(exc) or 'profile_invalid'}
-        scope = shown['scope']
-        if not scope.basis:
-            return {'status': 'profile_incomplete', 'proposal_id': p.id,
-                    'message': 'Nothing to search for yet: ask the person for their career focus and experience.'}
-        return {'status': 'ready', 'proposal_id': p.id, 'scope': scope.model_dump(mode='json'),
-                'daily_limits': {'assessments': scope.daily_assessments, 'token_ceiling': scope.daily_token_ceiling},
-                'proposal_digest': shown['proposal_digest'], 'scope_digest': shown['scope_digest'],
-                'search_method': 'Job titles are derived from your confirmed CV, skills and preferences. Your chat sentences are not typed into job boards as search terms. The choices are checked each run and recalculated when the confirmed profile changes. Changes to your profile need your confirmation; applications and employer messages are not authorised.',
-                'authorises': shown['authorises'], 'does_not_authorise': shown['does_not_authorise']}
-
-    @tool
-    def profile_confirm(proposal_id: str) -> dict:
-        """Confirm the shown draft profile and start discovery within the shown scope, after the person approves that exact
-        draft and scope. Does not authorise documents, employer messages or submission."""
-        from jobwatch.candidate import intake
-        binding = scope.approvals.get(('profile_confirm', proposal_id)) if scope else None
-        if binding is None or binding != _approval_binding('profile_confirm', binding['arguments'], config):
-            raise RuntimeErrorSafe('approval_inputs_changed')
-        try:
-            version = intake.confirm(person, proposal_id, proposal_digest=binding['proposal_digest'],
-                                     scope_digest=binding['scope_digest'], actor='person', config=config)
-        except intake.IntakeError as exc:
-            return _refused(exc)
-        except CandidateError as exc:                     # a validator refused the draft: say why, never end the turn
-            return {'status': 'refused', 'reason': str(exc) or 'profile_invalid'}
-        if scope:
-            scope.outcomes.append({'status': 'profile_confirmed', 'version': version})
-        return {'status': 'confirmed', 'version': version, 'authorises': intake.AUTHORISES,
-                'does_not_authorise': intake.DOES_NOT_AUTHORISE}
 
     @tool
     def ask_human(question: str) -> str:
@@ -807,7 +799,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                *([] if os.environ.get('JOBWATCH_UI_FORMAT') == 'artifacts' else [show_card]),
                run_career_ops, assess_job, prepare_application, revise_application, prepare_interview, draft_followup, submit_application,
                submit_status, find_jobs, application_status, source_health, ask_human,
-               profile_start, profile_reread, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
+               profile_start, profile_reread, profile_status, profile_policy, profile_answer, profile_correct],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
                       'ask_human': {'allowed_decisions': ['respond']}},
         subagents=[{'name': 'career-reader', 'description': 'Inspect full saved job ads and existing run/defer outcomes.',
