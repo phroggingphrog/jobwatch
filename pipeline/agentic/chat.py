@@ -177,7 +177,7 @@ def _approval_binding(name, args, config):
         try:
             shown = intake.confirmation(users.current(), args['proposal_id'], config)
             proposal = intake.load_proposal(users.current(), args['proposal_id'])
-        except intake.IntakeError:
+        except (intake.IntakeError, CandidateError):       # a draft that cannot be shown is not ready to approve
             raise AgenticError('profile_not_ready') from None
         if intake.digest(proposal) != shown['proposal_digest']:
             raise AgenticError('profile_not_ready')
@@ -682,6 +682,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                 return {'status': 'refused', 'reason': 'one_parse_per_turn'}
             intake.require_route(person, llm)                                           # candidate data goes only to paid routes
             p = _open()
+            if not p.parse_error and any(f.actor == 'parser' for f in p.facts):
+                return {'status': 'refused', 'reason': 'already_read'}  # a good read: reading again only duplicates facts
             ids = intake.upload_ids_for(person, p.uploads)
             reader = model_choice.get_model('reader', person)
             tokens = intake.estimate_parse_tokens(person, ids)
@@ -747,6 +749,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             shown = intake.confirmation(person, p.id, config)
         except intake.IntakeError as exc:
             return _refused(exc)
+        except CandidateError as exc:                     # a projection or evidence validator refused the draft
+            return {'status': 'refused', 'reason': getattr(exc, 'code', '') or 'profile_invalid'}
         scope = shown['scope']
         if not scope.basis:
             return {'status': 'profile_incomplete', 'proposal_id': p.id,
@@ -769,6 +773,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                                      scope_digest=binding['scope_digest'], actor='person', config=config)
         except intake.IntakeError as exc:
             return _refused(exc)
+        except CandidateError as exc:                     # a validator refused the draft: say why, never end the turn
+            return {'status': 'refused', 'reason': getattr(exc, 'code', '') or 'profile_invalid'}
         if scope:
             scope.outcomes.append({'status': 'profile_confirmed', 'version': version})
         return {'status': 'confirmed', 'version': version, 'authorises': intake.AUTHORISES,

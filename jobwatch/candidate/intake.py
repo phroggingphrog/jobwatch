@@ -901,6 +901,12 @@ def _write_profile(pdir: Path, files: dict[str, str]) -> None:
             os.chmod(tmp, 0o600)
         for tmp, dest in staged:
             os.replace(tmp, dest)
+        for name in _STALE_ANNOTATIONS:                     # the version dir keeps the old copy; a live one would keep
+            if name not in files:                           # answering from the text it no longer describes
+                try:
+                    (pdir / name).unlink()
+                except FileNotFoundError:
+                    pass
     finally:
         for tmp, _ in staged:
             try:
@@ -911,6 +917,8 @@ def _write_profile(pdir: Path, files: dict[str, str]) -> None:
 
 _PROJECTED = ("profile.yaml", "master_resume.md", "interests_and_criteria.yaml")
 _EVIDENCE = ("profile.yaml", "master_resume.md")           # the projected files the evidence snapshot reads
+_STALE_ANNOTATIONS = ("evidence.yaml",)    # annotations of the exact text they were made from: a rewritten
+#                                             profile.yaml or resume cannot keep them (snapshot: annotation_invalid)
 
 
 def _finish(person: str, cur: Proposal, pdir: Path, files: dict[str, str]) -> None:
@@ -1001,6 +1009,9 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                     _write_private(stage / "evidence" / name, text.encode("utf-8"))
             carried = {}                                       # unchanged files the projection does not write (adopted extras)
             for name in recorded:
+                if name in _STALE_ANNOTATIONS:
+                    continue            # recorded against the old profile.yaml/master_resume.md: mixed with a fresh
+                                        # projection the validator rejects the set (annotation_invalid), so it is replaced
                 if name not in files and name in _ALLOWED + _PROJECTED and os.path.lexists(pdir / name):
                     carried[name] = read_regular_file(_versions_root(person) / str(nums[-1]) / name, MAX_JSON_BYTES)
                     _write_private(stage / name, carried[name])
