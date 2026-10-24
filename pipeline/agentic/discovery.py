@@ -67,43 +67,57 @@ def refresh(person, config, *, llm=None, conn=None, seconds=240.0):
         if policy is None:
             raise DiscoveryError('no_policy')
         hypotheses = field_hypotheses(person, llm=llm, config=config, policy=policy, conn=conn, seconds=seconds)
+        if not hypotheses:
+            raise DiscoveryError('no_profile_facts')
         plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
+        if not any(plan.queries.values()):
+            raise DiscoveryError('no_profile_facts')
         save_plan(person, plan)
         from jobwatch.occupations.loaders import load_reference_records
         return dict(profile_version=policy.profile_version, hypotheses=len(hypotheses),
                     plan_hash=plan.plan_hash, datasets=load_reference_records().versions)
-
-
 def _current_plan(person):
     policy, plan = policy_for(person), load_plan(person)
-    if policy is None or plan is None or plan.profile_version != policy.profile_version or plan.policy_hash != policy.policy_hash:
+    if (policy is None or plan is None or plan.profile_version != policy.profile_version
+            or plan.policy_hash != policy.policy_hash):
         return policy, None
     return policy, plan
 
 
-def prepare_run(conn, config):
+def prepare_run(conn, config, *, dry_run=False):
     try:
-        scope = intake.discovery_scope(users.current())
+        person = users.current()
+        scope = intake.discovery_scope(person)
         if scope is None:
             return config
-        policy, plan = _current_plan(users.current())
+        if not settings(config)['search_plan']:
+            raise DiscoveryError('confirmed_scope_unavailable')
+        policy = policy_for(person)
         if policy is None:
-            return config
-        cached = _fields().cached_hypotheses(users.current(), config=config) if settings(config)['search_plan'] and plan else None
-        if not settings(config)['search_plan'] or plan is None or cached is None:
-            # Confirmed scope always replaces inherited searches. No paid refresh
-            # is needed to search the person's own approved directions.
-            from types import SimpleNamespace
-            hypotheses = tuple(SimpleNamespace(id=f'scope:{i}', title=value) for i, value in enumerate(scope.basis))
-            plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
+            raise DiscoveryError('no_policy')
+        hypotheses = _fields().cached_hypotheses(person, config=config)
+        if hypotheses is None:
+            if dry_run:
+                raise DiscoveryError('discovery_not_prepared')
+            refresh(person, config, conn=conn)
+            hypotheses = _fields().cached_hypotheses(person, config=config)
+        if not hypotheses:
+            raise DiscoveryError('no_profile_facts')
+        plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
+        if not any(plan.queries.values()):
+            raise DiscoveryError('no_profile_facts')
+        if not dry_run:
+            save_plan(person, plan)
         return replace(config, searches=searches_overlay(plan, config.searches, policy),
                        feeds=feeds_overlay(plan, config.feeds, policy),
                        extra={**config.extra, 'search_plan': plan})
+    except DiscoveryError:
+        raise
     except Exception as exc:
         log.info('discovery prepare: %s', type(exc).__name__)
-        # Never fall back to another person's shared search settings after a
-        # failed confirmed-scope projection.
         raise DiscoveryError('confirmed_scope_unavailable') from None
+
+
 
 
 def recall_filter(base, config):

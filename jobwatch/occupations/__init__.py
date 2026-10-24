@@ -10,6 +10,7 @@ ERROR_CODES = frozenset({
     'daily_budget', 'embedding_not_configured', 'invalid_configuration',
     'invalid_vector', 'no_policy', 'no_profile_facts', 'reference_index_incomplete',
     'reference_unavailable', 'invalid_request', 'no_confirmed_profile',
+    'confirmed_scope_unavailable', 'discovery_not_prepared',
 })
 
 

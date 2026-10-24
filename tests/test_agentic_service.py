@@ -1258,7 +1258,7 @@ def test_authenticated_chat_confirms_the_profile_shown_in_the_conversation(onboa
         review = shown.json()['choices'][0]['message']
         assert 'Bookkeeping' in review['content']
         assert 'daily' in review['content'].lower()
-        assert 'this chat cannot authorize' not in review['content']
+        assert 'job titles are derived' in review['content'].lower() and 'chat sentences are not typed' in review['content'].lower()
         assert intake.current_version(person) is None
         messages += [review, {'role': 'user', 'content': 'Yes, confirm my profile.'}]
         # A model-facing credential cannot turn the same words into a human decision.

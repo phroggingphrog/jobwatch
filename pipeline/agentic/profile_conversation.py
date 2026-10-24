@@ -46,7 +46,8 @@ def prompt(run):
     lines += ['', 'Search scope:', '- Work: ' + '; '.join(scope['basis']),
         '- Locations: ' + ('; '.join(scope['locations']) or 'Not specified'),
         '- Daily limits: ' + str(scope['daily_assessments']) + ' assessments; ' + str(scope['daily_token_ceiling']) + ' tokens.',
-        '', 'Confirming saves this profile and enables discovery and assessment within this scope.',
+        '', 'Job titles are derived from your confirmed CV, skills and preferences. Your chat sentences are not typed into job boards as search terms. The choices are checked each run and recalculated when the confirmed profile changes. Changes to your profile need your confirmation; applications and employer messages are not authorised.',
+        'Confirming saves this profile and enables discovery and assessment within this scope.',
         'It does not approve application documents, employer messages or final Submit.',
         '', 'Do you confirm this profile and search scope? Reply yes to confirm, no to decline, or tell me what to change.']
     return '\n'.join(lines)

@@ -42,14 +42,44 @@ def _unique(items):
     return tuple(out)
 
 
-def search_plan(policy, hypotheses, *, extra_locations=(), max_queries=12) -> SearchPlan:
-    queries = _unique([q.casefold()[:80] for q in policy.focus] + [query_for(h.title) for h in hypotheses])[:max_queries]
+def _search_locations(policy, extra_locations) -> tuple[str, ...]:
+    from pipeline.agentic.location import CAPITALS, regions_named, victorian_place
+    from jobwatch.place import STATES
+
+    negation = re.compile(r'\b(?:no|not|never|avoid|without|except|excluding)\b', re.I)
+    candidates = []
     home = policy.home or {}
-    location = ', '.join(str(home[k]) for k in ('place', 'state') if home.get(k))
-    from pipeline.agentic.location import regions_named
-    locations = _unique([location, *extra_locations])
-    covered = set().union(*(regions_named(loc) for loc in locations)) if locations else set()
-    locations = _unique([*locations, *(r for r in getattr(policy, 'regions', ()) if r not in covered)])
+    inputs = []
+    if isinstance(home, dict):
+        value = ', '.join(str(home[k]) for k in ('place', 'state') if home.get(k))
+        if value:
+            inputs.append(value)
+    for value in extra_locations:
+        if isinstance(value, str) and value.strip():
+            inputs.append(value.strip())
+    permitted = set(getattr(policy, 'regions', ()))
+    for text in inputs:
+        if negation.search(text):
+            continue
+        regions = regions_named(text)
+        if len(regions) > 1:
+            continue
+        if regions == {'VIC'}:
+            place = victorian_place(text)
+            if place and (not permitted or 'VIC' in permitted):
+                candidates.append(place.title() + ', VIC')
+            continue
+        for city, state in CAPITALS.items():
+            if re.search(rf'\b{re.escape(city)}\b', text, re.I) and state in regions and (not permitted or state in permitted):
+                candidates.append(city.title() + ', ' + state)
+                break
+    candidates.extend(region for region in getattr(policy, 'regions', ()) if region in STATES)
+    return _unique(candidates)
+
+
+def search_plan(policy, hypotheses, *, extra_locations=(), max_queries=12) -> SearchPlan:
+    queries = _unique([query_for(h.title) for h in hypotheses])[:max_queries]
+    locations = _search_locations(policy, extra_locations)
     data = dict(profile_version=policy.profile_version, policy_hash=policy.policy_hash,
         queries={key: queries for key in ('seek', 'jora', 'jobspy')},
         locations=locations, hypotheses=tuple(h.id for h in hypotheses))

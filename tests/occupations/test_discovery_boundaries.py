@@ -9,7 +9,7 @@ from jobwatch.candidate import intake
 from jobwatch.candidate.policy import build_policy
 from jobwatch.occupations import hypotheses, loaders
 from jobwatch.occupations.embeddings import VectorStore
-from jobwatch.occupations.plan import load_plan, save_plan, search_plan
+from jobwatch.occupations.plan import load_plan, query_for, save_plan, search_plan
 from pipeline import store
 from pipeline.agentic import discovery, service
 from pipeline.schemas import Stage
@@ -83,18 +83,18 @@ def test_dry_run_collection_uses_unpaid_scope_but_never_refreshes_discovery(tmp_
         raise AssertionError('dry-run reached paid discovery refresh')
 
     original = discovery.prepare_run
-    def prepare(conn, config):
-        called.append('unpaid scope')
-        return original(conn, config)
+    def prepare(conn, config, *, dry_run=False):
+        called.append(dry_run)
+        return original(conn, config, dry_run=dry_run)
     monkeypatch.setattr(discovery, 'prepare_run', prepare)
     monkeypatch.setattr(discovery, 'refresh', forbidden)
     monkeypatch.setattr(collection, 'tier_collectors', lambda *args: [])
     result = collection.run(config, 'fast', dry_run=True, printer=lambda *args: None)
-    assert called == ['unpaid scope']
+    assert called == [True]
     assert result['collectors'] == [] and result['ai'] == {}
 
 
-def test_prepare_run_uses_unpaid_confirmed_scope_when_reference_changes(tmp_path, monkeypatch):
+def test_prepare_run_refreshes_when_reference_changes(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     person = 'boundary-person'
     policy = make_policy()
@@ -104,7 +104,8 @@ def test_prepare_run_uses_unpaid_confirmed_scope_when_reference_changes(tmp_path
     monkeypatch.setattr(loaders, 'load_reference_records', lambda **kwargs: current_reference[0])
     monkeypatch.setattr(hypotheses, 'policy_for', lambda person: policy)
     monkeypatch.setattr(discovery, 'policy_for', lambda person: policy)
-    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(basis=('supplier reconciliation',), locations=(), daily_token_ceiling=1_000_000))
+    scope_text = 'anything related to my CV'
+    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(basis=(scope_text,), locations=(), daily_token_ceiling=1_000_000))
     monkeypatch.setattr(hypotheses, 'reference_store', lambda model=None: VectorStore(tmp_path / 'reference', model))
     monkeypatch.setattr(discovery, 'effective_mode', lambda cfg: 'agentic')
     calls = []
@@ -123,16 +124,16 @@ def test_prepare_run_uses_unpaid_confirmed_scope_when_reference_changes(tmp_path
             fields = hypotheses.field_hypotheses(person, config=config, llm=llm, policy=policy, conn=connection)
             original_plan = search_plan(policy, fields)
             save_plan(person, original_plan)
-            before = len(calls)
             current_reference[0] = current_reference[0].model_copy(update={'versions': {'anzsco2022': 'toy-2', 'onet': 'toy-1'}})
             assert hypotheses.cached_hypotheses(person, config=config) is None
             assert load_plan(person) == original_plan
             monkeypatch.setattr(discovery, 'refresh', refresh)
             prepared = discovery.prepare_run(connection, config)
-            assert refreshed == []
-            assert len(calls) == before
-            assert hypotheses.cached_hypotheses(person, config=config) is None
-            assert prepared.extra['search_plan'].profile_version == original_plan.profile_version
-            assert prepared.extra['search_plan'].policy_hash == original_plan.policy_hash
+            cached = hypotheses.cached_hypotheses(person, config=config)
+            assert refreshed == [person]
+            assert len(calls) > 0
+            assert cached is not None and set(prepared.extra['search_plan'].hypotheses) == {h.id for h in cached}
+            assert scope_text.casefold() not in prepared.extra['search_plan'].queries['seek']
+            assert set(prepared.extra['search_plan'].queries['seek']) == {query_for(h.title) for h in cached if query_for(h.title)}
         finally:
             connection.close()

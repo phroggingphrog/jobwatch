@@ -11,7 +11,7 @@ from conftest import make_config
 
 def policy(**kw):
     return SimpleNamespace(profile_version=1, policy_hash='a' * 64,
-        focus=kw.get('focus', ()), home=kw.get('home'), remote_ok=kw.get('remote_ok', False))
+        focus=kw.get('focus', ()), home=kw.get('home'), regions=kw.get('regions', ()), remote_ok=kw.get('remote_ok', False))
 
 
 def hyps(*titles):
@@ -19,14 +19,25 @@ def hyps(*titles):
 
 
 def test_queries_and_hash_are_stable_deduplicated_and_capped():
-    p = policy(focus=('data analyst',))
+    p = policy(focus=('anything related to my CV',))
     h = hyps('Accountant (General)', 'Bookkeeper', 'Accountant (General)', *[f'Role {i}' for i in range(20)])
     plan = search_plan(p, h)
-    assert plan.queries['seek'][:3] == ('data analyst', 'accountant', 'bookkeeper')
+    assert plan.queries['seek'][:2] == ('accountant', 'bookkeeper')
+    assert 'anything related to my cv' not in plan.queries['seek']
     assert len(plan.queries['seek']) == 12
     assert plan.queries['seek'] == plan.queries['jora'] == plan.queries['jobspy']
     assert plan == search_plan(p, h)
     assert plan.plan_hash != search_plan(p, hyps('Nurse')).plan_hash
+def test_locations_normalize_places_and_keep_approved_regions():
+    p = policy(home={'place': 'Brunswick', 'state': 'VIC'}, regions=('VIC',))
+    plan = search_plan(p, hyps('Nurse'), extra_locations=('anything around Brunswick please', 'Sydney NSW', 'no Melbourne VIC'))
+    assert plan.locations == ('Brunswick, VIC', 'VIC')
+
+
+def test_location_candidates_are_limited_to_named_capitals_and_permitted_regions():
+    p = policy(regions=('WA',))
+    plan = search_plan(p, hyps('Nurse'), extra_locations=('Perth, WA', 'unknown suburb, WA', 'Brisbane, QLD'))
+    assert plan.locations == ('Perth, WA', 'WA')
 
 
 def test_overlay_keeps_settings_and_uses_home_without_mutating_base():

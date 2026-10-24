@@ -54,8 +54,8 @@ pipeline:
     max_batch_jobs: 20
     concurrency: 2
     decision_policy: profile   # only each person's confirmed preferences; absent facts remain unknown
-    # Field and job discovery: defaults below preserve the legacy search/archive behaviour.
-    # search_plan: false
+    # Confirmed profiles use cached CV-derived hypotheses, never chat text as keywords.
+    search_plan: true
     # relevance: shadow       # off | shadow | on; shadow stores judgments but archives nothing
     # dedupe: legacy          # legacy | semantic
     # ordering: legacy        # legacy | hypotheses

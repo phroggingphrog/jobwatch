@@ -742,7 +742,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
 
     @tool
     def profile_confirmation() -> dict:
-        """Show what confirming would start: the search scope, daily limits and what it does not authorise. Show this to the person first."""
+        """Show the search scope and limits, explain that job titles are derived from the confirmed CV, skills and preferences and checked each run, and state what confirming does not authorise. Show this to the person first."""
         from jobwatch.candidate import intake
         try:
             p = _open()
@@ -758,6 +758,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         return {'status': 'ready', 'proposal_id': p.id, 'scope': scope.model_dump(mode='json'),
                 'daily_limits': {'assessments': scope.daily_assessments, 'token_ceiling': scope.daily_token_ceiling},
                 'proposal_digest': shown['proposal_digest'], 'scope_digest': shown['scope_digest'],
+                'search_method': 'Job titles are derived from your confirmed CV, skills and preferences. Your chat sentences are not typed into job boards as search terms. The choices are checked each run and recalculated when the confirmed profile changes. Changes to your profile need your confirmation; applications and employer messages are not authorised.',
                 'authorises': shown['authorises'], 'does_not_authorise': shown['does_not_authorise']}
 
     @tool

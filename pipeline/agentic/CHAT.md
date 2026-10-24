@@ -127,16 +127,27 @@ OmniRoute route and are charged to the confirmed scope's budget.
 | `GET /api/agent/discovery/plan` | Cached search plan, status and discovery flags. |
 | `GET /api/agent/discovery/postings/{posting_id}/relevance` | Latest stored relevance judgment, mode and time; 404 `not_found` when none exists. |
 
-Discovery flags are `pipeline.agentic.search_plan` (default `false`),
-`pipeline.agentic.relevance` (`off | shadow | on`, default `shadow`),
-`pipeline.agentic.dedupe` (`legacy | semantic`, default `legacy`) and
-`pipeline.agentic.ordering` (`legacy | hypotheses`, default `legacy`). Shadow
-judgments archive nothing; screening makes no model or embedding call until
+Discovery flags include `pipeline.agentic.search_plan` (enabled for confirmed
+profile-derived searches), `pipeline.agentic.relevance` (`off | shadow | on`,
+default `shadow`), `pipeline.agentic.dedupe` (`legacy | semantic`, default
+`legacy`) and `pipeline.agentic.ordering` (`legacy | hypotheses`, default
+`legacy`).
+After a person confirms a profile, discovery derives occupational titles from the
+approved CV, skills and preferences. It does not send conversational scope
+sentences to job boards as keywords. Cached hypotheses are validated against the
+approved profile, policy, reference data and embedding model on each preparation;
+changed or missing entries are rebuilt within the existing bounded embedding
+budget. Dry runs only use already-prepared hypotheses and refuse an unprepared
+confirmed profile. Locations use recognized places and the approved region list;
+unknown non-Victorian localities are not guessed. Profile changes still require
+the person's confirmation, and this does not authorize application documents,
+employer messages or submission.
+Shadow judgments archive nothing. Screening makes no model or embedding call until
 fields and a plan have been refreshed. `relevance: on` archives a verified `no`
-as `not_relevant`; `uncertain` proceeds. The exclusion pre-filter archives as
-`excluded_by_rule` from the current confirmed policy in the normal default path. Semantic dedupe and hypothesis ordering use the approved embedding
-route. The tuning defaults are `pipeline.discovery.similar_at: 0.60`,
-`duplicate_cosine: 0.95`, `screen_per_run: 40`, `reconsider_per_run: 20`,
+as `not_relevant`; `uncertain` proceeds. The confirmed-policy exclusion pre-filter
+archives as `excluded_by_rule` in the normal default path. Tuning defaults are
+`pipeline.discovery.similar_at: 0.60`, `duplicate_cosine: 0.95`,
+`screen_per_run: 40`, `reconsider_per_run: 20`,
 `embedding_token_ceiling: 2000000`, `screen_token_ceiling: 300000`, and
 `relevance_model: null` (the configured evaluator model).
 
@@ -144,9 +155,9 @@ The explicit operator commands are `python -m pipeline.agentic.discovery
 refresh --user NAME`, `python -m pipeline.agentic.discovery status --user
 NAME`, and `python -m pipeline.agentic.discovery restore --user NAME`.
 `status` is read-only; `refresh` computes and caches the current profile's
-hypotheses and plan and may make paid embedding calls. Collection always derives unpaid search inputs from
-the current confirmed scope. `search_plan: true` adds current cached occupational hypotheses; missing or stale
-indexes fall back to approved directions without a paid refresh. Seek, Jora and JobSpy rotate every approved
+hypotheses and plan and may make paid embedding calls. Collection prepares searches
+from validated profile-derived hypotheses, refreshing a cache miss only on real
+runs; dry runs refuse unprepared profiles. Seek, Jora and JobSpy rotate every approved
 location within existing request limits. Reddit uses confirmed geography. ATS/RSS/provider inventories remain
 explicitly configured sources; there is no automatic acquisition of new providers. The similarity thresholds are
 uncalibrated, there is no lexical hybrid, and these routes do not establish
