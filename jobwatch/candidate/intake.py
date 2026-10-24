@@ -38,6 +38,7 @@ from ..apply.evidence import norm
 from ..apply import paths as apaths
 from ..apply.paths import ensure_dir
 from ..llm import LLM, DeadlineExceeded, LLMError
+from .contracts import CandidateError
 from ..model_choice import get_model
 from ._private_io import read_regular_file
 from . import projection
@@ -494,7 +495,8 @@ def _merge(cur: Proposal, parsed: list[ProfileFact], asked: list[Question], shas
     same = {(f.section, json.dumps(f.value, sort_keys=True)) for f in cur.facts if f.basis is not Basis.UNKNOWN}
     keep = [f for f in parsed if f.basis is Basis.UNKNOWN or not (
         (f.section in stated and f.section in _ONE_ANSWER) or (f.section, json.dumps(f.value, sort_keys=True)) in same)]
-    covered = stated | {f.section for f in keep if f.basis is not Basis.UNKNOWN}
+    covered = stated | {f.section for f in cur.facts if f.basis is not Basis.UNKNOWN} \
+        | {f.section for f in keep if f.basis is not Basis.UNKNOWN}   # a fact already in the draft retires its question too
     facts = [f for f in cur.facts if not (f.actor == "parser" and f.basis is Basis.UNKNOWN and f.section in covered)]
     for f in keep:
         if f.basis is Basis.UNKNOWN and (f.section in covered or any(x.section == f.section for x in facts)):
@@ -901,12 +903,6 @@ def _write_profile(pdir: Path, files: dict[str, str]) -> None:
             os.chmod(tmp, 0o600)
         for tmp, dest in staged:
             os.replace(tmp, dest)
-        for name in _STALE_ANNOTATIONS:                     # the version dir keeps the old copy; a live one would keep
-            if name not in files:                           # answering from the text it no longer describes
-                try:
-                    (pdir / name).unlink()
-                except FileNotFoundError:
-                    pass
     finally:
         for tmp, _ in staged:
             try:
@@ -999,6 +995,7 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                     "facts": [f.model_dump(mode="json") for f in facts],
                     "open_questions": [q.model_dump(mode="json") for q in open_questions]}
         files = projection.project(approved)
+        dropped_annotations = ()
         root = ensure_dir(_versions_root(person))
         stage = root / (".staging-" + secrets.token_hex(8))
         try:
@@ -1009,15 +1006,26 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                     _write_private(stage / "evidence" / name, text.encode("utf-8"))
             carried = {}                                       # unchanged files the projection does not write (adopted extras)
             for name in recorded:
-                if name in _STALE_ANNOTATIONS:
-                    continue            # recorded against the old profile.yaml/master_resume.md: mixed with a fresh
-                                        # projection the validator rejects the set (annotation_invalid), so it is replaced
                 if name not in files and name in _ALLOWED + _PROJECTED and os.path.lexists(pdir / name):
                     carried[name] = read_regular_file(_versions_root(person) / str(nums[-1]) / name, MAX_JSON_BYTES)
                     _write_private(stage / name, carried[name])
                     if name in _ALLOWED:
                         _write_private(stage / "evidence" / name, carried[name])
-            bundle = snapshot_evidence(stage / "evidence")
+            try:
+                bundle = snapshot_evidence(stage / "evidence")
+            except CandidateError as exc:
+                # A recorded annotation set describes the exact text it was made from. Once the projection rewrites that
+                # text the mixed bundle is invalid (annotation_invalid), so those annotations are replaced instead of
+                # failing the confirmation: a rewritten profile cannot be annotated by the old one.
+                stale = [name for name in carried if name in _STALE_ANNOTATIONS]
+                if str(exc) != "annotation_invalid" or not stale:      # CandidateError carries its code as its message
+                    raise
+                for name in stale:
+                    carried.pop(name)
+                    (stage / name).unlink(missing_ok=True)
+                    (stage / "evidence" / name).unlink(missing_ok=True)
+                dropped_annotations = tuple(stale)
+                bundle = snapshot_evidence(stage / "evidence")
             approved["evidence_bundle_hash"] = bundle.bundle_hash
             approved["file_sha256"] = {k: hashlib.sha256(v).hexdigest() for k, v in sorted(
                 {**{k: t.encode("utf-8") for k, t in files.items()}, **carried}.items())}
@@ -1029,6 +1037,11 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
             shutil.rmtree(stage, ignore_errors=True)
             raise
         _finish(person, cur, pdir, files)
+        for name in dropped_annotations:            # the version keeps a copy; a live one would answer from old text
+            try:
+                (pdir / name).unlink()
+            except FileNotFoundError:
+                pass
     return n
 
 

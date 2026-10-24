@@ -750,7 +750,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         except intake.IntakeError as exc:
             return _refused(exc)
         except CandidateError as exc:                     # a projection or evidence validator refused the draft
-            return {'status': 'refused', 'reason': getattr(exc, 'code', '') or 'profile_invalid'}
+            return {'status': 'refused', 'reason': str(exc) or 'profile_invalid'}
         scope = shown['scope']
         if not scope.basis:
             return {'status': 'profile_incomplete', 'proposal_id': p.id,
@@ -774,7 +774,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         except intake.IntakeError as exc:
             return _refused(exc)
         except CandidateError as exc:                     # a validator refused the draft: say why, never end the turn
-            return {'status': 'refused', 'reason': getattr(exc, 'code', '') or 'profile_invalid'}
+            return {'status': 'refused', 'reason': str(exc) or 'profile_invalid'}
         if scope:
             scope.outcomes.append({'status': 'profile_confirmed', 'version': version})
         return {'status': 'confirmed', 'version': version, 'authorises': intake.AUTHORISES,
