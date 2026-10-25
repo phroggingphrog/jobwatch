@@ -238,7 +238,7 @@ person's jobs DB: code running as the agent API can write that DB, so the approv
 protects the chat path, not a compromised agent process. The approval shows the posting id,
 while the application card reads actual live values and attachments before its separate final Submit confirmation.
 
-`find_jobs`, `application_status` and `source_health` support read-only discovery.
+`find_jobs`, `application_status` and `source_health` support read-only discovery; `jobs_overview` lists jobs with activity, newest first, each with the `task_status` state (no approval).
 The reader can retrieve canonical evidence by source name, hash and explicit line
 pages. The researcher uses saved public employer identity; candidate details cannot
 be supplied as search queries. Approved writing references are retrieved locally.

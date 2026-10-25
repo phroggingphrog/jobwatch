@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime
 
 from jobwatch import users
 from jobwatch.apply import submit_confirm
@@ -42,6 +43,57 @@ def task_card(conn: sqlite3.Connection, posting_id: int) -> dict:
         last = selections[-1]
         return {'posting_id': posting_id, 'state': SELECTION_LABEL.get(last['state'], last['state']), 'selection_id': last['id']}
     return {'posting_id': posting_id, 'state': 'not started'}
+
+
+COUNT_BUCKET = {'draft ready': 'needs_you', 'awaiting browser press': 'needs_you', 'failed': 'needs_info', 'expired': 'needs_info',
+                'outcome unknown': 'outcome_unknown', 'submitted': 'submitted'}
+
+
+def _epoch(value) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _has(conn: sqlite3.Connection, table: str) -> bool:
+    return bool(conn.execute('SELECT 1 FROM sqlite_master WHERE name=?', (table,)).fetchone())
+
+
+def jobs_overview(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
+    """One row per posting with an application, preparation or submit request, newest activity first. Read-only."""
+    seen: dict[int, float] = {}
+
+    def touch(posting_id, at):
+        seen[posting_id] = max(seen.get(posting_id, 0.0), _epoch(at))
+    if _has(conn, 'applications'):
+        for pid, at in conn.execute('SELECT posting_id, updated_at FROM applications'):
+            touch(pid, at)
+    if _has(conn, 'selection_requests'):
+        for manifest, at in conn.execute('SELECT manifest_json, updated_at FROM selection_requests WHERE person=?', (users.current(),)):
+            for pid in json.loads(manifest)['request']['posting_ids']:
+                touch(pid, at)
+    if _has(conn, 'submit_requests'):
+        for pid, at in conn.execute('SELECT posting_id, updated_at FROM submit_requests'):
+            touch(pid, at)
+    rows = []
+    for pid in sorted(seen, key=lambda p: (seen[p], p), reverse=True)[:max(limit, 0)]:
+        post = conn.execute('SELECT company, title FROM postings WHERE id=?', (pid,)).fetchone() or (None, None)
+        score = conn.execute('SELECT score FROM ad_reviews WHERE posting_id=?', (pid,)).fetchone() if _has(conn, 'ad_reviews') else None
+        card = task_card(conn, pid)
+        rows.append({'posting_id': pid, 'employer': post[0], 'title': post[1], 'score': score[0] if score else None,
+                     'state': card['state'], 'detail': card.get('message') or (card.get('submit') or {}).get('reason') or ''})
+    return rows
+
+
+def overview_counts(rows: list[dict]) -> dict:
+    counts = {'needs_you': 0, 'needs_info': 0, 'outcome_unknown': 0, 'submitted': 0}
+    for row in rows:
+        if row['state'] in COUNT_BUCKET:
+            counts[COUNT_BUCKET[row['state']]] += 1
+    return counts
 
 
 def retry_blocked(conn: sqlite3.Connection, posting_id: int) -> str | None:

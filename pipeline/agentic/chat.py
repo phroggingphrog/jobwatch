@@ -623,6 +623,14 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             return task_state.task_card(jobs, posting_id)
 
     @tool
+    def jobs_overview(limit: int = 50) -> list[dict]:
+        """Read-only list of the person's jobs with activity (application, preparation or Submit), newest first, each with
+        employer, title, score and the same plain state as task_status."""
+        from pipeline.agentic import task_state
+        with job_connection(config) as jobs:
+            return task_state.jobs_overview(jobs, limit)
+
+    @tool
     def stop_work(posting_id: int) -> dict:
         """The owner said stop: cancel unpressed preparation and Submit requests for the posting and report what is
         done, cancelled, still in flight or uncertain. Needs no approval because it only removes authority."""
@@ -835,7 +843,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                                  _permissions=permissions)],
         tools=[*feedback_chat.tools(config,scope,_identity,_approval_binding),
                run_career_ops, assess_job, prepare_application, revise_application, prepare_interview, draft_followup, submit_application,
-               submit_status, task_status, stop_work, find_jobs, application_status, source_health, ask_human,
+               submit_status, task_status, jobs_overview, stop_work, find_jobs, application_status, source_health, ask_human,
                profile_start, profile_reread, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm,
                *mcp.tools],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
