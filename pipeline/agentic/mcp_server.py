@@ -220,6 +220,9 @@ def create_server(*, token: str | None = None, person: str | None = None) -> Fas
         return _turn(person=_person_from_request(), operation='continue', thread_id=thread_id,
                      message=message, ctx=ctx)
 
+    from pipeline.agentic import chatgpt_connector
+    chatgpt_connector.register(server, lambda: _person_from_request())
+
     @server.resource('jobwatch://skills/career-ops', name='Career Ops skill',
                      description='Reusable Jobwatch Career Ops instructions and safety boundaries.')
     def career_ops_skill() -> str:
