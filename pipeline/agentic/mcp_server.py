@@ -198,12 +198,23 @@ def create_server(*, token: str | None = None, person: str | None = None) -> Fas
     if not token or len(token) < 32 or not users.valid_name(person):
         raise RuntimeErrorSafe('mcp_configuration_required')
 
+    auth = _JobwatchTokenVerifier(token, person)
+    oauth = None
+    if os.environ.get('JOBWATCH_MCP_OAUTH') == '1':        # off by default; the bearer verifier stays valid either way
+        from fastmcp.server.auth import MultiAuth
+        from pipeline.agentic.mcp_oauth import JobwatchOAuth
+        base_url, passphrase = os.environ.get('JOBWATCH_MCP_PUBLIC_URL'), os.environ.get('JOBWATCH_MCP_OAUTH_PASSPHRASE')
+        if not base_url or not passphrase or len(passphrase) < 16:
+            raise RuntimeErrorSafe('mcp_oauth_configuration_required')
+        oauth = JobwatchOAuth(base_url=base_url, person=person, passphrase=passphrase)
+        auth = MultiAuth(server=oauth, verifiers=[auth])
+
     state_key = hashlib.sha256(b'jobwatch-mcp-request-state\0' + token.encode()).digest()
     server = FastMCP('Jobwatch Career Ops',
         instructions=('Use career_ops_start_chat for a new natural-language Career Ops request. '
                       'Use career_ops_continue_chat with the opaque thread_id returned by the server. '
                       'Human questions and run approvals arrive as MCP elicitation requests; do not invent answers.'),
-        auth=_JobwatchTokenVerifier(token, person),
+        auth=auth,
         request_state_security=RequestStateSecurity(keys=[state_key], ttl=86400),
         mask_error_details=True)
 
@@ -219,6 +230,9 @@ def create_server(*, token: str | None = None, person: str | None = None) -> Fas
             raise RuntimeErrorSafe('invalid_request')
         return _turn(person=_person_from_request(), operation='continue', thread_id=thread_id,
                      message=message, ctx=ctx)
+
+    if oauth is not None:
+        server.custom_route('/oauth/consent', methods=['GET', 'POST'])(oauth.consent)
 
     from pipeline.agentic import chatgpt_connector
     chatgpt_connector.register(server, lambda: _person_from_request())

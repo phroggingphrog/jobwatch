@@ -328,3 +328,94 @@ def test_a_digest_for_one_person_does_not_submit_for_another(reviewed, monkeypat
     with pytest.raises(Exception):
         _call('guest', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
     assert _requests('guest') == []
+
+
+# --- ChatGPT connector stage 4: optional OAuth 2.1 (code + PKCE + dynamic registration) --------------------
+
+PASS = 'correct horse battery'
+
+
+def _oauth_server(monkeypatch):
+    monkeypatch.setenv('JOBWATCH_MCP_OAUTH', '1')
+    monkeypatch.setenv('JOBWATCH_MCP_PUBLIC_URL', 'http://127.0.0.1:8914')
+    monkeypatch.setenv('JOBWATCH_MCP_OAUTH_PASSPHRASE', PASS)
+    return mcp_server.create_server(token=TOKEN, person='owner')
+
+
+def test_oauth_is_off_by_default_and_needs_its_config(monkeypatch):
+    monkeypatch.delenv('JOBWATCH_MCP_OAUTH', raising=False)
+    paths = {getattr(r, 'path', '') for r in mcp_server.create_server(token=TOKEN, person='owner').http_app().routes}
+    assert '/register' not in paths and '/oauth/consent' not in paths
+    monkeypatch.setenv('JOBWATCH_MCP_OAUTH', '1')
+    monkeypatch.delenv('JOBWATCH_MCP_PUBLIC_URL', raising=False)
+    with pytest.raises(RuntimeErrorSafe) as exc:
+        mcp_server.create_server(token=TOKEN, person='owner')
+    assert exc.value.code == 'mcp_oauth_configuration_required'
+
+
+def test_oauth_flow_maps_the_user_to_the_configured_person(monkeypatch):
+    import base64, hashlib
+    from urllib.parse import parse_qs, urlparse
+    from starlette.testclient import TestClient
+    server = _oauth_server(monkeypatch)
+    http = TestClient(server.http_app(), base_url='http://127.0.0.1:8914', follow_redirects=False)
+    assert 'registration_endpoint' in http.get('/.well-known/oauth-authorization-server').json()
+    assert http.get('/.well-known/oauth-protected-resource/mcp').status_code == 200
+    cb = 'https://chatgpt.example/callback'
+    reg = http.post('/register', json={'redirect_uris': [cb], 'client_name': 'Test ChatGPT', 'token_endpoint_auth_method': 'none',
+                                       'grant_types': ['authorization_code', 'refresh_token'], 'response_types': ['code']})
+    assert reg.status_code == 201, reg.text
+    cid = reg.json()['client_id']
+    verifier = __import__('secrets').token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+    auth = http.get('/authorize', params={'response_type': 'code', 'client_id': cid, 'redirect_uri': cb, 'state': 's1',
+                                          'code_challenge': challenge, 'code_challenge_method': 'S256', 'scope': 'jobwatch'})
+    assert auth.status_code == 302 and '/oauth/consent' in auth.headers['location']
+    txn = parse_qs(urlparse(auth.headers['location']).query)['txn'][0]
+    assert 'Allow access' in http.get('/oauth/consent', params={'txn': txn}).text
+    assert 'wrong' in http.post('/oauth/consent', data={'txn': txn, 'passphrase': 'nope'}).text
+    done = http.post('/oauth/consent', data={'txn': txn, 'passphrase': PASS})
+    q = parse_qs(urlparse(done.headers['location']).query)
+    assert done.headers['location'].startswith(cb) and q['state'] == ['s1']
+    bad = http.post('/token', data={'grant_type': 'authorization_code', 'code': q['code'][0], 'client_id': cid,
+                                    'redirect_uri': cb, 'code_verifier': 'x' * 50})
+    assert bad.status_code in (400, 401) and 'code_verifier' in bad.text                           # PKCE verifier mismatch refuses
+    tok = http.post('/token', data={'grant_type': 'authorization_code', 'code': q['code'][0], 'client_id': cid,
+                                    'redirect_uri': cb, 'code_verifier': verifier})
+    assert tok.status_code == 200, tok.text
+    access = tok.json()['access_token']
+
+    async def check():
+        got = await server.auth.verify_token(access)
+        assert got.claims['sub'] == 'owner' or got.subject == 'owner'
+        assert await server.auth.verify_token(TOKEN) is not None       # the bearer token still works
+        assert await server.auth.verify_token('nope') is None
+    asyncio.run(check())
+    again = http.post('/token', data={'grant_type': 'authorization_code', 'code': q['code'][0], 'client_id': cid,
+                                      'redirect_uri': cb, 'code_verifier': verifier})
+    assert again.status_code in (400, 401)                                    # a code works once
+    refreshed = http.post('/token', data={'grant_type': 'refresh_token', 'refresh_token': tok.json()['refresh_token'], 'client_id': cid})
+    assert refreshed.status_code == 200
+    unauth = http.post('/mcp', json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'},
+                       headers={'Accept': 'application/json, text/event-stream'})
+    assert unauth.status_code == 401
+
+
+def test_consent_denied_and_lockout(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    from starlette.testclient import TestClient
+    server = _oauth_server(monkeypatch)
+    http = TestClient(server.http_app(), base_url='http://127.0.0.1:8914', follow_redirects=False)
+    cb = 'https://chatgpt.example/callback'
+    cid = http.post('/register', json={'redirect_uris': [cb], 'token_endpoint_auth_method': 'none'}).json()['client_id']
+    def start():
+        r = http.get('/authorize', params={'response_type': 'code', 'client_id': cid, 'redirect_uri': cb, 'state': 's',
+                                           'code_challenge': 'c' * 43, 'code_challenge_method': 'S256'})
+        return parse_qs(urlparse(r.headers['location']).query)['txn'][0]
+    denied = http.post('/oauth/consent', data={'txn': start(), 'passphrase': PASS, 'deny': '1'})
+    assert 'error=access_denied' in denied.headers['location']
+    txn = start()
+    for _ in range(5):
+        last = http.post('/oauth/consent', data={'txn': txn, 'passphrase': 'bad'})
+    assert last.status_code == 429
+    assert http.post('/oauth/consent', data={'txn': txn, 'passphrase': PASS}).status_code == 400
