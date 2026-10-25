@@ -6,8 +6,12 @@ chat agent's own jobs_overview / task_status tools call.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import secrets
 import sqlite3
+import time
 from urllib.parse import urlparse
 
 from fastmcp import FastMCP
@@ -16,12 +20,16 @@ from fastmcp.tools import ToolResult
 from jobwatch import users
 from jobwatch.config import load_config
 from pipeline.agentic import task_state
-from pipeline.agentic.chat import job_connection
+from pipeline.agentic.chat import dispatch, job_connection
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
 MIME = 'text/html;profile=mcp-app'
 LIST_URI = 'ui://jobwatch/chatgpt-jobs-v1.html'
 DETAIL_URI = 'ui://jobwatch/chatgpt-job-v1.html'
+WORK = {'readOnlyHint': False, 'destructiveHint': False, 'openWorldHint': False, 'idempotentHint': False}
+DECIDE = dict(WORK)
+# Submit sends the application to the employer: destructive and open-world.
+SUBMIT = {'readOnlyHint': False, 'destructiveHint': True, 'openWorldHint': True, 'idempotentHint': False}
 READ_ONLY = {'readOnlyHint': True, 'destructiveHint': False, 'openWorldHint': False, 'idempotentHint': True}
 # The widgets are self-contained: no external scripts, styles or fonts, and they only call this server.
 CSP = {'connectDomains': [], 'resourceDomains': []}
@@ -67,6 +75,7 @@ def detail(person: str, posting_id: int) -> dict:
         review = conn.execute('SELECT score, reason, pros_json, cons_json FROM ad_reviews WHERE posting_id=?',
                               (posting_id,)).fetchone() if has('ad_reviews') else None
         card = task_state.task_card(conn, posting_id)
+        ready_digest = _application_and_digest(conn, posting_id)[1]
         draft = conn.execute('SELECT d.version FROM drafts d JOIN applications a ON a.id=d.application_id '
                              "WHERE a.posting_id=? AND d.status='ready' ORDER BY d.version DESC LIMIT 1",
                              (posting_id,)).fetchone() if has('drafts') and has('applications') else None
@@ -75,7 +84,129 @@ def detail(person: str, posting_id: int) -> dict:
             'score': review['score'] if review else None, 'why_it_fits': (review['reason'] if review else None),
             'pros': _list(review['pros_json']) if review else [], 'cons': _list(review['cons_json']) if review else [],
             'state': card['state'], 'state_detail': card.get('message') or (card.get('submit') or {}).get('reason') or '',
-            'documents_ready': draft is not None, 'draft_version': draft['version'] if draft else None}
+            'documents_ready': draft is not None, 'draft_version': draft['version'] if draft else None,
+            'can_submit': ready_digest is not None and card['state'] in ('draft ready', 'awaiting browser press')}
+
+
+# -- stage 2: hand heavy work to Jobwatch's own agent ---------------------------------------------------------
+_PENDING: dict[str, dict] = {}      # interaction_id -> the interrupt a widget button may answer (memory only)
+PENDING_SECONDS = 3600
+_WIDGET_MODEL_CUTOFF = 'Approve/Reject are widget buttons; do not call decide yourself.'
+_OPS = {'prepare_application': 'Prepare the application', 'revise_application': 'Revise the application'}
+
+
+def _forget_expired() -> None:
+    now = time.time()
+    for key in [k for k, v in _PENDING.items() if v['expires'] <= now]:
+        del _PENDING[key]
+
+
+def _hand_off(person: str, posting_id: int, message: str) -> tuple[dict, dict]:
+    """Run one agent turn. Returns (structured content for the model and widget, widget-only meta)."""
+    if type(posting_id) is not int or posting_id < 1:
+        raise RuntimeErrorSafe('invalid_request')
+    thread_id = secrets.token_urlsafe(32)
+    result = dispatch(person=person, thread_id=thread_id, message=message[:15000])
+    base = {'view': 'work', 'posting_id': posting_id, 'thread_id': thread_id}
+    return _outcome(person, base, result)
+
+
+def _outcome(person: str, base: dict, result: dict) -> tuple[dict, dict]:
+    declined: list[str] = []
+    for _ in range(4):
+        if result.get('status') != 'interrupted':
+            break
+        items = result.get('interactions') or []
+        approvals = [i for i in items if i.get('type') == 'approval']
+        if (len(items) == 1 and len(approvals) == 1 and approvals[0].get('operation') != 'submit_application'
+                and approvals[0].get('binding')):
+            item, interaction_id = approvals[0], secrets.token_urlsafe(16)
+            _forget_expired()
+            _PENDING[interaction_id] = {'person': person, 'thread_id': base['thread_id'], 'item': item,
+                                        'checkpoint_id': result.get('checkpoint_id'),
+                                        'expires': time.time() + PENDING_SECONDS}
+            op = item.get('operation')
+            data = base | {'status': 'awaiting_approval', 'interaction_id': interaction_id, 'operation': op,
+                           'summary': f"Jobwatch wants to {op.replace('_', ' ')} for job {item.get('posting_id')}. "
+                                      'This may use paid model calls and save drafts. It will not submit.',
+                           'note': _WIDGET_MODEL_CUTOFF}
+            # The binding digest goes in widget-only _meta, not in what the model reads.
+            return data, {'binding': item['binding'].get('digest')}
+        # Anything else (several items, a question, a submit approval) cannot be put to the person here:
+        # decline it so the thread stays usable. A rejection authorises nothing.
+        declined += [str(i.get('operation') or i.get('type')) for i in items]
+        result = dispatch(person=person, thread_id=base['thread_id'], human_decision=True,
+                          expected_checkpoint=result.get('checkpoint_id'),
+                          approval_bindings=[i.get('binding') for i in items],
+                          decisions=[{'type': 'reject'} if i.get('type') == 'approval' else
+                                     {'type': 'respond', 'message': 'This client cannot ask the person for that. '
+                                      'Do not infer or invent the answer.'} for i in items])
+    data = base | {'status': 'complete' if result.get('status') != 'interrupted' else 'needs_chat',
+                   'answer': result.get('answer', ''), 'tools': result.get('tools', [])}
+    if declined:
+        data['declined'] = sorted(set(declined))
+    return data, {}
+
+
+def decide(person: str, interaction_id: str, decision: str, binding: str) -> dict:
+    """Answer one pending approval. Only an approval this person was shown, with its own binding digest."""
+    _forget_expired()
+    if decision not in ('approve', 'reject') or type(interaction_id) is not str or type(binding) is not str:
+        raise RuntimeErrorSafe('invalid_request')
+    pending = _PENDING.get(interaction_id)
+    item = pending['item'] if pending else None
+    if (pending is None or pending['person'] != person or item['operation'] == 'submit_application'
+            or not hmac.compare_digest(binding, str(item['binding'].get('digest') or ''))):
+        raise RuntimeErrorSafe('approval_not_found')
+    del _PENDING[interaction_id]                      # one answer per approval
+    result = dispatch(person=person, thread_id=pending['thread_id'], human_decision=True,
+                      expected_checkpoint=pending['checkpoint_id'], approval_bindings=[item['binding']],
+                      decisions=[{'type': decision}])
+    data, meta = _outcome(person, {'view': 'work', 'posting_id': item.get('posting_id'),
+                                   'thread_id': pending['thread_id']}, result)
+    return data | {'decision': decision}, meta
+
+
+# -- stage 3: Submit, only with the digest of the reviewed fill ----------------------------------------------
+def _application_and_digest(conn, posting_id: int):
+    from jobwatch.apply import prepare, submit_confirm
+    from jobwatch.apply.paths import data_dir
+    conn.row_factory = sqlite3.Row
+    row = conn.execute('SELECT id FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
+    if row is None:
+        return None, None
+    try:
+        prepared = prepare.latest_preparation(data_dir(), str(row['id']))
+    except prepare.PreparationRefused:
+        return row['id'], None
+    return row['id'], submit_confirm.digest(prepared)
+
+
+def submit_digest(person: str, posting_id: int) -> str | None:
+    """The reviewed fill's confirmation digest, or None when there is no reviewed fill to confirm."""
+    with users.use(person), job_connection(load_config()) as conn:
+        return _application_and_digest(conn, posting_id)[1]
+
+
+def submit_reviewed(person: str, posting_id: int, confirm_digest: str) -> dict:
+    """Queue the one press for the exact reviewed form. The web process re-checks the live form before pressing."""
+    from jobwatch.apply import submit_confirm
+    if type(posting_id) is not int or posting_id < 1 or type(confirm_digest) is not str:
+        raise RuntimeErrorSafe('invalid_request')
+    with users.use(person), job_connection(load_config(), write=True) as conn:
+        application_id, current = _application_and_digest(conn, posting_id)
+        if current is None:
+            raise RuntimeErrorSafe('submit_not_ready')
+        if not hmac.compare_digest(confirm_digest, current):
+            raise RuntimeErrorSafe('submit_digest_mismatch')
+        from pipeline.agentic import task_state
+        blocked = task_state.retry_blocked(conn, posting_id)
+        if blocked:
+            raise RuntimeErrorSafe(blocked)
+        approval = hashlib.sha256(('widget-submit:' + current).encode()).hexdigest()   # a double click queues once
+        queued = submit_confirm.queue(conn, posting_id=posting_id, application_id=application_id,
+                                      confirm_digest=current, approval=approval)
+    return {'view': 'submit', 'posting_id': posting_id, **queued}
 
 
 def _overview_text(data: dict) -> str:
@@ -110,8 +241,56 @@ def register(server: FastMCP, person_from_request) -> None:
     def job_detail_tool(posting_id: int) -> ToolResult:
         """Employer, title, score, why it fits, state, whether documents are ready, and the ad link for one job.
         Read-only."""
-        data = detail(person_from_request(), posting_id)
-        return ToolResult(content=_detail_text(data), structured_content=data)
+        person = person_from_request()
+        data = detail(person, posting_id)
+        # The Submit digest is for the widget button only: it is in _meta, not in what the model reads.
+        meta = {'submit_digest': submit_digest(person, posting_id)} if data.get('can_submit') else None
+        return ToolResult(content=_detail_text(data), structured_content=data, meta=meta)
+
+    def _work_result(data: dict, meta: dict) -> ToolResult:
+        text = (data['summary'] + ' Waiting for the person to press Approve or Reject in the widget.'
+                if data['status'] == 'awaiting_approval' else
+                (data.get('answer') or 'Done.')[:1500])
+        return ToolResult(content=text, structured_content=data, meta=meta or None)
+
+    @server.tool(name='prepare_application', title='Prepare an application', annotations=WORK, meta={
+        'ui': {'resourceUri': DETAIL_URI}, 'openai/outputTemplate': DETAIL_URI,
+        'openai/widgetAccessible': True,
+        'openai/toolInvocation/invoking': 'Handing to Jobwatch', 'openai/toolInvocation/invoked': 'Jobwatch replied'})
+    def prepare_application_tool(posting_id: int, instructions: str = '') -> ToolResult:
+        """Hand the heavy work of preparing an application (cover letter, CV, form fill) to Jobwatch's own agent.
+        Returns the status and any approval it needs; the person approves with the widget buttons. Never submits."""
+        message = f'Prepare the application for posting {posting_id}.' + (f' Instructions: {instructions}' if instructions else '')
+        return _work_result(*_hand_off(person_from_request(), posting_id, message))
+
+    @server.tool(name='revise_application', title='Revise an application', annotations=WORK, meta={
+        'ui': {'resourceUri': DETAIL_URI}, 'openai/outputTemplate': DETAIL_URI,
+        'openai/widgetAccessible': True,
+        'openai/toolInvocation/invoking': 'Handing to Jobwatch', 'openai/toolInvocation/invoked': 'Jobwatch replied'})
+    def revise_application_tool(posting_id: int, changes: str) -> ToolResult:
+        """Hand a requested revision of an existing application draft to Jobwatch's own agent. Returns the status
+        and any approval it needs; the person approves with the widget buttons. Never submits."""
+        if not changes or not changes.strip():
+            raise RuntimeErrorSafe('invalid_request')
+        return _work_result(*_hand_off(person_from_request(), posting_id,
+                                       f'Revise the application for posting {posting_id}. Changes: {changes}'))
+
+    @server.tool(name='decide', title='Answer an approval (widget button)', annotations=DECIDE, meta={
+        'ui': {'resourceUri': DETAIL_URI, 'visibility': ['app']}, 'openai/widgetAccessible': True,
+        'openai/visibility': 'private'})
+    def decide_tool(interaction_id: str, decision: str, binding: str) -> ToolResult:
+        """Widget buttons only. Approve or reject one pending Jobwatch approval. The model must not call this."""
+        data, meta = decide(person_from_request(), interaction_id, decision, binding)
+        return _work_result(data, meta)
+
+    @server.tool(name='submit_reviewed', title='Submit the reviewed application (widget button)', annotations=SUBMIT,
+                 meta={'ui': {'resourceUri': DETAIL_URI, 'visibility': ['app']}, 'openai/widgetAccessible': True,
+                       'openai/visibility': 'private'})
+    def submit_reviewed_tool(posting_id: int, confirm_digest: str) -> ToolResult:
+        """Widget Submit button only. Sends the reviewed application to the employer if confirm_digest matches the
+        reviewed form. The model must not call this."""
+        data = submit_reviewed(person_from_request(), posting_id, confirm_digest)
+        return ToolResult(content=f"Submit {data['status']} for job {posting_id}.", structured_content=data)
 
     @server.tool(name='task_status', title='Task status', annotations=READ_ONLY)
     def task_status_tool(posting_id: int) -> ToolResult:
@@ -157,7 +336,10 @@ button.back,a.ad{font:inherit;color:var(--focus);background:none;border:0;paddin
 dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 14px;margin:8px 0}dt{color:var(--muted)}dd{margin:0;overflow-wrap:anywhere}
 .pc{margin:4px 0;padding-left:20px;list-style:disc;border:0}.pc li{border:0;padding:1px 0}
 .note{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--card);margin:8px 0}
-.slot{margin-top:12px}
+.slot{margin-top:12px}.btns{display:flex;gap:8px;flex-wrap:wrap}
+.act{font:inherit;min-height:44px;padding:8px 16px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+.act.primary{background:var(--focus);color:var(--bg);border-color:var(--focus);font-weight:600}
+.act.danger{background:var(--bad);color:var(--bg);border-color:var(--bad);font-weight:600}.act:disabled{opacity:.5;cursor:default}
 h1[tabindex]:focus{outline:none}
 </style></head><body>
 <main id="app" aria-live="polite"><h1>Jobwatch</h1><p class="sub">Loading...</p></main>
@@ -174,6 +356,7 @@ return new Promise(function(res,rej){pending[id]={res:res,rej:rej};setTimeout(fu
 function callTool(name,args){
 if(window.openai&&window.openai.callTool)return window.openai.callTool(name,args);
 return request('tools/call',{name:name,arguments:args})}
+function mt(r){return r&&(r._meta||r.meta||(r.result&&r.result._meta))||{}}
 function sc(r){return r&&(r.structuredContent||(r.result&&r.result.structuredContent))||null}
 var COUNTS=[['needs_you','need you'],['needs_info','need info'],['outcome_unknown','outcome unknown'],['submitted','submitted']];
 function countsText(c){var p=[];COUNTS.forEach(function(k){if(c&&c[k[0]])p.push(c[k[0]]+' '+k[1])});return p.join(' · ')||'Nothing needs you'}
@@ -186,9 +369,9 @@ var g=el('span','grow');g.appendChild(el('div','t',j.title||'(untitled)'));g.app
 b.appendChild(g);if(j.score!=null)b.appendChild(el('span','score','Score '+j.score));b.appendChild(badge(j.state));
 b.addEventListener('click',function(){open(j.posting_id,b)});li.appendChild(b);ul.appendChild(li)});app.appendChild(ul)}
 function open(id,from){lastFocus=from||null;app.setAttribute('aria-busy','true');
-callTool('job_detail',{posting_id:id}).then(function(r){var d=sc(r);if(d)renderDetail(d,true);else fail()},fail)}
+callTool('job_detail',{posting_id:id}).then(function(r){var d=sc(r);if(d)renderDetail(d,true,mt(r));else fail()},fail)}
 function fail(){app.removeAttribute('aria-busy');app.appendChild(el('p','note','Could not load that job. Try again.'))}
-function renderDetail(d,fromList){app.removeAttribute('aria-busy');app.textContent='';
+function renderDetail(d,fromList,meta){meta=meta||{};app.removeAttribute('aria-busy');app.textContent='';
 if(fromList&&listData){var back=el('button','back','Back to jobs');back.type='button';back.addEventListener('click',function(){renderList(listData);
 var rows=app.querySelectorAll('button.row');for(var i=0;i<rows.length;i++){if(lastFocus&&rows[i].getAttribute('aria-label')===lastFocus.getAttribute('aria-label')){rows[i].focus();break}}});app.appendChild(back)}
 if(!d.found){app.appendChild(el('p',null,'That job was not found.'));return}
@@ -201,15 +384,38 @@ if(d.why_it_fits){app.appendChild(el('h2',null,'Why it fits'));app.appendChild(e
 [['pros','In its favour'],['cons','Against']].forEach(function(k){if(d[k[0]]&&d[k[0]].length){app.appendChild(el('h2',null,k[1]));
 var ul=el('ul','pc');d[k[0]].forEach(function(t){ul.appendChild(el('li',null,t))});app.appendChild(ul)}});
 if(d.ad_url&&/^https?:\/\//.test(d.ad_url)){var a=el('a','ad','Open the job ad');a.href=d.ad_url;a.target='_blank';a.rel='noopener noreferrer';app.appendChild(a)}
-/* STAGE 2/3 SLOT: prepare / revise (stage 2) and the Submit button (stage 3) go here. Stage 1 is read-only: no buttons. */
-var slot=el('div','slot');slot.id='actions-slot';slot.hidden=true;app.appendChild(slot);
+var slot=el('div','slot');slot.id='actions-slot';app.appendChild(slot);
+if(d.can_submit&&meta.submit_digest)submitButton(slot,d,meta.submit_digest);else slot.hidden=true;
 h.focus()}
-function show(d){if(!d)return;if(d.view==='detail')renderDetail(d,false);else if(d.view==='list')renderList(d)}
+function msg(slot,text){var n=slot.querySelector('.status');if(!n){n=el('p','note status');n.setAttribute('role','status');slot.appendChild(n)}n.textContent=text}
+function btn(label,cls,fn){var b=el('button','act '+cls,label);b.type='button';b.addEventListener('click',fn);return b}
+function submitButton(slot,d,digest){
+var box=el('div');var go=btn('Submit application','primary',function(){
+box.textContent='';box.appendChild(el('p','note','This sends your application for '+(d.title||'this job')+' at '+(d.employer||'the employer')+' exactly as filled and reviewed. Nothing is sent if the form changed.'));
+var row=el('div','btns');row.appendChild(btn('Send to employer','danger',function(){
+row.querySelectorAll('button').forEach(function(x){x.disabled=true});
+callTool('submit_reviewed',{posting_id:d.posting_id,confirm_digest:digest}).then(function(r){var s=sc(r)||{};
+msg(slot,s.status==='queued'?'Queued. Jobwatch presses Submit within 15 minutes if the form is unchanged.':'Submit status: '+(s.status||'unknown')+'.')},
+function(){msg(slot,'Not submitted. The reviewed form may have changed; open the job again.')})}));
+row.appendChild(btn('Cancel','',function(){box.textContent='';box.appendChild(go)}));box.appendChild(row)});
+box.appendChild(go);slot.appendChild(box)}
+function renderWork(d,meta){app.removeAttribute('aria-busy');app.textContent='';
+var h=el('h1',null,d.status==='awaiting_approval'?'Approval needed':'Jobwatch update');h.tabIndex=-1;app.appendChild(h);
+var slot=el('div','slot');slot.id='actions-slot';
+if(d.status==='awaiting_approval'){app.appendChild(el('p',null,d.summary));
+var row=el('div','btns');['approve','reject'].forEach(function(k){row.appendChild(btn(k==='approve'?'Approve':'Reject',k==='approve'?'primary':'',function(){
+row.querySelectorAll('button').forEach(function(x){x.disabled=true});
+callTool('decide',{interaction_id:d.interaction_id,decision:k,binding:meta.binding||''}).then(function(r){var n=sc(r);if(n)renderWork(n,mt(r));else msg(slot,'No reply.')},
+function(){msg(slot,'That approval is no longer available. Ask Jobwatch again.')})}))});slot.appendChild(row)}
+else{app.appendChild(el('p',null,d.decision==='reject'?'Rejected. Nothing was done.':(d.answer||'Done.')));
+if(d.declined)app.appendChild(el('p','note','Jobwatch could not ask you about: '+d.declined.join(', ')+'.'))}
+app.appendChild(slot);h.focus()}
+function show(d,m){if(!d)return;if(d.view==='detail')renderDetail(d,false,m);else if(d.view==='list')renderList(d);else if(d.view==='work')renderWork(d,m||{})}
 window.addEventListener('message',function(ev){if(ev.source!==window.parent)return;var m=ev.data;if(!m||m.jsonrpc!=='2.0')return;
 if(m.id!==undefined&&pending[m.id]){var p=pending[m.id];delete pending[m.id];m.error?p.rej(m.error):p.res(m.result);return}
-if(m.method==='ui/notifications/tool-result')show(m.params&&m.params.structuredContent)},{passive:true});
-window.addEventListener('openai:set_globals',function(){if(window.openai&&window.openai.toolOutput)show(window.openai.toolOutput)});
-if(window.openai&&window.openai.toolOutput)show(window.openai.toolOutput);
+if(m.method==='ui/notifications/tool-result')show(m.params&&m.params.structuredContent,m.params&&m.params._meta)},{passive:true});
+window.addEventListener('openai:set_globals',function(){if(window.openai&&window.openai.toolOutput)show(window.openai.toolOutput,window.openai.toolResponseMetadata)});
+if(window.openai&&window.openai.toolOutput)show(window.openai.toolOutput,window.openai.toolResponseMetadata);
 else request('ui/initialize',{appInfo:{name:'jobwatch',version:'1'},appCapabilities:{},protocolVersion:'2025-06-18'}).then(function(){
 window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized',params:{}},'*')},function(){});
 window.__show=show;

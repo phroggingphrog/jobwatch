@@ -202,3 +202,129 @@ def test_unauthenticated_request_reads_nothing(two_people, monkeypatch):
 
 def test_ad_link_must_be_http():
     assert cc._http_url('javascript:alert(1)') is None and cc._http_url('https://a.example/x') == 'https://a.example/x'
+
+
+# --- ChatGPT connector stages 2 and 3: hand-off, widget approvals, widget-only Submit ----------------------
+
+PREPARED = {'status': 'ready_for_owner', 'run_id': 'r1', 'package_hash': 'p', 'session_id': 's', 'page_url_sha256': 'u',
+            'owner_revision': 1, 'attached_documents': ['cv.pdf'], 'final_control': {'selector': 'b'}, 'form_state': 'f'}
+
+
+def _interrupt(op='prepare_application', digest='d1'):
+    return {'status': 'interrupted', 'checkpoint_id': 'cp1', 'interactions': [{
+        'type': 'approval', 'operation': op, 'posting_id': 1,
+        'binding': {'digest': digest, 'operation': op, 'arguments': {'posting_id': 1}}}]}
+
+
+@pytest.fixture(autouse=True)
+def _clear_pending():
+    cc._PENDING.clear()
+    yield
+    cc._PENDING.clear()
+
+
+def test_prepare_hands_off_and_raises_a_widget_approval_with_the_binding_only_in_meta(two_people, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cc, 'dispatch', lambda **kw: calls.append(kw) or _interrupt())
+    res = _call('owner', 'prepare_application', {'posting_id': 1, 'instructions': 'short letter'}, monkeypatch)
+    sc = res.structured_content
+    assert sc['status'] == 'awaiting_approval' and sc['operation'] == 'prepare_application'
+    assert 'short letter' in calls[0]['message'] and calls[0]['person'] == 'owner'
+    assert 'd1' not in json.dumps(sc) and 'd1' not in res.content[0].text      # the model never sees the binding
+    assert res.meta['binding'] == 'd1'
+
+
+def test_decide_needs_the_binding_the_person_and_is_single_use(two_people, monkeypatch):
+    seen = []
+    def fake(**kw):
+        seen.append(kw)
+        return _interrupt() if 'message' in kw else {'status': 'complete', 'answer': 'Draft saved.', 'tools': []}
+    monkeypatch.setattr(cc, 'dispatch', fake)
+    sc = _call('owner', 'prepare_application', {'posting_id': 1}, monkeypatch).structured_content
+    iid = sc['interaction_id']
+    with pytest.raises(Exception):
+        _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'wrong'}, monkeypatch)
+    with pytest.raises(Exception):                                  # another person cannot answer it
+        _call('guest', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'd1'}, monkeypatch)
+    assert len(seen) == 1
+    done = _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'd1'}, monkeypatch)
+    assert done.structured_content['answer'] == 'Draft saved.' and seen[1]['decisions'] == [{'type': 'approve'}]
+    assert seen[1]['expected_checkpoint'] == 'cp1' and seen[1]['human_decision'] is True
+    with pytest.raises(Exception):
+        _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'd1'}, monkeypatch)
+
+
+def test_a_submit_approval_from_the_agent_is_never_put_to_the_widget(two_people, monkeypatch):
+    seen = []
+    def fake(**kw):
+        seen.append(kw)
+        return _interrupt('submit_application') if 'message' in kw else {'status': 'complete', 'answer': 'No.', 'tools': []}
+    monkeypatch.setattr(cc, 'dispatch', fake)
+    sc = _call('owner', 'revise_application', {'posting_id': 1, 'changes': 'shorter'}, monkeypatch).structured_content
+    assert sc['status'] == 'complete' and sc['declined'] == ['submit_application']
+    assert seen[1]['decisions'] == [{'type': 'reject'}] and not cc._PENDING
+
+
+def test_tool_annotations_and_widget_only_visibility():
+    server = mcp_server.create_server(token=TOKEN, person='owner')
+    async def go():
+        async with Client(server) as c:
+            return {t.name: t for t in await c.list_tools()}
+    by = asyncio.run(go())
+    assert by['submit_reviewed'].annotations.destructive_hint is True
+    assert by['submit_reviewed'].meta['ui']['visibility'] == ['app'] and by['decide'].meta['ui']['visibility'] == ['app']
+    for name in ('prepare_application', 'revise_application'):
+        assert by[name].annotations.read_only_hint is False and by[name].annotations.destructive_hint is False
+
+
+@pytest.fixture
+def reviewed(two_people, monkeypatch):
+    from jobwatch.apply import prepare
+    monkeypatch.setattr(prepare, 'latest_preparation', lambda root, app_id: dict(PREPARED))
+    from jobwatch.apply import submit_confirm
+    return submit_confirm.digest(PREPARED)
+
+
+def _requests(person):
+    with users.use(person):
+        conn = dbm.connect(users.db_path())
+        rows = conn.execute('SELECT posting_id, digest FROM submit_requests').fetchall() \
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() else []
+        conn.close()
+    return rows
+
+
+def test_submit_requires_the_digest_of_the_reviewed_form(reviewed, monkeypatch):
+    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    assert d.structured_content['can_submit'] is True
+    assert d.meta['submit_digest'] == reviewed and reviewed not in json.dumps(d.structured_content) + d.content[0].text
+    # a model-style call with no digest, an empty one, or a wrong one refuses and queues nothing
+    for args in ({'posting_id': 1}, {'posting_id': 1, 'confirm_digest': ''}, {'posting_id': 1, 'confirm_digest': 'a' * 64}):
+        with pytest.raises(Exception):
+            _call('owner', 'submit_reviewed', args, monkeypatch)
+    assert _requests('owner') == []
+    ok = _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
+    assert ok.structured_content['status'] == 'queued'
+    with pytest.raises(Exception):                                  # a second click never queues a second press
+        _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
+    assert len(_requests('owner')) == 1
+
+
+def test_submit_is_per_person_and_needs_a_reviewed_fill(two_people, monkeypatch):
+    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    assert d.structured_content['can_submit'] is False and 'submit_digest' not in (d.meta or {})
+    with pytest.raises(Exception):
+        _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': 'a' * 64}, monkeypatch)
+
+
+def test_a_digest_for_one_person_does_not_submit_for_another(reviewed, monkeypatch):
+    from jobwatch.apply import prepare
+    monkeypatch.setattr(prepare, 'latest_preparation',
+                        lambda root, app_id: dict(PREPARED) if 'owner' in str(root) or str(root).endswith('owner') else None)
+    with users.use('guest'):
+        guest_dir = str(users.user_dir())
+    if 'owner' in guest_dir:
+        pytest.skip('layout does not separate people by name')
+    with pytest.raises(Exception):
+        _call('guest', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
+    assert _requests('guest') == []
