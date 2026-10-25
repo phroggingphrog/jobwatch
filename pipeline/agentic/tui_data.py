@@ -79,9 +79,12 @@ class WebBackend(Backend):
     def _web(self):
         if self._client is None:
             from fastapi.testclient import TestClient
-            from jobwatch.web.app import create_app
-            self._client = TestClient(create_app(self._cfg()), base_url='http://localhost',
+            from jobwatch.web import app as web_app
+            from jobwatch.web.auth_routes import COOKIE, _secret, make_cookie
+            self._client = TestClient(web_app.create_app(self._cfg()), base_url='http://localhost',
                                       headers={'host': 'localhost', 'origin': 'http://localhost'})
+            if _secret():                     # web auth on: call the handlers as this person, like a signed-in browser
+                self._client.cookies.set(COOKIE, make_cookie(self.person))
         return self._client
 
     def _get(self, path: str, **params: Any) -> Any:
