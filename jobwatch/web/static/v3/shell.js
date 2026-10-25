@@ -38,8 +38,9 @@
     var h = document.getElementById("health");
     if (h && NAV.sources_bad !== undefined) {
       h.hidden = false;
-      document.getElementById("healthPip").setAttribute("data-t", NAV.sources_bad ? "warn" : "ok");
-      document.getElementById("healthT").textContent = NAV.sources_bad ? NAV.sources_bad + " source" + (NAV.sources_bad === 1 ? "" : "s") + " failing" : "Sources healthy";
+      var idle = !NAV.sources_bad && NAV.sources_seen === 0;
+      document.getElementById("healthPip").setAttribute("data-t", NAV.sources_bad ? "warn" : idle ? "" : "ok");
+      document.getElementById("healthT").textContent = NAV.sources_bad ? NAV.sources_bad + " source" + (NAV.sources_bad === 1 ? "" : "s") + " failing" : idle ? "No source run yet" : "Sources healthy";
     }
   }
   function refresh() {
