@@ -64,7 +64,7 @@ def box(lines: list[Text], width: int, accent: str | None = None, pad: int = 2, 
         out.append(styled('└' + '─' * (width - 2) + '┘', edge))
     if fill:
         for line in out:
-            line.stylize(f'on {fill}')
+            line.stylize_before(f'on {fill}')
     return out[1:] if accent else out
 
 

@@ -61,7 +61,7 @@ def open_view(app, name: str, arg=None) -> None:
     if name not in classes:
         app._say(f'[dim]{plain(name)} is not available yet[/dim]')
         return
-    while len(app.screen_stack) > 1:
+    while len(app.screen_stack) > app.base_depth():
         app.pop_screen()
     app.push_screen(classes[name](app))
 
@@ -71,11 +71,11 @@ class ViewScreen(Screen):
     kind = ''
     DEFAULT_CSS = f"""
     ViewScreen {{ layout: vertical; background: {BG}; }}
-    #navrow {{ height: 1; }}
+    #navrow {{ height: 1; padding: 0 1; }}
     #scroller {{ height: 1fr; }}
-    #viewbody {{ height: auto; padding: 1 1 0 1; }}
-    #viewhint {{ height: 1; padding: 0 1; color: {MUTED}; }}
-    #viewfoot {{ height: 1; background: {PANEL}; }}
+    #viewbody {{ height: auto; padding: 1 2 0 2; }}
+    #viewhint {{ height: 1; padding: 0 2; color: {MUTED}; }}
+    #viewfoot {{ height: 1; background: {PANEL}; padding: 0 1; }}
     """
 
     def __init__(self, app_ref) -> None:
@@ -159,7 +159,7 @@ class ViewScreen(Screen):
     def redraw(self) -> None:
         if self.size.width == 0:           # not laid out yet; on_resize draws it
             return
-        width = max(self.size.width, 40)
+        width = max(self.size.width - 2, 40)
         self.query_one('#navrow', Static).update(self.nav(width))
         if self.loading:
             lines, at = [styled('Loading…', MUTED)], 0
@@ -229,6 +229,38 @@ class ViewScreen(Screen):
         pass
 
 
+def big_buttons(specs: list[tuple[str, bool, int]], width: int) -> list[Text]:
+    """Three-row buttons, right aligned: a filled amethyst primary and grey secondaries."""
+    rows = [Text(), Text(), Text()]
+    for label, primary, size in specs:
+        style = f'bold {BG} on {AMETHYST}' if primary else 'bold on #27272a'
+        for n, text in enumerate(['', label.center(size), '']):
+            rows[n].append(text.center(size), style=style)
+            rows[n].append('  ')
+    for row_ in rows:
+        row_.pad_left(max(width - 2 - row_.cell_len, 0))
+    return rows
+
+
+def needs_you(rows: list[dict], inbox: int = 0) -> list[dict]:
+    """What waits on the owner, from the queue rows and the number of mail replies to confirm."""
+    items = []
+    for r in rows:
+        title, who = plain(r.get('title') or 'job'), plain(r.get('employer') or '')
+        state = r.get('state')
+        if state == 'draft ready':
+            items.append({'glyph': '◆', 'head': f'Check and submit: {title}', 'note': f'{who} · CV and letter are ready. You press Submit.', 'pid': r['posting_id'], 'who': who, 'title': title})
+        elif state == 'awaiting browser press':
+            items.append({'glyph': '◆', 'head': f'Press Submit in the browser: {title}', 'note': who, 'pid': r['posting_id'], 'who': who, 'title': title})
+        elif state in ('failed', 'expired'):
+            items.append({'glyph': '✕' if state == 'failed' else '◇', 'head': f'{state.capitalize()}: {title}', 'note': who, 'pid': r['posting_id'], 'who': who, 'title': title})
+        elif state == 'outcome unknown':
+            items.append({'glyph': '?', 'head': f'Check the employer site: {title}', 'note': f'{who} · outcome unknown; nothing resends without you.', 'pid': r['posting_id'], 'who': who, 'title': title})
+    if inbox:
+        items.append({'glyph': '●', 'head': f'{inbox} email repl{"y" if inbox == 1 else "ies"} to confirm', 'note': 'Jobwatch read your mail and needs a yes or no.', 'view': 'inbox'})
+    return items
+
+
 # ------------------------------------------------------------------------------------------------ Today
 class TodayScreen(ViewScreen):
     kind = 'today'
@@ -238,22 +270,7 @@ class TodayScreen(ViewScreen):
         return {'today': self.backend.today(), 'rows': rows}
 
     def needs(self) -> list[dict]:
-        items = []
-        for r in (self.data or {}).get('rows', []):
-            title, who = plain(r.get('title') or 'job'), plain(r.get('employer') or '')
-            state = r.get('state')
-            if state == 'draft ready':
-                items.append({'glyph': '◆', 'head': f'Check and submit: {title}', 'note': f'{who} · CV and letter are ready. You press Submit.', 'pid': r['posting_id']})
-            elif state == 'awaiting browser press':
-                items.append({'glyph': '◆', 'head': f'Press Submit in the browser: {title}', 'note': who, 'pid': r['posting_id']})
-            elif state in ('failed', 'expired'):
-                items.append({'glyph': '✕' if state == 'failed' else '◇', 'head': f'{state.capitalize()}: {title}', 'note': who, 'pid': r['posting_id']})
-            elif state == 'outcome unknown':
-                items.append({'glyph': '?', 'head': f'Check the employer site: {title}', 'note': f'{who} · outcome unknown; nothing resends without you.', 'pid': r['posting_id']})
-        n = self.nav_counts.get('inbox') or 0
-        if n:
-            items.append({'glyph': '●', 'head': f'{n} email repl{"y" if n == 1 else "ies"} to confirm', 'note': 'Jobwatch read your mail and needs a yes or no.', 'view': 'inbox'})
-        return items
+        return needs_you((self.data or {}).get('rows', []), self.nav_counts.get('inbox') or 0)
 
     def best(self) -> list[dict]:
         return ((self.data or {}).get('today') or {}).get('rows', [])[:6]
@@ -494,10 +511,10 @@ class ReviewScreen(ViewScreen):
         inner = w - 6
         lines = [styled('Review before Submit'.center(inner), f'bold {AMETHYST}'), Text(''),
                  Text('The form is filled in. Check every answer and file below.'), Text('')]
-        lines += box([styled(f'▲ This will send your application to {employer}. It cannot be undone.', AMBER)], inner, pad=1)
+        lines += box([styled(f'▲ This will send your application to {employer}. It cannot be undone.', AMBER)], inner, pad=1, edge=AMBER)
         lines.append(Text(''))
         c1, c2 = 24, 46
-        lines.append(join(styled('Field'.ljust(c1), 'bold'), styled('Answer'.ljust(c2), 'bold'), styled('Source', 'bold')))
+        lines.append(styled('Field'.ljust(c1) + 'Answer'.ljust(c2) + 'Source'.ljust(inner - c1 - c2 - 2), f'bold on #27272a'))
         at = 0
         for n, (field, answer, source) in enumerate(data.get('rows', [])):
             line = join(plain(field).ljust(c1), fit(answer, c2 - 2).ljust(c2),
@@ -508,10 +525,10 @@ class ReviewScreen(ViewScreen):
             lines.append(line)
         lines.append(Text(''))
         if self.waiting():
-            lines.append(join(btn('   Submit (a)   ', primary=True), '  ', btn('  Edit (e)  '), '  ', btn('  Reject (r)  ')))
+            lines += big_buttons([('Submit (a)', True, 22), ('Edit (e)', False, 14), ('Reject (r)', False, 14)], inner)
         else:
             lines.append(styled('No Submit is waiting on you. Ask Jobwatch to fill the form; it will stop here for your approval.', MUTED))
-            lines.append(join(btn('  Reject (r)  ', muted=True)))
+            lines += big_buttons([('Reject (r)', False, 14)], inner)
         return [join(pad, ln) for ln in box(lines, w, pad=2, edge='#5b3d8f', fill=PANEL)], at + 4
 
     def footer_keys(self):
@@ -523,7 +540,7 @@ class ReviewScreen(ViewScreen):
     def redraw(self):
         super().redraw()
         foot = self.query_one('#viewfoot', Static)
-        width = max(self.size.width, 40)
+        width = max(self.size.width - 2, 40)
         foot.update(theme.two_col(join(' ', keyhint(self.footer_keys())), join(keyhint([('esc', 'back to Main, nothing sent')]), ' '), width))
 
     def activate(self):
@@ -577,7 +594,7 @@ class ApplicationsScreen(ViewScreen):
         data = self.data or {}
         items = self.items()
         lines = heading('Applications', f'{data.get("total", len(items))} tracked. Jobwatch writes the CV and letter; you check the form and press Submit.') + [Text('')]
-        cols = [('Job', 34), ('State', 20), ('Actions', 50)]
+        cols = [('Job', 36), ('State', 13), ('Actions', 40)]
         lines.append(join(' ', header_row(cols)))
         at = 0
         for n, a in enumerate(items):
@@ -585,26 +602,30 @@ class ApplicationsScreen(ViewScreen):
             job = join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED))
             files = a.get('files') or {}
             state = a.get('status')
-            if on:
-                acts = Text()
+            second = None
+            if on and state in ('interested', 'drafted', 'drafting', 'applied', 'interview', 'assessment', 'offer'):
+                second = Text()
                 if files.get('cv'):
-                    acts = join(acts, btn('CV (c)'), ' ')
+                    second = join(second, btn('CV (c)'), ' ')
                 if files.get('letter'):
-                    acts = join(acts, btn('Letter (l)'), ' ')
+                    second = join(second, btn('Letter (l)'), ' ')
                 if state in ('interested', 'drafted', 'drafting'):
-                    acts = join(acts, btn('Fill the form (f)', primary=True), ' ')
-                acts = join(acts, btn('I applied (i)'))
+                    second = join(second, btn('Fill the form (f)', primary=True), ' ')
+                second = join(second, btn('I applied (i)'))
+                acts = Text('')
             elif state in ('applied', 'interview', 'assessment', 'offer'):
                 acts = join(btn('CV'), ' ', btn('Letter'), ' ', btn('Fill the form'), ' ', btn('Follow-up'), ' ', btn('Interview prep'))
             else:
                 acts = btn('I applied (i)') if state in ('interested',) else Text('')
             at = len(lines) if on else at
-            lines.append(selected(join(row([(job, 34), (app_state(state), 20)]), acts), width, on))
+            lines.append(selected(join(row([(job, 36), (app_state(state), 13)]), acts), width, on))
+            if second is not None:
+                lines.append(selected(join(' ', second), width, True))
         closed = (data.get('closed') or [])
         if closed:
             lines += [Text(''), caps('Closed')]
             for a in closed:
-                lines.append(join(' ', row([(join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED)), 34), (app_state(a.get('status')), 20)])))
+                lines.append(join(' ', row([(join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED)), 36), (app_state(a.get('status')), 13)])))
         if not items and not closed:
             lines.append(styled('No applications yet. Save a job or ask Jobwatch to prepare one.', MUTED))
         lines += [Text(''), join(styled('Prepare an interview from a job link: ', MUTED), styled('n', AMETHYST))]
@@ -666,7 +687,7 @@ class InboxScreen(ViewScreen):
             old = APP_STATE.get(p.get('app_status') or '', ('·', p.get('app_status') or '?', MUTED))
             new = APP_STATE.get(p.get('proposed_status') or '', ('·', p.get('proposed_status') or '?', MUTED))
             conf = f' · {round(float(p["confidence"]) * 100)}% sure' if p.get('confidence') is not None else ''
-            lines += box([join(styled(plain(p.get('title') or 'Application'), 'bold underline'), styled(f' · {plain(p.get("company") or "")}', MUTED)),
+            card = box([join(styled(plain(p.get('title') or 'Application'), 'bold underline'), styled(f' · {plain(p.get("company") or "")}', MUTED)),
                           Text(''),
                           join('This reply looks like:  ', styled(f'{new[0]} {new[1]}', f'bold {AMETHYST}')),
                           Text(''),
@@ -675,7 +696,8 @@ class InboxScreen(ViewScreen):
                           Text(''),
                           join(styled('Approve moves this job from ', MUTED), styled(f'{old[0]} {old[1]}', f'bold'), styled(' to ', MUTED), styled(f'{new[0]} {new[1]}', 'bold'), styled('.', MUTED)),
                           Text(''),
-                          join(btn('Approve (a)', primary=on), ' ', btn('Reject (r)'))], width, accent=AMBER if on else theme.RULE)
+                          join(btn('Approve (a)', primary=on), ' ', btn('Reject (r)'))], width, pad=1)
+            lines += [join(styled('▌', AMBER if on else theme.RULE), line[1:]) for line in card]
             lines.append(Text(''))
         return lines, at
 
@@ -739,7 +761,7 @@ class TableScreen(ViewScreen):
                 chips.append(' ')
         if chips.plain.strip():
             lines += [chips, Text('')]
-        cols = [('Score', 5), ('Title', 25), ('Company', 15), ('Archetype', 12), ('Location', 13), ('Salary', 13), ('Listed', 8), ('State · AI view', 17)]
+        cols = [('Score', 5), ('Title', 29), ('Company', 14), ('Archetype', 12), ('Location', 13), ('Salary', 11), ('Listed', 7), ('State · AI view', 16)]
         lines.append(join(' ', header_row(cols)))
         at = 0
         for n, r in enumerate(rows):
@@ -747,9 +769,9 @@ class TableScreen(ViewScreen):
             ai = {'show': 'good', 'hide': 'hidden', 'review': 'review', 'pending': 'waiting'}.get(ai, ai)
             state = row_state(r)
             state.append(f' · {ai}' if ai else '', style=MUTED)
-            line = row([(score_cell(r.get('score5')), 5), (plain(r.get('title')), 25), (plain(r.get('company')), 15),
+            line = row([(score_cell(r.get('score5')), 5), (plain(r.get('title')), 29), (plain(r.get('company')), 14),
                         (plain(r.get('archetype') or '-'), 12), (plain(r.get('where') or r.get('location') or ''), 13),
-                        (plain(r.get('salary') or ''), 13), (plain(r.get('listed_ago') or '')[:8] + (' ago' if r.get('listed_ago') else ''), 8), (state, 17)])
+                        (plain(r.get('salary') or ''), 11), (plain(r.get('listed_ago') or '')[:8] + (' ago' if r.get('listed_ago') else ''), 7), (state, 16)])
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))
@@ -758,7 +780,7 @@ class TableScreen(ViewScreen):
         return lines, at
 
     def footer_keys(self):
-        return [('↑ ↓', 'row'), ('enter', 'open job'), ('s', 'sort'), ('/', 'filter'), ('x', 'csv')]
+        return [('↑ ↓', 'row'), ('enter', 'open job'), ('s', 'sort'), ('tab', 'next list'), ('x', 'csv')]
 
     def handle(self, event):
         if self.filtering:
@@ -911,11 +933,11 @@ class InsightsScreen(ViewScreen):
         left = [styled('New matches per day', 'bold'), styled('Dim bars are older than 7 days.', MUTED)]
         series = d.get('series') or []
         top = max([n for _, n in series] or [1]) or 1
-        blocks = '▁▂▃▄▅▆▇█'
-        spark = Text()
-        for i, (_, n) in enumerate(series[-30:]):
-            spark.append(blocks[min(int(n / top * 7), 7)] if n else '─', style=GREEN if i >= len(series[-30:]) - 7 else '#2f6f5b')
-        left += [spark, styled(f'{totals.get("matches_30d", 0)} new matches in 30 days.', MUTED), Text('')]
+        days = series[-min(30, (half - 6) // 2):]
+        chart = day_chart([n for _, n in days], top)
+        first = dayname(days[0][0]) if days else ''
+        left += [Text('')] + chart + [join(styled(first, MUTED), ' ' * max(len(days) * 2 - 1 - len(first) - 5, 1), styled('Today', MUTED)) if days else Text(''),
+                styled(f'{totals.get("matches_30d", 0)} new matches in 30 days.', MUTED), Text('')]
         prog = d.get('progress') or {}
         if prog:
             left += [styled('Is the AI getting through them?', 'bold'), styled(f'{prog.get("read", 0)} of {prog.get("total", 0)} matched ads read.', 'bold'),
@@ -947,6 +969,32 @@ class InsightsScreen(ViewScreen):
 
     def footer_keys(self):
         return [('tab', 'next panel'), ('↑ ↓', 'scroll')]
+
+
+def dayname(value) -> str:
+    try:
+        return datetime.fromisoformat(str(value)[:10]).strftime('%-d %b')
+    except ValueError:
+        return ''
+
+
+def day_chart(counts: list[int], top: int, height: int = 3) -> list[Text]:
+    """Columns of stacked eighth blocks, `height` text rows tall; recent days are bright, older ones dim."""
+    blocks = '▁▂▃▄▅▆▇█'
+    rows = [Text() for _ in range(height)]
+    for i, n in enumerate(counts):
+        level = round(n / top * height * 8) if n else 0
+        colour = GREEN if i >= len(counts) - 7 else '#2f6f5b'
+        for r in range(height):
+            below = (height - 1 - r) * 8
+            if level - below >= 8:
+                cell = '█'
+            elif level - below > 0:
+                cell = blocks[level - below - 1]
+            else:
+                cell = '─' if r == height - 1 and not n else ' '
+            rows[r].append(cell + ' ', style=colour)
+    return rows
 
 
 def top_n(rows, idx: int = 2) -> int:
@@ -989,6 +1037,7 @@ class ModelsScreen(ViewScreen):
         lines += [Text(''), styled('Which model for which job', 'bold')]
         cols = [('Job', 28), ('Model', 28), ('Source', 28), ('Test', 12)]
         lines.append(join(' ', header_row(cols)))
+        lines[-1].pad_right(max(width - lines[-1].cell_len, 0))
         lines[-1].stylize_before(f'on {PANEL}')
         at = 0
         for n, r in enumerate(self.rows()):
@@ -1000,7 +1049,8 @@ class ModelsScreen(ViewScreen):
             else:
                 source = styled('Default (server setting)', MUTED)
             result = self.test_result.get(r['role'], 'not tested')
-            line = row([(plain(r.get('label')), 28), (plain(value), 28), (source, 28), (styled(result, GREEN if result == 'ok' else RED if result != 'not tested' else MUTED), 12)])
+            test = styled('Test (t)', 'bold') if n == self.sel and result == 'not tested' else styled(result, GREEN if result == 'ok' else RED if result != 'not tested' else MUTED)
+            line = row([(plain(r.get('label')), 28), (plain(value), 28), (source, 28), (test, 12)])
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))

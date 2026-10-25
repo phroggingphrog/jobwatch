@@ -90,9 +90,10 @@ class JobwatchTUI(App):
     """Main board: job feed, the conversation, the approval strip and one prompt line."""
 
     CSS = theme.BASE_CSS + f"""
-    #tabs {{ height: 1; }}
+    HomeScreen {{ padding: 1 3 0 3; }}
+    #tabs {{ height: 1; padding: 0 1; }}
     #main {{ height: 1fr; }}
-    #left {{ width: 1fr; padding: 0 1; }}
+    #left {{ width: 1fr; padding: 0 1 0 2; }}
     #transcript {{ height: 1fr; background: {theme.BG}; scrollbar-size-vertical: 1; }}
     #taskstate {{ height: auto; color: {theme.MUTED}; padding: 0 1; }}
     #status {{ display: none; }}
@@ -103,16 +104,17 @@ class JobwatchTUI(App):
     #chips {{ height: auto; display: none; color: {theme.MUTED}; }}
     #chips.-on {{ display: block; }}
     #promptbox {{ height: auto; background: {theme.INPUT}; border-left: thick {theme.AMETHYST}; padding: 0 1; margin-top: 1; }}
+    #promptbox.-narrow {{ margin-top: 0; }}
     #hint {{ height: 1; color: {theme.MUTED}; }}
     #prompt {{ background: {theme.INPUT}; border: none; height: 1; padding: 0; }}
     #prompt:focus {{ border: none; background-tint: transparent; }}
     #agentline {{ height: 1; color: {theme.MUTED}; }}
-    #sidebar {{ width: 31; background: {theme.SIDE}; padding: 1 2 0 2; }}
+    #sidebar {{ width: 33; height: 1fr; background: {theme.SIDE}; padding: 1 2 0 2; }}
     #sidebar.-hidden {{ display: none; }}
     #sidebar.-overlay {{ display: block; width: 100%; dock: top; height: 1fr; layer: above; }}
     #narrowfeed {{ height: auto; display: none; border-bottom: solid {theme.RULE}; }}
     #narrowfeed.-on {{ display: block; }}
-    #footer {{ height: 1; background: {theme.BG}; }}
+    #footer {{ height: 1; background: {theme.BG}; padding: 0 1; }}
     """
 
     BINDINGS = [
@@ -120,8 +122,9 @@ class JobwatchTUI(App):
         Binding('ctrl+n', 'new_thread', 'new thread'),
     ]
 
-    def __init__(self, person: str, thread_id: str | None = None, backend: Backend | None = None) -> None:
+    def __init__(self, person: str, thread_id: str | None = None, backend: Backend | None = None, home: bool = False) -> None:
         super().__init__()
+        self.start_home = home
         self.person = person
         self.backend: Backend = backend if backend is not None else WebBackend(person)
         self.thread_id = thread_id or f'tui-{time.strftime("%Y%m%d-%H%M%S")}'
@@ -178,6 +181,8 @@ class JobwatchTUI(App):
         self._set_status('ready')
         self._layout_for(self.size.width)
         self._refresh_chrome()
+        if self.start_home:
+            self.show_home()
 
     def on_resize(self, event) -> None:
         self._layout_for(event.size.width)
@@ -192,6 +197,9 @@ class JobwatchTUI(App):
         if narrow:
             side.remove_class('-overlay')
         self.query_one('#narrowfeed').set_class(narrow, '-on')
+        self.query_one('#tabs').display = not narrow
+        self.query_one('#agentline').display = not narrow
+        self.query_one('#promptbox').set_class(narrow, '-narrow')
         self._refresh_chrome()
         self._rewrite_log()
 
@@ -213,8 +221,8 @@ class JobwatchTUI(App):
         self.feed_index = min(self.feed_index, max(len(self.rows) - 1, 0))
 
     def _refresh_chrome(self) -> None:
-        width = max(getattr(self, 'cols', 0) or self.size.width, 20)
-        inner = max(width - 2, 20)
+        width = max(getattr(self, 'cols', 0) or self.size.width, 22) - 2
+        inner = max(width - 1, 20)
         tabs = Text()
         tabs.append(' ' + theme.fit(self.title_text, 30).ljust(34), style=f'bold on {theme.PANEL}')
         tabs.append('  +', style=theme.MUTED)
@@ -504,10 +512,29 @@ class JobwatchTUI(App):
         chips.set_class(bool(self.attachments), '-on')
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        text = event.value.strip()
         self.query_one('#prompt', Input).value = ''
+        self.submit_text(event.value.strip())
+
+    def base_depth(self) -> int:
+        """Screens that stay under the boards: the chat, plus the start screen when it is open."""
+        homes = [n for n, screen in enumerate(self.screen_stack) if type(screen).__name__ == 'HomeScreen']
+        return homes[-1] + 1 if homes else 1
+
+    def show_home(self) -> None:
+        from pipeline.agentic.tui_home import HomeScreen
+        while len(self.screen_stack) > 1:
+            self.pop_screen()
+        self.push_screen(HomeScreen(self))
+
+    def submit_text(self, text: str) -> None:
         if not text:
             return
+        if text == '/home':
+            self.show_home()
+            return
+        if text not in VIEW_COMMANDS and text not in ('/quit', '/exit'):
+            while len(self.screen_stack) > 1:      # a question typed on the start screen goes to the conversation
+                self.pop_screen()
         if text in ('/quit', '/exit'):
             self.exit()
             return
@@ -561,6 +588,9 @@ class JobwatchTUI(App):
         self._set_status('ready')
 
     def action_cancel_turn(self) -> None:
+        if not self.busy and type(self.screen).__name__ == 'HomeScreen':
+            self.exit()
+            return
         if not self.busy:
             self._say('[dim]nothing running[/dim]')
             return
@@ -658,7 +688,10 @@ class JobwatchTUI(App):
     SPIN = '◐◓◑◒'
 
     def _refresh_working(self) -> None:
-        box = self.query_one('#working', Static)
+        try:
+            box = self.query_one('#working', Static)
+        except Exception:  # noqa: BLE001 - the timer can fire while the app is closing
+            return
         box.set_class(self.busy, '-on')
         if not self.busy:
             return
@@ -712,8 +745,8 @@ class JobwatchTUI(App):
         """A step stopped: say what, that nothing was submitted, and the keys that follow."""
         self.failed = {'tool': name, 'posting_id': self.posting_id, 'error': error}
         self._say(f'[red]✕ failed[/red]  {_e(name)}' + (f' · posting {self.posting_id}' if self.posting_id else ''))
-        self._say('  Nothing was submitted.')
-        self._say('  [dim]r retry the step   e edit and retry   enter open job detail[/dim]')
+        self._say('  Nothing was submitted.\n')
+        self._say('  [dim]r retry the step   e edit and retry   enter open job detail[/dim]\n')
         self._say(f'  [dim]▾ tool_finished {_e(name)} · error[/dim]')
         self._say(f'  [dim]  {_e(error[:300])}[/dim]')
 
@@ -726,7 +759,7 @@ class JobwatchTUI(App):
         self.pending = [i for i in pending if i.get('type') in ('approval', 'question')]
         usage = result.get('usage') or {}
         finish = 'waiting on you' if self.pending else status
-        self._add(('meta', f'Jobwatch{" · " + self.model_name if self.model_name else ""} · {elapsed:.0f}s · {finish}'))
+        self._add(('meta', f'Jobwatch{" · " + self.model_name if self.model_name else ""} · {elapsed:.0f}s{usage_note(usage)} · {finish}'))
         if answer:
             self._add(('agent', str(answer)))
         for item in self.pending:
@@ -735,8 +768,6 @@ class JobwatchTUI(App):
         self._refresh_pending()
         self._refresh_task_state()
         self._load_feed()
-        if usage:
-            self._say(f'[dim]  {_e(usage)}[/dim]\n')
         _write_session(self.person, {'thread_id': self.thread_id, 'run_id': self.run_id,
                                      'checkpoint': self.checkpoint,
                                      'unfinished': bool(self.pending)})
@@ -768,6 +799,19 @@ class JobwatchTUI(App):
             self._start_turn(nxt)
 
 
+def usage_note(usage: dict) -> str:
+    """One quiet part of the turn header: "1 call · 9k tokens". The raw usage record is never printed."""
+    if not isinstance(usage, dict):
+        return ''
+    calls, tokens = usage.get('model_calls'), usage.get('charged_tokens') or usage.get('actual_tokens')
+    parts = []
+    if isinstance(calls, int) and calls:
+        parts.append(f'{calls} call{"" if calls == 1 else "s"}')
+    if isinstance(tokens, (int, float)) and tokens:
+        parts.append(f'{tokens / 1000:.0f}k tokens' if tokens >= 1000 else f'{int(tokens)} tokens')
+    return ' · ' + ' · '.join(parts) if parts else ''
+
+
 def theme_unknown() -> str:
     from pipeline.agentic.task_state import UNKNOWN_MESSAGE
     return UNKNOWN_MESSAGE
@@ -784,7 +828,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--thread', help='thread id to continue')
     args = parser.parse_args(argv)
     person = args.person or users.current()
-    JobwatchTUI(person, args.thread).run()
+    JobwatchTUI(person, args.thread, home=True).run()
     return 0
 
 

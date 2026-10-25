@@ -140,7 +140,7 @@ class FilePicker(ModalScreen):
             except OSError:
                 size = '?'
             name = (str(path.relative_to(self.folder)) if self.needle else path.name) + ('/' if is_dir else '')
-            name = ('▸ ' if is_dir else '  ') + theme.fit(name, left_w - 12)
+            name = ('▸ ' if is_dir else '● ' if on else '  ') + theme.fit(name, left_w - 12)
             line = join(name.ljust(left_w - 8), size.rjust(8))
             if on:
                 line = join(styled('▌', AMETHYST), line)
@@ -157,8 +157,8 @@ class FilePicker(ModalScreen):
             lines.append(join(l, styled('│ ', theme.RULE), right[i] if i < len(right) else Text('')))
         lines.append(styled('─' * width, theme.RULE))
         if self.message:
-            lines.append(styled(plain(self.message), AMBER_))
-        else:
+            lines.append(styled(theme.fit(self.message, width), AMBER_))
+        if True:
             lines.append(theme.two_col(keyhint([('enter', 'attach'), ('→', 'open folder'), ('←', 'up'), ('type', 'filter')]),
                                        styled('↑ ↓ move', MUTED), width))
         self.query_one('#pickbody', Static).update(Text('\n').join(lines))

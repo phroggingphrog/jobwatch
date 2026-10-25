@@ -77,7 +77,7 @@ def two_col(left: Text | str, right: Text | str, width: int) -> Text:
 BASE_CSS = f"""
 Screen {{ background: {BG}; color: {TEXT}; }}
 .muted {{ color: {MUTED}; }}
-#navrow {{ height: 1; background: {BG}; }}
-#viewbody {{ height: 1fr; padding: 1 1 0 1; }}
-#viewfoot {{ height: 1; background: {PANEL}; }}
+#navrow {{ height: 1; background: {BG}; padding: 0 1; }}
+#viewbody {{ height: 1fr; padding: 1 2 0 2; }}
+#viewfoot {{ height: 1; background: {PANEL}; padding: 0 1; }}
 """

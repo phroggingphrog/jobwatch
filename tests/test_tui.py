@@ -89,7 +89,14 @@ class FakeBackend(Backend):
                 dict(id=12, score5=4.3, title='Business Intelligence Analyst', company='Northwind', archetype='Data analyst', where='Sydney NSW',
                      salary='$70k - $85k', listed_ago='37h', status='saved', ai_state='show'),
                 dict(id=14, score5=None, title='Reporting Analyst', company='Initech', archetype='', where='Brisbane QLD',
-                     salary='$70k - $85k', listed_ago='3d', status='applied', ai_state='show')]
+                     salary='$70k - $85k', listed_ago='3d', status='applied', ai_state='show'),
+                dict(id=13, score5=None, title='Data Analyst (Graduate)', company='Globex', archetype='', where='Remote',
+                     salary='$70k - $85k', listed_ago='2d', status='saved', ai_state='show'),
+                dict(id=15, score5=None, title='Analytics Engineer', company='Hooli', archetype='', where='Melbourne VIC',
+                     salary='$70k - $85k', listed_ago='4d', status='applied', ai_state='show'),
+                dict(id=16, score5=None, title='Research Data Officer', company='Umbrella', archetype='', where='Canberra ACT',
+                     salary='$70k - $85k', listed_ago='5d', status='applied', ai_state='show')]
+        rows = rows[:2] + rows[3:4] + rows[2:3] + rows[4:]
         return {'rows': rows, 'total': 6, 'counts': {'ai': {'show': 6, 'hide': 2, 'pending': 0}}, 'ai_text': 'Worth a look',
                 'progress': {'read': 8, 'total': 8, 'left': 0}}
 
@@ -119,7 +126,8 @@ class FakeBackend(Backend):
     def review_form(self, posting_id):
         return {'employer': 'Acme Analytics', 'role': 'Senior Data Analyst', 'rows': [
             ('Employer', 'Acme Analytics', 'form'), ('Role', 'Senior Data Analyst', 'posting 42'),
-            ('Full name', '[Full name]', 'profile'), ('Why this role', '[3 lines typed into the form]', 'drafted by agent'),
+            ('Full name', '[Full name]', 'profile'), ('Email', '[Email]', 'profile'), ('Phone', '[Phone]', 'profile'),
+            ('Right to work', '[Answer]', 'profile'), ('Salary expectation', '[Answer]', 'profile'), ('Why this role', '[3 lines typed into the form]', 'drafted by agent'),
             ('CV', 'cv-acme-senior-data-analyst.pdf', 'attached · p change'),
             ('Cover letter', 'cover-acme-senior-data-analyst.pdf', 'attached · p change')]}
 
@@ -513,3 +521,58 @@ def test_state_outcome_unknown_line(app, monkeypatch):
             assert 'outcome unknown' in line and 'retries are paused' in line and 'Nothing will resend' in line
             await ashot(pilot, app, 'States-unknown')
     asyncio.run(run())
+
+
+def test_home_is_the_start_screen_and_opens_views(app, tmp_path):
+    instance = tui.JobwatchTUI('default', backend=FakeBackend(), home=True)
+
+    async def run():
+        async with instance.run_test(size=(120, 34)) as pilot:
+            await pilot.pause(0.8)
+            assert type(instance.screen).__name__ == 'HomeScreen'
+            text = instance.screen.plain_text
+            for word in ('MENU', 'Today', 'Models', 'NEEDS YOU', 'SERVICES', 'Watcher', 'Healthy', 'Applications 5', 'Inbox 1'):
+                assert word in text
+            await ashot(pilot, instance, 'Home')
+            await pilot.press('down')
+            await pilot.press('enter')                   # second item: Jobs
+            await pilot.pause(0.6)
+            assert type(instance.screen).__name__ == 'JobsScreen'
+            await pilot.press('escape')
+            await pilot.pause(0.3)
+            assert type(instance.screen).__name__ == 'HomeScreen'
+            await pilot.press('3')
+            await pilot.pause(0.6)
+            assert type(instance.screen).__name__ == 'ApplicationsScreen'
+            await pilot.press('escape')
+            await pilot.pause(0.3)
+            await pilot.resize_terminal(80, 24)
+            await pilot.pause(0.5)
+            await ashot(pilot, instance, 'Home-narrow')
+    asyncio.run(run())
+
+
+def test_home_typing_asks_the_agent_and_never_approves(app):
+    instance = tui.JobwatchTUI('default', backend=FakeBackend(), home=True)
+    instance.calls = []
+    import pipeline.agentic.tui as t
+    seen = []
+    orig = t.dispatch
+    t.dispatch = lambda **kw: (seen.append(kw), {'status': 'completed', 'answer': 'hi', 'checkpoint_id': 'c1',
+                                                 'usage': {'model_calls': 1, 'charged_tokens': 9070}})[1]
+
+    async def run():
+        async with instance.run_test(size=(120, 34)) as pilot:
+            await pilot.pause(0.5)
+            for ch in 'hello':
+                await pilot.press(ch)
+            await pilot.press('enter')
+            await _settle(pilot, instance)
+            assert type(instance.screen).__name__ != 'HomeScreen' and seen and seen[0]['message'] == 'hello'
+            assert not seen[0].get('decisions')
+            entries = ' '.join(str(e[1]) for e in instance.entries)
+            assert 'model_calls' not in entries and '1 call' in entries and '9k tokens' in entries
+    try:
+        asyncio.run(run())
+    finally:
+        t.dispatch = orig

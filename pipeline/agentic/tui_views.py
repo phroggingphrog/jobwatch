@@ -31,7 +31,7 @@ def feed_rows(rows: list[dict], selected: int | None, width: int = 27) -> list[T
     out: list[Text] = []
     for n, row in enumerate(rows):
         on = n == selected
-        name = two_col(fit(row.get('employer') or f'job {row.get("posting_id")}', width - 5), score_text(row.get('score')), width)
+        name = two_col(fit(row.get('employer') or f'job {row.get("posting_id")}', width - 5), '' if row.get('score') is None else score_text(row.get('score')), width)
         name.stylize(MUTED, width - 3, width)
         if on:
             name = join(styled('▎', AMETHYST), name)

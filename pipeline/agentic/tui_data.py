@@ -103,9 +103,17 @@ class WebBackend(Backend):
 
     # -- web views (the same handlers the web app serves)
     def services(self) -> list[tuple[str, str]]:
-        word = {'ok': 'Healthy', 'warn': 'Attention', 'bad': 'Failing'}
-        return [(h.get('label') or h.get('collector') or '?', word.get(h.get('rag'), 'Attention'))
-                for h in self._get('/api/sources').get('health', [])[:4]]
+        """A three-line summary, never the raw list of collectors."""
+        health = self._get('/api/sources').get('health', [])
+        bad = [h for h in health if h.get('rag') == 'bad']
+        warn = [h for h in health if h.get('rag') == 'warn']
+        total = len(health)
+        watcher = 'Attention' if not total else 'Healthy' if not bad else 'Failing' if len(bad) == total else 'Attention'
+        if not bad and not warn:
+            sources = ('Sources', 'Healthy')
+        else:
+            sources = ('Sources', f'Attention · {len(bad) + len(warn)} of {total}')
+        return [('Watcher', watcher), ('Web board', 'Healthy'), sources]
 
     def today(self) -> dict:
         table = self._get('/api/table')
