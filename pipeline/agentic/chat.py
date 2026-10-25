@@ -311,6 +311,17 @@ class _PrivateBoundary(AgentMiddleware):
                 self.execution.event('tool_finished', tool=request.tool_call['name'])
             return result
 
+    async def awrap_tool_call(self, request, handler):
+        # Same boundary on async runners (LangGraph server); gates inside the tools still decide.
+        with users.use(self.person), invocation.use(self.execution):
+            if self.execution:
+                self.execution.check()
+                self.execution.event('tool_started', tool=request.tool_call['name'])
+            result = await handler(request)
+            if self.execution:
+                self.execution.event('tool_finished', tool=request.tool_call['name'])
+            return result
+
 
 def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None, attachment_receipts=None):
     from pipeline.agentic import feedback_chat
