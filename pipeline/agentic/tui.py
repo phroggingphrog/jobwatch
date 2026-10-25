@@ -169,8 +169,7 @@ class JobwatchTUI(App):
         rows = []
         for n, item in enumerate(self.pending, 1):
             if item.get('type') == 'approval':
-                request = (item.get('action_requests') or [{}])[0]
-                rows.append(f'{n}. approve [bold]{_e(str(request.get("name", "operation")))}[/bold]?  '
+                rows.append(f'{n}. approve [bold]{_e(item.get("operation", "operation"))}[/bold]?  '
                             '[b]a[/b] approve · [b]r[/b] reject · [b]e[/b] reject with reason')
             else:
                 rows.append(f'{n}. {_e(str(item.get("question") or item.get("prompt") or "Jobwatch asks"))}  '
@@ -358,9 +357,8 @@ class JobwatchTUI(App):
         if self.pending:
             self._render_pending(self.pending)
         for item in self.pending:
-            args = ((item.get('action_requests') or [{}])[0].get('args') or {})
-            if isinstance(args.get('posting_id'), int):
-                self.posting_id = args['posting_id']
+            if isinstance(item.get('posting_id'), int):
+                self.posting_id = item['posting_id']
         self._refresh_pending()
         self._refresh_task_state()
         usage = result.get('usage') or {}
@@ -380,12 +378,11 @@ class JobwatchTUI(App):
         for item in pending:
             kind = item.get('type')
             if kind == 'approval':
-                request = (item.get('action_requests') or [{}])[0]
-                self._say(f'  approve [bold]{_e(str(request.get("name", "operation")))}[/bold]?  '
+                self._say(f'  approve [bold]{_e(item.get("operation", "operation"))}[/bold]?  '
                           f'a = approve · r = reject')
-                args = request.get('args')
-                if args:
-                    self._say(f'  [dim]{_e(json.dumps(args)[:400])}[/dim]')
+                detail = {k: item[k] for k in ('posting_id', 'summary') if item.get(k) is not None}
+                if detail:
+                    self._say(f'  [dim]{_e(json.dumps(detail)[:400])}[/dim]')
             else:
                 self._say(f'  {_e(str(item.get("question") or item.get("prompt") or "Jobwatch asks:"))}')
         self._say('[dim]press a / r / e with the prompt empty, or type your answer and press Enter[/dim]')

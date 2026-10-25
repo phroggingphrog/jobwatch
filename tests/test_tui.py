@@ -7,7 +7,9 @@ pytest.importorskip('textual')
 
 from pipeline.agentic import tui  # noqa: E402
 
-APPROVAL = {'type': 'approval', 'action_requests': [{'name': 'submit_application', 'args': {'posting_id': 7}}]}
+# the shape chat._chat_interactions produces
+APPROVAL = {'type': 'approval', 'interaction_id': 'a-0', 'posting_id': 7, 'operation': 'submit_application',
+            'binding': None, 'summary': 'Submit job 7'}
 
 
 @pytest.fixture
