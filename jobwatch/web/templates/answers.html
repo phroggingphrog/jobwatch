@@ -7,7 +7,7 @@
 <div class="wk-page">
   <div class="wk-head"><div><h1 class="wk-h1">Form answers</h1>
   <p class="wk-sub" style="margin-top:6px">These fill job forms automatically. Leave one empty to answer it by hand. Saved on this server only.</p></div>
-  <button class="btn primary" type="submit" form="answers-form">Save answers</button></div>
+  {% if fields %}<button class="btn primary" type="submit" form="answers-form">Save answers</button>{% else %}<a class="btn primary" href="/welcome">Add your CV</a>{% endif %}</div>
   {% if saved %}<div class="wk-note ok" role="status">Saved.</div>{% endif %}
   <div class="wk-twoL">
     <div class="wk-sec" style="position:sticky;top:76px">

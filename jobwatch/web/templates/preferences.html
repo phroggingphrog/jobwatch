@@ -7,7 +7,7 @@
 <div class="wk-page">
   <div class="wk-head"><div><h1 class="wk-h1">Your job preferences</h1>
   <p class="wk-sub" style="margin-top:6px">Choose the job you would most want to pursue, or none of these. This teaches your personal ranking; it never applies for a job.</p></div>
-  <form method="post" action="/preferences/new" style="margin:0"><button class="btn primary" type="submit">Compare three jobs</button></form></div>
+  <form method="post" action="/preferences/new" style="margin:0"><button class="btn primary" type="submit"{% if preference_error %} disabled aria-disabled="true"{% endif %}>Compare three jobs</button></form></div>
   {% if preference_error %}<div class="wk-note bad" role="alert">{{ preference_error }}</div>{% endif %}
   <div class="wk-panel wk-pad wk-statgrid">
     <div><div class="wk-eyebrow">Learning status</div><div style="margin-top:6px"><span class="st"{% if tone %} data-t="{{ tone }}"{% endif %}><span class="pip" aria-hidden="true"></span>{{ preference_state.status|replace('_', ' ') }}</span></div></div>
