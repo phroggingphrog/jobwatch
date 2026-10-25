@@ -118,3 +118,14 @@ def test_a_pressed_request_without_a_page_verdict_becomes_unsure(tmp_path):
     sc.settle(conn, rid2, 'pressed')
     sc.verdict(conn, 8, 'confident')
     assert sc.outcome(conn, 2)['status'] == 'submitted'
+
+
+def test_a_pressed_request_is_never_pressed_again_after_a_restart(tmp_path):
+    conn = dbm.connect(tmp_path / 'j.db')
+    rid = sc.queue(conn, posting_id=1, application_id=7, confirm_digest='d', approval='a', now=time.time())['request_id']
+    sc.settle(conn, rid, 'pressed')
+    conn.close()
+    restarted = dbm.connect(tmp_path / 'j.db')                              # a new web process reads the same DB
+    assert sc.pending(restarted) == []
+    assert sc.queue(restarted, posting_id=1, application_id=7, confirm_digest='d', approval='a')['status'] == 'pressed'
+    assert sc.pending(restarted) == []
