@@ -783,8 +783,8 @@ def test_transient_profile_error_does_not_refuse_a_valid_pending_approval(world,
         turn(message='Any news?')
     assert len(seen) == 1                                # nothing was auto-rejected back to the model
     monkeypatch.setattr(chat, '_approval_binding', real)
-    again = turn(message='Any news?')
-    assert again['status'] == 'interrupted' and again['interactions'][0]['type'] == 'approval', again
+    again = turn(message='Any news?')          # once readable, the typed words reject the pending approval and the model carries on
+    assert again['status'] == 'complete' and len(seen) == 2, again
 
 
 def test_approved_auxiliary_call_with_extra_model_args_still_runs(world, monkeypatch):
@@ -1780,3 +1780,41 @@ def test_the_agent_api_refuses_to_bind_a_non_loopback_address(monkeypatch):
     with pytest.raises(SystemExit):                      # loopback gets past the guard to the credential check
         api.main(['--host', '127.0.0.1'])
     assert reached == [True]
+
+
+def _typed_reply_setup(world, monkeypatch, script, thread):
+    from jobwatch import model_choice, users
+    from pipeline.agentic import chat
+    conn, config, bundle, add = world
+    add(42)
+    _ready_fill(conn, monkeypatch, 42)
+    monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
+    llm, seen = _chat_llm(script)
+    turn = lambda **kw: chat.dispatch(person=users.DEFAULT_USER, thread_id=thread, config=config, llm=llm, **kw)
+    return conn, turn, seen
+
+
+def test_a_typed_yes_while_submit_is_pending_never_approves(world, monkeypatch):
+    conn, turn, seen = _typed_reply_setup(world, monkeypatch,
+        [{'tool': 'submit_application', 'arguments': {'posting_id': 42}}, {'answer': 'Not submitted.'}], 'typed-yes')
+    first = turn(message='Submit 42')
+    assert first['status'] == 'interrupted'
+    second = turn(message='yes, submit it', expected_checkpoint=first['checkpoint_id'])
+    assert second['status'] == 'complete', second
+    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() or \
+        conn.execute('SELECT COUNT(*) FROM submit_requests').fetchone()[0] == 0
+    assert 'yes, submit it' in json.dumps(seen, default=str)          # the model saw the words
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    with pytest.raises(RuntimeErrorSafe, match='stale_interaction'):   # replaying the old message with the old checkpoint
+        turn(message='yes, submit it', expected_checkpoint=first['checkpoint_id'])
+
+
+def test_a_typed_change_while_submit_is_pending_reaches_the_model(world, monkeypatch):
+    conn, turn, seen = _typed_reply_setup(world, monkeypatch,
+        [{'tool': 'submit_application', 'arguments': {'posting_id': 42}},
+         {'tool': 'revise_application', 'arguments': {'posting_id': 42, 'instructions': 'start date 1 December'}}], 'typed-change')
+    first = turn(message='Submit 42')
+    second = turn(message='change the start date to 1 December', expected_checkpoint=first['checkpoint_id'])
+    assert second['status'] == 'interrupted' and second['interactions'][0]['operation'] == 'revise_application'
+    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() or \
+        conn.execute('SELECT COUNT(*) FROM submit_requests').fetchone()[0] == 0
