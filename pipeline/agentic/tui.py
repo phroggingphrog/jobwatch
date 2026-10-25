@@ -11,8 +11,11 @@ The turn identity is written to ``career-chat/tui-session.json`` *before* the tu
 starts, so a killed terminal can tell an unfinished turn from a fresh one — the
 checkpoints carry the invocation id, and a resume must present the same one.
 
-Approvals are typed, never modal: an interrupt is printed as a numbered prompt and
-the next line answers it with ``decisions=[...]`` and ``human_decision=True``.
+Approvals are never modal: pending decisions sit in a strip above the prompt. With the
+prompt empty, ``a`` approves and ``r`` rejects; ``e`` rejects with a written reason (the
+gate allows only approve, reject and respond, so there is no in-place edit). Typed answers
+still work. Every answer is sent as ``decisions=[...]`` with ``human_decision=True``.
+``/job N`` (or an approval naming a posting) sets the job whose task state is shown.
 """
 from __future__ import annotations
 
@@ -35,7 +38,7 @@ from textual.widgets import Footer, Input, RichLog, Static
 
 from jobwatch import users
 from jobwatch.config import load_config
-from pipeline.agentic.chat import dispatch
+from pipeline.agentic.chat import dispatch, job_connection
 from pipeline.agentic.execution import Execution
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
@@ -63,6 +66,13 @@ def _write_session(person: str, value: dict[str, Any]) -> None:
     tmp.replace(path)
 
 
+class PromptInput(Input):
+    """Lets the app take a / r / e before they are typed, while a decision is pending."""
+
+    def on_key(self, event) -> None:
+        self.app.decision_key(event)
+
+
 class JobwatchTUI(App):
     """A transcript, a prompt line and an honest status line."""
 
@@ -70,11 +80,14 @@ class JobwatchTUI(App):
     Screen { layout: vertical; }
     #transcript { height: 1fr; padding: 0 1; }
     #status { height: 1; padding: 0 1; color: $text-muted; }
+    #taskstate { height: 1; padding: 0 1; color: $accent; }
+    #pending { height: auto; padding: 0 1; border: round $warning; display: none; }
+    #pending.-on { display: block; }
     #prompt { dock: bottom; }
     """
 
     BINDINGS = [
-        Binding('ctrl+c', 'cancel_turn', 'cancel turn'),
+        Binding('ctrl+c', 'cancel_turn', 'cancel turn', priority=True),
         Binding('ctrl+n', 'new_thread', 'new thread'),
     ]
 
@@ -90,13 +103,17 @@ class JobwatchTUI(App):
         self.cancel = threading.Event()
         self.events: queue.SimpleQueue = queue.SimpleQueue()
         self._tool_started: dict[str, float] = {}
+        self.posting_id: int | None = None
+        self.reject_with_reason = False
 
     # ---------------------------------------------------------------- layout
     def compose(self) -> ComposeResult:
         with Vertical():
             yield RichLog(id='transcript', wrap=True, markup=True)
+            yield Static('', id='taskstate')
             yield Static('', id='status')
-        yield Input(placeholder='Ask Jobwatch…  (/quit to leave)', id='prompt')
+            yield Static('', id='pending')
+        yield PromptInput(placeholder='Ask Jobwatch…  (/quit to leave)', id='prompt')
         yield Footer()
 
     def on_mount(self) -> None:
@@ -117,11 +134,55 @@ class JobwatchTUI(App):
         else:
             log.write(f'[dim]Jobwatch · {_e(self.person)} · thread {_e(self.thread_id)}[/dim]\n')
 
+    def _refresh_task_state(self) -> None:
+        line = self.query_one('#taskstate', Static)
+        if self.posting_id is None:
+            line.update('')
+            return
+        label = 'unknown'
+        try:
+            from pipeline.agentic import task_state
+            with job_connection(load_config()) as jobs:
+                label = task_state.task_card(jobs, self.posting_id)['state']
+        except Exception:  # noqa: BLE001 - a missing database must not break the screen
+            label = 'unavailable'
+        line.update(f'job {self.posting_id}: {_e(str(label))}')
+
+    def _refresh_pending(self) -> None:
+        strip = self.query_one('#pending', Static)
+        if not self.pending:
+            strip.remove_class('-on')
+            strip.update('')
+            return
+        rows = []
+        for n, item in enumerate(self.pending, 1):
+            if item.get('type') == 'approval':
+                request = (item.get('action_requests') or [{}])[0]
+                rows.append(f'{n}. approve [bold]{_e(str(request.get("name", "operation")))}[/bold]?  '
+                            '[b]a[/b] approve · [b]r[/b] reject · [b]e[/b] reject with reason')
+            else:
+                rows.append(f'{n}. {_e(str(item.get("question") or item.get("prompt") or "Jobwatch asks"))}  '
+                            '(type your answer)')
+        strip.update('\n'.join(rows))
+        strip.add_class('-on')
+
     def _set_status(self, text: str) -> None:
         extra = f' · {len(self.deferred)} deferred' if self.deferred else ''
         self.query_one('#status', Static).update(f'{text}{extra} · {_e(self.thread_id)}')
 
     # ----------------------------------------------------------------- input
+    def decision_key(self, event) -> None:
+        prompt = self.query_one('#prompt', Input)
+        if (event.key in ('a', 'r', 'e') and self.pending and not prompt.value
+                and self.pending[0].get('type') == 'approval'):
+            event.prevent_default()
+            event.stop()
+            if event.key == 'e':
+                self.reject_with_reason = True
+                self._say('[dim]type the reason and press Enter (sent as a rejection)[/dim]')
+            else:
+                self._answer_pending(event.key)
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         self.query_one('#prompt', Input).value = ''
@@ -129,6 +190,11 @@ class JobwatchTUI(App):
             return
         if text in ('/quit', '/exit'):
             self.exit()
+            return
+        if text.startswith('/job'):
+            arg = text[4:].strip()
+            self.posting_id = int(arg) if arg.isdigit() else None
+            self._refresh_task_state()
             return
         if text == '/new':
             self.action_new_thread()
@@ -159,6 +225,9 @@ class JobwatchTUI(App):
         self.thread_id = f'tui-{time.strftime("%Y%m%d-%H%M%S")}'
         self.checkpoint = None
         self.pending = []
+        self.posting_id = None
+        self._refresh_pending()
+        self._refresh_task_state()
         _write_session(self.person, {'thread_id': self.thread_id, 'unfinished': False})
         self._say(f'\n[dim]new thread {_e(self.thread_id)}[/dim]')
         self._set_status('ready')
@@ -174,9 +243,12 @@ class JobwatchTUI(App):
     # ------------------------------------------------------------------ turn
     def _answer_pending(self, text: str) -> None:
         decisions = []
+        reason, self.reject_with_reason = self.reject_with_reason, False
         for item in self.pending:
             kind = item.get('type')
-            if kind == 'approval':
+            if kind == 'approval' and reason:
+                decisions.append({'type': 'reject', 'message': text})
+            elif kind == 'approval':
                 lowered = text.lower()
                 if lowered not in ('a', 'approve', 'y', 'yes', 'r', 'reject', 'n', 'no'):
                     self._say('[yellow]For an approval type a (approve) or r (reject).[/yellow]')
@@ -185,6 +257,7 @@ class JobwatchTUI(App):
             else:
                 decisions.append({'type': 'respond', 'message': text})
         self.pending = []
+        self._refresh_pending()
         self._start_turn(None, decisions=decisions)
 
     def _start_turn(self, message: str | None, *, decisions: list[dict] | None = None,
@@ -272,6 +345,12 @@ class JobwatchTUI(App):
         self.pending = [i for i in pending if i.get('type') in ('approval', 'question')]
         if self.pending:
             self._render_pending(self.pending)
+        for item in self.pending:
+            args = ((item.get('action_requests') or [{}])[0].get('args') or {})
+            if isinstance(args.get('posting_id'), int):
+                self.posting_id = args['posting_id']
+        self._refresh_pending()
+        self._refresh_task_state()
         usage = result.get('usage') or {}
         finish = 'interrupted' if self.pending else status
         self._say(f'[dim]— {_e(str(finish))} in {elapsed:.1f}s{_e(f" · {usage}") if usage else ""}[/dim]\n')
@@ -297,10 +376,11 @@ class JobwatchTUI(App):
                     self._say(f'  [dim]{_e(json.dumps(args)[:400])}[/dim]')
             else:
                 self._say(f'  {_e(str(item.get("question") or item.get("prompt") or "Jobwatch asks:"))}')
-        self._say('[dim]type your answer (or a / r for an approval) and press Enter[/dim]')
+        self._say('[dim]press a / r / e with the prompt empty, or type your answer and press Enter[/dim]')
 
     def _render_failed(self, error: str, elapsed: float) -> None:
         self.busy = False
+        self._refresh_task_state()
         if error == 'person_busy':
             self._say('[yellow]Another turn for this person is already running.[/yellow]')
             self._say('[dim]Wait for it to finish, then send again — nothing was lost.[/dim]')
