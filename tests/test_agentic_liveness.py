@@ -182,3 +182,13 @@ def test_page_furniture_that_changes_between_reads_does_not_change_the_ad():
     b="Title\nBody\nGet notified when a new job is posted.\nSet alert\nEnd"
     assert strip(a) == strip(b) == "Title\nBody\nEnd"
     assert strip("Body\nCookie Consent Manager\nRequired Cookies") == "Body\n"
+
+
+def test_http_posting_url_is_read_over_https(monkeypatch):
+    # Greenhouse boards (block.xyz) store http:// absolute_url; the readers only accept https, so every run logged
+    # interview_url_invalid and the posting was never read.
+    seen=[]
+    def capture(url,**kwargs):seen.append(url);return reader()
+    monkeypatch.setattr('pipeline.agentic.liveness.browser_ad',capture)
+    observed=observe_posting({**POST,'url':'http://example.test/job/1'})
+    assert seen==[URL] and observed.status=='active'

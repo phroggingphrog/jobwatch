@@ -75,6 +75,9 @@ def observe_posting(posting,*,reader=None,fetcher=None,deadline=None,now=None):
     budget=None if deadline is None else deadline-time.monotonic()
     if budget is not None and budget <= 0:
         raise AgenticError('deadline_exceeded')
+    # Readers accept https only; some boards (Greenhouse/block.xyz) store http. Identity (url_hash) keeps the stored URL.
+    stored_url=url
+    if url[:7].lower()=='http://':url='https://'+url[7:]
     try:
         ad=None
         if reader is None:
@@ -102,7 +105,7 @@ def observe_posting(posting,*,reader=None,fetcher=None,deadline=None,now=None):
         text=re.sub(r'^[ \t]*(?:We use cookies\b[^\n]*|(?:Modify Cookie Preferences|Reject All Cookies|Accept All Cookies))[ \t]*\n?','',text,flags=re.I|re.M)
         text=_strip_page_chrome(text)
         return PostingObservation(**base,status='active',reason='active_ats_posting' if ad.acquisition=='active_workday' else 'visible_job_description',
-            title=ad.title,text=text,ad_hash=content_hash(text.encode()),source_url=ad.source_url,expires_at=ad.expires_at)
+            title=ad.title,text=text,ad_hash=content_hash(text.encode()),source_url=stored_url if stored_url!=url else ad.source_url,expires_at=ad.expires_at)
     except InterviewAdUnavailable as exc:
         closed=str(exc)=='interview_ad_closed'
         if not closed and deadline is not None and time.monotonic() >= deadline:
