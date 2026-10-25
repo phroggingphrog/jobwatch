@@ -266,3 +266,44 @@ def test_review_escape_sends_nothing(app):
             await pilot.pause(0.3)
             assert len(app.calls) == n and app.pending
     asyncio.run(run())
+
+
+def test_file_picker_chip_upload_and_size_limit(app, tmp_path, monkeypatch):
+    home = tmp_path / 'home'
+    (home / 'jobwatch' / 'drafts').mkdir(parents=True)
+    (home / 'jobwatch' / 'cv-master.pdf').write_bytes(b'%PDF-1.4 small')
+    (home / 'jobwatch' / 'cv-big.pdf').write_bytes(b'0' * (10 * 1024 * 1024 + 1))
+    (home / 'notes.txt').write_text('hello')
+    monkeypatch.setenv('HOME', str(home))
+    uploads = []
+
+    class Up(FakeBackend):
+        def upload(self, path, kind):
+            uploads.append((path.name, kind))
+            return {'upload_id': 'u1'}
+    app.backend = Up()
+
+    async def run():
+        async with app.run_test(size=(120, 34)) as pilot:
+            await pilot.press('@')                       # opens the picker, nothing is typed into the prompt
+            await pilot.pause(0.4)
+            assert type(app.screen).__name__ == 'FilePicker' and app.query_one('#prompt').value == ''
+            for ch in 'cvbig':
+                await pilot.press(ch)
+            await pilot.press('enter')                   # too large: refused, picker stays
+            await pilot.pause(0.3)
+            assert type(app.screen).__name__ == 'FilePicker' and 'too large' in app.screen.message
+            await ashot(pilot, app, 'FilePicker')
+            for _ in range(3):
+                await pilot.press('backspace')
+            for ch in 'master':
+                await pilot.press(ch)
+            await pilot.press('enter')
+            await pilot.pause(0.4)
+            assert type(app.screen).__name__ != 'FilePicker' and len(app.attachments) == 1
+            app.query_one('#prompt').value = 'read my CV'
+            await pilot.press('enter')
+            await _settle(pilot, app)
+            assert uploads == [('cv-master.pdf', 'cv')]
+            assert app.calls[0]['upload_ids'] == ['u1'] and not app.attachments
+    asyncio.run(run())

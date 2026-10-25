@@ -145,6 +145,8 @@ class JobwatchTUI(App):
         self.model_name = ''
         self.current_tool = ''
         self.status_text = 'ready'
+        self.attachments: list[dict] = []
+        self.pending_picker = False
 
     # ---------------------------------------------------------------- layout
     def compose(self) -> ComposeResult:
@@ -234,6 +236,11 @@ class JobwatchTUI(App):
         self.query_one('#footer', Static).update(views.footer(width, '~ ' + theme.fit(self.status_text, width // 2), keys))
 
     def on_input_changed(self, event: Input.Changed) -> None:
+        if event.value.endswith('@') and event.input.id == 'prompt' and not self.pending_picker:
+            event.input.value = event.value[:-1]
+            self.pending_picker = True
+            self.pick_file()
+            return
         self.query_one('#hint', Static).update(views.hint(self.pending, self.busy, event.value))
 
     # ------------------------------------------------------------ transcript
@@ -345,6 +352,13 @@ class JobwatchTUI(App):
                 self.action_toggle_sidebar()
             self._refresh_chrome()
             return
+        if key == 'x' and self.attachments and not prompt.value:
+            event.prevent_default()
+            event.stop()
+            gone = self.attachments.pop()
+            self._refresh_chips()
+            self._say(f'[dim]removed {_e(gone["path"].name)}[/dim]')
+            return
         approval = bool(self.pending) and self.pending[0].get('type') == 'approval'
         if approval and not prompt.value:
             submit = self.pending[0].get('operation') == 'submit_application'
@@ -446,6 +460,28 @@ class JobwatchTUI(App):
             return
         tui_files.open_picker(self, purpose)
 
+    def add_attachment(self, path: Path) -> None:
+        """A chip above the prompt. Nothing is uploaded until the next message is sent."""
+        from pipeline.agentic import tui_files
+        from pipeline.agentic.tui_data import check_attachment
+        self.pending_picker = False
+        problem = check_attachment(path)
+        if problem:
+            self._say(f'[yellow]Cannot attach {_e(path.name)}: {_e(problem)}.[/yellow]')
+            return
+        if any(a['path'] == path for a in self.attachments):
+            return
+        self.attachments.append({'path': path, 'size': path.stat().st_size, 'kind': tui_files.kind_for(path.name)})
+        self._refresh_chips()
+        self.query_one('#prompt', Input).focus()
+
+    def _refresh_chips(self) -> None:
+        from pipeline.agentic import tui_files
+        chips = self.query_one('#chips', Static)
+        if self.attachments:
+            chips.update(tui_files.chips_text(self.attachments, self.size.width))
+        chips.set_class(bool(self.attachments), '-on')
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         self.query_one('#prompt', Input).value = ''
@@ -546,6 +582,11 @@ class JobwatchTUI(App):
             if message:
                 self.deferred.append(message)
             return
+        files, self.attachments = self.attachments, []
+        if files:
+            self._refresh_chips()
+            names = ', '.join(a['path'].name for a in files)
+            message = message or f'I attached {names}. Tell me what you will do with each file.'
         self.busy = True
         self.cancel.clear()
         self.run_id = uuid.uuid4().hex
@@ -554,6 +595,8 @@ class JobwatchTUI(App):
             if self.title_text == 'New thread':
                 self.title_text = message[:30]
             self._add(('user', message))
+            for a in files:
+                self._say(f'[dim]  ▸ {_e(a["path"].name)} attached ({a["kind"]})[/dim]')
         elif decisions:
             self._say('[dim]› answering the pending decision[/dim]')
         else:
@@ -562,13 +605,16 @@ class JobwatchTUI(App):
                                      'checkpoint': self.checkpoint, 'unfinished': True})
         self._set_status('◐ working')
         self._refresh_chrome()
-        self._turn(message, decisions, recover)
+        self._turn(message, decisions, recover, files)
 
     @work(thread=True, exclusive=True)
-    def _turn(self, message: str | None, decisions: list[dict] | None, recover: bool) -> None:
+    def _turn(self, message: str | None, decisions: list[dict] | None, recover: bool, files: list[dict] | None = None) -> None:
         started = time.monotonic()
         try:
             with users.use(self.person):
+                upload_ids = None
+                if files:                     # same save path as the upload ticket; each file is checked (10 MB) first
+                    upload_ids = [self.backend.upload(a['path'], a['kind'])['upload_id'] for a in files]
                 execution = Execution(
                     self.run_id or uuid.uuid4().hex,
                     emit=lambda kind, data: self.events.put(('event', kind, data)),
@@ -577,8 +623,11 @@ class JobwatchTUI(App):
                 result = dispatch(person=self.person, thread_id=self.thread_id, message=message,
                                   decisions=decisions, human_decision=bool(decisions),
                                   config=load_config(), execution=execution,
-                                  expected_checkpoint=self.checkpoint, recover=recover)
+                                  expected_checkpoint=self.checkpoint, recover=recover,
+                                  **({'upload_ids': upload_ids} if upload_ids else {}))
             self.events.put(('done', result, time.monotonic() - started))
+        except ValueError as exc:         # an attachment was refused before anything was sent
+            self.events.put(('failed', f'attachment refused: {exc}', time.monotonic() - started))
         except RuntimeErrorSafe as exc:
             self.events.put(('failed', str(exc), time.monotonic() - started))
         except Exception as exc:  # noqa: BLE001 - a crash must not kill the TUI

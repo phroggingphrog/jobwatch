@@ -708,11 +708,11 @@ class TableScreen(ViewScreen):
     def __init__(self, app_ref) -> None:
         super().__init__(app_ref)
         self.sort = 0
-        self.query = ''
+        self.needle = ''
         self.filtering = False
 
     def fetch(self):
-        return self.backend.table(sort=SORTS[self.sort], q=self.query)
+        return self.backend.table(sort=SORTS[self.sort], q=self.needle)
 
     def count(self):
         return len((self.data or {}).get('rows', []))
@@ -723,9 +723,9 @@ class TableScreen(ViewScreen):
         sort_name = {'fit': 'best fit', 'new': 'listed', 'salary': 'salary', 'company': 'company'}[SORTS[self.sort]]
         lines = heading('All jobs', f'Showing 1 to {len(rows)} of {data.get("total", len(rows))}' + (f' · {plain(data.get("ai_text"))}' if data.get('ai_text') else '')) + [Text('')]
         if self.filtering:
-            lines.append(join(styled('/ ', AMETHYST), plain(self.query) + '▏'))
+            lines.append(join(styled('/ ', AMETHYST), plain(self.needle) + '▏'))
         else:
-            lines.append(join(styled('/ ', AMETHYST), styled(plain(self.query) or 'Job title, company or skill', MUTED if not self.query else TEXT),
+            lines.append(join(styled('/ ', AMETHYST), styled(plain(self.needle) or 'Job title, company or skill', MUTED if not self.needle else TEXT),
                               '   ', btn(f'Sorted by {sort_name} ▾'), ' ', btn('Columns 9'), ' ', btn('Download CSV (x)')))
         lines.append(Text(''))
         counts = (data.get('counts') or {}).get('ai') or {}
@@ -764,12 +764,12 @@ class TableScreen(ViewScreen):
                 self.filtering = False
                 self.reload()
             elif event.key == 'escape':
-                self.filtering, self.query = False, ''
+                self.filtering, self.needle = False, ''
                 self.reload()
             elif event.key == 'backspace':
-                self.query = self.query[:-1]
+                self.needle = self.needle[:-1]
             elif event.is_printable and event.character:
-                self.query += event.character
+                self.needle += event.character
             self.redraw()
             return
         super().handle(event)
