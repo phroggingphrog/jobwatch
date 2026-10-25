@@ -1,38 +1,26 @@
 """/welcome: upload a CV, build the person's profile and their own search config (TASK-111 child 3)."""
-import html
-
 from fastapi import Request
-from fastapi.responses import HTMLResponse
 
 from jobwatch import fieldgen, onboarding, users
 from jobwatch.candidate.intake import extract_text  # noqa: F401  (moved; re-exported for this route)
 
-_PAGE = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-         "<title>Welcome</title><body style='font:16px system-ui;max-width:36rem;margin:2rem auto;padding:0 1rem'>"
-         "<h1>Welcome</h1>{body}</body>")
-
-
-KINDS = (("cv", "Your CV"), ("letter", "Cover letters you have written (your own style samples)"),
-         ("evidence", "Supporting evidence: project lists, diplomas, course lists, certificates"))
+# (field name, label, hint, needed)
+KINDS = (("cv", "Your CV", "PDF, DOCX or text.", True),
+         ("letter", "Cover letters", "Ones you wrote. They teach your style.", False),
+         ("evidence", "Evidence", "Projects, diplomas, course lists, certificates.", False))
 
 
 def register(app, config, conn_, render):
     @app.get("/welcome")
     def welcome(request: Request):
-        rows = "".join(f"<p><b>{label}</b><br><input type=file name={k} multiple{' required' if k == 'cv' else ''}></p>"
-                       for k, label in KINDS)
-        body = ("<p>Upload your documents (PDF, DOCX or text). We build your profile, your evidence and your own "
-                "job searches from them. Your files stay in your own folder and are never shown to anyone else.</p>"
-                f"<form method=post action=/welcome/cv enctype=multipart/form-data>{rows}"
-                "<button>Build my profile</button></form>")
-        return HTMLResponse(_PAGE.format(body=body))
+        return render(request, "welcome.html", None, stage="form", kinds=KINDS)
 
     @app.post("/welcome/cv")
     async def welcome_cv(request: Request):
         form = await request.form()
         try:
             docs = []
-            for kind, _ in KINDS:
+            for kind, *_ in KINDS:
                 for up in form.getlist(kind):
                     if not getattr(up, "filename", ""):
                         continue
@@ -44,12 +32,9 @@ def register(app, config, conn_, render):
             profile, questions = onboarding.wrangle(docs, user)
             fieldgen.generate_config(profile, user)
         except Exception as exc:
-            return HTMLResponse(_PAGE.format(body=f"<p>Could not build your profile: {html.escape(str(exc))}</p>"
-                                                  "<p><a href=/welcome>Try again</a></p>"), status_code=400)
-        qs = "".join(f"<li>{html.escape(q)}</li>" for q in questions) or "<li>None, the CV covered it.</li>"
-        body = (f"<p>Profile built for {html.escape(str(profile['candidate'].get('name') or user))}. "
-                f"Your searches now use {len(profile['target_titles'])} job titles. "
-                f"Saved {sum(1 for d in docs if d[0] == 'letter')} letter sample(s) and "
-                f"{len(profile['certifications']) + len(profile['actionable_evidence'])} evidence item(s).</p>"
-                f"<h2>A few things the CV did not say</h2><ul>{qs}</ul>")
-        return HTMLResponse(_PAGE.format(body=body))
+            return render(request, "welcome.html", None, status=400, stage="form", kinds=KINDS, error=str(exc))
+        summary = (f"Profile built for {profile['candidate'].get('name') or user}. "
+                   f"Your searches now use {len(profile['target_titles'])} job titles. "
+                   f"Saved {sum(1 for d in docs if d[0] == 'letter')} letter sample(s) and "
+                   f"{len(profile['certifications']) + len(profile['actionable_evidence'])} evidence item(s).")
+        return render(request, "welcome.html", None, stage="done", kinds=KINDS, summary=summary, questions=questions)

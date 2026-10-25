@@ -2,10 +2,12 @@
 {% block title %}Not found{% endblock %}
 {% block content %}
 {% set note = message if message and message|lower != 'not found' else 'It may have moved, or the job was taken down.' %}
-<div class="err">
-  <p class="err-code" aria-hidden="true">{{ code or 404 }}</p>
-  <h1>{% if code == 422 %}That link does not work{% else %}That page is not here{% endif %}</h1>
-  <p class="muted">{{ note }}</p>
-  <p class="err-actions"><a class="ph-btn ph-btn--default" href="/">Back to the board</a> <a class="ph-btn ph-btn--outline" href="/#table">Open the table</a></p>
+<div class="wk-page">
+  <div class="wk-panel"><div class="wk-empty" role="alert">
+    <span class="wk-big" aria-hidden="true">{{ code or 404 }}</span>
+    <h1 class="wk-h1">{% if code == 422 %}That link does not work{% else %}That page is not here{% endif %}</h1>
+    <span>{{ note }}</span>
+    <div class="wk-row"><a class="btn primary" href="/">Back to Today</a><a class="btn" href="/#table">Open the table</a></div>
+  </div></div>
 </div>
 {% endblock %}

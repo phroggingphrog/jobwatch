@@ -1,37 +1,92 @@
+{#- The one shell for every page: top bar, side rail, theme switch. SPA (app.html) and server pages both extend this. -#}
+{%- macro ico(name) -%}
+{%- if name == 'today' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+{%- elif name == 'jobs' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+{%- elif name == 'applications' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="6" rx="1"/></svg>
+{%- elif name == 'inbox' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l1 3h6l1-3h5"/><path d="M5 5h14l2 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/></svg>
+{%- elif name == 'chat' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.5A8 8 0 1 1 21 12z"/></svg>
+{%- elif name == 'interview' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a4 4 0 0 1 4 4v3a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+{%- elif name == 'table' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>
+{%- elif name == 'sources' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>
+{%- elif name == 'insights' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+{%- elif name == 'candidate' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+{%- elif name == 'answers' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7M9 8h3"/></svg>
+{%- elif name == 'preferences' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+{%- elif name == 'accounts' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V8a5 5 0 0 1 10 0v3"/></svg>
+{%- elif name == 'models' %}<svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>
+{%- endif -%}
+{%- endmacro -%}
+{%- macro link(key, href, label, count=None) -%}
+<a class="nav-link{% if active == key %} on{% endif %}" href="{{ href }}" data-nav="{{ key }}"{% if active == key %} aria-current="page"{% endif %}>{{ ico(key) }}{{ label }}{% if count %}<span class="nav-count" data-count="{{ count }}" hidden></span>{% endif %}</a>
+{%- endmacro -%}
 <!doctype html>
-<html lang="en-AU">
+<html lang="en-AU" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Jobs{% endblock %} · Jobwatch</title>
-<meta name="color-scheme" content="light dark">
+<title>{% block title %}Jobwatch{% endblock %} · Jobwatch</title>
+<meta name="color-scheme" content="dark light">
 <link rel="icon" href="/static/pebble/icons/logo.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/pebble/icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400&display=swap">
-<link rel="stylesheet" href="/static/v3/v3.css">
-<link rel="stylesheet" href="/static/v3/server.css">
-<script src="/static/app/shell.js" defer></script>
-<script src="/static/htmx.min.js" defer></script>
-{% if path.endswith('/prepare') or path == '/accounts' %}
-<link rel="stylesheet" href="/static/browser.css">
-<script src="/static/browser.js" defer></script>
-{% endif %}
-{% if path == "/models" %}<script src="/static/models.js" defer></script>{% endif %}
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="/static/v3/web.css">
+<script src="/static/v3/shell.js"></script>
+{% block head %}{% endblock %}
 </head>
-<body class="server">
-<a class="skip" href="#main">Skip to content</a>
-<header class="bar">
-  <a class="brand" href="/#today"><span class="brand__mark" aria-hidden="true">J</span>Jobwatch</a>
-  <nav class="tabs" aria-label="Main">
-    <a class="tab" href="/#today">Today</a>
-    <a class="tab" href="/#jobs">Jobs</a>
-    <a class="tab" href="/#applications">Applications</a>
-    <a class="tab" href="/#more" aria-current="page">More</a>
-  </nav>
+<body class="wk-root" data-page="{{ active or '' }}">
+<a class="skip" href="#{{ self.mainid() }}">Skip to content</a>
+<header class="wk-top">
+  {%- if not bare %}<button class="wk-iconbtn wk-menu" type="button" id="menuBtn" aria-label="Open menu" aria-expanded="false"><svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>{% endif %}
+  <a class="wk-brand" href="/#today" aria-label="Jobwatch, home"><svg class="wk-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1a1530"/><path d="M4.5 16c3-5 7-7.5 11.5-7.5S24.5 11 27.5 16c-3 5-7 7.5-11.5 7.5S7.5 21 4.5 16z" fill="none" stroke="#C084FC" stroke-width="2" stroke-linejoin="round"/><path d="M12.5 16.2l2.6 2.6 4.8-5.2" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="wk-word"><span>job</span>watch</span></a>
+  <nav class="wk-crumb" id="crumb" aria-label="Breadcrumb">{% block crumb %}{% endblock %}</nav>
+  <span class="wk-grow"></span>
+  <details class="wk-notif" id="notif"><summary class="wk-iconbtn" aria-label="Notifications"><svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6M10 19a2 2 0 0 0 4 0"/></svg><span class="wk-badge" id="notifN" hidden></span></summary>
+    <div class="wk-pop" id="notifList"><p class="wk-sub">Nothing needs you right now.</p></div></details>
+  <button class="wk-theme" type="button" id="themeBtn" aria-pressed="false" aria-label="Light theme"><span class="wk-track" aria-hidden="true"></span><span class="l">Light</span></button>
+  <span class="wk-health" id="health" hidden><span class="pip" id="healthPip" aria-hidden="true"></span><span class="t" id="healthT"></span></span>
 </header>
-<main id="main" tabindex="-1">
+<div class="wk-shell{% if bare %} bare{% endif %}">
+{%- if not bare %}
+<aside class="wk-rail" id="rail" aria-label="Main menu">
+  <nav class="wk-nav" aria-label="Main">
+    {{ link('today', '/#today', 'Today') }}
+    {{ link('jobs', '/#jobs', 'Jobs') }}
+    {{ link('applications', '/#applications', 'Pipeline', 'applications') }}
+    {{ link('inbox', '/#inbox', 'Inbox', 'inbox') }}
+    {{ link('chat', '/#chat', 'Ask Jobwatch', 'chat') }}
+    {{ link('interview', '/#interview', 'Interview prep') }}
+  </nav>
+  <nav class="wk-nav" aria-label="Data"><div class="wk-navhead">Data</div>
+    {{ link('table', '/#table', 'Table') }}
+    {{ link('sources', '/#sources', 'Sources', 'sources_bad') }}
+    {{ link('insights', '/#insights', 'Insights') }}
+  </nav>
+  <nav class="wk-nav" aria-label="About you"><div class="wk-navhead">About you</div>
+    {{ link('candidate', '/candidate', 'Assessment') }}
+    {{ link('answers', '/answers', 'Form answers') }}
+    {{ link('preferences', '/preferences', 'Preferences') }}
+    {{ link('accounts', '/accounts', 'Accounts') }}
+  </nav>
+  <div class="wk-foot">
+    {{ link('models', '/models', 'Models') }}
+  </div>
+</aside>
+{%- endif %}
+<main id="{% block mainid %}main{% endblock %}" class="wk-main" tabindex="-1">
 {% block content %}{% endblock %}
 </main>
+</div>
+{%- if not bare %}
+<nav class="wk-tabbar" aria-label="Quick links">
+  <a href="/#today" data-nav="today" class="{% if active == 'today' %}on{% endif %}">{{ ico('today') }}Today</a>
+  <a href="/#jobs" data-nav="jobs" class="{% if active == 'jobs' %}on{% endif %}">{{ ico('jobs') }}Jobs</a>
+  <a href="/#applications" data-nav="applications" class="{% if active == 'applications' %}on{% endif %}">{{ ico('applications') }}Pipeline</a>
+  <a href="/#inbox" data-nav="inbox" class="{% if active == 'inbox' %}on{% endif %}">{{ ico('inbox') }}Inbox<span class="nav-count" data-count="inbox" hidden></span></a>
+  <button type="button" id="tabMenu" aria-label="More pages">{{ ico('table') }}More</button>
+</nav>
+{%- endif %}
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/htmx.min.js" defer></script>
+{% block scripts %}{% endblock %}
 </body>
 </html>

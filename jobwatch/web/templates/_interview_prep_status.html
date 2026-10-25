@@ -1,15 +1,15 @@
 {% macro citations(values) %}
-{% for citation in values %}<details><summary>Evidence: {{ citation.source_id }}</summary><blockquote>{{ citation.quote }}</blockquote><p class="muted">Source hash: {{ citation.content_hash }}</p></details>{% endfor %}
+{% for citation in values %}<details><summary>Evidence: {{ citation.source_id }}</summary><blockquote>{{ citation.quote }}</blockquote><p class="wk-sub">Source hash: {{ citation.content_hash }}</p></details>{% endfor %}
 {% endmacro %}
-<section id="interview-prep" class="ph-card"{% if prep_state.status == 'running' %} hx-get="{{ prep_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+<section id="interview-prep" class="wk-panel wk-pad wk-prose wk-form"{% if prep_state.status == 'running' %} hx-get="{{ prep_url }}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
 {% if prep_state.status == 'ready' %}
 {% set report = prep_state.report %}
 <h2>Your reviewed interview preparation</h2>
 <p>Prepared from the current job ad, profile and saved notes, with independent review. Check the evidence and unknowns before your interview. Nothing has been sent.</p>
-<p><a class="ph-btn ph-btn--outline" href="{{ prep_url }}/download">Download private report (.txt)</a></p>
-<nav aria-label="Report sections"><ul class="prep-toc">{% for section in report.proposal.sections %}<li><a href="#prep-section-{{ loop.index }}">{{ section.title|replace('_', ' ')|replace('-', ' ')|title }}</a></li>{% endfor %}</ul></nav>
+<p><a class="btn" href="{{ prep_url }}/download">Download private report (.txt)</a></p>
+<nav aria-label="Report sections"><ul class="wk-chips" style="list-style:none;padding:0;margin:0">{% for section in report.proposal.sections %}<li><a href="#prep-section-{{ loop.index }}">{{ section.title|replace('_', ' ')|replace('-', ' ')|title }}</a></li>{% endfor %}</ul></nav>
 {% for section in report.proposal.sections %}
-<section class="prep-report-section" id="prep-section-{{ loop.index }}"><h3>{{ section.title|replace('_', ' ')|replace('-', ' ')|title }}</h3>
+<section class="wk-sec" style="margin-top:18px" id="prep-section-{{ loop.index }}"><h3>{{ section.title|replace('_', ' ')|replace('-', ' ')|title }}</h3>
 {% for item in section.items %}
 <article><h4>{{ item.topic|replace('_', ' ')|capitalize }}</h4><p><strong>{{ kind_labels[item.kind] }}</strong>{% if item.audience %} · {{ item.audience }}{% endif %}</p><p>{{ item.text }}</p>
 {% if item.question %}<p><strong>Question:</strong> {{ item.question }}</p>{% endif %}
@@ -27,10 +27,10 @@
 <h2>Researching, preparing and reviewing…</h2><p>This page updates when preparation finishes. You can leave and return.</p>
 {% elif prep_state.status == 'missing' %}
 <h2>Prepare for this interview</h2><p>Save any optional context below, then generate preparation from the full job ad and your current profile. Missing sources will be labelled unknown.</p>
-<form method="post" action="{{ prep_url }}"><button class="ph-btn ph-btn--default" type="submit">Generate interview preparation</button></form>
+<form method="post" action="{{ prep_url }}"><button class="btn primary" type="submit">Generate interview preparation</button></form>
 {% elif prep_state.status == 'held' %}
 <h2>Preparation held for verification</h2><p>A reviewed report is not available. Retry after the issue is resolved; previous usage and uncertain charges still count toward the same limits.</p>
-<form method="post" action="{{ prep_url }}"><input type="hidden" name="retry" value="true"><button class="ph-btn ph-btn--outline" type="submit">Retry within remaining allowance</button></form>
+<form method="post" action="{{ prep_url }}"><input type="hidden" name="retry" value="true"><button class="btn" type="submit">Retry within remaining allowance</button></form>
 {% elif prep_state.status == 'disabled' %}<p>Interview preparation is not enabled for this installation.</p>
 {% else %}<h2>Check interview readiness</h2><p>The full job ad, current profile or private notes need verification. A previously prepared report is hidden when its sources change.</p>{% endif %}
 </section>

@@ -1,32 +1,70 @@
 {% extends "base.html" %}
+{% set active = 'candidate' %}
 {% block title %}Your candidate assessment{% endblock %}
+{% block crumb %}<a href="/#today">About you</a><span aria-hidden="true">›</span><span class="here">Assessment</span>{% endblock %}
 {% block content %}
-<div class="jobpage"><h1>Your candidate assessment</h1>
-{% if profile_problems %}<div class="ph-alert ph-alert--warning" role="status"><strong>Check your profile files</strong>
-<ul>{% for p in profile_problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
-<h2>Statistical occupation fit</h2>
-{% if statistics.status == 'available' %}
-<p>{{ statistics.evidence_count }} evidence records; {{ statistics.mapped_evidence_count }} linked to work activities.
-{{ statistics.confirmed_count }} confirmed links; {{ statistics.suggested_count }} suggested links.</p>
-<p>These scores compare your evidence with occupational work activities. They are not hiring probability or proof of eligibility.</p>
-<p>Suggested links need verification. The job evaluator still checks your evidence against each actual vacancy.</p>
-<div class="ph-table-wrap"><table class="ph-table"><thead><tr><th>Occupation</th><th>Activity coverage</th><th>Activity similarity</th><th>Combined fit</th><th>Evidence status</th></tr></thead><tbody>
-{% for fit in statistics.fits %}<tr><th scope="row">{{ fit.title }} ({{ fit.code }})</th><td data-label="Activity coverage">{{ '%.1f'|format(fit.dwa_coverage * 100) }}%</td><td data-label="Activity similarity">{{ '%.1f'|format(fit.gwa_similarity * 100) }}%</td><td data-label="Combined fit">{{ '%.1f'|format(fit.proximity * 100) }}%</td><td data-label="Evidence status">{{ fit.recommendation_status|replace('_',' ') }}</td></tr>{% endfor %}
-</tbody></table></div>
-<details><summary>How these scores are calculated</summary><p>Reference: {{ statistics.reference_version }}. Crosswalks link multiple occupations and do not establish equivalent qualifications.</p><p>Combined fit = 60% weighted activity coverage + 40% cosine similarity. These are fixed design weights, not fitted coefficients. Missing evidence means unverified, not incapable.</p><p>Suggested links come from local text retrieval and are not verified qualifications.</p></details>
-<details><summary>Inspect evidence-to-activity links</summary><ul>{% for link in statistics.links %}<li>{{ link.evidence }} → {{ link.activity }} ({{ link.state }})</li>{% endfor %}</ul></details>
-{% elif statistics.status == 'unmapped' %}<p>Occupation reference loaded. No evidence-to-activity links meet the retrieval criteria yet; no numerical fit is asserted.</p>
-{% else %}<p>Statistical inputs are unavailable or invalid. No numerical fit is asserted.</p>{% endif %}
-{% if outcomes %}<h2>Outcome model</h2>
-<p>{{ outcomes.applied }} submitted applications; {{ outcomes.callbacks }} recorded callbacks; {{ outcomes.pending }} still awaiting a resolved outcome.</p>
-{% if outcomes.status == 'untrained' %}<p>Untrained: no observed outcomes. No hiring probability is available.</p>
-{% else %}<p>Descriptive only: {{ outcomes.resolved }} resolved outcomes. No validated per-job probability is available; held-out calibration is required.</p>
-<p>Among resolved outcomes only: posterior mean {{ '%.1f'|format(outcomes.resolved_posterior.mean * 100) }}%, 95% highest-density interval [{{ '%.1f'|format(outcomes.resolved_posterior.hdi[0] * 100) }}%, {{ '%.1f'|format(outcomes.resolved_posterior.hdi[1] * 100) }}%], assuming the existing Beta(1,15) prior. Unresolved applications are excluded; this selection can bias the rate.</p>{% endif %}
-{% endif %}
-{% if candidate %}
-<p class="muted">Based on your saved evidence and career preferences. Missing evidence is shown as a gap, not an invented qualification.</p>
-<h2>Supported strengths</h2><ul>{% for strength in candidate.strengths %}<li>{{ strength.claim }}</li>{% endfor %}</ul>
-<h2>Gaps to work on</h2><ul>{% for gap in candidate.gaps %}<li>{{ gap.gap }}: {{ gap.action }}</li>{% endfor %}</ul>
-<h2>Career directions</h2>{% for target in candidate.target_paths %}<section><h3>{{ target.family|replace('_',' ')|title }}</h3><p>{{ target.rationale }}</p><ul>{% for step in target.next_steps %}<li>{{ step }}</li>{% endfor %}</ul></section>{% endfor %}
-{% else %}<p>Your assessment will appear after Jobwatch evaluates your saved profile.</p>{% endif %}
-</div>{% endblock %}
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Your candidate assessment</h1>
+  <p class="wk-sub" style="margin-top:6px">How Jobwatch sees you, and what it needs to see you better.</p></div></div>
+  {% if profile_problems %}
+  <div class="wk-sec"><h2 class="wk-h2">Check your profile files<span class="n">{{ profile_problems|length }}</span></h2>
+    <p class="wk-sub">Jobwatch ignores these lines until they are fixed. Matching is weaker meanwhile.</p>
+    <div class="wk-rows" role="status">{% for p in profile_problems %}<div class="wk-prow"><span class="pip" data-t="warn" aria-hidden="true"></span><div class="grow wk-body">{{ p }}</div></div>{% endfor %}</div>
+  </div>
+  {% endif %}
+
+  <div class="wk-two">
+  <div class="wk-sec" style="gap:20px">
+  <div class="wk-sec"><h2 class="wk-h2">Occupation fit</h2>
+  {% if statistics.status == 'available' %}
+    <div class="wk-panel wk-pad wk-prose">
+      <p>{{ statistics.evidence_count }} evidence records; {{ statistics.mapped_evidence_count }} linked to work activities. {{ statistics.confirmed_count }} confirmed links; {{ statistics.suggested_count }} suggested links.</p>
+      <p>These scores compare your evidence with occupational work activities. They are not hiring probability or proof of eligibility. Suggested links need verification. The job evaluator still checks your evidence against each actual vacancy.</p>
+    </div>
+    <div class="wk-tablewrap"><table class="wk-table"><thead><tr><th scope="col">Occupation</th><th scope="col">Activity coverage</th><th scope="col">Activity similarity</th><th scope="col">Combined fit</th><th scope="col">Evidence status</th></tr></thead><tbody>
+    {% for fit in statistics.fits %}<tr><th scope="row" style="color:var(--text);background:transparent">{{ fit.title }} ({{ fit.code }})</th><td data-label="Activity coverage">{{ '%.1f'|format(fit.dwa_coverage * 100) }}%</td><td data-label="Activity similarity">{{ '%.1f'|format(fit.gwa_similarity * 100) }}%</td><td data-label="Combined fit">{{ '%.1f'|format(fit.proximity * 100) }}%</td><td data-label="Evidence status">{{ fit.recommendation_status|replace('_',' ') }}</td></tr>{% endfor %}
+    </tbody></table></div>
+    <details class="wk-fold"><summary>How these scores are calculated</summary><div class="wk-fold-b wk-prose"><p>Reference: {{ statistics.reference_version }}. Crosswalks link multiple occupations and do not establish equivalent qualifications.</p><p>Combined fit = 60% weighted activity coverage + 40% cosine similarity. These are fixed design weights, not fitted coefficients. Missing evidence means unverified, not incapable.</p><p>Suggested links come from local text retrieval and are not verified qualifications.</p></div></details>
+    <details class="wk-fold"><summary>Inspect evidence-to-activity links</summary><div class="wk-fold-b wk-prose"><ul>{% for link in statistics.links %}<li>{{ link.evidence }} → {{ link.activity }} ({{ link.state }})</li>{% endfor %}</ul></div></details>
+  {% elif statistics.status == 'unmapped' %}
+    <div class="wk-panel wk-pad"><span class="st"><span class="pip" aria-hidden="true"></span>Not enough evidence</span><p class="wk-body" style="margin-top:8px">The occupation reference is loaded, but no evidence of your activities meets the bar yet, so no numerical fit is given.</p></div>
+  {% else %}
+    <div class="wk-panel wk-pad"><span class="st" data-t="warn"><span class="pip" aria-hidden="true"></span>Unavailable</span><p class="wk-body" style="margin-top:8px">Statistical inputs are unavailable or invalid. No numerical fit is asserted.</p></div>
+  {% endif %}
+  </div>
+
+  <div class="wk-sec"><h2 class="wk-h2">What the evidence supports</h2>
+  {% if candidate %}
+    <p class="wk-sub">Based on your saved evidence and career preferences. Missing evidence is shown as a gap, not an invented qualification.</p>
+    <div class="wk-panel wk-pad wk-prose"><h3 class="wk-h3">Supported strengths</h3><ul>{% for strength in candidate.strengths %}<li>{{ strength.claim }}</li>{% else %}<li>None recorded yet.</li>{% endfor %}</ul>
+    <h3 class="wk-h3">Gaps to work on</h3><ul>{% for gap in candidate.gaps %}<li>{{ gap.gap }}: {{ gap.action }}</li>{% else %}<li>None recorded.</li>{% endfor %}</ul></div>
+    <h3 class="wk-h3">Career directions</h3>
+    <div class="wk-rows">{% for target in candidate.target_paths %}<section class="wk-prose" style="padding:16px 20px"><h4 class="wk-title">{{ target.family|replace('_',' ')|title }}</h4><p>{{ target.rationale }}</p><ul>{% for step in target.next_steps %}<li>{{ step }}</li>{% endfor %}</ul></section>{% endfor %}</div>
+  {% else %}
+    <div class="wk-panel"><div class="wk-empty"><b>No assessment yet</b><span>Your assessment will appear after Jobwatch evaluates your saved profile.</span></div></div>
+  {% endif %}
+  </div>
+  </div>
+
+  <div class="wk-sec"><h2 class="wk-h2">Chance of a callback</h2>
+  {% if outcomes %}
+    <div class="wk-panel wk-pad" style="display:flex;flex-direction:column;gap:12px">
+      {% if outcomes.status == 'untrained' %}
+        <div class="wk-big">No rate yet</div>
+        <p class="wk-body">Untrained: no observed outcomes. No hiring probability is available.</p>
+      {% else %}
+        <div class="wk-big">{{ '%.1f'|format(outcomes.resolved_posterior.mean * 100) }}%</div>
+        <p class="wk-sub">most likely rate, among {{ outcomes.resolved }} resolved applications</p>
+        <div class="wk-range" style="position:relative;height:12px;border-radius:12px;background:var(--line)"><span style="position:absolute;top:0;bottom:0;left:{{ '%.1f'|format(outcomes.resolved_posterior.hdi[0] * 100) }}%;width:{{ '%.1f'|format((outcomes.resolved_posterior.hdi[1] - outcomes.resolved_posterior.hdi[0]) * 100) }}%;border-radius:12px;background:var(--accent);opacity:.6"></span></div>
+        <p class="wk-sub">{{ '%.1f'|format(outcomes.resolved_posterior.hdi[0] * 100) }}% to {{ '%.1f'|format(outcomes.resolved_posterior.hdi[1] * 100) }}% likely range (95% highest-density interval, Beta(1,15) prior).</p>
+        <p class="wk-body">Descriptive only. No validated per-job probability is available; held-out calibration is required.</p>
+      {% endif %}
+      <p class="wk-body">{{ outcomes.applied }} submitted, {{ outcomes.callbacks }} recorded callbacks, {{ outcomes.pending }} still awaiting a resolved outcome. Unresolved applications are left out, which can bias the rate.</p>
+    </div>
+  {% else %}
+    <div class="wk-panel"><div class="wk-empty"><b>No applications yet</b><span>The callback rate appears after you have applied to some jobs.</span></div></div>
+  {% endif %}
+  </div>
+  </div>
+</div>
+{% endblock %}

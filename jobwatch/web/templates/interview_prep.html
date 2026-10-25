@@ -1,21 +1,25 @@
 {% extends "base.html" %}
+{% set active = 'interview' %}
 {% block title %}Interview preparation{% endblock %}
+{% block crumb %}<span class="here">Interview prep</span>{% endblock %}
 {% block content %}
-<div class="ph-page-head"><h1>Interview preparation for {{ job.title }}</h1><p>{{ job.company }}</p></div>
-<p>{% if not job.standalone %}<a href="/#job/{{ posting_id }}">Back to job</a> · {% endif %}<a href="/interview-prep">Prepare another interview</a> · <a href="/#applications">Applications</a></p>
+<div class="wk-page">
+<div class="wk-head"><div><h1 class="wk-h1">Interview preparation for {{ job.title }}</h1><p class="wk-sub" style="margin-top:6px">{{ job.company }}</p></div></div>
+<div class="wk-row">{% if not job.standalone %}<a class="btn" href="/#job/{{ posting_id }}">Back to job</a>{% endif %}<a class="btn" href="/interview-prep">Prepare another interview</a><a class="btn" href="/#applications">Pipeline</a></div>
 {% if job.jd_source %}<p><strong>JD source:</strong> {{ job.jd_source }} · Saved {{ job.acquired_at }}</p>
-<details><summary>Review the saved job description</summary><p>{% if job.source_url|interview_source_url %}<a href="{{ job.source_url|interview_source_url }}" rel="noopener noreferrer" target="_blank">Open source</a>{% endif %}</p><pre style="white-space:pre-wrap">{{ job.ad_text }}</pre></details>{% endif %}
+<details class="wk-fold"><summary>Review the saved job description</summary><div class="wk-fold-b"><p>{% if job.source_url|interview_source_url %}<a href="{{ job.source_url|interview_source_url }}" rel="noopener noreferrer" target="_blank">Open source</a>{% endif %}</p><pre class="wk-evidence">{{ job.ad_text }}</pre></div></details>{% endif %}
 {% include "_interview_prep_status.html" %}
-<section class="ph-card">
+<section class="wk-panel wk-pad wk-prose wk-form">
 <h2>Your private interview context</h2>
 <p>Optional notes help tailor the preparation. These notes are not used in public search queries. Save before generating; changing notes hides the previous report.</p>
 <form method="post" action="{{ prep_url }}/inputs">
 <input type="hidden" name="revision" value="{{ revision }}">
 {% for field, label in input_fields %}
-<p><label for="prep-{{ field }}">{{ label }}</label><textarea class="followup-copy" id="prep-{{ field }}" name="{{ field }}" rows="4" maxlength="{{ 10000 if field == 'prior_compensation' else 20000 }}">{{ inputs[field] }}</textarea></p>
+<p><label for="prep-{{ field }}">{{ label }}</label><textarea class="wk-area" id="prep-{{ field }}" name="{{ field }}" rows="4" maxlength="{{ 10000 if field == 'prior_compensation' else 20000 }}">{{ inputs[field] }}</textarea></p>
 {% endfor %}
 <p>Up to 60,000 characters across all notes. Leave unavailable sources blank.</p>
-<button class="ph-btn ph-btn--outline" type="submit">Save private context</button>
+<button class="btn" type="submit">Save private context</button>
 </form>
 </section>
+</div>
 {% endblock %}

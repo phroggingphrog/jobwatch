@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set bare = true %}
+{% block title %}Welcome{% endblock %}
+{% block crumb %}<span class="here">Welcome</span>{% endblock %}
+{% block content %}
+<div class="wk-welcome">
+  <div style="text-align:center;display:flex;flex-direction:column;gap:10px">
+    <h1 class="wk-h1" style="font-size:38px">{% if stage == 'done' %}Your profile is ready{% else %}Welcome to Jobwatch{% endif %}</h1>
+    <p class="wk-body">{% if stage == 'done' %}Jobwatch built your profile and your own job searches from your documents.{% else %}Add your documents. Jobwatch uses them to build your profile and your job searches. Your files stay in your own folder and are never shown to anyone else.{% endif %}</p>
+  </div>
+  <div class="wk-steps3" style="justify-content:center">
+    <span class="wk-s{% if stage != 'done' %} on{% endif %}"><b>1</b>Add documents</span><span class="wk-s{% if stage == 'done' %} on{% endif %}"><b>2</b>Check your profile</span><span class="wk-s"><b>3</b>See your first matches</span>
+  </div>
+  {% if stage == 'done' %}
+    <div class="wk-panel wk-pad wk-prose"><p>{{ summary }}</p></div>
+    <div class="wk-sec"><h2 class="wk-h2">A few things the CV did not say</h2>
+      <div class="wk-panel wk-pad wk-prose"><ul>{% for q in questions %}<li>{{ q }}</li>{% else %}<li>None, the CV covered it.</li>{% endfor %}</ul></div></div>
+    <div style="text-align:center"><a class="btn primary" href="/#today">Go to Today</a></div>
+  {% else %}
+    {% if error %}<div class="wk-note bad" role="alert">Could not build your profile: {{ error }}</div>{% endif %}
+    <form method="post" action="/welcome/cv" enctype="multipart/form-data" class="wk-form">
+      <div class="wk-rows">
+      {% for kind, label, hint, needed in kinds %}
+        <div class="wk-drop"><div class="wk-row" style="gap:6px"><b class="wk-title" style="font-size:17px">{{ label }}</b><span class="wk-sub">{{ '(needed)' if needed else '(optional)' }}</span></div>
+          <span class="wk-sub" id="h-{{ kind }}">{{ hint }}</span>
+          <input type="file" name="{{ kind }}" multiple{% if needed %} required{% endif %} aria-label="{{ label }}" aria-describedby="h-{{ kind }}"></div>
+      {% endfor %}
+      </div>
+      <div style="text-align:center"><button class="btn primary" type="submit">Build my profile</button></div>
+    </form>
+    {% if error %}<p class="wk-sub" style="text-align:center"><a class="wk-link" href="/welcome">Start again</a></p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

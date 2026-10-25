@@ -276,11 +276,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     def old_pebble_link():
         return RedirectResponse("/", status_code=308)
 
-    V3_SHELL = Path(__file__).resolve().parent / "static" / "v3" / "index.html"
-
     @app.get("/", response_class=HTMLResponse)
-    def board():
-        return FileResponse(V3_SHELL, media_type="text/html", headers={"Cache-Control": "no-store"})
+    def board(request: Request):
+        """The app: the shared shell (base.html) with the single-page views drawn into it by static/v3/v3.js."""
+        return render(request, "app.html", None)
 
     @app.get("/old", response_class=HTMLResponse)
     def old_board():

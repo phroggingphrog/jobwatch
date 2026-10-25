@@ -1,19 +1,21 @@
 <!doctype html>
-<html lang="en-AU" data-theme="phrog-light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Create account - Jobwatch</title>
-<link rel="stylesheet" href="/static/v3/v3.css"><link rel="stylesheet" href="/static/v3/server.css"><script src="/static/app/shell.js" defer></script></head>
-<body><main class="auth">
-  <h1>Create your account</h1>
-  {% if not open %}<p class="muted">Sign-up is closed right now. Ask for an invite.</p>
+<html lang="en-AU" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create account · Jobwatch</title>
+<meta name="color-scheme" content="dark light">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap">
+<link rel="stylesheet" href="/static/v3/web.css"><script src="/static/v3/shell.js"></script></head>
+<body class="wk-root"><main class="wk-auth" id="main">
+  <h1 class="wk-h1">Create your account</h1>
+  {% if not open %}<p class="wk-sub">Sign-up is closed right now. Ask for an invite.</p>
   {% else %}
-  <p class="muted">You need an invite code.</p>
-  {% if error %}<p class="auth-error" role="alert">{{ error }}</p>{% endif %}
-  <form method="post" action="/signup">
-    <label>Invite code <input name="invite" autocomplete="off" required autofocus></label>
-    <label>Name <input name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none" required></label>
-    <label>Password (8 or more characters) <input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
-    <button class="ph-btn ph-btn--default" type="submit">Create account</button>
+  <p class="wk-sub">You need an invite code.</p>
+  {% if error %}<div class="wk-note bad" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" action="/signup" class="wk-form wk-panel wk-pad">
+    <div class="wk-field"><label for="i">Invite code</label><input id="i" name="invite" autocomplete="off" required autofocus></div>
+    <div class="wk-field"><label for="u">Name</label><input id="u" name="username" value="{{ username or '' }}" autocomplete="username" autocapitalize="none" required></div>
+    <div class="wk-field"><label for="p">Password (8 or more characters)</label><input id="p" name="password" type="password" autocomplete="new-password" minlength="8" required></div>
+    <button class="btn primary" type="submit">Create account</button>
   </form>
   {% endif %}
-  <p class="muted"><a href="/login">Back to sign in</a></p>
+  <p class="wk-sub"><a class="wk-link" href="/login">Back to sign in</a></p>
 </main></body></html>

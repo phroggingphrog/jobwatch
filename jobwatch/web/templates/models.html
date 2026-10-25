@@ -1,37 +1,43 @@
 {% extends 'base.html' %}
+{% set active = 'models' %}
 {% block title %}Models{% endblock %}
+{% block crumb %}<a href="/#today">Setup</a><span aria-hidden="true">›</span><span class="here">Models</span>{% endblock %}
 {% block content %}
-<div class="jobpage">
-<section class="ph-page-head"><h1>Models</h1>
-<p>Pick which AI model does each job. Your pick is used for you only.</p>
-{% if saved %}<p role="status"><strong>Saved.</strong></p>{% endif %}
-{% if error %}<p role="alert"><strong>Not saved:</strong> {{ error }}</p>{% endif %}
-{% if not gateway_ok %}<p role="status">Could not load the model list from the gateway. Type the model id by hand.</p>{% endif %}</section>
-<datalist id="model-list">{% for m in options %}<option value="{{ m }}">{% endfor %}</datalist>
-<form method="post" action="/models" id="models-form">
-<section class="ph-card"><h2>Which model for which job</h2>
-{% for r in rows %}
-<div class="mrow" data-role="{{ r.role }}">
-  <label for="m-{{ r.role }}"><strong>{{ r.label }}</strong></label>
-  <div class="mrow-line">
-    <input type="text" id="m-{{ r.role }}" name="{{ r.role }}" value="{{ r.value }}" list="model-list" maxlength="120" autocomplete="off" spellcheck="false">
-    <button class="ph-btn ph-btn--outline" type="button" data-test="{{ r.role }}">Test</button>
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Models</h1>
+  <p class="wk-sub" style="margin-top:6px">Pick the AI model for each kind of work. Your picks are used for you only.</p></div></div>
+  {% if saved %}<div class="wk-note ok" role="status">Saved.</div>{% endif %}
+  {% if error %}<div class="wk-note bad" role="alert"><b>Not saved:</b> {{ error }}</div>{% endif %}
+  <div class="wk-panel wk-pad wk-row" style="gap:32px">
+    <div><div class="wk-sub">Connection</div><span class="st" data-t="ok"><span class="pip" aria-hidden="true"></span>{{ 'Your own gateway' if gw.own else "Server's gateway" }}</span></div>
+    <div><div class="wk-sub">Model list</div>{% if gateway_ok %}<span class="st" data-t="ok"><span class="pip" aria-hidden="true"></span>{{ options|length }} models</span>{% else %}<span class="st" data-t="warn"><span class="pip" aria-hidden="true"></span>Not loaded, type the id</span>{% endif %}</div>
   </div>
-  <small class="mwhy" data-why>{% if r.why %}{{ r.why }}{% elif not r.custom %}Default (server setting).{% endif %}</small>
-  <small class="mres" data-result role="status"></small>
-</div>
-{% endfor %}
-<p><button class="ph-btn ph-btn--outline" type="submit">Save models</button> <small>Test uses the saved model, so save first.</small></p>
-</section>
-</form>
-<form method="post" action="/models">
-<section class="ph-card"><h2>Your keys</h2>
-<p><small>{% if gw.own %}Using your own gateway. Key ends in <code>{{ gw.key_tail }}</code>.{% else %}Using the server's gateway. Fill this in to use your own instead (OmniRoute, OpenRouter, OpenAI, anything OpenAI-compatible). Leave both empty to keep the server's.{% endif %}</small></p>
-<p><label>Gateway base URL<br><input type="text" name="base_url" value="{{ gw.base_url if gw.own else '' }}" placeholder="https://openrouter.ai/api/v1" maxlength="200" style="width:100%;max-width:32rem"></label></p>
-<p><label>API key<br><input type="password" name="api_key" value="" placeholder="{% if gw.own %}ends in {{ gw.key_tail }} (leave empty to keep){% else %}paste key{% endif %}" autocomplete="off" maxlength="300" style="width:100%;max-width:32rem"></label></p>
-<p><small>Stored privately on this server for you only, never shown back in full. Clear the URL and leave the key empty to go back to the server's gateway.</small></p>
-<p><button class="ph-btn ph-btn--outline" type="submit">Save keys</button></p>
-</section>
-</form>
+  <datalist id="model-list">{% for m in options %}<option value="{{ m }}">{% endfor %}</datalist>
+  <form method="post" action="/models" id="models-form" class="wk-form">
+    <div class="wk-sec"><h2 class="wk-h2">Which model for which job</h2>
+    <div class="wk-rows">
+    {% for r in rows %}
+      <div class="wk-mrow mrow" data-role="{{ r.role }}">
+        <label for="m-{{ r.role }}" class="wk-title">{{ r.label }}</label>
+        <div class="wk-mrow-line">
+          <input type="text" id="m-{{ r.role }}" name="{{ r.role }}" value="{{ r.value }}" list="model-list" maxlength="120" autocomplete="off" spellcheck="false" class="wk-mono">
+          <button class="btn" type="button" data-test="{{ r.role }}">Test</button>
+        </div>
+        <span class="wk-sub" data-why>{% if r.why %}{{ r.why }}{% elif not r.custom %}Default (server setting).{% else %}Your pick.{% endif %}</span>
+        <span class="mres" data-result role="status"></span>
+      </div>
+    {% endfor %}
+    </div></div>
+    <div class="wk-row"><button class="btn primary" type="submit">Save models</button><span class="wk-sub">Test uses the saved model, so save first.</span></div>
+  </form>
+  <details class="wk-fold"{% if gw.own %} open{% endif %}><summary>Custom gateway <span class="wk-sub" style="margin-left:10px;font-weight:400">{{ 'Using your own gateway' if gw.own else "Currently the server's" }}</span></summary>
+    <div class="wk-fold-b"><form method="post" action="/models" class="wk-form">
+      <p class="wk-sub">{% if gw.own %}Using your own gateway. Key ends in <code>{{ gw.key_tail }}</code>.{% else %}Using the server's gateway. Fill this in to use your own instead (OmniRoute, OpenRouter, OpenAI, anything OpenAI-compatible). Leave both empty to keep the server's.{% endif %}</p>
+      <div class="wk-field"><label for="gw-url">Gateway base URL</label><input id="gw-url" type="text" name="base_url" value="{{ gw.base_url if gw.own else '' }}" placeholder="https://openrouter.ai/api/v1" maxlength="200" style="max-width:36rem"></div>
+      <div class="wk-field"><label for="gw-key">API key</label><input id="gw-key" type="password" name="api_key" value="" placeholder="{% if gw.own %}ends in {{ gw.key_tail }} (leave empty to keep){% else %}paste key{% endif %}" autocomplete="off" maxlength="300" style="max-width:36rem"></div>
+      <p class="wk-sub">Stored privately on this server for you only, never shown back in full. Clear the URL and leave the key empty to go back to the server's gateway.</p>
+      <div><button class="btn" type="submit">Save keys</button></div>
+    </form></div></details>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/models.js" defer></script>{% endblock %}

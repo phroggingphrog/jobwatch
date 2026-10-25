@@ -1,51 +1,67 @@
-<section id="preparation-status" data-automation-active="{{ 'true' if browser.automation_active else 'false' }}"
+<section id="preparation-status" class="wk-review" data-automation-active="{{ 'true' if browser.automation_active else 'false' }}"
          hx-get="/job/{{ job.id }}/prepare/status" hx-trigger="every 3s" hx-swap="outerHTML" aria-live="polite">
-  {% if error %}<p class="ph-alert ph-alert--error">{{ error }}</p>{% endif %}
+  <div class="wk-sec" style="gap:16px">
+  {% if error %}<div class="wk-note bad" role="alert">{{ error }}</div>{% endif %}
   {% if browser.automation_active %}
-    <p><strong>Filling your application…</strong> Jobwatch is preparing answers and attaching your documents. Browser controls return when it finishes.</p>
+    <div class="wk-note"><b>Filling your application…</b> Jobwatch is preparing answers and attaching your documents. Browser controls return when it finishes.</div>
   {% elif job.status == 'applied' %}
-    <p class="ph-alert"><strong>Applied.</strong> Jobwatch saw the Submit go through and marked this job Applied.</p>
+    <div class="wk-note ok"><b>Applied.</b> Jobwatch saw the Submit go through and marked this job Applied.</div>
   {% elif prepared and prepared.status == 'ready_for_owner' %}
-    <p class="ph-alert"><strong>Filled and ready for your review.</strong> Check the live application below, then click its Submit button yourself, or have Jobwatch press it for you.</p>
-    {% if confirm_digest %}
-    <form method="post" action="/job/{{ job.id }}/prepare/submit" class="submit-confirm">
-      <input type="hidden" name="digest" value="{{ confirm_digest }}">
-      <button class="ph-btn ph-btn--default" type="submit">Submit this application</button>
-      <small>Jobwatch presses the employer's Submit once, for exactly this filled form. If anything on the page changes first, nothing is sent.</small>
-    </form>
-    {% endif %}
+    <div class="wk-note ok"><b>Filled and ready for your review.</b> Check the live application below, then click its Submit button yourself, or have Jobwatch press it for you.</div>
   {% elif prepared and prepared.reason == 'missing_profile_facts' %}
-    <p><strong>A few facts are missing from your profile.</strong> Answer here once; Jobwatch will remember them and fill the application.</p>
-    <form method="post" action="/job/{{ job.id }}/answers" class="answer-intake">
+    <div class="wk-panel wk-pad" style="display:flex;flex-direction:column;gap:14px">
+    <div><h2 class="wk-h2">A few facts are missing from your profile</h2><p class="wk-sub" style="margin-top:6px">Answer here once; Jobwatch will remember them and fill the application.</p></div>
+    <form method="post" action="/job/{{ job.id }}/answers" class="answer-intake wk-form">
     <input type="hidden" name="preparation_run_id" value="{{ prepared.run_id }}">
     {% for question in prepared.missing %}
-      <label>{{ question.question }}
+      <div class="wk-field"><label for="aq-{{ question.question_id }}">{{ question.question }}</label>
       {% if question.type == 'checkbox' or question.kind == 'radio' %}
-        <select name="answer_{{ question.question_id }}" required><option value="">Choose…</option><option value="true">Yes</option><option value="false">No</option></select>
+        <select id="aq-{{ question.question_id }}" name="answer_{{ question.question_id }}" required><option value="">Choose…</option><option value="true">Yes</option><option value="false">No</option></select>
       {% elif question.options %}
-        <select name="answer_{{ question.question_id }}" {% if question.multiple or question.type == 'select-multiple' %}multiple{% endif %} required>
+        <select id="aq-{{ question.question_id }}" name="answer_{{ question.question_id }}" {% if question.multiple or question.type == 'select-multiple' %}multiple{% endif %} required>
           {% if not question.multiple and question.type != 'select-multiple' %}<option value="">Choose…</option>{% endif %}
           {% for option in question.options %}<option value="{{ option.value if option is mapping else option }}">{{ option.label if option is mapping else option }}</option>{% endfor %}
         </select>
-      {% else %}<textarea name="answer_{{ question.question_id }}" rows="2" maxlength="8000" required></textarea>{% endif %}
-      </label>
+      {% else %}<textarea id="aq-{{ question.question_id }}" name="answer_{{ question.question_id }}" rows="2" maxlength="8000" required></textarea>{% endif %}
+      </div>
     {% endfor %}
-    <button class="ph-btn ph-btn--default" type="submit">Save answers and finish filling</button>
-    </form>
+    <div><button class="btn primary" type="submit">Save answers and finish filling</button></div>
+    </form></div>
   {% elif prepared and prepared.status == 'needs_adapter' %}
-    <p class="ph-alert ph-alert--warning">This site's form needs additional automation support. The completed fields are still in the browser; the application is not ready yet.</p>
+    <div class="wk-note warn" role="status">This site's form needs additional automation support. The completed fields are still in the browser; the application is not ready yet.</div>
   {% elif prepared and prepared.reason == 'owner_session_required' %}
-    <p>Complete the site's sign-in or verification in the live browser, then choose Fill application.</p>
+    <div class="wk-note">Complete the site's sign-in or verification in the live browser, then choose Fill application.</div>
   {% elif prepared and prepared.status == 'blocked' %}
-    <p class="ph-alert ph-alert--warning">Preparation stopped before finishing. Your application has not been submitted. You can retry after checking the live page.</p>
+    <div class="wk-note warn" role="status">Preparation stopped before finishing. Your application has not been submitted. You can retry after checking the live page.</div>
   {% endif %}
-  {% if not can_prepare and job.status != 'applied' %}<p>Verified application documents are needed before filling. <a href="/#job/{{ job.id }}">View document status</a>.</p>{% endif %}
+  {% if not can_prepare and job.status != 'applied' %}<div class="wk-note">Verified application documents are needed before filling. <a class="wk-link" href="/#job/{{ job.id }}">View document status</a>.</div>{% endif %}
   {% if browser.open and can_prepare and not browser.automation_active %}
-  <form method="post" action="/job/{{ job.id }}/prepare"><button class="ph-btn ph-btn--default" type="submit">Fill application</button></form>
+  <form method="post" action="/job/{{ job.id }}/prepare" style="margin:0"><button class="btn{% if not (prepared and prepared.status == 'ready_for_owner') %} primary{% endif %}" type="submit">Fill application</button></form>
   {% endif %}
   {% if prepared and prepared.review_answers %}
-  <details><summary>Review the prepared answers</summary>
-    <dl class="prepared-answers">{% for answer in prepared.review_answers %}<dt>{{ answer.question }}</dt><dd>{{ answer.value }}</dd>{% endfor %}</dl>
+  <details class="wk-fold" open><summary>Review the prepared answers ({{ prepared.review_answers|length }})</summary>
+    <div class="wk-fold-b"><dl class="prepared-answers wk-answers">{% for answer in prepared.review_answers %}<dt>{{ answer.question }}</dt><dd>{{ answer.value }}</dd>{% endfor %}</dl></div>
   </details>
   {% endif %}
+  </div>
+  <aside class="wk-aside" aria-label="Ready to send">
+    {% set ready = prepared and prepared.status == 'ready_for_owner' and job.status != 'applied' and not browser.automation_active %}
+    <div class="wk-panel wk-pad" style="display:flex;flex-direction:column;gap:14px">
+      <span class="st" data-t="{{ 'ok' if job.status == 'applied' else 'warn' if ready else '' }}"><span class="pip" aria-hidden="true"></span>{{ 'Submitted' if job.status == 'applied' else 'Ready to send?' if ready else 'Not ready to send' }}</span>
+      <ul class="wk-checks">
+        <li><span class="pip" data-t="{{ 'ok' if can_prepare else 'warn' }}" aria-hidden="true"></span><span>{{ 'CV and letter are verified.' if can_prepare else 'CV and letter are not verified yet.' }}</span></li>
+        <li><span class="pip" data-t="{{ 'ok' if prepared and prepared.status == 'ready_for_owner' or job.status == 'applied' else 'warn' }}" aria-hidden="true"></span><span>{{ 'The form is filled.' if prepared and prepared.status == 'ready_for_owner' or job.status == 'applied' else 'The form is not filled yet.' }}</span></li>
+        {% if prepared and prepared.review_answers %}<li><span class="pip" data-t="warn" aria-hidden="true"></span><span>{{ prepared.review_answers|length }} answer{{ '' if prepared.review_answers|length == 1 else 's' }} prepared. Read {{ 'it' if prepared.review_answers|length == 1 else 'them' }} before you submit.</span></li>{% endif %}
+      </ul>
+      {% if ready and confirm_digest %}
+      <form method="post" action="/job/{{ job.id }}/prepare/submit" class="submit-confirm" style="margin:0;display:flex;flex-direction:column;gap:10px">
+        <p class="wk-sub">This will send your application to {{ job.company or 'the employer' }}. It cannot be undone.</p>
+        <input type="hidden" name="digest" value="{{ confirm_digest }}">
+        <div class="wk-row"><button class="btn primary" type="submit">Submit this application</button><a class="btn" href="/#job/{{ job.id }}">Back, nothing sent</a></div>
+        <small class="wk-sub">Jobwatch presses the employer's Submit once, for exactly this filled form. If anything on the page changes first, nothing is sent.</small>
+      </form>
+      {% elif job.status != 'applied' %}<a class="btn" href="/#job/{{ job.id }}">Back, nothing sent</a>{% endif %}
+    </div>
+    <p class="wk-sub">The form opens in a private browser inside Jobwatch. Sign in there if the employer requires it.</p>
+  </aside>
 </section>
