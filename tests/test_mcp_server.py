@@ -202,3 +202,220 @@ def test_unauthenticated_request_reads_nothing(two_people, monkeypatch):
 
 def test_ad_link_must_be_http():
     assert cc._http_url('javascript:alert(1)') is None and cc._http_url('https://a.example/x') == 'https://a.example/x'
+
+
+# --- ChatGPT connector stages 2 and 3: hand-off, widget approvals, widget-only Submit ----------------------
+
+PREPARED = {'status': 'ready_for_owner', 'run_id': 'r1', 'package_hash': 'p', 'session_id': 's', 'page_url_sha256': 'u',
+            'owner_revision': 1, 'attached_documents': ['cv.pdf'], 'final_control': {'selector': 'b'}, 'form_state': 'f'}
+
+
+def _interrupt(op='prepare_application', digest='d1'):
+    return {'status': 'interrupted', 'checkpoint_id': 'cp1', 'interactions': [{
+        'type': 'approval', 'operation': op, 'posting_id': 1,
+        'binding': {'digest': digest, 'operation': op, 'arguments': {'posting_id': 1}}}]}
+
+
+@pytest.fixture(autouse=True)
+def _clear_pending():
+    cc._PENDING.clear()
+    yield
+    cc._PENDING.clear()
+
+
+def test_prepare_hands_off_and_raises_a_widget_approval_with_the_binding_only_in_meta(two_people, monkeypatch):
+    calls = []
+    monkeypatch.setattr(cc, 'dispatch', lambda **kw: calls.append(kw) or _interrupt())
+    res = _call('owner', 'prepare_application', {'posting_id': 1, 'instructions': 'short letter'}, monkeypatch)
+    sc = res.structured_content
+    assert sc['status'] == 'awaiting_approval' and sc['operation'] == 'prepare_application'
+    assert 'short letter' in calls[0]['message'] and calls[0]['person'] == 'owner'
+    assert 'd1' not in json.dumps(sc) and 'd1' not in res.content[0].text      # the model never sees the binding
+    assert res.meta['binding'] == 'd1'
+
+
+def test_decide_needs_the_binding_the_person_and_is_single_use(two_people, monkeypatch):
+    seen = []
+    def fake(**kw):
+        seen.append(kw)
+        return _interrupt() if 'message' in kw else {'status': 'complete', 'answer': 'Draft saved.', 'tools': []}
+    monkeypatch.setattr(cc, 'dispatch', fake)
+    sc = _call('owner', 'prepare_application', {'posting_id': 1}, monkeypatch).structured_content
+    iid = sc['interaction_id']
+    with pytest.raises(Exception):
+        _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'wrong'}, monkeypatch)
+    with pytest.raises(Exception):                                  # another person cannot answer it
+        _call('guest', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'd1'}, monkeypatch)
+    assert len(seen) == 1
+    done = _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'd1'}, monkeypatch)
+    assert done.structured_content['answer'] == 'Draft saved.' and seen[1]['decisions'] == [{'type': 'approve'}]
+    assert seen[1]['expected_checkpoint'] == 'cp1' and seen[1]['human_decision'] is True
+    with pytest.raises(Exception):
+        _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'd1'}, monkeypatch)
+
+
+def test_a_submit_approval_from_the_agent_is_never_put_to_the_widget(two_people, monkeypatch):
+    seen = []
+    def fake(**kw):
+        seen.append(kw)
+        return _interrupt('submit_application') if 'message' in kw else {'status': 'complete', 'answer': 'No.', 'tools': []}
+    monkeypatch.setattr(cc, 'dispatch', fake)
+    sc = _call('owner', 'revise_application', {'posting_id': 1, 'changes': 'shorter'}, monkeypatch).structured_content
+    assert sc['status'] == 'complete' and sc['declined'] == ['submit_application']
+    assert seen[1]['decisions'] == [{'type': 'reject'}] and not cc._PENDING
+
+
+def test_tool_annotations_and_widget_only_visibility():
+    server = mcp_server.create_server(token=TOKEN, person='owner')
+    async def go():
+        async with Client(server) as c:
+            return {t.name: t for t in await c.list_tools()}
+    by = asyncio.run(go())
+    assert by['submit_reviewed'].annotations.destructive_hint is True
+    assert by['submit_reviewed'].meta['ui']['visibility'] == ['app'] and by['decide'].meta['ui']['visibility'] == ['app']
+    for name in ('prepare_application', 'revise_application'):
+        assert by[name].annotations.read_only_hint is False and by[name].annotations.destructive_hint is False
+
+
+@pytest.fixture
+def reviewed(two_people, monkeypatch):
+    from jobwatch.apply import prepare
+    monkeypatch.setattr(prepare, 'latest_preparation', lambda root, app_id: dict(PREPARED))
+    from jobwatch.apply import submit_confirm
+    return submit_confirm.digest(PREPARED)
+
+
+def _requests(person):
+    with users.use(person):
+        conn = dbm.connect(users.db_path())
+        rows = conn.execute('SELECT posting_id, digest FROM submit_requests').fetchall() \
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() else []
+        conn.close()
+    return rows
+
+
+def test_submit_requires_the_digest_of_the_reviewed_form(reviewed, monkeypatch):
+    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    assert d.structured_content['can_submit'] is True
+    assert d.meta['submit_digest'] == reviewed and reviewed not in json.dumps(d.structured_content) + d.content[0].text
+    # a model-style call with no digest, an empty one, or a wrong one refuses and queues nothing
+    for args in ({'posting_id': 1}, {'posting_id': 1, 'confirm_digest': ''}, {'posting_id': 1, 'confirm_digest': 'a' * 64}):
+        with pytest.raises(Exception):
+            _call('owner', 'submit_reviewed', args, monkeypatch)
+    assert _requests('owner') == []
+    ok = _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
+    assert ok.structured_content['status'] == 'queued'
+    with pytest.raises(Exception):                                  # a second click never queues a second press
+        _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
+    assert len(_requests('owner')) == 1
+
+
+def test_submit_is_per_person_and_needs_a_reviewed_fill(two_people, monkeypatch):
+    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    assert d.structured_content['can_submit'] is False and 'submit_digest' not in (d.meta or {})
+    with pytest.raises(Exception):
+        _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': 'a' * 64}, monkeypatch)
+
+
+def test_a_digest_for_one_person_does_not_submit_for_another(reviewed, monkeypatch):
+    from jobwatch.apply import prepare
+    monkeypatch.setattr(prepare, 'latest_preparation',
+                        lambda root, app_id: dict(PREPARED) if 'owner' in str(root) or str(root).endswith('owner') else None)
+    with users.use('guest'):
+        guest_dir = str(users.user_dir())
+    if 'owner' in guest_dir:
+        pytest.skip('layout does not separate people by name')
+    with pytest.raises(Exception):
+        _call('guest', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': reviewed}, monkeypatch)
+    assert _requests('guest') == []
+
+
+# --- ChatGPT connector stage 4: optional OAuth 2.1 (code + PKCE + dynamic registration) --------------------
+
+PASS = 'correct horse battery'
+
+
+def _oauth_server(monkeypatch):
+    monkeypatch.setenv('JOBWATCH_MCP_OAUTH', '1')
+    monkeypatch.setenv('JOBWATCH_MCP_PUBLIC_URL', 'http://127.0.0.1:8914')
+    monkeypatch.setenv('JOBWATCH_MCP_OAUTH_PASSPHRASE', PASS)
+    return mcp_server.create_server(token=TOKEN, person='owner')
+
+
+def test_oauth_is_off_by_default_and_needs_its_config(monkeypatch):
+    monkeypatch.delenv('JOBWATCH_MCP_OAUTH', raising=False)
+    paths = {getattr(r, 'path', '') for r in mcp_server.create_server(token=TOKEN, person='owner').http_app().routes}
+    assert '/register' not in paths and '/oauth/consent' not in paths
+    monkeypatch.setenv('JOBWATCH_MCP_OAUTH', '1')
+    monkeypatch.delenv('JOBWATCH_MCP_PUBLIC_URL', raising=False)
+    with pytest.raises(RuntimeErrorSafe) as exc:
+        mcp_server.create_server(token=TOKEN, person='owner')
+    assert exc.value.code == 'mcp_oauth_configuration_required'
+
+
+def test_oauth_flow_maps_the_user_to_the_configured_person(monkeypatch):
+    import base64, hashlib
+    from urllib.parse import parse_qs, urlparse
+    from starlette.testclient import TestClient
+    server = _oauth_server(monkeypatch)
+    http = TestClient(server.http_app(), base_url='http://127.0.0.1:8914', follow_redirects=False)
+    assert 'registration_endpoint' in http.get('/.well-known/oauth-authorization-server').json()
+    assert http.get('/.well-known/oauth-protected-resource/mcp').status_code == 200
+    cb = 'https://chatgpt.example/callback'
+    reg = http.post('/register', json={'redirect_uris': [cb], 'client_name': 'Test ChatGPT', 'token_endpoint_auth_method': 'none',
+                                       'grant_types': ['authorization_code', 'refresh_token'], 'response_types': ['code']})
+    assert reg.status_code == 201, reg.text
+    cid = reg.json()['client_id']
+    verifier = __import__('secrets').token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
+    auth = http.get('/authorize', params={'response_type': 'code', 'client_id': cid, 'redirect_uri': cb, 'state': 's1',
+                                          'code_challenge': challenge, 'code_challenge_method': 'S256', 'scope': 'jobwatch'})
+    assert auth.status_code == 302 and '/oauth/consent' in auth.headers['location']
+    txn = parse_qs(urlparse(auth.headers['location']).query)['txn'][0]
+    assert 'Allow access' in http.get('/oauth/consent', params={'txn': txn}).text
+    assert 'wrong' in http.post('/oauth/consent', data={'txn': txn, 'passphrase': 'nope'}).text
+    done = http.post('/oauth/consent', data={'txn': txn, 'passphrase': PASS})
+    q = parse_qs(urlparse(done.headers['location']).query)
+    assert done.headers['location'].startswith(cb) and q['state'] == ['s1']
+    bad = http.post('/token', data={'grant_type': 'authorization_code', 'code': q['code'][0], 'client_id': cid,
+                                    'redirect_uri': cb, 'code_verifier': 'x' * 50})
+    assert bad.status_code in (400, 401) and 'code_verifier' in bad.text                           # PKCE verifier mismatch refuses
+    tok = http.post('/token', data={'grant_type': 'authorization_code', 'code': q['code'][0], 'client_id': cid,
+                                    'redirect_uri': cb, 'code_verifier': verifier})
+    assert tok.status_code == 200, tok.text
+    access = tok.json()['access_token']
+
+    async def check():
+        got = await server.auth.verify_token(access)
+        assert got.claims['sub'] == 'owner' or got.subject == 'owner'
+        assert await server.auth.verify_token(TOKEN) is not None       # the bearer token still works
+        assert await server.auth.verify_token('nope') is None
+    asyncio.run(check())
+    again = http.post('/token', data={'grant_type': 'authorization_code', 'code': q['code'][0], 'client_id': cid,
+                                      'redirect_uri': cb, 'code_verifier': verifier})
+    assert again.status_code in (400, 401)                                    # a code works once
+    refreshed = http.post('/token', data={'grant_type': 'refresh_token', 'refresh_token': tok.json()['refresh_token'], 'client_id': cid})
+    assert refreshed.status_code == 200
+    unauth = http.post('/mcp', json={'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'},
+                       headers={'Accept': 'application/json, text/event-stream'})
+    assert unauth.status_code == 401
+
+
+def test_consent_denied_and_lockout(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    from starlette.testclient import TestClient
+    server = _oauth_server(monkeypatch)
+    http = TestClient(server.http_app(), base_url='http://127.0.0.1:8914', follow_redirects=False)
+    cb = 'https://chatgpt.example/callback'
+    cid = http.post('/register', json={'redirect_uris': [cb], 'token_endpoint_auth_method': 'none'}).json()['client_id']
+    def start():
+        r = http.get('/authorize', params={'response_type': 'code', 'client_id': cid, 'redirect_uri': cb, 'state': 's',
+                                           'code_challenge': 'c' * 43, 'code_challenge_method': 'S256'})
+        return parse_qs(urlparse(r.headers['location']).query)['txn'][0]
+    denied = http.post('/oauth/consent', data={'txn': start(), 'passphrase': PASS, 'deny': '1'})
+    assert 'error=access_denied' in denied.headers['location']
+    txn = start()
+    for _ in range(5):
+        last = http.post('/oauth/consent', data={'txn': txn, 'passphrase': 'bad'})
+    assert last.status_code == 429
+    assert http.post('/oauth/consent', data={'txn': txn, 'passphrase': PASS}).status_code == 400
