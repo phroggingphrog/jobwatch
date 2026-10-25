@@ -1228,7 +1228,8 @@ def create_app(config: Config | None = None) -> FastAPI:
         """Script callers (fetch with Accept: application/json first, or X-Requested-With)."""
         h = request.headers
         return (accepts_json_first(h.get("accept", ""))
-                or "x-requested-with" in h)
+                or "x-requested-with" in h
+                or (request.url.path.startswith("/api/") and "text/html" not in h.get("accept", "")))
 
     @app.exception_handler(404)
     async def not_found(request: Request, exc):

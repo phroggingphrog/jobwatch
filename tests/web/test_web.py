@@ -241,3 +241,11 @@ def test_board_times_use_the_persons_timezone(tmp_path, monkeypatch):
     import os, time
     os.utime(pdir / "profile.yaml", ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))   # a profile edit is picked up
     assert q.absolute(noon).endswith("3:00 PM AEDT")
+
+
+def test_api_404_is_json_even_without_json_accept(client):
+    # curl and the TUI send Accept: */*; an /api/ caller must still get JSON, not the HTML error page.
+    for path in ("/api/job/999999", "/api/interview/nope", "/api/followup-draft/999999"):
+        r = client.get(path, headers={"accept": "*/*"})
+        assert r.status_code == 404, path
+        assert r.headers["content-type"].startswith("application/json"), path
