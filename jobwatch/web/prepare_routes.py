@@ -181,8 +181,11 @@ def register(app, config, conn_factory, render, sessions):
                     content_hash(career_profile_text(bundle).encode()),
                     digest(default_policy().model_dump(mode='json')), statistics['run_key'], cfg['evaluator_model'])
             except Exception as exc:
-                logging.getLogger(__name__).exception('candidate page: statistics failed')
-                statistics = {'status': 'error', 'error': f'{type(exc).__name__}: {str(exc)[:200]}'}
+                if str(exc) == 'source_missing':    # no profile yet (fresh start): the page says so, nothing to log
+                    statistics = {'status': 'input_unavailable'}
+                else:
+                    logging.getLogger(__name__).exception('candidate page: statistics failed')
+                    statistics = {'status': 'error', 'error': f'{type(exc).__name__}: {str(exc)[:200]}'}
             if conn.execute("SELECT 1 FROM sqlite_master WHERE name='agentic_runs'").fetchone():
                 for row in conn.execute('SELECT posting_id FROM agentic_runs ORDER BY rowid DESC LIMIT 100'):
                     try:
