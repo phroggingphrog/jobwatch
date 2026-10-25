@@ -305,6 +305,9 @@ class _PrivateBoundary(AgentMiddleware):
 
     def wrap_tool_call(self, request, handler):
         # Thread pools and an empty Context must never fall back to DEFAULT_USER.
+        if not self.execution and request.tool_call['name'] in (*GATED, 'profile_confirm'):
+            # No Jobwatch dispatch scope (LangGraph server path): the exact-binding approvals are not set up, never run.
+            raise RuntimeErrorSafe('approval_required_via_jobwatch_client')
         with users.use(self.person), invocation.use(self.execution):
             if self.execution:
                 self.execution.check()
@@ -316,6 +319,9 @@ class _PrivateBoundary(AgentMiddleware):
 
     async def awrap_tool_call(self, request, handler):
         # Same boundary on async runners (LangGraph server); gates inside the tools still decide.
+        if not self.execution and request.tool_call['name'] in (*GATED, 'profile_confirm'):
+            # No Jobwatch dispatch scope (LangGraph server path): the exact-binding approvals are not set up, never run.
+            raise RuntimeErrorSafe('approval_required_via_jobwatch_client')
         with users.use(self.person), invocation.use(self.execution):
             if self.execution:
                 self.execution.check()
@@ -1037,8 +1043,10 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                         # A typed message while something is pending is the person's own reply (a human decision), but it
                         # never approves: approvals are rejected with their words, questions are answered with them. The model
                         # then reasons about it (e.g. raises a new revise_application approval). Checkpoint checks ran above.
+                        answering = any(i['type'] in ('question', 'unsupported') for i in interactions)
                         decisions = [{'type': 'respond', 'message': message} if i['type'] in ('question', 'unsupported') else
-                                     {'type': 'reject', 'message': message} for i in interactions]
+                                     {'type': 'reject', 'message': 'Not approved: the person answered a question instead.'
+                                      if answering else message} for i in interactions]
                     # A resumed invocation can have advanced to another interrupt
                     # before the API persisted its result. Never replay the old
                     # human response against that later question or approval.

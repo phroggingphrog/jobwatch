@@ -1818,3 +1818,31 @@ def test_a_typed_change_while_submit_is_pending_reaches_the_model(world, monkeyp
     assert second['status'] == 'interrupted' and second['interactions'][0]['operation'] == 'revise_application'
     assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() or \
         conn.execute('SELECT COUNT(*) FROM submit_requests').fetchone()[0] == 0
+
+
+def test_a_typed_reply_with_a_question_and_an_approval_pending_answers_the_question_only(world, monkeypatch):
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from pipeline.agentic import chat
+    conn, turn, seen = _typed_reply_setup(world, monkeypatch, [{'answer': 'Not submitted.'}], 'typed-both')
+    calls = []
+    def generate(self, messages, stop=None, run_manager=None, **kwargs):
+        calls.append(messages)
+        if len(calls) == 1:
+            message = AIMessage(content='', tool_calls=[
+                {'name': 'ask_human', 'args': {'question': 'When can you start?'}, 'id': 'q1', 'type': 'tool_call'},
+                {'name': 'submit_application', 'args': {'posting_id': 42}, 'id': 's1', 'type': 'tool_call'}])
+        else:
+            message = AIMessage(content='Noted.')
+        return ChatResult(generations=[ChatGeneration(message=message)])
+    monkeypatch.setattr(chat.ConversationModel, '_generate', generate)
+    first = turn(message='Submit 42')
+    assert first['status'] == 'interrupted'
+    assert sorted(i['type'] for i in first['interactions']) == ['approval', 'question']
+    second = turn(message='yes, from Monday', expected_checkpoint=first['checkpoint_id'])
+    assert second['status'] == 'complete', second
+    tool_text = {m.name: m.content for m in calls[1] if m.type == 'tool'}
+    assert 'Not approved: the person answered a question instead.' in tool_text['submit_application']
+    assert 'yes, from Monday' in tool_text['ask_human']
+    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() or \
+        conn.execute('SELECT COUNT(*) FROM submit_requests').fetchone()[0] == 0
