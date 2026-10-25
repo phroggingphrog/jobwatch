@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from rich.markdown import Markdown
+from rich.markup import escape as _e
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -93,7 +94,7 @@ class JobwatchTUI(App):
     # ---------------------------------------------------------------- layout
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield RichLog(id='transcript', wrap=True, markup=False)
+            yield RichLog(id='transcript', wrap=True, markup=True)
             yield Static('', id='status')
         yield Input(placeholder='Ask Jobwatch…  (/quit to leave)', id='prompt')
         yield Footer()
@@ -110,15 +111,15 @@ class JobwatchTUI(App):
         if previous.get('unfinished'):
             self.thread_id = previous.get('thread_id', self.thread_id)
             self.checkpoint = previous.get('checkpoint')
-            log.write(f'[yellow]A previous turn for {self.person} did not report completion.[/yellow]')
-            log.write(f'  thread {self.thread_id} · last checkpoint {self.checkpoint or "none"}')
+            log.write(f'[yellow]A previous turn for {_e(self.person)} did not report completion.[/yellow]')
+            log.write(f'  thread {_e(self.thread_id)} · last checkpoint {_e(self.checkpoint or "none")}')
             log.write('  Type /resume to continue it, or just ask something new.\n')
         else:
-            log.write(f'[dim]Jobwatch · {self.person} · thread {self.thread_id}[/dim]\n')
+            log.write(f'[dim]Jobwatch · {_e(self.person)} · thread {_e(self.thread_id)}[/dim]\n')
 
     def _set_status(self, text: str) -> None:
         extra = f' · {len(self.deferred)} deferred' if self.deferred else ''
-        self.query_one('#status', Static).update(f'{text}{extra} · {self.thread_id}')
+        self.query_one('#status', Static).update(f'{text}{extra} · {_e(self.thread_id)}')
 
     # ----------------------------------------------------------------- input
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -143,7 +144,7 @@ class JobwatchTUI(App):
             return
         if self.busy:
             self.deferred.append(text)
-            self._say(f'[dim]parked as the next message: {text}[/dim]')
+            self._say(f'[dim]parked as the next message: {_e(text)}[/dim]')
             self._set_status('waiting for the current turn')
             return
         self._start_turn(text)
@@ -159,7 +160,7 @@ class JobwatchTUI(App):
         self.checkpoint = None
         self.pending = []
         _write_session(self.person, {'thread_id': self.thread_id, 'unfinished': False})
-        self._say(f'\n[dim]new thread {self.thread_id}[/dim]')
+        self._say(f'\n[dim]new thread {_e(self.thread_id)}[/dim]')
         self._set_status('ready')
 
     def action_cancel_turn(self) -> None:
@@ -196,7 +197,7 @@ class JobwatchTUI(App):
         self.cancel.clear()
         self.run_id = uuid.uuid4().hex
         if message:
-            self._say(f'[bold cyan]›[/bold cyan] {message}')
+            self._say(f'[bold cyan]›[/bold cyan] {_e(message)}')
         elif decisions:
             self._say('[dim]› answering the pending decision[/dim]')
         else:
@@ -250,15 +251,15 @@ class JobwatchTUI(App):
         elif kind == 'tool_started':
             name = str(data.get('tool') or data.get('name') or 'tool')
             self._tool_started[name] = time.monotonic()
-            self._say(f'[dim]⏺[/dim] {name} …')
+            self._say(f'[dim]⏺[/dim] {_e(name)} …')
             self._set_status(f'running {name}')
         elif kind == 'tool_finished':
             name = str(data.get('tool') or data.get('name') or 'tool')
             took = time.monotonic() - self._tool_started.pop(name, time.monotonic())
-            self._say(f'[dim]⏺[/dim] {name} [green]✓[/green] [dim]{took:.1f}s[/dim]')
+            self._say(f'[dim]⏺[/dim] {_e(name)} [green]✓[/green] [dim]{took:.1f}s[/dim]')
             self._set_status('working')
         elif kind == 'execution_error':
-            self._say(f'[red]! {data.get("error") or "execution error"}[/red]')
+            self._say(f'[red]! {_e(str(data.get("error") or "execution error"))}[/red]')
 
     def _render_done(self, result: dict, elapsed: float) -> None:
         self.busy = False
@@ -273,14 +274,14 @@ class JobwatchTUI(App):
             self._render_pending(self.pending)
         usage = result.get('usage') or {}
         finish = 'interrupted' if self.pending else status
-        self._say(f'[dim]— {finish} in {elapsed:.1f}s{f" · {usage}" if usage else ""}[/dim]\n')
+        self._say(f'[dim]— {_e(str(finish))} in {elapsed:.1f}s{_e(f" · {usage}") if usage else ""}[/dim]\n')
         _write_session(self.person, {'thread_id': self.thread_id, 'run_id': self.run_id,
                                      'checkpoint': self.checkpoint,
                                      'unfinished': bool(self.pending)})
         self._set_status('waiting for your decision' if self.pending else 'ready')
         if self.deferred and not self.pending:
             nxt = self.deferred.pop(0)
-            self._say(f'[dim]sending the parked message: {nxt}[/dim]')
+            self._say(f'[dim]sending the parked message: {_e(nxt)}[/dim]')
             self._start_turn(nxt)
 
     def _render_pending(self, pending: list[dict]) -> None:
@@ -289,13 +290,13 @@ class JobwatchTUI(App):
             kind = item.get('type')
             if kind == 'approval':
                 request = (item.get('action_requests') or [{}])[0]
-                self._say(f'  approve [bold]{request.get("name", "operation")}[/bold]?  '
+                self._say(f'  approve [bold]{_e(str(request.get("name", "operation")))}[/bold]?  '
                           f'a = approve · r = reject')
                 args = request.get('args')
                 if args:
-                    self._say(f'  [dim]{json.dumps(args)[:400]}[/dim]')
+                    self._say(f'  [dim]{_e(json.dumps(args)[:400])}[/dim]')
             else:
-                self._say(f'  {item.get("question") or item.get("prompt") or "Jobwatch asks:"}')
+                self._say(f'  {_e(str(item.get("question") or item.get("prompt") or "Jobwatch asks:"))}')
         self._say('[dim]type your answer (or a / r for an approval) and press Enter[/dim]')
 
     def _render_failed(self, error: str, elapsed: float) -> None:
@@ -308,7 +309,7 @@ class JobwatchTUI(App):
             self._say(f'[yellow]cancelled after {elapsed:.1f}s — completed steps are kept[/yellow]')
             self._set_status('cancelled')
         else:
-            self._say(f'[red]{error}[/red]')
+            self._say(f'[red]{_e(str(error))}[/red]')
             self._set_status('failed')
         _write_session(self.person, {'thread_id': self.thread_id, 'run_id': self.run_id,
                                      'checkpoint': self.checkpoint, 'unfinished': False})
