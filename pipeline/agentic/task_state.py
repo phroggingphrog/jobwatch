@@ -45,7 +45,8 @@ def task_card(conn: sqlite3.Connection, posting_id: int) -> dict:
     return {'posting_id': posting_id, 'state': 'not started'}
 
 
-COUNT_BUCKET = {'draft ready': 'needs_you', 'awaiting browser press': 'needs_you', 'failed': 'needs_info', 'expired': 'needs_info',
+# needs_info stays 0 until task_card has a state for an open question to the owner.
+COUNT_BUCKET = {'draft ready': 'needs_you', 'awaiting browser press': 'needs_you', 'failed': 'needs_you', 'expired': 'needs_you',
                 'outcome unknown': 'outcome_unknown', 'submitted': 'submitted'}
 
 
