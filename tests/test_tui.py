@@ -68,3 +68,7 @@ def test_reject_with_reason(app):
             await _settle(pilot, app)
             assert app.calls[-1]['decisions'] == [{'type': 'reject', 'message': 'wrong salary'}]
     asyncio.run(run())
+
+
+def test_hidden_control_characters_are_stripped():
+    assert tui._e('ok‮evil​[red]x\x1b') == 'okevil\\[red]x'

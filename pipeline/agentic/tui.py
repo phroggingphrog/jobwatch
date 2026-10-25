@@ -24,12 +24,13 @@ import json
 import queue
 import threading
 import time
+import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any
 
 from rich.markdown import Markdown
-from rich.markup import escape as _e
+from rich.markup import escape as _escape
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -41,6 +42,17 @@ from jobwatch.config import load_config
 from pipeline.agentic.chat import dispatch, job_connection
 from pipeline.agentic.execution import Execution
 from pipeline.agentic.runtime import RuntimeErrorSafe
+
+# Idea from deepagents-code (LangChain, MIT): strip hidden/bidi control characters from
+# model, tool and posting text before it is shown. Reimplemented, no code copied.
+
+def _clean(text: str) -> str:
+    return ''.join(ch for ch in text if ch in '\n\t' or unicodedata.category(ch) not in ('Cc', 'Cf'))
+
+
+def _e(text: object) -> str:
+    return _escape(_clean(str(text)))
+
 
 _SESSION = 'tui-session.json'
 _DECLINE = 'The human declined to answer. Do not infer missing facts.'
@@ -340,7 +352,7 @@ class JobwatchTUI(App):
         self.checkpoint = result.get('checkpoint_id') or self.checkpoint
         answer = result.get('answer')
         if answer:
-            self.query_one('#transcript', RichLog).write(Markdown(str(answer)))
+            self.query_one('#transcript', RichLog).write(Markdown(_clean(str(answer))))
         pending = result.get('interactions') or []
         self.pending = [i for i in pending if i.get('type') in ('approval', 'question')]
         if self.pending:
