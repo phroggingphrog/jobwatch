@@ -41,6 +41,35 @@ class FakeBackend(Backend):
     def chat_model(self):
         return '[model]'
 
+    def nav_counts(self):
+        return {'applications': 5, 'inbox': 1}
+
+    def today(self):
+        return {'total': 6, 'progress': {'read': 8, 'total': 8, 'left': 0}, 'rows': [
+            dict(id=11, score5=4.6, title='Junior Data Analyst', company='Acme Analytics', where='Melbourne VIC', listed_ago='13h',
+                 salary='$70,000 - $85,000', status='seen'),
+            dict(id=12, score5=4.3, title='Business Intelligence Analyst', company='Northwind', where='Sydney NSW', listed_ago='37h',
+                 salary='$70,000 - $85,000', status='saved'),
+            dict(id=13, score5=None, title='Data Analyst (Graduate)', company='Globex', where='Remote', listed_ago='2d',
+                 salary='$70,000 - $85,000', status='saved', app_status='drafted'),
+            dict(id=14, score5=None, title='Reporting Analyst', company='Initech', where='Brisbane QLD', listed_ago='3d',
+                 salary='$70,000 - $85,000', status='applied')]}
+
+    def job(self, posting_id):
+        return {'job': {'title': 'Data Analyst (Graduate)', 'company': 'Globex', 'where': 'Remote', 'posted_ago': '2d',
+                        'salary': '$70,000 - $85,000', 'wt_label': 'full_time', 'src_labels': ['Greenhouse'],
+                        'posted_abs': 'Fri 23 Oct 2026', 'rec_word': 'Decent match', 'score5': None, 'url': 'https://example.org/ad',
+                        'ai': {'reason': 'Graduate-friendly, SQL, Python, Excel and Tableau named in the ad.'},
+                        'blocks': [{'text': 'Globex is hiring a Data Analyst (Graduate). You will build dashboards.'}]},
+                'draft': {'state': 'ready'}, 'draft_links': {'cv': '/files/drafts/a/cv.pdf', 'letter': '/files/drafts/a/letter.pdf'}}
+
+    def review_form(self, posting_id):
+        return {'employer': 'Acme Analytics', 'role': 'Senior Data Analyst', 'rows': [
+            ('Employer', 'Acme Analytics', 'form'), ('Role', 'Senior Data Analyst', 'posting 42'),
+            ('Full name', '[Full name]', 'profile'), ('Why this role', '[3 lines typed into the form]', 'drafted by agent'),
+            ('CV', 'cv-acme-senior-data-analyst.pdf', 'attached · p change'),
+            ('Cover letter', 'cover-acme-senior-data-analyst.pdf', 'attached · p change')]}
+
 
 _PNG = """
 import sys
@@ -51,6 +80,19 @@ with sync_playwright() as p:
     pg.set_content('<body style="margin:0;background:#000">' + svg + '</body>')
     pg.screenshot(path=sys.argv[2], full_page=True); b.close()
 """
+
+
+async def ashot(pilot, app, name):
+    """Screenshots wait for a quiet screen: exporting mid-refresh can hit a half-built frame."""
+    last = None
+    for _ in range(10):
+        await pilot.pause(0.3)
+        try:
+            shot(app, name)
+            return
+        except TypeError as exc:
+            last = exc
+    raise last
 
 
 def shot(app, name):
@@ -163,10 +205,64 @@ def test_main_board_wide_and_narrow(app):
             side = str(app.query_one('#sidebar').render())
             assert 'Acme Analytics' in side and '2 need you' in side and 'awaiting browser press' in side
             assert 'Watcher' in side
-            shot(app, 'Main')
+            await ashot(pilot, app, 'Main')
             await pilot.resize_terminal(80, 24)
             await pilot.pause(0.3)
             assert app.query_one('#sidebar').has_class('-hidden')
             assert 'draft ready' in str(app.query_one('#narrowfeed').render())
-            shot(app, 'Narrow')
+            await ashot(pilot, app, 'Narrow')
+    asyncio.run(run())
+
+
+def test_today_detail_and_review(app):
+    async def run():
+        async with app.run_test(size=(120, 34)) as pilot:
+            await pilot.pause(0.2)
+            app.show_view('today')
+            await pilot.pause(0.6)
+            body = app.screen.plain_text
+            assert 'Check and submit' in body and 'Junior Data Analyst' in body and '100%' in body
+            await ashot(pilot, app, 'Today')
+            await pilot.press('enter')                   # first needs-you item is Acme (draft ready)
+            await pilot.pause(0.6)
+            assert type(app.screen).__name__ == 'DetailScreen'
+            await ashot(pilot, app, 'Detail')
+            await pilot.press('escape')
+            await pilot.press('escape')
+            await pilot.pause(0.2)
+            assert type(app.screen).__name__ != 'TodayScreen'
+    asyncio.run(run())
+
+
+def test_submit_only_from_review(app):
+    async def run():
+        async with app.run_test(size=(120, 34)) as pilot:
+            app.query_one('#prompt').value = 'submit job 7'
+            await pilot.press('enter')
+            await _settle(pilot, app)
+            n = len(app.calls)
+            await pilot.press('enter')                   # empty prompt + Submit waiting: opens the review
+            await pilot.pause(0.6)
+            assert type(app.screen).__name__ == 'ReviewScreen'
+            assert len(app.calls) == n                   # opening it sent nothing
+            await ashot(pilot, app, 'Review')
+            await pilot.press('a')
+            await _settle(pilot, app)
+            assert app.calls[-1]['decisions'] == [{'type': 'approve'}] and app.calls[-1]['human_decision'] is True
+            assert type(app.screen).__name__ != 'ReviewScreen'
+    asyncio.run(run())
+
+
+def test_review_escape_sends_nothing(app):
+    async def run():
+        async with app.run_test(size=(120, 34)) as pilot:
+            app.query_one('#prompt').value = 'submit job 7'
+            await pilot.press('enter')
+            await _settle(pilot, app)
+            n = len(app.calls)
+            await pilot.press('enter')
+            await pilot.pause(0.4)
+            await pilot.press('escape')
+            await pilot.pause(0.3)
+            assert len(app.calls) == n and app.pending
     asyncio.run(run())

@@ -393,6 +393,59 @@ class JobwatchTUI(App):
             return
         tui_screens.open_view(self, name, arg)
 
+    # ---- hooks the board screens call
+    def open_link(self, link: str) -> None:
+        """Open an ad URL or a drafted PDF with the desktop's default program; say where it is either way."""
+        if not link:
+            self._say('[yellow]Nothing to open here.[/yellow]')
+            return
+        target = self.backend.resolve_link(link)
+        self._say(f'[dim]opening {_e(target)}[/dim]')
+        try:
+            import webbrowser
+            webbrowser.open(target if target.startswith('http') else Path(target).as_uri())
+        except Exception:  # noqa: BLE001 - a headless terminal has nothing to open it with
+            pass
+
+    def ask_agent(self, text: str) -> None:
+        while len(self.screen_stack) > 1:
+            self.pop_screen()
+        if self.pending:
+            self._say('[yellow]Answer the waiting decision first.[/yellow]')
+        elif self.busy:
+            self.deferred.append(text)
+        else:
+            self._start_turn(text)
+
+    def fill_form(self, posting_id) -> None:
+        """Fill the form: if a Submit for this job waits, open its review; otherwise ask the agent to prepare it."""
+        waiting = [i for i in self.pending if i.get('operation') == 'submit_application' and i.get('posting_id') == posting_id]
+        if waiting:
+            self.show_view('review', posting_id)
+        else:
+            self.ask_agent(f'Prepare the application for posting {posting_id} and fill in the employer form. Do not submit it.')
+
+    def begin_edit(self, prefix: str) -> None:
+        self.reject_with_reason = True
+        prompt = self.query_one('#prompt', Input)
+        prompt.value = prefix
+        prompt.focus()
+        self._say('[dim]type the change and press Enter (sent as a rejection with your note)[/dim]')
+
+    def decide_submit(self, decision: str) -> None:
+        """Called only by the review screen: the single place a Submit is approved."""
+        if not self.pending or self.pending[0].get('operation') != 'submit_application':
+            return
+        self._answer_key('a' if decision == 'approve' else 'r')
+
+    def pick_file(self, purpose: str = 'chat') -> None:
+        try:
+            from pipeline.agentic import tui_files
+        except ImportError:
+            self._say('[dim]the file picker is not available yet[/dim]')
+            return
+        tui_files.open_picker(self, purpose)
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         self.query_one('#prompt', Input).value = ''

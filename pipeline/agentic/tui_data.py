@@ -27,7 +27,10 @@ class Backend:
     def applications(self) -> dict: return {}
     def inbox(self) -> dict: return {'open': [], 'closed': []}
     def inbox_decide(self, proposal_id: int, decision: str) -> str: return ''
-    def sources(self) -> dict: return {'health': [], 'employers': [], 'sectors': []}
+    def sources(self, sector: str = '', enabled: str = '') -> dict: return {'health': [], 'employers': [], 'sectors': []}
+    def job_action(self, posting_id: int, action: str) -> str: return ''
+    def export_csv(self) -> str: return ''
+    def resolve_link(self, link: str) -> str: return link
     def insights(self) -> dict: return {}
     def models(self) -> dict: return {'rows': []}
     def save_models(self, picks: dict[str, str]) -> str: return ''
@@ -136,11 +139,34 @@ class WebBackend(Backend):
         resp.raise_for_status()
         return str((resp.json() or {}).get('toast') or 'done')
 
-    def sources(self) -> dict:
-        return self._get('/api/sources')
+    def sources(self, sector: str = '', enabled: str = '') -> dict:
+        return self._get('/api/sources', sector=sector, enabled=enabled)
+
+    def job_action(self, posting_id: int, action: str) -> str:
+        resp = self._web().post(f'/api/job/{int(posting_id)}/{action}', json={})
+        body = resp.json()
+        if resp.status_code != 200:
+            raise ValueError(body.get('error') or 'refused')
+        return str(body.get('toast') or 'done')
+
+    def export_csv(self) -> str:
+        resp = self._web().get('/table.csv')
+        resp.raise_for_status()
+        target = Path.home() / 'jobwatch-jobs.csv'
+        target.write_bytes(resp.content)
+        return f'Saved {target}'
+
+    def resolve_link(self, link: str) -> str:
+        """A draft-file web path becomes the local file; an http(s) link stays as it is."""
+        if link.startswith('/files/drafts/') and '..' not in link:
+            from jobwatch.apply import paths as apaths
+            return str(apaths.drafts_dir() / link.removeprefix('/files/drafts/'))
+        return link
 
     def insights(self) -> dict:
-        return self._get('/api/insights')
+        data = self._get('/api/insights')
+        data['progress'] = self._get('/api/table').get('progress') or {}
+        return data
 
     def nav_counts(self) -> dict:
         from jobwatch import db as dbm
