@@ -17,7 +17,7 @@ from textual.widgets import Input, Static
 from . import tui_theme as theme
 from .tui_theme import (AMBER, AMETHYST, BG, GREEN, IDLE, MUTED, NEEDS_YOU, PANEL, RED, TEXT, badge, fit, join,
                         plain, score_text, styled)
-from .tui_widgets import (bar, box, btn, caps, heading, header_row, keyhint, lines_of, row, selected, wrap)
+from .tui_widgets import (Cols, bar, box, btn, caps, heading, header_row, keyhint, lines_of, row, selected, wrap)
 
 NAV = [('today', 'Today'), ('jobs', 'Jobs'), ('applications', 'Applications'), ('inbox', 'Inbox'), ('table', 'Table'),
        ('sources', 'Sources'), ('insights', 'Insights'), ('models', 'Models')]
@@ -136,7 +136,9 @@ class ViewScreen(Screen):
     def nav(self, width: int) -> Text:
         out = styled(' [■] jobwatch', 'bold')
         out.append('  ')
+        tight = width < 90
         for key, label in NAV:
+            label = {'applications': 'Apps'}.get(key, label) if tight else label
             n = {'applications': self.nav_counts.get('applications'), 'inbox': self.nav_counts.get('inbox')}.get(key)
             part = Text()
             on = key == self.kind or (key == 'jobs' and self.kind == 'detail')
@@ -144,7 +146,7 @@ class ViewScreen(Screen):
             if n:
                 part.append(f' {n}', style=AMETHYST)
             out.append_text(part)
-            out.append('   ')
+            out.append('  ' if tight else '   ')
         return out
 
     def body(self, width: int) -> tuple[list[Text], int]:
@@ -175,9 +177,14 @@ class ViewScreen(Screen):
         body = self.query_one('#viewbody', Static)
         body.update(text)
         body.refresh(layout=True)
-        self.query_one('#viewhint', Static).update(self.hint_text())
+        hint = self.hint_text()
+        self.query_one('#viewhint', Static).update(hint if len(hint) <= width - 2 else hint[:max(width - 3, 1)].rstrip() + '…')
         left = keyhint(self.footer_keys())
         right = keyhint([('1-8', 'switch view'), ('ctrl+p', 'commands')])
+        if left.cell_len + right.cell_len + 3 > width:
+            right = keyhint([('1-8', 'views'), ('ctrl+p', 'cmds')])
+        if left.cell_len + right.cell_len + 3 > width:
+            right = keyhint([('1-8', 'views')])
         self.query_one('#viewfoot', Static).update(theme.two_col(join(' ', left), join(right, ' '), width))
         scroller = self.query_one('#scroller')
         top = scroller.scroll_y
@@ -301,20 +308,23 @@ class TodayScreen(ViewScreen):
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))
         lines += [Text(''), caps('Best matches')]
-        cols = [('Score', 5), ('Title', 32), ('Company', 17), ('Where · age', 22), ('Pay', 21), ('State', 12)]
-        lines.append(join(' ', header_row(cols)))
+        cols = Cols([('Score', 5), ('Title', 32), ('Company', 17), ('Where · age', 22), ('Pay', 21), ('State', 12)], width - 2,
+                    drop=('Pay', 'Where · age', 'Company'), shrink=(('Title', 20),))
+        lines.append(join(' ', cols.header()))
         best = self.best()
         for n, r in enumerate(best):
             idx = len(needs) + n
             loc = plain(r.get('where') or r.get('location') or '')
             age = plain(r.get('listed_ago') or '')
-            line = row([(score_cell(r.get('score5')), 5), (plain(r.get('title')), 32), (plain(r.get('company')), 17),
-                        (f'{loc} · {age}' if age else loc, 22), (plain(r.get('salary') or ''), 21), (row_state(r), 12)])
+            line = cols.row(score_cell(r.get('score5')), plain(r.get('title')), plain(r.get('company')),
+                            f'{loc} · {age}' if age else loc, plain(r.get('salary') or ''), row_state(r))
             if idx == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, idx == self.sel))
         if not best:
             lines.append(styled('No matches yet. The first run will fill this in.', MUTED))
+            if not needs:
+                lines += [Text(''), styled('New here? Open /welcome in the web board and add your CV. Jobwatch builds your profile and searches from it.', MUTED)]
         lines += [Text(''), join(styled('enter', AMETHYST), ' open   ', styled(f'Browse all {total} jobs: press ', MUTED), styled('2', AMETHYST))]
         return lines, at
 
@@ -346,12 +356,11 @@ class JobsScreen(ViewScreen):
         lines = heading('Jobs', f'{len(rows)} in the queue. Newest activity first.') + [Text('')]
         if not rows:
             return lines + empty_feed(width), 0
-        cols = [('Score', 5), ('State', 26), ('Employer', 24), ('Title', 36)]
-        lines.append(join(' ', header_row(cols)))
+        cols = Cols([('Score', 5), ('State', 26), ('Employer', 24), ('Title', 36)], width - 2, shrink=(('Title', 16), ('Employer', 14)))
+        lines.append(join(' ', cols.header()))
         at = 0
         for n, r in enumerate(rows):
-            line = row([(score_cell(r.get('score')), 5), (badge(r.get('state', '')), 26), (plain(r.get('employer') or ''), 24),
-                        (plain(r.get('title') or ''), 36)])
+            line = cols.row(score_cell(r.get('score')), badge(r.get('state', '')), plain(r.get('employer') or ''), plain(r.get('title') or ''))
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))
@@ -594,7 +603,8 @@ class ApplicationsScreen(ViewScreen):
         data = self.data or {}
         items = self.items()
         lines = heading('Applications', f'{data.get("total", len(items))} tracked. Jobwatch writes the CV and letter; you check the form and press Submit.') + [Text('')]
-        cols = [('Job', 36), ('State', 13), ('Actions', 40)]
+        roomy = width >= 100
+        cols = [('Job', 36 if roomy else max(width - 18, 20)), ('State', 13)] + ([('Actions', 40)] if roomy else [])
         lines.append(join(' ', header_row(cols)))
         at = 0
         for n, a in enumerate(items):
@@ -618,14 +628,14 @@ class ApplicationsScreen(ViewScreen):
             else:
                 acts = btn('I applied (i)') if state in ('interested',) else Text('')
             at = len(lines) if on else at
-            lines.append(selected(join(row([(job, 36), (app_state(state), 13)]), acts), width, on))
+            lines.append(selected(join(row([(job, cols[0][1]), (app_state(state), 13)]), acts if roomy else Text('')), width, on))
             if second is not None:
                 lines.append(selected(join(' ', second), width, True))
         closed = (data.get('closed') or [])
         if closed:
             lines += [Text(''), caps('Closed')]
             for a in closed:
-                lines.append(join(' ', row([(join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED)), 36), (app_state(a.get('status')), 13)])))
+                lines.append(join(' ', row([(join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED)), cols[0][1]), (app_state(a.get('status')), 13)])))
         if not items and not closed:
             lines.append(styled('No applications yet. Save a job or ask Jobwatch to prepare one.', MUTED))
         lines += [Text(''), join(styled('Prepare an interview from a job link: ', MUTED), styled('n', AMETHYST))]
@@ -761,17 +771,18 @@ class TableScreen(ViewScreen):
                 chips.append(' ')
         if chips.plain.strip():
             lines += [chips, Text('')]
-        cols = [('Score', 5), ('Title', 29), ('Company', 14), ('Archetype', 12), ('Location', 13), ('Salary', 11), ('Listed', 7), ('State · AI view', 16)]
-        lines.append(join(' ', header_row(cols)))
+        cols = Cols([('Score', 5), ('Title', 29), ('Company', 14), ('Archetype', 12), ('Location', 13), ('Salary', 11), ('Listed', 7), ('State · AI view', 16)],
+                    width - 2, drop=('Archetype', 'Salary', 'Location', 'Listed'), shrink=(('Title', 16),))
+        lines.append(join(' ', cols.header()))
         at = 0
         for n, r in enumerate(rows):
             ai = plain(r.get('ai_state') or '')
             ai = {'show': 'good', 'hide': 'hidden', 'review': 'review', 'pending': 'waiting'}.get(ai, ai)
             state = row_state(r)
             state.append(f' · {ai}' if ai else '', style=MUTED)
-            line = row([(score_cell(r.get('score5')), 5), (plain(r.get('title')), 29), (plain(r.get('company')), 14),
-                        (plain(r.get('archetype') or '-'), 12), (plain(r.get('where') or r.get('location') or ''), 13),
-                        (plain(r.get('salary') or ''), 11), (plain(r.get('listed_ago') or '')[:8] + (' ago' if r.get('listed_ago') else ''), 7), (state, 16)])
+            line = cols.row(score_cell(r.get('score5')), plain(r.get('title')), plain(r.get('company')),
+                            plain(r.get('archetype') or '-'), plain(r.get('where') or r.get('location') or ''),
+                            plain(r.get('salary') or ''), plain(r.get('listed_ago') or '')[:8] + (' ago' if r.get('listed_ago') else ''), state)
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))
@@ -860,17 +871,20 @@ class SourcesScreen(ViewScreen):
                   styled("Jobwatch checks these employers' own careers systems directly, not only the job boards. Live = seen in 7 days.", MUTED), Text(''),
                   join(styled('Sector ', MUTED), btn(f'{self.sector or "All sectors"} ▾'), '    ', styled('Checking ', MUTED),
                        btn({'': 'All', '1': 'On', '0': 'Off'}[self.checking] + ' ▾'), '    ', styled(f'{len(allrows)} employers', MUTED)), Text('')]
-        cols = [('Employer', 31), ('Sector', 11), ('System', 17), ('Live', 7), ('Ver · AU · VIC', 17), ('Checked', 20)]
-        lines.append(join(' ', header_row(cols)))
+        cols = Cols([('Employer', 31), ('Sector', 11), ('System', 17), ('Live', 7), ('Ver · AU · VIC', 17), ('Checked', 20)], width - 2,
+                    drop=('Ver · AU · VIC', 'System', 'Sector'), shrink=(('Employer', 20),))
+        lines.append(join(' ', cols.header()))
         at = 0
         for n, e in enumerate(self.employers()):
             ver = ' · '.join(str(e.get(k)) if e.get(k) is not None else '-' for k in ('vc_total', 'vc_au', 'vc_vic'))
             checked = styled(f'✓ checked {plain(e.get("verified_at"))}', GREEN) if e.get('verified_at') else styled('· not checked', MUTED)
-            line = row([(plain(e.get('name')), 31), (plain(str(e.get('sector')).capitalize()), 11), (plain(e.get('provider')), 17),
-                        (f'{e.get("live", 0)} live', 7), (ver, 17), (checked, 20)])
+            line = cols.row(plain(e.get('name')), plain(str(e.get('sector')).capitalize()), plain(e.get('provider')),
+                            f'{e.get("live", 0)} live', ver, checked)
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))
+        if not allrows:
+            return lines + [styled('No employers are listed yet.', MUTED)], at
         lines += [Text(''), join(styled('enter', AMETHYST), ' show notes for the selected employer   ', styled('A', AMETHYST), f' show all {len(allrows)} employers')]
         sel = self.employers()[self.sel] if self.employers() and self.sel < len(self.employers()) else None
         if sel and sel.get('notes') and getattr(self, 'notes_open', False):
@@ -1035,8 +1049,8 @@ class ModelsScreen(ViewScreen):
         if not d.get('gateway_ok', True):
             lines.append(styled('▲ Could not load the model list from the gateway. Type the model id by hand.', AMBER))
         lines += [Text(''), styled('Which model for which job', 'bold')]
-        cols = [('Job', 28), ('Model', 28), ('Source', 28), ('Test', 12)]
-        lines.append(join(' ', header_row(cols)))
+        cols = Cols([('Job', 28), ('Model', 28), ('Source', 28), ('Test', 12)], width - 2, drop=('Source',), shrink=(('Model', 18), ('Job', 20)))
+        lines.append(join(' ', cols.header()))
         lines[-1].pad_right(max(width - lines[-1].cell_len, 0))
         lines[-1].stylize_before(f'on {PANEL}')
         at = 0
@@ -1050,7 +1064,7 @@ class ModelsScreen(ViewScreen):
                 source = styled('Default (server setting)', MUTED)
             result = self.test_result.get(r['role'], 'not tested')
             test = styled('Test (t)', 'bold') if n == self.sel and result == 'not tested' else styled(result, GREEN if result == 'ok' else RED if result != 'not tested' else MUTED)
-            line = row([(plain(r.get('label')), 28), (plain(value), 28), (source, 28), (test, 12)])
+            line = cols.row(plain(r.get('label')), plain(value), source, test)
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))

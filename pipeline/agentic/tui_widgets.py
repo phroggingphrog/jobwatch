@@ -111,3 +111,37 @@ def amber(text: str) -> Text:
 def wrap(text: str, width: int, style: str | None = None) -> list[Text]:
     import textwrap
     return [styled(part, style) if style else Text(part) for part in (textwrap.wrap(plain(text), max(width, 10)) or [''])]
+
+
+class Cols:
+    """Table columns that fit the screen: drop the named columns first (in order), then shrink the flexible ones.
+
+    spec is [(name, width)]; `drop` lists names to remove when the row is too wide; `shrink` lists (name, minimum)
+    to narrow after that. `row()` takes one value per original column so callers do not care which were dropped.
+    """
+
+    def __init__(self, spec: list[tuple[str, int]], avail: int, drop: tuple = (), shrink: tuple = ()) -> None:
+        self.spec = list(spec)
+        keep = {name: width for name, width in spec}
+        order = [name for name, _ in spec]
+
+        def total() -> int:
+            return sum(w + 1 for n, w in keep.items())
+        for name in drop:
+            if total() <= avail:
+                break
+            keep.pop(name, None)
+            order.remove(name)
+        for name, floor in shrink:
+            over = total() - avail
+            if over <= 0:
+                break
+            if name in keep:
+                keep[name] = max(floor, keep[name] - over)
+        self.keep = keep
+
+    def header(self) -> Text:
+        return header_row([(n, self.keep[n]) for n, _ in self.spec if n in self.keep])
+
+    def row(self, *values) -> Text:
+        return row([(v, self.keep[n]) for (n, _), v in zip(self.spec, values) if n in self.keep])
