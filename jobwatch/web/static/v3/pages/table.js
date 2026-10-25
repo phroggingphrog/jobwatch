@@ -58,7 +58,7 @@
     if (key === "fit") return '<span title="' + (r.score_src === "ai" ? "AI score" : "Keyword score (the AI has not read it yet)") + '">' + esc(r.score) + "</span>";
     if (key === "ai_fit") return ai && r.score5 != null ? '<span class="tscore" data-b="' + (r.score5 >= 4 ? "good" : r.score5 >= 3 ? "ok" : "low") + '" title="' + esc(V.clean(ai.reason || "")) + '">' + esc(r.score_text) + "</span>" : '<span class="tmute" title="The AI has no score for this job yet">–</span>';
     if (key === "archetype") return r.archetype ? esc(r.archetype) : dash();
-    if (key === "ai_view") return badge(r.ai_text, r.ai_state === "show" ? "good" : r.ai_state === "review" ? "ok" : "");
+    if (key === "ai_view") return V.st(r.ai_text, r.ai_state === "show" ? "ok" : r.ai_state === "review" ? "warn" : "");
     if (key === "title") return esc(r.title);
     if (key === "company") return r.company ? esc(r.company) : dash();
     if (key === "location") return esc(r.where || "");
@@ -71,7 +71,7 @@
     if (key === "listed") return r.listed_dt ? esc(r.listed_ago) : dash();
     if (key === "first_seen") return esc(r.first_seen_ago);
     if (key === "flags") return ["rights", "fulltime", "experience"].filter(function (w) { return (r.warn || []).indexOf(w) >= 0; }).map(function (w) { return badge(META.warn[w], "ok"); }).join(" ") + (r.entry ? " " + badge("Entry level", "good") : "") + (r.is_remote ? " " + badge("Remote") : "");
-    if (key === "status") return badge(ROW_STATUS[r.status] || r.status, r.status === "saved" || r.status === "applied" ? "good" : "");
+    if (key === "status") return V.st(ROW_STATUS[r.status] || r.status, r.status === "applied" ? "ok" : r.status === "new" ? "accent" : "");
     return "";
   }
 

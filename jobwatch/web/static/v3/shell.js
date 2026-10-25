@@ -13,7 +13,13 @@
   }
   apply(saved());
 
-  var NAV = {};
+  var NAV = {}, ITEMS = [];
+  function fillList() {
+    var d = document.getElementById("notif"), list = document.getElementById("notifList");
+    if (!list) { return; }
+    if (!d || !d.open) { list.innerHTML = ""; return; }
+    list.innerHTML = ITEMS.length ? ITEMS.map(function (i) { return '<a class="wk-rc" href="' + i[0] + '"><span class="pip" data-t="' + i[1] + '" aria-hidden="true"></span><span><b>' + esc(i[2]) + "</b><i>" + esc(i[3]) + "</i></span></a>"; }).join("") : '<p class="wk-sub">Nothing needs you right now.</p>';
+  }
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function counts() {
     document.querySelectorAll("[data-count]").forEach(function (el) {
@@ -25,11 +31,10 @@
     if (NAV.inbox) { items.push(["/#inbox", "accent", NAV.inbox + " mail repl" + (NAV.inbox === 1 ? "y" : "ies") + " to confirm", "Jobwatch needs a yes or no."]); }
     if (NAV.sources_bad) { items.push(["/#sources", "warn", NAV.sources_bad + " job source" + (NAV.sources_bad === 1 ? " is" : "s are") + " failing", "New jobs from it may be missing."]); }
     if (NAV.chat) { items.push(["/#chat", "accent", NAV.chat + " new message" + (NAV.chat === 1 ? "" : "s") + " from Jobwatch", "Open the chat to read it."]); }
-    var n = items.length, badge = document.getElementById("notifN"), list = document.getElementById("notifList");
+    ITEMS = items;
+    var n = items.length, badge = document.getElementById("notifN");
     if (badge) { badge.textContent = String(n); badge.hidden = !n; }
-    if (list) {
-      list.innerHTML = n ? items.map(function (i) { return '<a class="wk-rc" href="' + i[0] + '"><span class="pip" data-t="' + i[1] + '" aria-hidden="true"></span><span><b>' + esc(i[2]) + "</b><i>" + esc(i[3]) + "</i></span></a>"; }).join("") : '<p class="wk-sub">Nothing needs you right now.</p>';
-    }
+    fillList();
     var h = document.getElementById("health");
     if (h && NAV.sources_bad !== undefined) {
       h.hidden = false;
@@ -74,6 +79,7 @@
     var n = document.getElementById("notif");
     if (n && n.open && !e.target.closest("#notif")) { n.open = false; }
   });
+  document.addEventListener("toggle", function (e) { if (e.target && e.target.id === "notif") { fillList(); } }, true);
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") { return; }
     document.body.classList.remove("nav-open");

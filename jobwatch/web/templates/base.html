@@ -41,7 +41,7 @@
   <nav class="wk-crumb" id="crumb" aria-label="Breadcrumb">{% block crumb %}{% endblock %}</nav>
   <span class="wk-grow"></span>
   <details class="wk-notif" id="notif"><summary class="wk-iconbtn" aria-label="Notifications"><svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6M10 19a2 2 0 0 0 4 0"/></svg><span class="wk-badge" id="notifN" hidden></span></summary>
-    <div class="wk-pop" id="notifList"><p class="wk-sub">Nothing needs you right now.</p></div></details>
+    <div class="wk-pop" id="notifList" aria-live="polite"></div></details>
   <button class="wk-theme" type="button" id="themeBtn" aria-pressed="false" aria-label="Light theme"><span class="wk-track" aria-hidden="true"></span><span class="l">Light</span></button>
   <span class="wk-health" id="health" hidden><span class="pip" id="healthPip" aria-hidden="true"></span><span class="t" id="healthT"></span></span>
 </header>

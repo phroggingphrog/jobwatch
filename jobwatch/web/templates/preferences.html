@@ -10,7 +10,7 @@
   <form method="post" action="/preferences/new" style="margin:0"><button class="btn primary" type="submit">Compare three jobs</button></form></div>
   {% if preference_error %}<div class="wk-note bad" role="alert">{{ preference_error }}</div>{% endif %}
   <div class="wk-panel wk-pad wk-statgrid">
-    <div><div class="wk-eyebrow">Learning status</div><div style="margin-top:6px"><span class="st"{% if tone %} data-t="{{ tone }}"{% endif %}><span class="pip" aria-hidden="true"></span>{{ preference_state.status|replace('_', ' ')|capitalize }}</span></div></div>
+    <div><div class="wk-eyebrow">Learning status</div><div style="margin-top:6px"><span class="st"{% if tone %} data-t="{{ tone }}"{% endif %}><span class="pip" aria-hidden="true"></span>{{ preference_state.status|replace('_', ' ') }}</span></div></div>
     <div><div class="wk-row" style="justify-content:space-between"><span class="wk-sub">Training choices</span><b class="wk-mono">{{ preference_state.n_train }} / {{ preference_state.minimum_train }}</b></div><div class="wk-meter" style="margin-top:8px"><i style="width:{{ [100, (100 * preference_state.n_train / preference_state.minimum_train)|round|int]|min if preference_state.minimum_train else 0 }}%"></i></div></div>
     <div><div class="wk-row" style="justify-content:space-between"><span class="wk-sub">Checking choices</span><b class="wk-mono">{{ preference_state.n_holdout }} / {{ preference_state.minimum_holdout }}</b></div><div class="wk-meter" style="margin-top:8px"><i style="width:{{ [100, (100 * preference_state.n_holdout / preference_state.minimum_holdout)|round|int]|min if preference_state.minimum_holdout else 0 }}%"></i></div></div>
   </div>
