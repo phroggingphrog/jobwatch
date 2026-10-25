@@ -285,7 +285,10 @@ def mount(app, require, get_config):
                     session = service.sessions.status(binding['application_id'])
                     if session.get('target_id') != binding['target_id'] or not session.get('review_protected'):
                         raise HTTPException(409, 'browser_session_changed')
-                    value['_confirmed_only'] = True
+                    # A chat click on final Submit only goes through for the exact form the owner reviewed.
+                    sent = value.pop('confirm_digest', None)
+                    value['_chat'] = True
+                    value['_digest_ok'] = bool(sent) and service.review(binding['posting_id']).get('confirmed_digest') == sent
                     service.sessions.action(binding['application_id'], value)
             await asyncio.to_thread(perform)
             return JSONResponse({'ok': True}, headers=headers)

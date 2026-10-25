@@ -144,7 +144,9 @@ Keywords may help discover postings; they do not decide personal fit.
 - An application is submitted only by the owner's own click on the employer's Submit,
   or by Jobwatch pressing it after the owner explicitly confirms that exact reviewed fill
   (board button, or an approved chat `submit_application`). Approval to prepare materials
-  does not authorize submission, and auto-fill never submits by itself. The agent does not
+  does not authorize submission, and auto-fill never submits by itself. In chat the owner's
+  conversation may override gates and preferences (owner 2026-10-25) and the agent reasons about it and records the
+  override, but it never invents facts, and a confirmation never covers a form that changed after review. The agent does not
   send employer messages or move money.
 - Identity comes from authentication. Human responses belong to their exact
   pending interaction and inputs; recovery must not reuse an old approval for new work.

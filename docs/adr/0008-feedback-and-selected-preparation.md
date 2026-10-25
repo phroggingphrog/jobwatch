@@ -70,7 +70,7 @@ contract; parent verification is still required before release claims.
    `POST /api/agent/selections/{selection_id}/cancel` cancels through the existing
    run cancellation path. Chat's gated `prepare_application` and `select_jobs`
    operations create the same durable selection, and `selection_status` reads
-   it. The request authorizes preparation only and never Submit.
+   it. The request authorizes preparation only. Submit needs its own confirmation of the exact reviewed form (board button or chat), which the owner may give in chat.
 6. **Privacy and evaluation boundary.** Feedback history and selection state are
    scoped to the authenticated person. This Phase 6 source does not deliver
    Phase 7 evaluation reports, holdout evaluation or report exports. No report

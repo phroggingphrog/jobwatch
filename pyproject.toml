@@ -29,12 +29,14 @@ dev = [
 ]
 browser = ["playwright>=1.50,<2"]
 mcp = ["langchain[mcp]>=1.4.0,<2"]
+tui = ["textual>=8,<9"]
 
 [project.scripts]
 jobwatch = "jobwatch.cli:main"
 jobwatch-mcp = "pipeline.agentic.mcp_server:main"
 jobwatch-agent = "pipeline.agentic.api:main"
 jobwatch-mcp-app = "pipeline.agentic.mcp_app:main"
+jobwatch-tui = "pipeline.agentic.tui:main"
 
 [build-system]
 requires = ["setuptools>=68"]

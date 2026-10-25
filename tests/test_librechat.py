@@ -410,7 +410,11 @@ def test_genui_guidance_keeps_routine_questions_in_plain_chat(monkeypatch):
     from pipeline.agentic.genui import guidance
     from pipeline.agentic.chat import SYSTEM
     monkeypatch.delenv('JOBWATCH_GENUI_ENABLED', raising=False)
-    assert guidance() == ''
+    monkeypatch.delenv('JOBWATCH_UI_FORMAT', raising=False)
+    plain = guidance()
+    # Markdown is the baseline everywhere; generated UI is never authorable by default.
+    assert 'schemaJson' not in plain and ':::artifact' not in plain
+    assert 'GFM table' in plain and 'mermaid' in plain
     monkeypatch.setenv('JOBWATCH_GENUI_ENABLED', 'true')
     text = guidance()
     assert 'ask one or two questions directly in plain text' in text

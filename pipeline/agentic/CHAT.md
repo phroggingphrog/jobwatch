@@ -74,7 +74,7 @@ is admitted, and a person's queued work is bounded.
 
 The person comes only from the bearer token; ids belonging to another person return 404. Uploads and
 proposals stay private and separate from the approved profile until confirmed. Nothing here prepares
-documents, contacts an employer or submits; confirmation only starts discovery within the scope shown.
+documents or submits; confirmation only starts discovery within the scope shown. Submitting is a separate step: the owner's own click, or Jobwatch pressing Submit after the owner confirms that exact reviewed form (board button or chat `submit_application`).
 
 | Method and path | Scope | Result |
 |---|---|---|
@@ -319,7 +319,46 @@ No UI/DSH changes or live-service activation are part of source verification.
 
 MCP is optional (`uv sync --extra mcp`, `jobwatch-mcp`). Its experimental adapter
 calls the same dispatcher and bound approval contract. It is not required to
-install or use the native API.
+install or use the native API. External MCP **client** tools for the chat
+agent are separate and off by default (`mcp_client` below).
+
+### External MCP client tools (off by default)
+
+The chat agent can load tools from external MCP servers. Nothing is imported
+and no server process starts unless both switches are on: `mcp_client.enabled:
+true` in `config/jobwatch.yaml` and `enabled: true` on that server. No server
+is configured in the repository.
+
+```yaml
+mcp_client:
+  enabled: false
+  servers:
+    - name: example
+      enabled: true
+      transport: stdio            # stdio or streamable_http
+      command: python
+      args: ["-m", "example_mcp"]
+      people: []                  # empty = everyone; otherwise allowlist
+      read_only_tools: []         # raw MCP names allowed unattended
+      startup_timeout_seconds: 15
+      tool_timeout_seconds: 30
+```
+
+- Tools appear to the model as `<server>__<tool>`.
+- Only raw names in `read_only_tools` run without approval. Every other MCP
+  tool is added to `interrupt_on` and pauses for a human approve/reject
+  decision. Unknown tools are gated, never trusted.
+- Tools come from LangChain's own adapter, `langchain.mcp.MCPAdapter`, over
+  `fastmcp.Client` (MCP 2). The standalone `langchain-mcp-adapters` package is
+  not used: it pins `mcp<2` and imports modules MCP 2 renamed.
+- A missing `mcp` extra, an invalid entry, or a server that fails
+  to start is logged and skipped; the rest of the turn continues. Install with
+  `uv sync --extra mcp`.
+- stdio servers run owner-configured local commands. The model cannot add,
+  enable or configure a server. Treat tool descriptions and results as
+  untrusted data.
+- Each call opens a fresh MCP session, bounded by `tool_timeout_seconds`.
+  `dispatch` is synchronous; do not call it inside a running event loop.
 
 ### LibreChat client
 
@@ -677,8 +716,8 @@ setting it remains independently usable with its existing local browser owner.
 `/api/agent/applications` exposes only the person's application state; per-application
 `open`, `answers`, `frame`, `review` and `submit` operations require human scope for
 browser access/mutations. An in-chat five-minute control capability binds one person,
-application and browser target, permits bounded browser input, and cannot authorize
-final Submit. No browser debugging port is exposed. The exact reviewed form includes
+application and browser target, permits bounded browser input, including the final Submit click, which only goes through when it
+carries the `confirmed_digest` of the exact form the owner reviewed (a refused attempt voids that review). No browser debugging port is exposed. The exact reviewed form includes
 employer, URL, actual values and attached documents. Unsupported/custom unreadable
 controls block review. Human corrections use a separate private review overlay;
 original preparation records stay immutable. Final Submit still uses
@@ -704,10 +743,12 @@ available routes. Per-person role choices remain runtime settings.
 ## Standard chat clients (2026-10-24)
 
 The owner selected vanilla LibreChat with native Artifacts and no Jobwatch cards.
-`JOBWATCH_UI_FORMAT=artifacts` authors native Artifact markup and disables new
-`show_card` tools and automatic MCP view calls. Old resources remain readable.
-Artifacts never grant human approval; a gated action stays paused when its client
-cannot supply protected human review.
+Chat answers are Markdown by default: GFM tables for comparisons and fenced mermaid
+diagrams for flows. `JOBWATCH_UI_FORMAT=artifacts` adds native Artifact authoring when
+the person explicitly asks for a visual. Chat renders no Jobwatch cards, so canonical
+views, settings and application review stay on the board; old MCP resources remain
+readable. Artifacts never grant human approval; a gated action stays paused when its
+client cannot supply protected human review.
 
 `POST /v1/chat/completions` accepts standard text/file content parts containing
 `file.filename` and base64 `file.file_data` data URIs. Inline image/audio/video data

@@ -1,3 +1,4 @@
+import time
 """Native browser frontend uses canonical synthetic form review and one-use Submit."""
 import hashlib
 import json
@@ -77,7 +78,7 @@ def test_live_review_changed_form_and_final_submit(native):
     assert seen==[('GET','/'),('POST','/submit')]
 
 
-def test_browser_capability_cannot_press_submit_and_is_person_bound(native):
+def test_browser_capability_needs_reviewed_digest_for_submit_and_is_person_bound(native):
     client,manager,(base,seen),prepared=native
     cap=client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1})
     assert cap.status_code==200,cap.text
@@ -94,6 +95,22 @@ def test_browser_capability_cannot_press_submit_and_is_person_bound(native):
             manager.status('1')
     # A principal cannot add a claimed person to a grant.
     assert client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1,'person':'friend'}).status_code==422
+
+
+def test_browser_capability_presses_submit_for_the_reviewed_form(native):
+    client,manager,(base,seen),prepared=native
+    cap=client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1}).json()
+    box=manager.with_page('1',lambda page:page.locator('#submit').bounding_box())
+    digest=client.get('/api/agent/applications/1/review',headers=auth()).json()['confirmed_digest']
+    assert digest
+    body=cap['ticket']+'\n'+json.dumps({'kind':'click','x':box['x']+5,'y':box['y']+5,'confirm_digest':digest})
+    done=client.post('/api/agent/client/browser/action',content=body,headers={'Content-Type':'text/plain','Origin':'null'})
+    assert done.status_code==200,done.text
+    for _ in range(20):
+        if seen!=[('GET','/')]:
+            break
+        time.sleep(0.25)
+    assert seen!=[('GET','/')]
 
 
 def test_accounts_and_expired_browser_grants_are_isolated(native,monkeypatch):
@@ -179,3 +196,14 @@ def test_expired_browser_requires_explicit_current_package_refill(native,monkeyp
         conn.close()
     assert client.post('/api/agent/applications/1/open',headers=auth(),json=body).status_code==409
     assert fills==[1]
+
+
+def test_browser_capability_refuses_a_wrong_or_stale_digest_and_presses_nothing(native):
+    client,manager,(base,seen),prepared=native
+    cap=client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1}).json()
+    box=manager.with_page('1',lambda page:page.locator('#submit').bounding_box())
+    body=cap['ticket']+'\n'+json.dumps({'kind':'click','x':box['x']+5,'y':box['y']+5,'confirm_digest':'0'*64})
+    refused=client.post('/api/agent/client/browser/action',content=body,headers={'Content-Type':'text/plain','Origin':'null'})
+    assert refused.status_code==409,refused.text
+    manager.with_page('1',lambda page:page.wait_for_timeout(300))
+    assert seen==[('GET','/')]

@@ -69,3 +69,23 @@ pipeline:
   #   screen_token_ceiling: 300000
   #   relevance_model: null   # default to the configured evaluator model
 
+
+mcp_client:
+  # Optional external MCP tools for the career chat agent. OFF by default: when
+  # this switch is false (or this section is absent), no MCP package is imported
+  # and no server process starts. Server commands are owner-controlled; never add
+  # one through chat. This is the client side; it needs the `mcp` install extra
+  # (`langchain[mcp]`), the same stack the Jobwatch MCP server uses.
+  enabled: false
+  servers: []
+  # Example stdio server (disabled). Every tool not named in read_only_tools pauses
+  # for a human approve/reject decision.
+  #  - name: example
+  #    enabled: true
+  #    transport: stdio
+  #    command: python
+  #    args: ["-m", "example_mcp"]
+  #    people: []              # empty = every Jobwatch person
+  #    read_only_tools: []     # raw MCP tool names allowed without approval
+  #    startup_timeout_seconds: 15
+  #    tool_timeout_seconds: 30

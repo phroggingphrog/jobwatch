@@ -199,8 +199,8 @@ are gated by an exact-payload human interrupt. Question text must match words
 supplied by the person. The model cannot invent an answer or approve changed
 inputs. HTTP acceptance and dispatch do not call a model; package preparation
 later runs in the authenticated worker using existing paid routes and execution
-budgets. Selection authorizes preparation only. It never clicks or authorizes
-Submit.
+budgets. Selection authorizes preparation only. Submit is a separate step: the owner clicks it, or
+confirms the exact reviewed form (board button or chat) so Jobwatch presses it.
 
 Feedback history and selection status are scoped to the authenticated person.
 This Phase 6 example does not expose evaluation reports or holdout results;
