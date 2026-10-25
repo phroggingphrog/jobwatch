@@ -155,3 +155,10 @@ def footer(width: int, left: str = '~', keys: list[tuple[str, str]] | None = Non
         if n < len(keys) - 1:
             right.append('   ')
     return two_col(Text(left, style=MUTED), right, width)
+
+
+def empty_feed() -> list[str]:
+    """First run: what is going on and what to type (markup lines for the transcript)."""
+    return ['[bold]Nothing in the queue yet.[/bold]', '[dim]The watcher has not found a job to score.[/dim]', '',
+            f'[{AMETHYST}]/run[/]      start a watcher run', f'[{AMETHYST}]/profile[/]  check the career profile it scores against', '',
+            '[dim]Or ask: "What is the watcher doing?"[/dim]']

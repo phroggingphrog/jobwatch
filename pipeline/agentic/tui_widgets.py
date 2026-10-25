@@ -74,7 +74,7 @@ def selected(line: Text, width: int, on: bool) -> Text:
         return join(' ', line)
     out = join(styled('▌', AMETHYST), line)
     out.pad_right(max(width - out.cell_len, 0))
-    out.stylize(f'on {PANEL}')
+    out.stylize_before(f'on {PANEL}')
     return out
 
 

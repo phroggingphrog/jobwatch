@@ -94,10 +94,12 @@ class JobwatchTUI(App):
     #main {{ height: 1fr; }}
     #left {{ width: 1fr; padding: 0 1; }}
     #transcript {{ height: 1fr; background: {theme.BG}; scrollbar-size-vertical: 1; }}
-    #taskstate {{ height: auto; color: {theme.AMETHYST}; }}
+    #taskstate {{ height: auto; color: {theme.MUTED}; padding: 0 1; }}
     #status {{ display: none; }}
     #pending {{ height: auto; background: {theme.PANEL}; padding: 0 2; border-left: thick {theme.AMBER}; display: none; }}
     #pending.-on {{ display: block; }}
+    #working {{ height: auto; display: none; color: {theme.MUTED}; padding: 0 1; }}
+    #working.-on {{ display: block; }}
     #chips {{ height: auto; display: none; color: {theme.MUTED}; }}
     #chips.-on {{ display: block; }}
     #promptbox {{ height: auto; background: {theme.INPUT}; border-left: thick {theme.AMETHYST}; padding: 0 1; margin-top: 1; }}
@@ -144,6 +146,7 @@ class JobwatchTUI(App):
         self.narrow = False
         self.model_name = ''
         self.current_tool = ''
+        self.failed: dict | None = None
         self.status_text = 'ready'
         self.attachments: list[dict] = []
         self.pending_picker = False
@@ -157,6 +160,7 @@ class JobwatchTUI(App):
                 yield RichLog(id='transcript', wrap=True, markup=True)
                 yield Static('', id='taskstate')
                 yield Static('', id='status')
+                yield Static('', id='working')
                 yield Static('', id='pending')
                 yield Static('', id='chips')
                 with Vertical(id='promptbox'):
@@ -168,10 +172,10 @@ class JobwatchTUI(App):
 
     def on_mount(self) -> None:
         self.query_one('#prompt', Input).focus()
+        self._load_feed()
         self._banner()
         self.set_interval(0.12, self._drain)
         self._set_status('ready')
-        self._load_feed()
         self._layout_for(self.size.width)
         self._refresh_chrome()
 
@@ -296,8 +300,9 @@ class JobwatchTUI(App):
             self._say('  Type /resume to continue it, or just ask something new.\n')
         else:
             self._say(f'[dim]Jobwatch · {_e(self.person)} · thread {_e(self.thread_id)}[/dim]\n')
-        if self.rows == [] and not previous.get('unfinished'):
-            pass
+        if not self.rows and not previous.get('unfinished'):
+            for line in views.empty_feed():
+                self._add(('raw', line))
 
     def _refresh_task_state(self) -> None:
         line = self.query_one('#taskstate', Static)
@@ -311,7 +316,10 @@ class JobwatchTUI(App):
                 label = task_state.task_card(jobs, self.posting_id)['state']
         except Exception:  # noqa: BLE001 - a missing database must not break the screen
             label = 'unavailable'
-        line.update(f'job {self.posting_id}: {_e(str(label))}')
+        if label == 'outcome unknown':
+            line.update(f'[#fbbf24]? outcome unknown[/] job {self.posting_id} · {_e(theme_unknown())}  [dim]enter open job detail. Nothing will resend without you.[/dim]')
+        else:
+            line.update(f'job {self.posting_id}: {_e(str(label))}')
 
     def _refresh_pending(self) -> None:
         strip = self.query_one('#pending', Static)
@@ -358,6 +366,19 @@ class JobwatchTUI(App):
             gone = self.attachments.pop()
             self._refresh_chips()
             self._say(f'[dim]removed {_e(gone["path"].name)}[/dim]')
+            return
+        if self.failed and not self.pending and not prompt.value and not self.busy and key in ('r', 'e', 'enter'):
+            event.prevent_default()
+            event.stop()
+            failed, self.failed = self.failed, None
+            if key == 'enter':
+                if failed.get('posting_id'):
+                    self.show_view('detail', failed['posting_id'])
+            elif key == 'r':
+                self.ask_agent(f'Retry the step {failed["tool"]}' + (f' for posting {failed["posting_id"]}' if failed.get('posting_id') else '') + '. Do not submit anything.')
+            else:
+                prompt.value = f'Retry {failed["tool"]} but '
+                prompt.cursor_position = len(prompt.value)
             return
         approval = bool(self.pending) and self.pending[0].get('type') == 'approval'
         if approval and not prompt.value:
@@ -634,7 +655,24 @@ class JobwatchTUI(App):
             self.events.put(('failed', f'{type(exc).__name__}: {exc}', time.monotonic() - started))
 
     # ------------------------------------------------------------- rendering
+    SPIN = '◐◓◑◒'
+
+    def _refresh_working(self) -> None:
+        box = self.query_one('#working', Static)
+        box.set_class(self.busy, '-on')
+        if not self.busy:
+            return
+        frame = self.SPIN[int(time.monotonic() * 6) % 4]
+        out = Text()
+        out.append(f'{frame} working', style=theme.AMETHYST)
+        if self.current_tool:
+            out.append(f'  {theme.plain(self.current_tool)} running', style=theme.MUTED)
+        out.append(f'  {time.monotonic() - getattr(self, "turn_started", time.monotonic()):.0f}s', style=theme.MUTED)
+        out.append('\nctrl+c cancels this turn. Nothing is sent.', style=theme.MUTED)
+        box.update(out)
+
     def _drain(self) -> None:
+        self._refresh_working()
         while True:
             try:
                 item = self.events.get_nowait()
@@ -663,9 +701,21 @@ class JobwatchTUI(App):
             name = str(data.get('tool') or data.get('name') or 'tool')
             took = time.monotonic() - self._tool_started.pop(name, time.monotonic())
             self._add(('tool', name, 'done', took))
+            self.current_tool = ''
+            if data.get('error') or data.get('status') == 'error':
+                self._render_step_failed(name, str(data.get('error') or 'error'))
             self._set_status('◐ working')
         elif kind == 'execution_error':
             self._say(f'[red]✕ {_e(str(data.get("error") or "execution error"))}[/red]')
+
+    def _render_step_failed(self, name: str, error: str) -> None:
+        """A step stopped: say what, that nothing was submitted, and the keys that follow."""
+        self.failed = {'tool': name, 'posting_id': self.posting_id, 'error': error}
+        self._say(f'[red]✕ failed[/red]  {_e(name)}' + (f' · posting {self.posting_id}' if self.posting_id else ''))
+        self._say('  Nothing was submitted.')
+        self._say('  [dim]r retry the step   e edit and retry   enter open job detail[/dim]')
+        self._say(f'  [dim]▾ tool_finished {_e(name)} · error[/dim]')
+        self._say(f'  [dim]  {_e(error[:300])}[/dim]')
 
     def _render_done(self, result: dict, elapsed: float) -> None:
         self.busy = False
@@ -708,8 +758,7 @@ class JobwatchTUI(App):
             self._say(f'[yellow]cancelled after {elapsed:.1f}s — completed steps are kept[/yellow]')
             self._set_status('cancelled')
         else:
-            self._say(f'[red]✕ failed[/red]  {_e(str(error))}')
-            self._say('[dim]Nothing was submitted. Send the message again to retry.[/dim]')
+            self._render_step_failed(self.current_tool or 'turn', str(error))
             self._set_status('failed')
         _write_session(self.person, {'thread_id': self.thread_id, 'run_id': self.run_id,
                                      'checkpoint': self.checkpoint, 'unfinished': False})
@@ -717,6 +766,11 @@ class JobwatchTUI(App):
         if self.deferred:
             nxt = self.deferred.pop(0)
             self._start_turn(nxt)
+
+
+def theme_unknown() -> str:
+    from pipeline.agentic.task_state import UNKNOWN_MESSAGE
+    return UNKNOWN_MESSAGE
 
 
 VIEW_COMMANDS = {'/today': 'today', '/jobs': 'jobs', '/applications': 'applications', '/inbox': 'inbox',

@@ -448,6 +448,9 @@ class DetailScreen(ViewScreen):
             self.tui.open_link((ctx.get('draft_links') or {}).get('cv' if key == 'c' else 'letter') or '')
         elif key == 'f':
             self.tui.fill_form(self.posting_id)
+        elif key in ('m', 'x') and ((self.data or {}).get('card') or {}).get('state') == 'outcome unknown':
+            self.toast = 'Marking the outcome is not wired into the terminal yet. Check the employer site or your email, then use the web board.'
+            self.redraw()
 
 
 def outcome_unknown_lines(card: dict, job: dict, width: int) -> list[Text]:
@@ -574,7 +577,7 @@ class ApplicationsScreen(ViewScreen):
         data = self.data or {}
         items = self.items()
         lines = heading('Applications', f'{data.get("total", len(items))} tracked. Jobwatch writes the CV and letter; you check the form and press Submit.') + [Text('')]
-        cols = [('Job', 40), ('State', 18), ('Actions', 50)]
+        cols = [('Job', 34), ('State', 20), ('Actions', 50)]
         lines.append(join(' ', header_row(cols)))
         at = 0
         for n, a in enumerate(items):
@@ -596,12 +599,12 @@ class ApplicationsScreen(ViewScreen):
             else:
                 acts = btn('I applied (i)') if state in ('interested',) else Text('')
             at = len(lines) if on else at
-            lines.append(selected(join(row([(job, 40), (app_state(state), 18)]), acts), width, on))
+            lines.append(selected(join(row([(job, 34), (app_state(state), 20)]), acts), width, on))
         closed = (data.get('closed') or [])
         if closed:
             lines += [Text(''), caps('Closed')]
             for a in closed:
-                lines.append(join(' ', row([(join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED)), 40), (app_state(a.get('status')), 18)])))
+                lines.append(join(' ', row([(join(styled(plain(a.get('title')), 'bold'), styled(' ' + plain(a.get('company')), MUTED)), 34), (app_state(a.get('status')), 20)])))
         if not items and not closed:
             lines.append(styled('No applications yet. Save a job or ask Jobwatch to prepare one.', MUTED))
         lines += [Text(''), join(styled('Prepare an interview from a job link: ', MUTED), styled('n', AMETHYST))]
@@ -736,7 +739,7 @@ class TableScreen(ViewScreen):
                 chips.append(' ')
         if chips.plain.strip():
             lines += [chips, Text('')]
-        cols = [('Score', 5), ('Title', 26), ('Company', 17), ('Archetype', 13), ('Location', 13), ('Salary', 14), ('Listed', 9), ('State · AI view', 18)]
+        cols = [('Score', 5), ('Title', 25), ('Company', 15), ('Archetype', 12), ('Location', 13), ('Salary', 13), ('Listed', 8), ('State · AI view', 17)]
         lines.append(join(' ', header_row(cols)))
         at = 0
         for n, r in enumerate(rows):
@@ -744,9 +747,9 @@ class TableScreen(ViewScreen):
             ai = {'show': 'good', 'hide': 'hidden', 'review': 'review', 'pending': 'waiting'}.get(ai, ai)
             state = row_state(r)
             state.append(f' · {ai}' if ai else '', style=MUTED)
-            line = row([(score_cell(r.get('score5')), 5), (plain(r.get('title')), 26), (plain(r.get('company')), 17),
-                        (plain(r.get('archetype') or '-'), 13), (plain(r.get('where') or r.get('location') or ''), 13),
-                        (plain(r.get('salary') or ''), 14), (plain(r.get('listed_ago') or '')[:8] + (' ago' if r.get('listed_ago') else ''), 9), (state, 18)])
+            line = row([(score_cell(r.get('score5')), 5), (plain(r.get('title')), 25), (plain(r.get('company')), 15),
+                        (plain(r.get('archetype') or '-'), 12), (plain(r.get('where') or r.get('location') or ''), 13),
+                        (plain(r.get('salary') or ''), 13), (plain(r.get('listed_ago') or '')[:8] + (' ago' if r.get('listed_ago') else ''), 8), (state, 17)])
             if n == self.sel:
                 at = len(lines)
             lines.append(selected(line, width, n == self.sel))
@@ -891,15 +894,17 @@ class InsightsScreen(ViewScreen):
         stats = [(totals.get('postings', 0), 'Postings seen'), (totals.get('matches', 0), 'Matches, all time'),
                  (totals.get('matches_7d', 0), 'Matches, 7 days'), (totals.get('employers_live', 0), 'Employers hiring now')]
         cell = 24
-        for part in range(3):
+        for part in range(4):
             line = Text()
             for value, label in stats:
                 if part == 0:
                     line.append('┌' + '─' * (cell - 2) + '┐ ', style=theme.RULE)
                 elif part == 1:
                     line.append_text(join(styled('│ ', theme.RULE), styled(str(value).ljust(cell - 4), 'bold'), styled(' │ ', theme.RULE)))
-                else:
+                elif part == 2:
                     line.append_text(join(styled('│ ', theme.RULE), styled(label.ljust(cell - 4), MUTED), styled(' │ ', theme.RULE)))
+                else:
+                    line.append('└' + '─' * (cell - 2) + '┘ ', style=theme.RULE)
             lines.append(line)
         lines.append(Text(''))
         half = max((width - 4) // 2, 30)
@@ -983,8 +988,8 @@ class ModelsScreen(ViewScreen):
             lines.append(styled('▲ Could not load the model list from the gateway. Type the model id by hand.', AMBER))
         lines += [Text(''), styled('Which model for which job', 'bold')]
         cols = [('Job', 28), ('Model', 28), ('Source', 28), ('Test', 12)]
-        lines.append(header_row(cols).copy())
-        lines[-1].stylize(f'on {PANEL}')
+        lines.append(join(' ', header_row(cols)))
+        lines[-1].stylize_before(f'on {PANEL}')
         at = 0
         for n, r in enumerate(self.rows()):
             value = self.edits.get(r['role'], r.get('value'))
