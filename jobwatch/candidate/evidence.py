@@ -114,8 +114,7 @@ def _extract_primary(contents: dict[str, bytes]) -> tuple[list[dict[str, Any]], 
         profile_text = contents["profile.yaml"].decode("utf-8", "strict")
         _, spans = _parse_yaml(profile_text)
         raw_items.extend(extract_profile_yaml(profile_text))
-        _, yaml_nodes = _parse_yaml(profile_text)
-        for path, node in yaml_nodes.items():
+        for path, node in spans.items():
             dotted = ".".join(map(str, path))
             kind = next((kind for rx, kind in PF_RULES if rx.match(dotted)), None)
             if kind is not None and isinstance(node, yaml.ScalarNode) and len(node.value.strip()) >= 2:
