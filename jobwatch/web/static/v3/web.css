@@ -16,8 +16,8 @@
 }
 html[data-theme="light"] {
   --bg: #efece1; --top: #faf9f5; --rail: #e6e2d4; --panel: #ffffff; --inset: #f3f1e8; --line: #d6d2c2; --line2: #c7c2ae;
-  --text: #141413; --sub: #3d3d3a; --muted: #605f58; --dim: #75726a;
-  --accent: #d97757; --accent-soft: #fbede6; --accent-text: #a94a28; --on-accent: #ffffff;
+  --text: #141413; --sub: #3d3d3a; --muted: #55534b; --dim: #64615a;
+  --accent: #d97757; --accent-soft: #fbede6; --accent-text: #a94a28; --on-accent: #141413;
   --ok: #5a6b43; --warn: #8a6410; --bad: #b8452f;
   --primary: #b4552f; --primary-hover: #9c4726; --on-primary: #ffffff; --hover: #ddd8c7; --sel: #fbede6;
   --btn-bg: #ffffff; --field: #ffffff;
@@ -58,7 +58,7 @@ a.wk-title { display: inline-flex; align-items: center; min-height: 40px; }
 .wk-top { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 0 20px; background: var(--top); border-bottom: 1px solid var(--line); }
 .wk-brand { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font: 600 20px var(--sans); letter-spacing: -0.02em; color: var(--text); }
 .wk-mark { width: 30px; height: 30px; flex: none; }
-.wk-word span { color: var(--accent); }
+.wk-word span { color: var(--accent-text); }
 .wk-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; font-size: 14px; color: var(--muted); }
 .wk-crumb a { display: inline-flex; align-items: center; min-height: 40px; color: var(--muted); }
 .wk-crumb a:hover { color: var(--text); }
