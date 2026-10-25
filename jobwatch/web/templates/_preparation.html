@@ -36,7 +36,7 @@
   {% endif %}
   {% if not can_prepare and job.status != 'applied' %}<div class="wk-note">Verified application documents are needed before filling. <a class="wk-link" href="/#job/{{ job.id }}">View document status</a>.</div>{% endif %}
   {% if browser.open and can_prepare and not browser.automation_active %}
-  <form method="post" action="/job/{{ job.id }}/prepare" style="margin:0"><button class="btn{% if not (prepared and prepared.status == 'ready_for_owner') %} primary{% endif %}" type="submit">Fill application</button></form>
+  <form method="post" action="/job/{{ job.id }}/prepare" style="margin:0"><button class="btn{% if not (prepared and (prepared.status == 'ready_for_owner' or prepared.reason == 'missing_profile_facts')) %} primary{% endif %}" type="submit">Fill application</button></form>
   {% endif %}
   {% if prepared and prepared.review_answers %}
   <details class="wk-fold" open><summary>Review the prepared answers ({{ prepared.review_answers|length }})</summary>

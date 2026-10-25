@@ -11,7 +11,7 @@
   --serif: 'Newsreader', Georgia, 'Times New Roman', serif;
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, monospace;
-  --r: 12px; --r-sm: 8px; --rail-w: 240px;
+  --r: 12px; --r-sm: 8px; --rail-w: 240px; --btn-bg: #13151b; --field: #0c0e12;
   color-scheme: dark;
 }
 html[data-theme="light"] {
@@ -20,6 +20,7 @@ html[data-theme="light"] {
   --accent: #d97757; --accent-soft: #fbede6; --accent-text: #a94a28; --on-accent: #ffffff;
   --ok: #5a6b43; --warn: #8a6410; --bad: #b8452f;
   --primary: #b4552f; --primary-hover: #9c4726; --on-primary: #ffffff; --hover: #ddd8c7; --sel: #fbede6;
+  --btn-bg: #ffffff; --field: #ffffff;
   color-scheme: light;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -50,7 +51,7 @@ a.wk-title { display: inline-flex; align-items: center; min-height: 40px; }
 .wk-lede b { color: var(--accent-text); font-weight: 600; }
 .wk-prose p { margin: 0 0 12px; font-size: 15px; line-height: 24px; color: var(--sub); }
 .wk-prose ul, .wk-prose ol { margin: 0 0 12px; padding-left: 22px; color: var(--sub); line-height: 24px; }
-.wk-prose a, .wk-link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.wk-prose a:not(.btn), .wk-link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
 .wk-link { display: inline-flex; align-items: center; min-height: 40px; }
 
 /* ---- top bar ---- */
@@ -108,8 +109,7 @@ html[data-theme="light"] .nav-link.on { background: #fff; box-shadow: 0 1px 3px 
 .wk-tabbar { display: none; }
 
 /* ---- buttons, fields ---- */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--r-sm); border: 1px solid var(--line2); background: var(--panel); color: var(--text); font: 500 14px var(--sans); cursor: pointer; white-space: nowrap; }
-html[data-theme="light"] .btn { background: #fff; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 16px; border-radius: var(--r-sm); border: 1px solid var(--line2); background: var(--btn-bg); color: var(--text); font: 500 14px var(--sans); cursor: pointer; white-space: nowrap; }
 .btn:hover { background: var(--hover); }
 .btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); font-weight: 600; }
 .btn.primary:hover { background: var(--primary-hover); }
@@ -118,8 +118,7 @@ html[data-theme="light"] .btn { background: #fff; }
 .btn.danger { color: var(--bad); }
 .btn[disabled], .btn[aria-disabled="true"] { opacity: .5; cursor: default; }
 .wk-input, .wk-sel, .wk-area, .wk-form input:not([type=checkbox]):not([type=radio]):not([type=file]), .wk-form select, .wk-form textarea {
-  min-height: 40px; padding: 8px 12px; background: var(--inset); border: 1px solid var(--line2); border-radius: var(--r-sm); color: var(--text); font: 400 15px/1.4 var(--sans); max-width: 100%; }
-html[data-theme="light"] .wk-input, html[data-theme="light"] .wk-sel, html[data-theme="light"] .wk-area, html[data-theme="light"] .wk-form input, html[data-theme="light"] .wk-form select, html[data-theme="light"] .wk-form textarea { background: #fff; }
+  min-height: 40px; padding: 8px 12px; background: var(--field); border: 1px solid var(--line2); border-radius: var(--r-sm); color: var(--text); font: 400 15px/1.4 var(--sans); max-width: 100%; }
 .wk-area, .wk-form textarea { width: 100%; min-height: 96px; resize: vertical; }
 .wk-input::placeholder, .wk-area::placeholder { color: var(--dim); }
 .wk-form input[type=checkbox], .wk-form input[type=radio] { width: 22px; height: 22px; accent-color: var(--primary); }
@@ -364,6 +363,7 @@ html[data-theme="light"] .wk-heat i.l1 { background: rgba(217,119,87,.4); }
   .wk-tabbar .on { color: var(--accent-text); }
   .wk-tabbar .nav-count { position: absolute; top: 2px; left: calc(50% + 6px); margin: 0; min-width: 20px; line-height: 20px; }
   .toast { bottom: 76px; }
+  .wk-compwrap { bottom: 60px; padding-bottom: 8px; }
   .wk-sdetail-full .wk-shead { position: static; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

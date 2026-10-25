@@ -20,8 +20,9 @@
     flush();
     return out.join("");
   }
+  function tidy(t) { return String(t || "").replace(/^(opportunity\s*\/\s*archetype|archetype|tl;?dr)\s*[:\-–]\s*/i, "").replace(/[ \t]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim(); }
   function chatWords(t) {
-    return V.clean(String(t || "").replace(/`?\b([a-z]+(?:_[a-z]+)+)\b`?/g, function (m, c) { return CODE_WORDS[c] || c; })
+    return tidy(String(t || "").replace(/`?\b([a-z]+(?:_[a-z]+)+)\b`?/g, function (m, c) { return CODE_WORDS[c] || c; })
       .replace(/\s*Claude Code needs to look[^.]*\./g, "").replace(/\bdlq\b/gi, "failed-jobs queue").replace(/\bREADY\b/g, "ready").replace(/\s*\(?\bT\d+\b\)?/g, ""));
   }
   function noticeWords(t) {
