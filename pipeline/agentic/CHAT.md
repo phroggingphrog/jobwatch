@@ -770,3 +770,22 @@ and provisions isolated friends. This server credential never enters browser/mod
 text and this adapter grants only read/run scope. It cannot approve operations or
 authenticate other native API routes. Existing per-person bearer clients continue
 to work. Never use an unauthenticated browser/model field as a trusted subject.
+
+## ACP adapter: Jobwatch inside Toad or any ACP client
+
+`jobwatch-acp` speaks the Agent Client Protocol over stdio, so any ACP client can drive the same
+chat agent as `jobwatch-tui`. Install the extra once: `uv pip install -e ".[acp]"`.
+
+- Run: `jobwatch-acp` (it waits for JSON-RPC on stdin; normally the client starts it).
+- Toad (Textual-based ACP front end, needs Python 3.14, so install it apart from this venv):
+  `toad acp "/home/phroggingphrog/apps/jobwatch-native/.venv/bin/jobwatch-acp" .`
+  (`toad acp [OPTIONS] COMMAND PATH`; add `-t Jobwatch` for a status-bar title). The person is the current Jobwatch person (set `JOBWATCH_DEFAULT_USER` in that command's environment).
+- Mapping: session/new starts a new chat thread for the current person; session/prompt runs one
+  turn (tool calls appear as tool_call / tool_call_update, the answer as a message); an approval
+  becomes a permission request with Approve / Reject, answered as a human decision; session/cancel
+  stops the turn at its next checkpoint, same as ctrl+c in the TUI.
+- A question from Jobwatch is shown as a message and your next prompt is the answer. Sending a new
+  prompt while an approval is open rejects that approval.
+- Not exposed: client files and terminals are never read or written. Submit still needs the exact-form
+  approval and the browser press; nothing here can bypass those gates. Limits: no token streaming
+  (the answer arrives once the turn returns), no session/load (a session lasts for the process).
