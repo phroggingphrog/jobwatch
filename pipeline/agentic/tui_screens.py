@@ -929,7 +929,10 @@ class InsightsScreen(ViewScreen):
         lines = heading('Insights', 'What Jobwatch has found, and what is working.') + [Text('')]
         stats = [(totals.get('postings', 0), 'Postings seen'), (totals.get('matches', 0), 'Matches, all time'),
                  (totals.get('matches_7d', 0), 'Matches, 7 days'), (totals.get('employers_live', 0), 'Employers hiring now')]
-        cell = 24
+        cell = 24 if width >= 100 else max((width - 2) // len(stats) - 1, 14)
+        if cell < 24:
+            stats = [(v, {'Postings seen': 'Postings', 'Matches, all time': 'Matches', 'Matches, 7 days': 'Last 7 days',
+                          'Employers hiring now': 'Hiring now'}.get(l, l)) for v, l in stats]
         for part in range(4):
             line = Text()
             for value, label in stats:
@@ -938,7 +941,7 @@ class InsightsScreen(ViewScreen):
                 elif part == 1:
                     line.append_text(join(styled('│ ', theme.RULE), styled(str(value).ljust(cell - 4), 'bold'), styled(' │ ', theme.RULE)))
                 elif part == 2:
-                    line.append_text(join(styled('│ ', theme.RULE), styled(label.ljust(cell - 4), MUTED), styled(' │ ', theme.RULE)))
+                    line.append_text(join(styled('│ ', theme.RULE), styled(label[:cell - 4].ljust(cell - 4), MUTED), styled(' │ ', theme.RULE)))
                 else:
                     line.append('└' + '─' * (cell - 2) + '┘ ', style=theme.RULE)
             lines.append(line)
@@ -960,7 +963,7 @@ class InsightsScreen(ViewScreen):
         right += [join(plain(a[3] if len(a) > 3 else a[0]).ljust(18), bar(min(a[2] / max(top_n(d.get('by_arm')), 1), 1), 12), f' {a[2]}') for a in (d.get('by_arm') or [])[:4]]
         right += [Text(''), styled('By source', 'bold')]
         right += [join(plain(a[2] if len(a) > 2 else a[0]).ljust(18), bar(min(a[1] / max(top_n(d.get('by_src'), 1), 1), 1), 12), f' {a[1]}') for a in (d.get('by_src') or [])[:4]]
-        right += [Text(''), styled('Busiest employers (30 days, seen · matched)', 'bold'),
+        right += [Text(''), styled('Busiest employers (30 days)', 'bold'),
                   Text(' · '.join(plain(t[0]) for t in (d.get('top') or [])[:6]))]
         rem = d.get('remote') or {}
         if rem.get('matches'):
