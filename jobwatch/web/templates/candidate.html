@@ -9,7 +9,7 @@
   {% if profile_problems %}
   <div class="wk-sec"><h2 class="wk-h2">Check your profile files<span class="n">{{ profile_problems|length }}</span></h2>
     <p class="wk-sub">Jobwatch ignores these lines until they are fixed. Matching is weaker meanwhile.</p>
-    <div class="wk-rows" role="status">{% for p in profile_problems %}<div class="wk-prow"><span class="pip" data-t="warn" aria-hidden="true"></span><div class="grow wk-body">{{ p }}</div></div>{% endfor %}</div>
+    <div class="wk-rows" role="status">{% for p in profile_problems %}<div class="wk-prow"><span class="pip" data-t="warn" aria-hidden="true"></span><div class="grow wk-body">{% if 'profile.yaml is missing' in p %}You have no profile yet. Add your CV and Jobwatch builds one.{% else %}{{ p }}{% endif %}</div>{% if 'profile.yaml is missing' in p %}<a class="btn primary" href="/welcome">Add your CV</a>{% endif %}</div>{% endfor %}</div>
   </div>
   {% endif %}
 

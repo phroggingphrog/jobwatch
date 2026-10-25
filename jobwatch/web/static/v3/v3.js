@@ -4,9 +4,10 @@
   "use strict";
   var view = document.getElementById("view"), META = {}, F = { ai: "show", q: "", page: 1, st: "", arr: "", minscore: "", sal: "", entry: "" }, rows = [], SEL = null, GEN = 0, PAGES = {};
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function friendly(c) { return c === 404 ? "Not found. It may have been removed." : c === 401 || c === 403 ? "You are signed out. Reload the page and sign in." : c >= 500 ? "Jobwatch hit a problem. Nothing was changed. Try again." : "That did not work (" + c + "). Nothing changed."; }
   function api(path, body) {
     var opt = body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
-    return fetch(path, opt).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || d.detail || "Request failed (" + r.status + ")"); return d; }); });
+    return fetch(path, opt).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) { var er = new Error(typeof (d.error || d.detail) === "string" ? (d.error || d.detail) : friendly(r.status)); er.status = r.status; throw er; } return d; }); }, function () { var er = new Error("Cannot reach Jobwatch. Check that it is running, then try again."); er.status = 0; throw er; });
   }
   function toast(m, bad) { window.jwToast(m, bad); }
   function fail(e) { toast(e.message || "That did not work. Nothing changed.", true); }
@@ -15,8 +16,8 @@
   function wide() { return matchMedia("(min-width: 901px)").matches; }
   function draw(html) { view.innerHTML = '<div class="wk-page">' + html + "</div>"; }
   function head(title, sub, right) { return '<div class="wk-head"><div><h1 class="wk-h1">' + esc(title) + "</h1>" + (sub ? '<p class="wk-sub" style="margin-top:6px">' + sub + "</p>" : "") + "</div>" + (right || "") + "</div>"; }
-  function errBox(msg) { return '<div class="wk-err" role="alert"><span>' + esc(msg) + '</span><button class="btn" type="button" data-retry>Try again</button></div>'; }
-  function failPage(title, e) { draw(head(title) + errBox(e.message || "This page could not load.")); }
+  function errBox(msg, nr) { return '<div class="wk-err" role="alert"><span>' + esc(msg) + "</span>" + (nr ? '<a class="btn" href="#jobs">Back to Jobs</a>' : '<button class="btn" type="button" data-retry>Try again</button>') + "</div>"; }
+  function failPage(title, e) { draw(head(title) + errBox(e.message || "This page could not load.", e.status === 404)); }
   function sentence(s) { s = String(s || ""); return s.replace(/^./, function (c) { return c.toUpperCase(); }); }
 
   /* ---- shared pieces ---- */
@@ -53,7 +54,8 @@
       if (NAV.sources_bad) pend.push(row("#sources", co("S"), NAV.sources_bad + " job source" + (NAV.sources_bad === 1 ? " is" : "s are") + " failing", "New jobs from it may be missing.", st("Check sources", "bad")));
       var sub = (good.total ? good.total + " job" + (good.total === 1 ? " is" : "s are") + " worth applying to." : "No job is rated Good yet.") + (held ? " " + held + " more are held back because the AI could not read the whole ad." : "");
       var cb = ins && ins.callbacks && ins.callbacks._all ? ins.callbacks._all : { n: 0, successes: 0 }, t7 = ins && ins.totals ? ins.totals.matches_7d : null;
-      var focus = ready ? '<div class="wk-panel wk-focus"><div class="wk-row" style="gap:14px;flex-wrap:nowrap">' + co(ready.company) + '<div style="flex:1;min-width:0"><div class="wk-eyebrow">Next action</div><h2 class="wk-h2" style="margin-top:4px">' + esc(ready.title) + (ready.company ? ", " + esc(ready.company) : "") + '</h2><p class="wk-sub">' + esc([ready.where, ready.updated_ago ? "updated " + ready.updated_ago : ""].filter(Boolean).join(" · ")) + "</p></div></div>" +
+      var fresh = ins && ins.totals && ins.totals.postings === 0 && !ready;
+      var focus = fresh ? '<div class="wk-panel wk-focus"><div class="wk-empty"><b>Start here</b><span>Add your CV and Jobwatch builds your profile and your job searches. The first jobs show up after the first search runs.</span><a class="btn primary" href="/welcome">Add your CV</a></div></div>' : ready ? '<div class="wk-panel wk-focus"><div class="wk-row" style="gap:14px;flex-wrap:nowrap">' + co(ready.company) + '<div style="flex:1;min-width:0"><div class="wk-eyebrow">Next action</div><h2 class="wk-h2" style="margin-top:4px">' + esc(ready.title) + (ready.company ? ", " + esc(ready.company) : "") + '</h2><p class="wk-sub">' + esc([ready.where, ready.updated_ago ? "updated " + ready.updated_ago : ""].filter(Boolean).join(" · ")) + "</p></div></div>" +
         '<div class="wk-steps" aria-label="Progress"><div class="wk-step done"><i></i>Ad read</div><div class="wk-step done"><i></i>CV and letter</div><div class="wk-step now"><i></i>You check it</div><div class="wk-step"><i></i>Submit</div></div>' +
         '<div class="wk-row" style="gap:12px">' + ((ready.files || {}).cv ? '<a class="wk-doc" target="_blank" rel="noopener" href="' + esc(ready.files.cv) + '"><b>CV</b><span class="wk-sub">Open the PDF</span></a>' : "") + ((ready.files || {}).letter ? '<a class="wk-doc" target="_blank" rel="noopener" href="' + esc(ready.files.letter) + '"><b>Letter</b><span class="wk-sub">Open the PDF</span></a>' : "") + '<span class="wk-grow" style="flex:1"></span><a class="btn primary" href="/job/' + ready.posting_id + '/prepare">Review application</a></div></div>'
         : '<div class="wk-panel"><div class="wk-empty"><b>Nothing to check right now</b><span>When a CV and letter are ready, the form to review shows up here.</span><a class="btn" href="#jobs">Browse jobs</a></div></div>';
@@ -155,7 +157,7 @@
       document.title = j.title + " – Jobwatch";
       window.JW.page("jobs", '<a href="#jobs">Jobs</a><span aria-hidden="true">›</span><span class="here">' + esc(j.title) + "</span>");
       if (dr.state === "running") setTimeout(function () { if (location.hash === "#job/" + id) job(id); }, 5000);
-    }).catch(function (e) { draw('<a class="wk-link" href="#jobs">← Jobs</a>' + errBox(e.message)); });
+    }).catch(function (e) { draw('<a class="wk-link" href="#jobs">← Jobs</a>' + errBox(e.message, e.status === 404)); });
   }
 
   /* ---- Pipeline (applications): rows by whose move it is. Dots show the stage. ---- */

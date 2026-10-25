@@ -1460,8 +1460,9 @@ def nav_counts(conn) -> dict:
     apps = conn.execute(
         "SELECT COUNT(*) FROM applications WHERE status NOT IN ('skipped','rejected','withdrawn')").fetchone()[0]
     bad = conn.execute("SELECT COUNT(*) FROM source_health WHERE consecutive_failures>=3").fetchone()[0]
+    seen = conn.execute("SELECT COUNT(*) FROM source_health").fetchone()[0]
     from jobwatch.notify import unread
-    return {"inbox": inbox, "applications": apps, "sources_bad": bad, "chat": unread(conn)}
+    return {"inbox": inbox, "applications": apps, "sources_bad": bad, "sources_seen": seen, "chat": unread(conn)}
 
 
 # -- insights -------------------------------------------------------------------------------------------
