@@ -4,9 +4,10 @@
   "use strict";
   var view = document.getElementById("view"), META = {}, F = { ai: "show", q: "", page: 1, st: "", arr: "", minscore: "", sal: "", entry: "" }, rows = [], SEL = null, GEN = 0, PAGES = {};
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function friendly(c) { return c === 404 ? "Not found. It may have been removed." : c === 401 || c === 403 ? "You are signed out. Reload the page and sign in." : c >= 500 ? "Jobwatch hit a problem. Nothing was changed. Try again." : "That did not work (" + c + "). Nothing changed."; }
   function api(path, body) {
     var opt = body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
-    return fetch(path, opt).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) throw new Error(d.error || d.detail || "Request failed (" + r.status + ")"); return d; }); });
+    return fetch(path, opt).then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) { if (!r.ok) { var er = new Error(typeof (d.error || d.detail) === "string" ? (d.error || d.detail) : friendly(r.status)); er.status = r.status; throw er; } return d; }); }, function () { var er = new Error("Cannot reach Jobwatch. Check that it is running, then try again."); er.status = 0; throw er; });
   }
   function toast(m, bad) { window.jwToast(m, bad); }
   function fail(e) { toast(e.message || "That did not work. Nothing changed.", true); }
@@ -15,8 +16,8 @@
   function wide() { return matchMedia("(min-width: 901px)").matches; }
   function draw(html) { view.innerHTML = '<div class="wk-page">' + html + "</div>"; }
   function head(title, sub, right) { return '<div class="wk-head"><div><h1 class="wk-h1">' + esc(title) + "</h1>" + (sub ? '<p class="wk-sub" style="margin-top:6px">' + sub + "</p>" : "") + "</div>" + (right || "") + "</div>"; }
-  function errBox(msg) { return '<div class="wk-err" role="alert"><span>' + esc(msg) + '</span><button class="btn" type="button" data-retry>Try again</button></div>'; }
-  function failPage(title, e) { draw(head(title) + errBox(e.message || "This page could not load.")); }
+  function errBox(msg, nr) { return '<div class="wk-err" role="alert"><span>' + esc(msg) + "</span>" + (nr ? '<a class="btn" href="#jobs">Back to Jobs</a>' : '<button class="btn" type="button" data-retry>Try again</button>') + "</div>"; }
+  function failPage(title, e) { draw(head(title) + errBox(e.message || "This page could not load.", e.status === 404)); }
   function sentence(s) { s = String(s || ""); return s.replace(/^./, function (c) { return c.toUpperCase(); }); }
 
   /* ---- shared pieces ---- */
@@ -156,7 +157,7 @@
       document.title = j.title + " – Jobwatch";
       window.JW.page("jobs", '<a href="#jobs">Jobs</a><span aria-hidden="true">›</span><span class="here">' + esc(j.title) + "</span>");
       if (dr.state === "running") setTimeout(function () { if (location.hash === "#job/" + id) job(id); }, 5000);
-    }).catch(function (e) { draw('<a class="wk-link" href="#jobs">← Jobs</a>' + errBox(e.message)); });
+    }).catch(function (e) { draw('<a class="wk-link" href="#jobs">← Jobs</a>' + errBox(e.message, e.status === 404)); });
   }
 
   /* ---- Pipeline (applications): rows by whose move it is. Dots show the stage. ---- */
