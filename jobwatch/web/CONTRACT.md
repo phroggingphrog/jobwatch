@@ -2,9 +2,9 @@
 
 Routes live in `app.py`, data in `queries.py` (read) and `actions.py` (write). Keep this file true.
 **The old server-rendered board, job page, pane, table, applications and inbox pages are gone (2026-10-19, owner: "need to be removed completely").**
-`/` is the app shell (`static/app/index.html` + `app.js`); everything it shows comes from `/api/*` (below). Server templates remain only for
+`/` is the app shell: `templates/app.html` extends `base.html` (the one shared shell: top bar, side rail, theme switch, `static/v3/web.css`, `static/v3/shell.js`) and `static/v3/v3.js` plus `static/v3/pages/*.js` draw the views into `<main id="view">`; everything they show comes from `/api/*` (below). Server templates remain only for
 the pages listed under "Server pages that stay". Templates are Jinja2 (autoescape on) in `templates/`; styles in `static/app.css`, `board.css`, `pages.css`;
-the only script files they load are `static/htmx.min.js` and `static/app.js` (no inline `<script>`; CSP is `script-src 'self'`).
+the only script files they load are `static/htmx.min.js`, `static/v3/shell.js` and the page's own file (no inline `<script>`; CSP is `script-src 'self'`). All styling is `static/v3/web.css` (dark by default, light via the top-bar switch; stored in `localStorage` as `jw-theme`).
 Never print raw HTML from the database: descriptions are already plain text (`job.blocks`).
 Dates: always `{{ x|... }}` through the globals `ago(ts)` ("3h ago") and `absolute(ts)`.
 
@@ -76,7 +76,7 @@ legitimacy {tier, signals [str]}, comp {company_type, reliability (High|Medium|L
 the htmx fragments behind them (`/job/{id}/draft`, `POST /job/{id}/{action}`, `POST /applications/{id}/status|followup`,
 `POST /inbox/{id}/{decision}`, `POST /searches`, `POST /searches/{id}/delete`) no longer exist.
 
-### Server pages that stay (extend `base.html`; its top bar is a "Back to Jobwatch" link plus Chat, My profile, Preferences, Answers, Design)
+### Server pages that stay (extend `base.html`; they set `{% set active = 'key' %}` to mark the rail item, and fill `{% block crumb %}` and `{% block content %}` inside a `<div class="wk-page">`; `{% set bare = true %}` hides the rail, as on /welcome)
 | Route | Template | Why it stays |
 |---|---|---|
 | `GET /chat`, `POST /chat`, `POST /chat/ask` | `chat.html` | the app's Chat has no ask cards; this page is the only place they exist |

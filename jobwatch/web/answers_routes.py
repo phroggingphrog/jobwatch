@@ -62,7 +62,10 @@ def save(text, form):
 def register(app, config, conn_factory, render):
     @app.get('/answers')
     def answers(request: Request):
-        fields, _ = parse(_path().read_text())
+        try:
+            fields, _ = parse(_path().read_text())
+        except OSError:               # no answers file yet: show the empty state, not a server error
+            fields = []
         filled = sum(1 for f in fields if f['value'])
         conn = conn_factory()
         try:

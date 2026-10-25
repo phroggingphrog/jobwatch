@@ -1,7 +1,11 @@
 {% extends "base.html" %}
+{% set active = 'applications' %}
 {% block title %}Follow-up draft{% endblock %}
+{% block crumb %}<a href="/#applications">Pipeline</a><span aria-hidden="true">›</span><span class="here">Follow-up</span>{% endblock %}
 {% block content %}
-<div class="ph-page-head"><h1>Follow-up for {{ job.title }}</h1><p>{{ job.company }}</p></div>
-<p><a href="/#applications">Back to applications</a> · <a href="?channel=email">Email draft</a> · <a href="?channel=linkedin">LinkedIn draft</a></p>
+<div class="wk-page">
+<div class="wk-head"><div><h1 class="wk-h1">Follow-up for {{ job.title }}</h1><p class="wk-sub" style="margin-top:6px">{{ job.company }}</p></div></div>
+<div class="wk-row"><a class="btn" href="/#applications">Back to pipeline</a><a class="chip{% if channel == 'email' %} on{% endif %}" href="?channel=email">Email draft</a><a class="chip{% if channel == 'linkedin' %} on{% endif %}" href="?channel=linkedin">LinkedIn draft</a></div>
 {% include "_followup_draft_status.html" %}
+</div>
 {% endblock %}

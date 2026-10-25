@@ -58,7 +58,7 @@
     if (key === "fit") return '<span title="' + (r.score_src === "ai" ? "AI score" : "Keyword score (the AI has not read it yet)") + '">' + esc(r.score) + "</span>";
     if (key === "ai_fit") return ai && r.score5 != null ? '<span class="tscore" data-b="' + (r.score5 >= 4 ? "good" : r.score5 >= 3 ? "ok" : "low") + '" title="' + esc(V.clean(ai.reason || "")) + '">' + esc(r.score_text) + "</span>" : '<span class="tmute" title="The AI has no score for this job yet">–</span>';
     if (key === "archetype") return r.archetype ? esc(r.archetype) : dash();
-    if (key === "ai_view") return badge(r.ai_text, r.ai_state === "show" ? "good" : r.ai_state === "review" ? "ok" : "");
+    if (key === "ai_view") return V.st(r.ai_text, r.ai_state === "show" ? "ok" : r.ai_state === "review" ? "warn" : "");
     if (key === "title") return esc(r.title);
     if (key === "company") return r.company ? esc(r.company) : dash();
     if (key === "location") return esc(r.where || "");
@@ -71,7 +71,7 @@
     if (key === "listed") return r.listed_dt ? esc(r.listed_ago) : dash();
     if (key === "first_seen") return esc(r.first_seen_ago);
     if (key === "flags") return ["rights", "fulltime", "experience"].filter(function (w) { return (r.warn || []).indexOf(w) >= 0; }).map(function (w) { return badge(META.warn[w], "ok"); }).join(" ") + (r.entry ? " " + badge("Entry level", "good") : "") + (r.is_remote ? " " + badge("Remote") : "");
-    if (key === "status") return badge(ROW_STATUS[r.status] || r.status, r.status === "saved" || r.status === "applied" ? "good" : "");
+    if (key === "status") return V.st(ROW_STATUS[r.status] || r.status, r.status === "applied" ? "ok" : r.status === "new" ? "accent" : "");
     return "";
   }
 
@@ -108,7 +108,7 @@
     var en = (c.entry || {}).entry || 0, sl = (c.sal || {}).sal || 0, ks = [40, 60, 80, 100, 120, 150];
     if (en || F.entry || sl || F.sal || F.salmin) {
       h += group("Level and pay", (en || F.entry ? opt("entry", "1", "Entry level", en, !!F.entry, "checkbox") : "") + (sl || F.sal || F.salmin ? opt("sal", "1", "Pay shown", sl, !!F.sal, "checkbox") +
-        '<label class="tfield"><span>Lowest pay a year</span><select class="tselect" name="salmin"><option value="">Any</option>' + ks.map(function (k) { return '<option value="' + k + '"' + (Number(F.salmin) === k ? " selected" : "") + ">$" + k + "k or more</option>"; }).join("") + "</select></label>" : ""), !!(F.entry || F.sal || F.salmin));
+        '<label class="tfield"><span>Lowest pay a year</span><select class="wk-sel" name="salmin"><option value="">Any</option>' + ks.map(function (k) { return '<option value="' + k + '"' + (Number(F.salmin) === k ? " selected" : "") + ">$" + k + "k or more</option>"; }).join("") + "</select></label>" : ""), !!(F.entry || F.sal || F.salmin));
     }
     h += multi("arm", c.arm, F.arm); h += multi("tier", c.tier, F.tier, ["core", "fallback", "other"]); h += multi("src", c.src, F.src); h += multi("sector", c.sector, F.sector);
     h += multi("arch", c.arch, F.arch); h += multi("wt", c.wt, F.wt); h += multi("hide", c.hide, F.hide, ["rights", "fulltime", "experience"]);
@@ -125,7 +125,7 @@
     if (F.x) cs.push(["Without: " + F.x, "x", ""]);
     if (F.scope === "all") cs.push(["Including unmatched jobs", "scope", ""]);
     if (!cs.length) return "";
-    return '<div class="row tchips" role="group" aria-label="Active filters">' + cs.map(function (c) { return '<button type="button" class="chip chip--btn" data-unchip="' + c[1] + '" data-v="' + esc(c[2]) + '">' + esc(c[0]) + ' <span aria-hidden="true">×</span><span class="sr"> (remove)</span></button>'; }).join("") + '<button type="button" class="btn btn--quiet" data-clear>Clear all</button></div>';
+    return '<div class="wk-chips tchips" role="group" aria-label="Active filters">' + cs.map(function (c) { return '<button type="button" class="chip" data-unchip="' + c[1] + '" data-v="' + esc(c[2]) + '">' + esc(c[0]) + ' <span aria-hidden="true">×</span><span class="sr"> (remove)</span></button>'; }).join("") + '<button type="button" class="btn ghost" data-clear>Clear all</button></div>';
   }
   function applyInput(el) {
     var n = el.name, v = el.value;
@@ -142,29 +142,28 @@
     else if (F.ai === "worth") { t = c.pending > 0 && prog.left > 0 ? "The AI is still reading ads (" + prog.read + " of " + prog.total + " read)" : "Nothing worth a look yet"; sub = (c.pending || 0) + " jobs are still waiting for the AI."; }
     else if (F.ai === "hide") { t = "Nothing hidden"; }
     else t = "No jobs here";
-    return '<div class="card tempty"><p class="tempty__t">' + esc(t) + '</p><p class="tmute">' + esc(sub) + "</p>" + (facetCount() || F.q ? '<button type="button" class="btn" data-clear data-clearq>Clear filters and search</button>' : "") + "</div>";
+    return '<div class="wk-panel"><div class="wk-empty"><b>' + esc(t) + '</b><span>' + esc(sub) + "</span>" + (facetCount() || F.q ? '<button type="button" class="btn" data-clear data-clearq>Clear filters and search</button>' : "") + "</div></div>";
   }
   function pager(d) {
     if (d.pages <= 1) return "";
-    return '<nav class="tpager" aria-label="Pages of results"><button type="button" class="btn" data-goto="' + (d.page - 1) + '"' + (d.page <= 1 ? " disabled" : "") + '>← Previous</button><span class="tmute">Page ' + d.page + " of " + d.pages + '</span><button type="button" class="btn" data-goto="' + (d.page + 1) + '"' + (d.page >= d.pages ? " disabled" : "") + ">Next →</button></nav>";
+    return '<nav class="tpager wk-row" aria-label="Pages of results"><button type="button" class="btn" data-goto="' + (d.page - 1) + '"' + (d.page <= 1 ? " disabled" : "") + '>← Previous</button><span class="tmute">Page ' + d.page + " of " + d.pages + '</span><button type="button" class="btn" data-goto="' + (d.page + 1) + '"' + (d.page >= d.pages ? " disabled" : "") + ">Next →</button></nav>";
   }
   function table(d) {
     var cs = cols(), labels = {}; META.table_cols.forEach(function (c) { labels[c[0]] = c[1]; });
-    return '<div class="twrap" tabindex="0" role="region" aria-label="Jobs table. Scrolls sideways inside this box."><table class="ttable"><thead><tr>' + cs.map(function (k) {
+    return '<div class="wk-tablewrap" tabindex="0" role="region" aria-label="Jobs table. Scrolls sideways inside this box."><table class="wk-table"><thead><tr>' + cs.map(function (k) {
       var active = T.sort === k, cur = T.dir || (DESC_FIRST.indexOf(k) >= 0 ? "desc" : "asc");
       return '<th scope="col" class="' + (NUMERIC.indexOf(k) >= 0 ? "num" : "") + '" aria-sort="' + (active ? (cur === "asc" ? "ascending" : "descending") : "none") + '"><button type="button" class="tth" data-sortcol="' + k + '">' + esc(labels[k]) + '<span aria-hidden="true">' + (active ? (cur === "asc" ? " ▲" : " ▼") : "") + "</span></button></th>";
     }).join("") + "</tr></thead><tbody>" + d.rows.map(function (r) {
       return "<tr>" + cs.map(function (k, i) {
         var inner = cell(k, r), link = k === "title" || (i === 0 && cs.indexOf("title") < 0);
-        return '<td class="' + (NUMERIC.indexOf(k) >= 0 ? "num" : "") + (k === "title" ? " tt" : "") + '">' + (link ? '<a href="#job/' + r.id + '">' + inner + "</a>" : inner) + "</td>";
+        return '<td class="' + (NUMERIC.indexOf(k) >= 0 ? "num" : "") + '">' + (link ? '<a class="t" href="#job/' + r.id + '">' + inner + "</a>" : inner) + "</td>";
       }).join("") + "</tr>";
     }).join("") + "</tbody></table></div>";
   }
   function list(d) {
-    return '<ul class="tlist">' + d.rows.map(function (r) {
-      var b = r.score5 != null ? (r.score5 >= 4 ? "good" : r.score5 >= 3 ? "ok" : "low") : "";
-      return '<li><a class="card tlist__row" href="#job/' + r.id + '"><span class="tlist__main"><strong>' + esc(r.title) + "</strong><span>" + esc(r.company || "Employer not stated") + (r.where ? " · " + esc(String(r.where).split(" · ")[0].split(",")[0]) : "") + (r.salary ? " · " + esc(r.salary) : "") + '</span></span><span class="tscore" data-b="' + b + '">' + (r.score5 != null ? esc(r.score_text) : "–") + "</span></a></li>";
-    }).join("") + "</ul>";
+    return '<div class="wk-rows">' + d.rows.map(function (r) {
+      return '<a class="wk-prow" href="#job/' + r.id + '">' + V.ring(r, true) + '<div class="grow"><div class="wk-title">' + esc(r.title) + '</div><div class="wk-sub">' + esc(r.company || "Employer not stated") + (r.where ? " · " + esc(String(r.where).split(" · ")[0].split(",")[0]) : "") + (r.salary ? " · " + esc(r.salary) : "") + "</div></div></a>";
+    }).join("") + "</div>";
   }
   function draw() {
     if (!here()) return;
@@ -173,22 +172,22 @@
     V.api("/api/table?" + qs({ page: T.page })).then(function (d) {
       if (!here() || mine !== seq) return;
       var c = d.counts.ai || {}, prog = d.progress || {}, from = (d.page - 1) * d.size + 1;
-      var tabs = VIEWS.map(function (v) { var n = v[0] === "worth" ? (c.show || 0) + (c.review || 0) : (c[v[0]] || 0); var cur = F.ai === "show" || F.ai === "review" ? "worth" : F.ai; return '<button type="button" class="pill" data-view="' + v[0] + '" aria-pressed="' + (cur === v[0]) + '">' + v[1] + " <small>" + n + "</small></button>"; }).join("");
+      var tabs = VIEWS.map(function (v) { var n = v[0] === "worth" ? (c.show || 0) + (c.review || 0) : (c[v[0]] || 0); var cur = F.ai === "show" || F.ai === "review" ? "worth" : F.ai; return '<button type="button" class="chip" data-view="' + v[0] + '" aria-pressed="' + (cur === v[0]) + '">' + v[1] + " <small>" + n + "</small></button>"; }).join("");
       var picker = META.table_cols.map(function (cc) { var on = cs.indexOf(cc[0]) >= 0; return '<label class="topt"><input type="checkbox" data-col="' + cc[0] + '"' + (on ? " checked" : "") + (on && cs.length === 1 ? " disabled" : "") + '><span class="topt__l">' + esc(cc[1]) + "</span></label>"; }).join("");
       var sorts = META.sorts.map(function (s) { return '<option value="' + s[0] + '"' + (s[0] === T.sort ? " selected" : "") + ">" + esc(s[1]) + "</option>"; }).join("");
       if (!META.sorts.some(function (x) { return x[0] === T.sort; })) sorts = '<option value="" selected disabled>Sorted by ' + esc(((META.table_cols.find(function (x) { return x[0] === T.sort; }) || [0, T.sort])[1]).toLowerCase()) + "</option>" + sorts;
       var n = facetCount();
-      view.innerHTML = '<h1>All jobs</h1><p class="sub">' + (d.total ? "Showing " + from + " to " + (from + d.rows.length - 1) + " of " + d.total : "No jobs") + " · " + esc(d.summary) + (prog.left > 0 ? " · The AI has read " + prog.read + " of " + prog.total + " ads" : "") + "</p>" +
-        '<div class="ttools"><input class="search ttools__q" id="tq" type="search" placeholder="Job title, company or skill" aria-label="Search jobs" autocomplete="off" value="' + esc(F.q) + '">' +
-        '<div class="row"><label class="sr" for="tsort">Sort by</label><select class="tselect" id="tsort" aria-label="Sort by">' + sorts + "</select>" +
-        '<details class="tmenu"><summary class="btn">Columns <small>' + cs.length + '</small></summary><div class="tmenu__pop card" role="group" aria-label="Choose columns">' + picker + '<button type="button" class="btn btn--quiet" data-colreset>Back to the usual columns</button></div></details>' +
+      V.draw(V.head("All jobs", (d.total ? "Showing " + from + " to " + (from + d.rows.length - 1) + " of " + d.total : "No jobs") + " · " + esc(d.summary) + (prog.left > 0 ? " · The AI has read " + prog.read + " of " + prog.total + " ads" : "")) +
+        '<div class="ttools"><input class="wk-input ttools__q" id="tq" type="search" placeholder="Job title, company or skill" aria-label="Search jobs" autocomplete="off" value="' + esc(F.q) + '">' +
+        '<div class="wk-row"><label class="sr" for="tsort">Sort by</label><select class="wk-sel" id="tsort" aria-label="Sort by">' + sorts + "</select>" +
+        '<details class="tmenu"><summary class="btn">Columns ' + cs.length + '</summary><div class="tmenu__pop" role="group" aria-label="Choose columns">' + picker + '<button type="button" class="btn ghost" data-colreset>Back to the usual columns</button></div></details>' +
         '<a class="btn" href="/table.csv?' + esc(qs().toString()) + '" download>Download CSV</a></div></div>' +
-        '<div class="pills" role="group" aria-label="Which jobs">' + tabs + "</div>" +
-        '<details class="card fold tfilters"' + (n ? " open" : "") + "><summary>Filters" + (n ? " (" + n + " on)" : "") + '</summary><div class="fold__b"><label class="tfield"><span>Leave out these words</span><input class="tinput" id="tx" type="text" placeholder="Words to leave out" autocomplete="off" value="' + esc(F.x) + '"></label>' +
+        '<div class="wk-chips" role="group" aria-label="Which jobs">' + tabs + "</div>" +
+        '<details class="wk-fold tfilters"' + (n ? " open" : "") + "><summary>Filters" + (n ? " (" + n + " on)" : "") + '</summary><div class="wk-fold-b"><label class="tfield"><span>Leave out these words</span><input class="wk-input" id="tx" type="text" placeholder="Words to leave out" autocomplete="off" value="' + esc(F.x) + '"></label>' +
         '<label class="topt"><input type="checkbox" id="tscope"' + (F.scope === "all" ? " checked" : "") + '><span class="topt__l">Include jobs that matched no target role</span></label><div class="tgroups">' + facets(d.counts) + "</div></div></details>" + chips() +
-        (d.rows.length ? '<div class="tdesk">' + table(d) + '</div><div class="tphone">' + list(d) + "</div>" + pager(d) : empty(d));
+        (d.rows.length ? '<div class="tdesk">' + table(d) + '</div><div class="tphone">' + list(d) + "</div>" + pager(d) : empty(d)));
       if (keepSearch) { var q = document.getElementById("tq"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
-    }).catch(function (e) { view.innerHTML = '<h1>All jobs</h1><p class="empty">' + esc(e.message) + '</p><button class="btn" data-tretry>Try again</button>'; });
+    }).catch(function (e) { V.draw(V.head("All jobs") + '<div class="wk-err" role="alert"><span>' + esc(e.message) + '</span><button class="btn" type="button" data-tretry>Try again</button></div>'); });
   }
 
   document.addEventListener("click", function (e) {
@@ -219,7 +218,6 @@
   var qt; document.addEventListener("input", function (e) { if (here() && e.target.id === "tq") { clearTimeout(qt); qt = setTimeout(function () { F.q = e.target.value.trim(); T.page = 1; draw(); }, 400); } });
 
   V.page("table", function () {
-    document.title = "All jobs – Jobwatch";
-    (META ? Promise.resolve() : V.api("/api/meta").then(function (m) { META = m; })).then(draw).catch(function (e) { view.innerHTML = '<h1>All jobs</h1><p class="empty">' + esc(e.message) + "</p>"; });
+    (META ? Promise.resolve() : V.api("/api/meta").then(function (m) { META = m; })).then(draw).catch(function (e) { V.failPage("All jobs", e); });
   });
 })();

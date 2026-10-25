@@ -1,18 +1,35 @@
 {% extends 'base.html' %}
-{% block title %}Answers{% endblock %}
+{% set active = 'answers' %}
+{% block title %}Form answers{% endblock %}
+{% block crumb %}<a href="/#today">About you</a><span aria-hidden="true">›</span><span class="here">Form answers</span>{% endblock %}
 {% block content %}
-<div class="jobpage">
-<section class="ph-page-head"><h1>Form answers</h1>
-<p>{{ filled }} of {{ fields|length }} filled. These fill job forms automatically. Leave one empty to answer it by hand. Saved on this server only.</p>
-{% if saved %}<p role="status"><strong>Saved.</strong></p>{% endif %}</section>
-<form method="post" action="/answers">
-{% set ns = namespace(sec='') %}
-{% for f in fields %}
-{% if f.section != ns.sec %}{% if ns.sec %}</section>{% endif %}<section class="ph-card"><h2>{{ f.section }}</h2>{% set ns.sec = f.section %}{% endif %}
-<label class="a-field jx-qfield"><span class="ph-label">{{ f.label }}</span><input type="text" name="{{ f.id }}" value="{{ f.value }}" maxlength="300">{% if f.hint %}<small>{{ f.hint }}</small>{% endif %}</label>
-{% endfor %}
-</section>
-<p><button class="ph-btn ph-btn--outline" type="submit">Save answers</button></p>
-</form>
+{% set secs = [] %}{% for f in fields %}{% if f.section not in secs %}{% set _ = secs.append(f.section) %}{% endif %}{% endfor %}
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Form answers</h1>
+  <p class="wk-sub" style="margin-top:6px">These fill job forms automatically. Leave one empty to answer it by hand. Saved on this server only.</p></div>
+  <button class="btn primary" type="submit" form="answers-form">Save answers</button></div>
+  {% if saved %}<div class="wk-note ok" role="status">Saved.</div>{% endif %}
+  <div class="wk-twoL">
+    <div class="wk-sec" style="position:sticky;top:76px">
+      <div class="wk-panel wk-pad wk-row" style="gap:14px;flex-wrap:nowrap"><span class="wk-ring" style="--p:{{ (100 * filled / fields|length)|round|int if fields|length else 0 }}" aria-hidden="true">{{ filled }}/{{ fields|length }}</span><div><div class="wk-title">{{ filled }} of {{ fields|length }} filled</div><div class="wk-sub">{{ fields|length - filled }} left to answer</div></div></div>
+      {% if secs|length > 1 %}<nav class="wk-rows" aria-label="Sections">
+        {% for s in secs %}{% set tot = fields|selectattr('section', 'equalto', s)|list|length %}{% set got = fields|selectattr('section', 'equalto', s)|selectattr('value')|list|length %}
+        <a class="wk-prow hov" style="min-height:48px;padding:10px 16px" href="#sec-{{ loop.index }}"><span class="grow wk-title">{{ s }}</span><span class="wk-sub">{{ got }} of {{ tot }}</span></a>
+        {% endfor %}</nav>{% endif %}
+    </div>
+    <form method="post" action="/answers" id="answers-form" class="wk-form">
+      {% for s in secs %}
+      <section class="wk-panel wk-pad" id="sec-{{ loop.index }}" style="display:flex;flex-direction:column;gap:14px"><h2 class="wk-h2">{{ s }}</h2>
+        <div class="wk-fgrid">
+        {% for f in fields if f.section == s %}
+          <div class="wk-field"><label for="a-{{ f.id }}">{{ f.label }}</label><input id="a-{{ f.id }}" type="text" name="{{ f.id }}" value="{{ f.value }}" maxlength="300">{% if f.hint %}<small>{{ f.hint }}</small>{% endif %}</div>
+        {% endfor %}
+        </div>
+      </section>
+      {% else %}
+      <div class="wk-panel"><div class="wk-empty"><b>No questions yet</b><span>Form questions appear here once your profile is built.</span></div></div>
+      {% endfor %}
+    </form>
+  </div>
 </div>
 {% endblock %}

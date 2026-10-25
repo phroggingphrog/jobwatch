@@ -1,30 +1,41 @@
 {% extends "base.html" %}
+{% set active = 'accounts' %}
 {% block title %}Connect accounts{% endblock %}
+{% block crumb %}<a href="/#today">About you</a><span aria-hidden="true">›</span><span class="here">Accounts</span>{% endblock %}
 {% block content %}
-<div class="jobpage">
-  <section class="ph-page-head"><h1>Connect accounts</h1>
-  <p>Sign in to each job site yourself, in the private browser below. Jobwatch never sees or stores your password; only the browser keeps the login.</p></section>
-  {% if request.query_params.get('error') %}<p class="ph-alert ph-alert--warning">The browser could not open. Try again.</p>{% endif %}
-  <section class="ph-card">
-    <ul class="account-list">
-    {% for s in sites %}
-      <li class="account-row">
-        <span class="account-name">{{ s.label }}</span>
-        <span class="ph-badge {{ 'ph-badge--success' if s.connected else 'ph-badge--secondary' }}">{{ 'Connected' if s.connected else 'Not connected' }}</span>
-        <form method="post" action="/accounts/{{ s.key }}/connect"><button class="ph-btn ph-btn--sm {{ 'ph-btn--outline' if s.connected else 'ph-btn--default' }}" type="submit">{{ 'Reconnect' if s.connected else 'Connect' }}</button></form>
-      </li>
-    {% endfor %}
-    </ul>
-  </section>
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Connect accounts</h1>
+  <p class="wk-sub" style="margin-top:6px">Sign in to each job site yourself, in the private browser. Jobwatch never sees or stores your password; only the browser keeps the login.</p></div></div>
+  {% if request.query_params.get('error') %}<div class="wk-note warn" role="alert">The browser could not open. Try again.</div>{% endif %}
+  <div class="wk-two">
+    <div class="wk-sec">
+      <div class="wk-rows">
+      {% for s in sites %}
+        <div class="wk-acct">
+          <span class="wk-co" aria-hidden="true">{{ s.label[:1] }}</span>
+          <div class="grow">{{ s.label }}</div>
+          <span class="st"{% if s.connected %} data-t="ok"{% endif %}><span class="pip" aria-hidden="true"></span>{{ 'Connected' if s.connected else 'Not connected' }}</span>
+          <form method="post" action="/accounts/{{ s.key }}/connect" style="margin:0"><button class="btn{% if not s.connected and loop.first %} primary{% endif %}" type="submit">{{ 'Reconnect' if s.connected else 'Connect' }}</button></form>
+        </div>
+      {% else %}
+        <div class="wk-empty"><b>No job sites to connect</b><span>None are set up on this install.</span></div>
+      {% endfor %}
+      </div>
+      <p class="wk-sub">Status is a check for the site's sign-in cookie in this browser profile.</p>
+    </div>
+    <div class="wk-sec"><h2 class="wk-h2">How it works</h2>
+      <div class="wk-panel wk-pad"><ol class="wk-ol"><li>Press Connect. A private browser opens on the site.</li><li>Sign in as you. Type your own password there.</li><li>Choose Done. Jobwatch sees only that you are signed in.</li></ol></div>
+    </div>
+  </div>
   {% if browser_open %}
-  <section class="browser-panel" aria-label="Live sign-in browser">
-    <p id="browser-help">Click inside the page, then type your email and password as normal. When you are signed in, choose Done.</p>
-    <p id="browser-control-message" role="status"></p>
-    <img id="application-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/accounts/browser/stream"
+  <section class="wk-panel wk-pad browser-panel" aria-label="Live sign-in browser" style="display:flex;flex-direction:column;gap:12px">
+    <p id="browser-help" class="wk-body">Click inside the page, then type your email and password as normal. When you are signed in, choose Done.</p>
+    <p id="browser-control-message" class="wk-sub" role="status"></p>
+    <img id="application-browser" class="wk-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/accounts/browser/stream"
          data-action-url="/accounts/browser/action" alt="Live sign-in page" aria-describedby="browser-help">
-    <form method="post" action="/accounts/browser/close"><button class="ph-btn ph-btn--default" type="submit">Done, close browser</button></form>
+    <form method="post" action="/accounts/browser/close" style="margin:0"><button class="btn primary" type="submit">Done, close browser</button></form>
   </section>
   {% endif %}
-  <p class="muted">Status is a check for the site's sign-in cookie in this browser profile.</p>
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/browser.js" defer></script>{% endblock %}

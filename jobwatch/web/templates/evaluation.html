@@ -1,17 +1,25 @@
 {% extends "base.html" %}
+{% set active = 'jobs' %}
 {% block title %}Job evaluation{% endblock %}
+{% block crumb %}<a href="/#jobs">Jobs</a><span aria-hidden="true">›</span><a href="/#job/{{ job.id }}">{{ job.title }}</a><span aria-hidden="true">›</span><span class="here">Evaluation</span>{% endblock %}
 {% block content %}
-<div class="jobpage"><nav class="crumbs"><a href="/#job/{{ job.id }}">← {{ job.title }}</a></nav><h1>Job evaluation</h1><p>{{ job.company }} · {{ job.title }}</p>
+<div class="wk-page">
+  <div class="wk-head"><div><a class="wk-link" href="/#job/{{ job.id }}">← {{ job.title }}</a><h1 class="wk-h1" style="margin-top:4px">Job evaluation</h1><p class="wk-sub" style="margin-top:6px">{{ job.company }} · {{ job.title }}</p></div></div>
 {% if evaluation %}
-<p><strong>{{ evaluation.global_score }}/5</strong> · {{ evaluation.archetype }}</p>
-<dl>{% for name, dimension in evaluation.dimensions.items() %}<dt>{{ name|replace('_',' ')|title }} · {{ dimension.score }}/5</dt><dd>{{ dimension.reason }}</dd>{% endfor %}</dl>
-<h2>Requirements and evidence</h2><table><thead><tr><th>Requirement</th><th>Importance</th><th>Evidence match</th></tr></thead><tbody>
-{% for requirement in evaluation.requirements.requirements %}<tr><td>{{ requirement.text }}</td><td>{{ requirement.importance|replace('_',' ') }}</td><td>{% for match in evaluation.matches if match.requirement_id == requirement.id %}
-<strong>{{ match.match|replace('_',' ')|title }}</strong>
-{% for citation in match.evidence %}<blockquote>{{ citation.quote }}</blockquote><small>{{ citation.source_id }}</small>{% endfor %}
-{% if match.risk %}<p><strong>Risk:</strong> {{ match.risk }}</p>{% endif %}
-{% if match.mitigation %}<p><strong>Next step:</strong> {{ match.mitigation }}</p>{% endif %}
-{% endfor %}</td></tr>{% endfor %}
-</tbody></table>
-{% for section, text in evaluation.report.items() %}<section><h2>Assessment {{ section }}</h2><p>{{ text }}</p></section>{% endfor %}
-{% else %}<p>This job has not completed agent evaluation yet.</p>{% endif %}</div>{% endblock %}
+  <div class="wk-panel wk-pad wk-row" style="gap:16px;flex-wrap:nowrap"><span class="wk-ring" style="--p:{{ (evaluation.global_score * 20)|round|int }}">{{ evaluation.global_score }}</span><div><div class="wk-title" style="font-size:17px">{{ evaluation.global_score }} out of 5</div><div class="wk-sub">{{ evaluation.archetype }}</div></div></div>
+  <div class="wk-sec"><h2 class="wk-h2">Scores</h2><div class="wk-rows">{% for name, dimension in evaluation.dimensions.items() %}<div class="wk-prow" style="align-items:flex-start"><div class="grow"><div class="wk-title">{{ name|replace('_',' ')|title }}</div><div class="wk-sub">{{ dimension.reason }}</div></div><b class="wk-mono">{{ dimension.score }}/5</b></div>{% endfor %}</div></div>
+  <div class="wk-sec"><h2 class="wk-h2">Requirements and evidence</h2>
+  <div class="wk-tablewrap"><table class="wk-table"><thead><tr><th scope="col">Requirement</th><th scope="col">Importance</th><th scope="col">Evidence match</th></tr></thead><tbody>
+  {% for requirement in evaluation.requirements.requirements %}<tr><td>{{ requirement.text }}</td><td>{{ requirement.importance|replace('_',' ') }}</td><td>{% for match in evaluation.matches if match.requirement_id == requirement.id %}
+  <strong>{{ match.match|replace('_',' ')|title }}</strong>
+  {% for citation in match.evidence %}<blockquote class="wk-evidence" style="margin:6px 0">{{ citation.quote }}</blockquote><small class="wk-sub">{{ citation.source_id }}</small>{% endfor %}
+  {% if match.risk %}<p><strong>Risk:</strong> {{ match.risk }}</p>{% endif %}
+  {% if match.mitigation %}<p><strong>Next step:</strong> {{ match.mitigation }}</p>{% endif %}
+  {% endfor %}</td></tr>{% endfor %}
+  </tbody></table></div></div>
+  {% for section, text in evaluation.report.items() %}<section class="wk-sec"><h2 class="wk-h2">Assessment {{ section }}</h2><div class="wk-panel wk-pad wk-prose"><p>{{ text }}</p></div></section>{% endfor %}
+{% else %}
+  <div class="wk-panel"><div class="wk-empty"><b>Not evaluated yet</b><span>This job has not completed agent evaluation yet.</span><a class="btn" href="/#job/{{ job.id }}">Back to the job</a></div></div>
+{% endif %}
+</div>
+{% endblock %}

@@ -1,52 +1,65 @@
 {% extends 'base.html' %}
-{% block title %}Preferences{% endblock %}
+{% set active = 'preferences' %}
+{% block title %}Job preferences{% endblock %}
+{% block crumb %}<a href="/#today">About you</a><span aria-hidden="true">›</span><span class="here">Preferences</span>{% endblock %}
 {% block content %}
-<div class="jobpage">
-<section class="ph-page-head"><h1>Your job preferences</h1>
-<p>Choose the job you would most want to pursue, or none of these. This teaches your personal ranking; it never applies for a job.</p></section>
-<section class="ph-card">
-<h2>Learning status: {{ preference_state.status|replace('_', ' ') }}</h2>
-<p>{{ preference_state.n_choices }} recorded choices. Training: {{ preference_state.n_train }} / {{ preference_state.minimum_train }} minimum. Validation: {{ preference_state.n_holdout }} / {{ preference_state.minimum_holdout }} minimum.</p>
-<p>A trained ranking is available only after convergence and validation checks pass. Job eligibility is checked separately.</p>
-{% if preference_error %}<p role="alert">{{ preference_error }}</p>{% endif %}
-{% if preference_state.fit %}
-<details><summary>Model validation details</summary>
-<p>Four chains; {{ preference_state.fit.n_train }} training choices and {{ preference_state.fit.n_holdout }} held-out choices. A higher held-out log score is better.</p>
-<p>Fitted model: {{ preference_state.fit.holdout_log_score }}. Prior baseline: {{ preference_state.fit.prior_log_score }}.</p>
-<p>These describe your choices between jobs, not your chance of being hired.</p>
-</details>
-{% endif %}
-<form method="post" action="/preferences/new"><button class="ph-btn ph-btn--outline" type="submit">Compare three jobs</button></form>
-</section>
-{% for item in choices|reverse %}
-<section class="ph-card">
-<h2>{% if item.answered %}Recorded choice{% elif not item.current %}Jobs changed: comparison paused{% else %}Which would you choose?{% endif %}</h2>
-<form method="post" action="/preferences/{{ item.id }}/pick">
-<input type="hidden" name="request_id" value="{{ item.request_id }}">
-{% for a in item.alternatives %}
-<p><a href="/?job={{ a.posting_id }}">{{ a.title }}</a> · {{ a.company }}
-{% if not item.answered and item.current %}<button class="ph-btn ph-btn--outline" type="submit" name="selected" value="{{ a.posting_id }}">Choose this job</button>{% elif item.answered and item.selected == a.posting_id %}<strong>Chosen</strong>{% endif %}</p>
-{% endfor %}
-{% if not item.answered and item.current %}<button class="ph-btn ph-btn--outline" type="submit" name="selected" value="none">None of these</button>{% elif item.answered and item.selected is none %}<p>Chosen: none of these</p>{% endif %}
-</form>
-{% if item.prediction %}
-<details><summary>Model ranking and uncertainty for this recorded comparison</summary>
-<p>{{ item.prediction.meaning }} Intervals below contain 95% of the retained posterior draws.</p>
-<ol>{% for pid in item.prediction.ranking %}{% for a in item.alternatives if a.posting_id == pid %}<li>{{ a.title }} · {{ a.company }}</li>{% endfor %}{% endfor %}</ol>
-{% for p in item.prediction.alternatives %}
-{% for a in item.alternatives if a.posting_id == p.posting_id %}<h3>{{ a.title }}</h3>{% endfor %}
-<p>Choice probability: {{ '%.1f'|format(p.choice_probability.mean * 100) }}%; interval {{ '%.1f'|format(p.choice_probability.hdi_low * 100) }} to {{ '%.1f'|format(p.choice_probability.hdi_high * 100) }}%.</p>
-<p>Unavailable inputs: {{ p.missing_features|join(', ') }}.</p>
-<details><summary>What contributes to the ranking</summary>
-<p>Family baseline utility: {{ '%.3f'|format(p.family_intercept.mean) }}. Total utility: {{ '%.3f'|format(p.utility.mean) }}.</p>
-<ul>{% for name, value in p.contributions.items() %}<li>{{ name|replace('_', ' ') }}: {{ '%.3f'|format(value.mean) }} ({{ '%.3f'|format(value.hdi_low) }} to {{ '%.3f'|format(value.hdi_high) }})</li>{% endfor %}</ul>
-</details>
-{% endfor %}
-<p>None of these: {{ '%.1f'|format(item.prediction.none_probability.mean * 100) }}%; interval {{ '%.1f'|format(item.prediction.none_probability.hdi_low * 100) }} to {{ '%.1f'|format(item.prediction.none_probability.hdi_high * 100) }}%.</p>
-<p>This is a retrospective view of a recorded comparison. Training comparisons are not out-of-sample validation.</p>
-</details>
-{% endif %}
-</section>
-{% else %}<p>No comparisons yet. Current eligible job evaluations are needed to create one.</p>{% endfor %}
+{% set tone = 'ok' if preference_state.status in ('ready', 'trained', 'fitted') else '' %}
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Your job preferences</h1>
+  <p class="wk-sub" style="margin-top:6px">Choose the job you would most want to pursue, or none of these. This teaches your personal ranking; it never applies for a job.</p></div>
+  <form method="post" action="/preferences/new" style="margin:0"><button class="btn primary" type="submit">Compare three jobs</button></form></div>
+  {% if preference_error %}<div class="wk-note bad" role="alert">{{ preference_error }}</div>{% endif %}
+  <div class="wk-panel wk-pad wk-statgrid">
+    <div><div class="wk-eyebrow">Learning status</div><div style="margin-top:6px"><span class="st"{% if tone %} data-t="{{ tone }}"{% endif %}><span class="pip" aria-hidden="true"></span>{{ preference_state.status|replace('_', ' ') }}</span></div></div>
+    <div><div class="wk-row" style="justify-content:space-between"><span class="wk-sub">Training choices</span><b class="wk-mono">{{ preference_state.n_train }} / {{ preference_state.minimum_train }}</b></div><div class="wk-meter" style="margin-top:8px"><i style="width:{{ [100, (100 * preference_state.n_train / preference_state.minimum_train)|round|int]|min if preference_state.minimum_train else 0 }}%"></i></div></div>
+    <div><div class="wk-row" style="justify-content:space-between"><span class="wk-sub">Checking choices</span><b class="wk-mono">{{ preference_state.n_holdout }} / {{ preference_state.minimum_holdout }}</b></div><div class="wk-meter" style="margin-top:8px"><i style="width:{{ [100, (100 * preference_state.n_holdout / preference_state.minimum_holdout)|round|int]|min if preference_state.minimum_holdout else 0 }}%"></i></div></div>
+  </div>
+  <p class="wk-sub">{{ preference_state.n_choices }} recorded choices. A trained ranking is available only after convergence and validation checks pass. Job eligibility is checked separately.</p>
+  {% if preference_state.fit %}
+  <details class="wk-fold"><summary>Model validation details</summary><div class="wk-fold-b wk-prose">
+    <p>Four chains; {{ preference_state.fit.n_train }} training choices and {{ preference_state.fit.n_holdout }} held-out choices. A higher held-out log score is better.</p>
+    <p>Fitted model: {{ preference_state.fit.holdout_log_score }}. Prior baseline: {{ preference_state.fit.prior_log_score }}.</p>
+    <p>These describe your choices between jobs, not your chance of being hired.</p>
+  </div></details>
+  {% endif %}
+
+  {% for item in choices|reverse %}
+  <section class="wk-sec">
+    <h2 class="wk-h2">{% if item.answered %}Recorded choice{% elif not item.current %}Jobs changed: comparison paused{% else %}Which would you choose?{% endif %}</h2>
+    <form method="post" action="/preferences/{{ item.id }}/pick" style="margin:0;display:flex;flex-direction:column;gap:12px">
+      <input type="hidden" name="request_id" value="{{ item.request_id }}">
+      <div class="wk-rows">
+      {% for a in item.alternatives %}
+        <div class="wk-prow">
+          <div class="grow"><a class="wk-title" href="/#job/{{ a.posting_id }}">{{ a.title }}</a><div class="wk-sub">{{ a.company }}</div></div>
+          {% if not item.answered and item.current %}<button class="btn" type="submit" name="selected" value="{{ a.posting_id }}">Choose this job</button>
+          {% elif item.answered and item.selected == a.posting_id %}<span class="st" data-t="ok"><span class="pip" aria-hidden="true"></span>Chosen</span>{% endif %}
+        </div>
+      {% endfor %}
+      </div>
+      {% if not item.answered and item.current %}<div><button class="btn" type="submit" name="selected" value="none">None of these</button></div>
+      {% elif item.answered and item.selected is none %}<p class="wk-body">Chosen: none of these</p>{% endif %}
+    </form>
+    {% if item.prediction %}
+    <details class="wk-fold"><summary>Model ranking and uncertainty for this recorded comparison</summary><div class="wk-fold-b wk-prose">
+      <p>{{ item.prediction.meaning }} Intervals below contain 95% of the retained posterior draws.</p>
+      <ol>{% for pid in item.prediction.ranking %}{% for a in item.alternatives if a.posting_id == pid %}<li>{{ a.title }} · {{ a.company }}</li>{% endfor %}{% endfor %}</ol>
+      {% for p in item.prediction.alternatives %}
+        {% for a in item.alternatives if a.posting_id == p.posting_id %}<h3 class="wk-h3">{{ a.title }}</h3>{% endfor %}
+        <p>Choice probability: {{ '%.1f'|format(p.choice_probability.mean * 100) }}%; interval {{ '%.1f'|format(p.choice_probability.hdi_low * 100) }} to {{ '%.1f'|format(p.choice_probability.hdi_high * 100) }}%.</p>
+        <p>Unavailable inputs: {{ p.missing_features|join(', ') }}.</p>
+        <details class="wk-fold"><summary>What contributes to the ranking</summary><div class="wk-fold-b wk-prose">
+          <p>Family baseline utility: {{ '%.3f'|format(p.family_intercept.mean) }}. Total utility: {{ '%.3f'|format(p.utility.mean) }}.</p>
+          <ul>{% for name, value in p.contributions.items() %}<li>{{ name|replace('_', ' ') }}: {{ '%.3f'|format(value.mean) }} ({{ '%.3f'|format(value.hdi_low) }} to {{ '%.3f'|format(value.hdi_high) }})</li>{% endfor %}</ul>
+        </div></details>
+      {% endfor %}
+      <p>None of these: {{ '%.1f'|format(item.prediction.none_probability.mean * 100) }}%; interval {{ '%.1f'|format(item.prediction.none_probability.hdi_low * 100) }} to {{ '%.1f'|format(item.prediction.none_probability.hdi_high * 100) }}%.</p>
+      <p>This is a retrospective view of a recorded comparison. Training comparisons are not out-of-sample validation.</p>
+    </div></details>
+    {% endif %}
+  </section>
+  {% else %}
+  <div class="wk-panel"><div class="wk-empty"><b>No comparisons yet</b><span>Current eligible job evaluations are needed to create one.</span></div></div>
+  {% endfor %}
 </div>
 {% endblock %}

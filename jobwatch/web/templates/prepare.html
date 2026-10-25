@@ -1,24 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Review application{% endblock %}
+{% set active = 'jobs' %}
+{% block title %}Review before Submit{% endblock %}
+{% block crumb %}<a href="/#jobs">Jobs</a><span aria-hidden="true">›</span><a href="/#job/{{ job.id }}">{{ job.title }}</a><span aria-hidden="true">›</span><span class="here">Review before Submit</span>{% endblock %}
 {% block content %}
-<div class="jobpage">
-  <nav class="crumbs"><a href="/#job/{{ job.id }}">← {{ job.title }}</a></nav>
-  <h1>Review your application</h1>
-  <p>{{ job.company }} · {{ job.title }}</p>
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Review before Submit</h1>
+  <p class="wk-sub" style="margin-top:6px">{{ job.company }} · {{ job.title }}. This is the live form as the employer will receive it. Edit any field in the page below.</p></div></div>
   {% include "_preparation.html" %}
   {% if browser.open %}
-  <section class="browser-panel" aria-label="Live application browser">
-    <p id="browser-help">Click inside the live page to control it. Type normally, use Tab to move between fields, or paste text. Review the answers, then click Submit in the application, or use Submit this application below.</p>
-    <p id="browser-control-message" role="status"></p>
-    <img id="application-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/job/{{ job.id }}/browser/stream"
+  <section class="wk-panel wk-pad browser-panel" aria-label="Live application browser" style="display:flex;flex-direction:column;gap:12px">
+    <p id="browser-help" class="wk-body">Click inside the live page to control it. Type normally, use Tab to move between fields, or paste text. Review the answers, then click Submit in the application, or use Submit this application above.</p>
+    <p id="browser-control-message" class="wk-sub" role="status"></p>
+    <img id="application-browser" class="wk-browser" width="1280" height="800" data-remote-browser tabindex="0" src="/job/{{ job.id }}/browser/stream"
          data-action-url="/job/{{ job.id }}/browser/action" alt="Live application page" aria-describedby="browser-help">
-    <form method="post" action="/job/{{ job.id }}/browser/close"><button class="ph-btn ph-btn--outline" type="submit">Close browser</button></form>
+    <form method="post" action="/job/{{ job.id }}/browser/close" style="margin:0"><button class="btn" type="submit">Close browser</button></form>
   </section>
   {% else %}
-  <form method="post" action="/job/{{ job.id }}/browser/open">
-    <button class="ph-btn ph-btn--default" type="submit" {% if not job.application_id %}disabled{% endif %}>Open application here</button>
-  </form>
-  <p class="muted">The application opens in a private browser inside Jobwatch. Sign in there if the employer requires it.</p>
+  <div class="wk-panel wk-pad" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+    <form method="post" action="/job/{{ job.id }}/browser/open" style="margin:0">
+      <button class="btn{% if not job.application_id %}{% else %} primary{% endif %}" type="submit" {% if not job.application_id %}disabled{% endif %}>Open application here</button>
+    </form>
+    <span class="wk-sub">The application opens in a private browser inside Jobwatch. Sign in there if the employer requires it.</span>
+  </div>
   {% endif %}
 </div>
 {% endblock %}
+{% block scripts %}<script src="/static/browser.js" defer></script>{% endblock %}
