@@ -74,3 +74,36 @@ def test_reject_with_reason(app):
 
 def test_hidden_control_characters_are_stripped():
     assert tui._e('ok‮evil​[red]x\x1b') == 'okevil\\[red]x'
+
+
+def test_startup_screen_then_chat_with_sidebar(app):
+    async def run():
+        async with app.run_test(size=(120, 32)) as pilot:
+            await pilot.pause(0.2)
+            assert app.screen.has_class('-welcome')
+            assert app.query_one('#transcript').display is False
+            assert 'jobwatch' in str(app.query_one('#welcome').render()) or app.query_one('#welcome').display
+            app.query_one('#prompt').value = 'prepare job 7'
+            await pilot.press('enter')
+            await _settle(pilot, app)
+            assert not app.screen.has_class('-welcome')
+            side = str(app.query_one('#sidebar').render())
+            assert 'Needs you (1)' in side and 'submit_application' in side and 'job 7' in side
+            assert app.query_one('#prompt').has_class('-working')
+            await pilot.press('a')
+            await _settle(pilot, app)
+            side = str(app.query_one('#sidebar').render())
+            assert 'Needs you (0)' in side and 'nothing waiting' in side
+            assert not app.query_one('#prompt').has_class('-working')
+    asyncio.run(run())
+
+
+def test_sidebar_hides_on_narrow_terminals(app):
+    async def run():
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause(0.2)
+            assert app.query_one('#sidebar').has_class('-hidden')
+        async with tui.JobwatchTUI('default').run_test(size=(130, 30)) as pilot:
+            await pilot.pause(0.2)
+            assert not pilot.app.query_one('#sidebar').has_class('-hidden')
+    asyncio.run(run())
