@@ -4,16 +4,15 @@ import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/cli
 // @ts-expect-error plain JS helper
 import { startMock, DIGEST, SHOWN, BACKEND_TOKEN } from "./mock-backend.mjs";
 
-const MCP_TOKEN = "a".repeat(40);
 const PORT = 18943;
 const URL_ = `http://127.0.0.1:${PORT}/mcp`;
 let proc: ChildProcess;
 let mock: { server: import("node:http").Server; log: unknown[]; port: number; queuedCount: () => number };
 let client: Client;
 
-async function connect(token = MCP_TOKEN) {
+async function connect() {
   const c = new Client({ name: "test", version: "1" });
-  await c.connect(new StreamableHTTPClientTransport(new URL(URL_), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  await c.connect(new StreamableHTTPClientTransport(new URL(URL_)));
   return c;
 }
 const call = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args }) as Promise<any>;
@@ -22,7 +21,7 @@ const modelVisible = (r: any) => JSON.stringify({ content: r.content, structured
 beforeAll(async () => {
   mock = await startMock(0);
   proc = spawn("node_modules/.bin/mcp-use", ["start", "--port", String(PORT)], {
-    env: { ...process.env, JOBWATCH_MCP_TOKEN: MCP_TOKEN, JOBWATCH_CONNECTOR_TOKEN: BACKEND_TOKEN, JOBWATCH_BACKEND_URL: `http://127.0.0.1:${mock.port}` },
+    env: { ...process.env, JOBWATCH_CONNECTOR_TOKEN: BACKEND_TOKEN, JOBWATCH_BACKEND_URL: `http://127.0.0.1:${mock.port}`, JOBWATCH_MCP_PUBLIC_URL: `http://127.0.0.1:${PORT}` },
     stdio: "ignore",
   });
   for (let i = 0; i < 60; i++) {
@@ -37,11 +36,11 @@ afterAll(async () => {
   mock?.server.close();
 });
 
-describe("auth", () => {
-  it("rejects missing and wrong bearer tokens", async () => {
-    const none = await fetch(URL_, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
-    expect(none.status).toBe(401);
-    await expect(connect("z".repeat(40))).rejects.toBeTruthy();
+describe("authentication boundary", () => {
+  it("does not require a Jobwatch token; Cloudflare Access authenticates the public endpoint", async () => {
+    const local = await connect();
+    expect((await local.listTools()).tools.length).toBeGreaterThan(0);
+    await local.close();
   });
 });
 

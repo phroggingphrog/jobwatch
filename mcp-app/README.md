@@ -24,13 +24,10 @@ per-person binding and "already queued" refusal all stay in Python.
 - Residual risk: `_meta` is not model-visible by MCP Apps convention, but a host may still forward it to the model.
   Even then the model could only replay `submit_reviewed` with a digest for a form the person has already reviewed;
   hosts hide app-only tools from the model, and Python still refuses a changed form or a second press.
-- Auth: a bearer token is required (`JOBWATCH_MCP_TOKEN`, 32+ chars; the server will not start without it).
-  OAuth login (ChatGPT needs it) is OFF by default. `JOBWATCH_MCP_OAUTH=1` + `JOBWATCH_MCP_PUBLIC_URL=https://<public origin of this server>`
-  proxies `/.well-known/oauth-protected-resource`, `/authorize`, `/token`, `/register`, `/revoke`, `/oauth/consent` to Python and
-  accepts an OAuth access token Python vouches for, besides the static token. Python needs `JOBWATCH_CONNECTOR_OAUTH=1`,
-  the same `JOBWATCH_MCP_PUBLIC_URL`, and `JOBWATCH_MCP_OAUTH_PASSPHRASE` (16+ chars). Tokens persist hashed in a 0600 file
-  (`JOBWATCH_CONNECTOR_OAUTH_STATE`, default `$JOBWATCH_CONFIG_DIR|~/.config/jobwatch/connector-oauth.json`).
-  Nothing here opens a public URL; exposing the port is the owner's decision.
+- Authentication is handled by Cloudflare Access Managed OAuth with the configured Google identity provider.
+  The tunnel's `originRequest.access.required` setting validates Access JWTs before forwarding to this loopback-only app.
+  The app does not ask for a Jobwatch bearer token or passphrase. Keep port 18942 bound to `127.0.0.1` and publish it
+  only through the Access-protected tunnel hostname.
 - Never run write tools against real data in tests: use `test/mock-backend.mjs`.
 
 ## Run (local, mock backend)

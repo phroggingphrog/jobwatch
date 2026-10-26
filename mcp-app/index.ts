@@ -1,8 +1,6 @@
 import { MCPServer } from "mcp-use";
-import { OAuthError, OAuthErrorCode, oauthCustomProvider, type OAuthMetadata } from "mcp-use/oauth";
 import { z } from "zod";
 import { backendConfig, call, BackendError } from "./src/backend.js";
-import { authorizationServerMetadata, oauthConfig, PROXIED, proxy, same, verifyWithBackend } from "./src/oauth.js";
 import {
   chatOut,
   jobOut,
@@ -13,43 +11,8 @@ import {
   type TaskOut,
 } from "./src/schemas.js";
 
-// ---- auth: a bearer token is required. There is no unauthenticated mode. -------------------------------------
-// Accepted: the static JOBWATCH_MCP_TOKEN (constant time), or, when OAuth login is switched on
-// (JOBWATCH_MCP_OAUTH=1 + JOBWATCH_MCP_PUBLIC_URL), an OAuth access token the Python service issued (Python is asked).
-// Either way the request acts as the ONE person configured server-side in Python; no token or argument names a person.
-const mcpToken = process.env.JOBWATCH_MCP_TOKEN ?? "";
-if (mcpToken.length < 32) throw new Error("JOBWATCH_MCP_TOKEN (32+ chars) is required");
 const cfg = backendConfig();
-const oauthCfg = oauthConfig();
-
-const oauth = oauthCustomProvider<{ id: string }, (resource: URL) => OAuthMetadata>({
-  ...(oauthCfg ? { resource: new URL("/mcp", oauthCfg.publicUrl) } : {}),
-  createTokenVerifier: (resource) => ({
-    async verifyAccessToken(token: string) {
-      if (same(token, mcpToken)) {
-        return { token, clientId: "jobwatch", scopes: ["jobwatch"], expiresAt: Math.floor(Date.now() / 1000) + 3600, resource };
-      }
-      const verdict = oauthCfg ? await verifyWithBackend(cfg, token) : ({ valid: false } as const);
-      if (!verdict.valid) throw new OAuthError(OAuthErrorCode.InvalidToken, "invalid token");
-      return { token, clientId: "jobwatch-oauth", scopes: ["jobwatch"], expiresAt: verdict.expiresAt, resource };
-    },
-  }),
-  oauthMetadata: (resource: URL) =>
-    oauthCfg
-      ? (authorizationServerMetadata(oauthCfg.publicUrl.origin) as unknown as OAuthMetadata)
-      : {
-          issuer: resource.origin,
-          authorization_endpoint: `${resource.origin}/authorize`,
-          token_endpoint: `${resource.origin}/token`,
-          response_types_supported: ["code"],
-        },
-  requiredScopes: ["jobwatch"],
-  mapAuthInfo: (info) => ({
-    user: { id: info.clientId },
-    payload: {},
-    permissions: info.scopes,
-  }),
-});
+const publicHost = new URL(process.env.JOBWATCH_MCP_PUBLIC_URL ?? "").hostname;
 
 const server = new MCPServer({
   name: "jobwatch",
@@ -57,8 +20,7 @@ const server = new MCPServer({
   version: "2.0.0",
   description:
     "Your job applications: what needs you, job details, task status, and a review step before anything is sent.",
-  ...(oauthCfg ? { allowedHosts: [oauthCfg.publicUrl.hostname] } : {}),
-  oauth,
+  allowedHosts: [publicHost],
 });
 
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
@@ -292,13 +254,6 @@ export const submitReviewed = server.tool(
     }
   },
 );
-
-// ---- OAuth login: the public paths are proxied to the Python service (only when switched on) ----------------------
-if (oauthCfg) {
-  for (const r of PROXIED) {
-    server.app.on(r.method, r.path, (c) => proxy(cfg, c));
-  }
-}
 
 // ---- chat: pass-through to the same Career Ops agent as the Python MCP server --------------------------------
 // A question only the person can answer comes back as plain content ("needs your answer"), never answered here;
