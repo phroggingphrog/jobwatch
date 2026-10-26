@@ -70,6 +70,14 @@ def _write_json(path, data):
     private_write(path, json.dumps(data, sort_keys=True, ensure_ascii=False, allow_nan=False).encode())
 
 
+_SAFE_NAME = re.compile(r'[\w][\w .,()+\'-]{0,118}\.pdf', re.IGNORECASE)
+
+def _upload_name(path: Path, role: str) -> str:
+    """The original file name the employer's form receives. Anything that is not a plain printable PDF name
+    (control or bidi characters, separators, too long) falls back to the generic name."""
+    name = Path(path).name
+    return name if _SAFE_NAME.fullmatch(name) and name == name.strip() else role + '.pdf'
+
 def _document_role(control):
     # Bind only explicit unambiguous upload labels; never guess file1/file2.
     label = ' '.join(str(control.get(k) or '') for k in ('name', 'question'))
@@ -111,6 +119,8 @@ def _finish(run_dir, status, filled, completed, missing=(), reason='', screensho
         prepared.update(json.loads(private_bytes(run_dir / 'browser-state.json')))
     if (run_dir / 'attachments.json').exists():
         prepared['attached_documents'] = json.loads(private_bytes(run_dir / 'attachments.json'))
+    if (run_dir / 'document-names.json').exists():       # absent in older preparations: readers fall back to cv.pdf/letter.pdf
+        prepared['document_names'] = json.loads(private_bytes(run_dir / 'document-names.json'))
     prepared.update(review or {})           # final_control + form_state: what an owner Submit confirmation binds to
     _write_json(run_dir / 'prepared.json', prepared)
     safe_write_text(run_dir.parent / 'latest.json', json.dumps({'run_id': run_dir.name}))
@@ -263,7 +273,7 @@ def prepare_application(page, *, application_id: str, package_manifest, document
                 any(package.get('verification', {}).get(key) is not True
                     for key in ('cv_pdf', 'letter_pdf', 'claims', 'review'))):
             raise PreparationRefused('verified_pdf_package_required')
-        documents = {}
+        documents, names = {}, {}
         for role, path in document_paths.items():
             path = Path(path)
             if path.is_symlink() or not path.is_file():
@@ -271,8 +281,10 @@ def prepare_application(page, *, application_id: str, package_manifest, document
             data = path.read_bytes()
             if not data.startswith(b'%PDF-') or package.get('pdfs', {}).get(role) != hashlib.sha256(data).hexdigest():
                 raise PreparationRefused('verified_pdf_package_required')
-            documents[role] = run_dir / (role + '.pdf')
+            names[role] = _upload_name(path, role)
+            documents[role] = _private_dir(run_dir / ('upload-' + role)) / names[role]
             private_write(documents[role], data)
+        _write_json(run_dir / 'document-names.json', names)
         _write_json(run_dir / 'package.json', package)
         package_hash = hashlib.sha256(json.dumps(package, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
         def browser_state():
