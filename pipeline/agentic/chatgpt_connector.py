@@ -209,6 +209,14 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str) -> dict:
     return {'view': 'submit', 'posting_id': posting_id, **queued}
 
 
+def status(person: str, posting_id: int) -> dict:
+    """Plain state card for one posting (same logic as the task_status tool)."""
+    if type(posting_id) is not int or posting_id < 1:
+        raise RuntimeErrorSafe('invalid_request')
+    with users.use(person), job_connection(load_config()) as conn:
+        return task_state.task_card(conn, posting_id)
+
+
 def _overview_text(data: dict) -> str:
     lines = [f"{counts_text(data['counts'])}. {len(data['jobs'])} jobs with activity."]
     lines += [f"#{j['posting_id']} {j['employer'] or '?'} - {j['title'] or '?'}: {j['state']}" for j in data['jobs'][:10]]

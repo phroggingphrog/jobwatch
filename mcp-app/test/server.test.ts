@@ -1,0 +1,150 @@
+import { spawn, type ChildProcess } from "node:child_process";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+// @ts-expect-error plain JS helper
+import { startMock, DIGEST, BACKEND_TOKEN } from "./mock-backend.mjs";
+
+const MCP_TOKEN = "a".repeat(40);
+const PORT = 18943;
+const URL_ = `http://127.0.0.1:${PORT}/mcp`;
+let proc: ChildProcess;
+let mock: { server: import("node:http").Server; log: unknown[]; port: number; queuedCount: () => number };
+let client: Client;
+
+async function connect(token = MCP_TOKEN) {
+  const c = new Client({ name: "test", version: "1" });
+  await c.connect(new StreamableHTTPClientTransport(new URL(URL_), { requestInit: { headers: { Authorization: `Bearer ${token}` } } }));
+  return c;
+}
+const call = (name: string, args: Record<string, unknown> = {}) => client.callTool({ name, arguments: args }) as Promise<any>;
+const modelVisible = (r: any) => JSON.stringify({ content: r.content, structuredContent: r.structuredContent });
+
+beforeAll(async () => {
+  mock = await startMock(0);
+  proc = spawn("node_modules/.bin/mcp-use", ["start", "--port", String(PORT)], {
+    env: { ...process.env, JOBWATCH_MCP_TOKEN: MCP_TOKEN, JOBWATCH_CONNECTOR_TOKEN: BACKEND_TOKEN, JOBWATCH_BACKEND_URL: `http://127.0.0.1:${mock.port}` },
+    stdio: "ignore",
+  });
+  for (let i = 0; i < 60; i++) {
+    try { client = await connect(); return; } catch { await new Promise((r) => setTimeout(r, 500)); }
+  }
+  throw new Error("server did not start");
+}, 60_000);
+
+afterAll(async () => {
+  await client?.close().catch(() => {});
+  proc?.kill();
+  mock?.server.close();
+});
+
+describe("auth", () => {
+  it("rejects missing and wrong bearer tokens", async () => {
+    const none = await fetch(URL_, { method: "POST", headers: { "content-type": "application/json", accept: "application/json, text/event-stream" }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
+    expect(none.status).toBe(401);
+    await expect(connect("z".repeat(40))).rejects.toBeTruthy();
+  });
+});
+
+describe("tools list", () => {
+  it("has the expected tools, hints, views and visibility", async () => {
+    const { tools } = await client.listTools();
+    const by = Object.fromEntries(tools.map((t) => [t.name, t]));
+    expect(Object.keys(by).sort()).toEqual(["decide", "job_detail", "jobs_overview", "prepare_application", "review_submission", "revise_application", "submit_reviewed", "task_status"]);
+    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
+    expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
+    expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
+    expect((by.decide._meta as any).ui.visibility).toEqual(["app"]);
+    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application"]) {
+      expect((by[n]._meta as any).ui.resourceUri).toMatch(/^ui:\/\//);
+      expect(by[n].outputSchema).toBeTruthy();
+    }
+    expect(JSON.stringify(by.submit_reviewed.inputSchema)).toContain("confirm_digest");
+  });
+});
+
+describe("read tools", () => {
+  it("jobs_overview returns matching structured content", async () => {
+    const r = await call("jobs_overview", {});
+    expect(r.isError).toBeFalsy();
+    expect(r.structuredContent.jobs).toHaveLength(3);
+    expect(r.structuredContent.counts.needs_you).toBe(2);
+    expect(r.content[0].text).toContain("Acme Pty Ltd");
+  });
+  it("job_detail and task_status", async () => {
+    const d = await call("job_detail", { posting_id: 1 });
+    expect(d.structuredContent).toMatchObject({ found: true, can_submit: true, state: "draft ready" });
+    const missing = await call("job_detail", { posting_id: 99 });
+    expect(missing.structuredContent.found).toBe(false);
+    const s = await call("task_status", { posting_id: 3 });
+    expect(s.structuredContent).toMatchObject({ posting_id: 3, state: "outcome unknown" });
+  });
+  it("rejects bad input", async () => {
+    for (const args of [{ posting_id: 0 }, { posting_id: "1" }, {}]) {
+      const r = await client.callTool({ name: "job_detail", arguments: args }).catch((e) => ({ isError: true, e }));
+      expect((r as any).isError).toBe(true);
+    }
+  });
+});
+
+describe("digest handling", () => {
+  it("never appears in what the model reads; only review_submission _meta carries it", async () => {
+    const d = await call("job_detail", { posting_id: 1 });
+    expect(JSON.stringify(d)).not.toContain(DIGEST);
+    const o = await call("jobs_overview", {});
+    expect(JSON.stringify(o)).not.toContain(DIGEST);
+    const r = await call("review_submission", { posting_id: 1 });
+    expect(r.structuredContent).toMatchObject({ ready: true });
+    expect(modelVisible(r)).not.toContain(DIGEST);
+    expect(r._meta.submit_digest).toBe(DIGEST);
+    const none = await call("review_submission", { posting_id: 2 });
+    expect(none.structuredContent.ready).toBe(false);
+    expect(none._meta?.submit_digest).toBeUndefined();
+  });
+});
+
+describe("submit safety (mock backend only)", () => {
+  it("refuses a missing or wrong digest, queues once with the right one", async () => {
+    for (const args of [{ posting_id: 1 }, { posting_id: 1, confirm_digest: "" }]) {
+      const r = await client.callTool({ name: "submit_reviewed", arguments: args }).catch(() => ({ isError: true }));
+      expect((r as any).isError).toBe(true);
+    }
+    const wrong = await call("submit_reviewed", { posting_id: 1, confirm_digest: "a".repeat(64) });
+    expect(wrong.isError).toBe(true);
+    expect(wrong.content[0].text).toContain("submit_digest_mismatch");
+    expect(mock.queuedCount()).toBe(0);
+    const ok = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST });
+    expect(ok.structuredContent).toEqual({ posting_id: 1, status: "queued" });
+    const again = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST });
+    expect(again.isError).toBe(true);
+    expect(mock.queuedCount()).toBe(1);
+  });
+});
+
+describe("work tools", () => {
+  it("prepare raises an approval with the binding only in _meta; decide needs it", async () => {
+    const p = await call("prepare_application", { posting_id: 2, instructions: "short letter" });
+    expect(p.structuredContent.approval).toMatchObject({ interaction_id: "i-1", operation: "prepare_application" });
+    expect(modelVisible(p)).not.toContain("bind-1");
+    expect(p._meta.binding).toBe("bind-1");
+    const bad = await call("decide", { posting_id: 2, interaction_id: "i-1", decision: "approve", binding: "nope" });
+    expect(bad.isError).toBe(true);
+    const ok = await call("decide", { posting_id: 2, interaction_id: "i-1", decision: "approve", binding: "bind-1" });
+    expect(ok.structuredContent).toMatchObject({ state: "complete", decision: "approve" });
+    const again = await call("decide", { posting_id: 2, interaction_id: "i-1", decision: "approve", binding: "bind-1" });
+    expect(again.isError).toBe(true);
+  });
+  it("revise needs changes", async () => {
+    const r = await client.callTool({ name: "revise_application", arguments: { posting_id: 1, changes: "" } }).catch(() => ({ isError: true }));
+    expect((r as any).isError).toBe(true);
+  });
+});
+
+describe("failure", () => {
+  it("reports a generic error without secrets when the backend is down", async () => {
+    mock.server.close(); mock.server.closeAllConnections();
+    const r = await call("jobs_overview", {});
+    expect(r.isError).toBe(true);
+    expect(JSON.stringify(r)).not.toContain(BACKEND_TOKEN);
+    expect(r.content[0].text).toContain("not reachable");
+  });
+});
