@@ -135,6 +135,8 @@ class FakeLive:
         return submit_confirm.digest(dict(NAMED, form_state=self.form_state))
 
     def read(self, person, posting_id):
+        from jobwatch import users
+        assert users.current() == person, 'the live read must run as the configured person'
         if self.blocked:
             return {'status': 'blocked', 'reason': self.blocked}
         recorded = self.overlay.get('form_state', 'f')
@@ -142,6 +144,8 @@ class FakeLive:
                 'confirmed_digest': self.digest() if recorded == self.form_state else None}
 
     def rebind(self, person, posting_id, digest):
+        from jobwatch import users
+        assert users.current() == person, 'the rebind must run as the configured person, not the default one'
         if digest != self.digest():
             raise RuntimeErrorSafe('review_changed')
         self.rebound.append(digest)
@@ -235,3 +239,14 @@ def test_a_refused_submit_records_no_confirmation_of_an_edited_form(live, client
     refused = _submit(client, fresh, None)
     assert refused.status_code == 400 and refused.json()['error'] == 'submit_already_queued'
     assert live.rebound == [] and len(_requests('owner')) == 1
+
+def test_live_read_and_rebind_run_as_the_configured_person_not_the_default(live, two_people):
+    """guest is not the default user: the native browser key is chosen by users.current(), so both calls must be scoped."""
+    guest = TestClient(connector_http.create_app(token=TOKEN, person='guest'))
+    body = guest.get('/connector/jobs/1/review', headers=H).json()
+    assert body['review']['ready'] and body['review']['employer'] == 'Secret Co'
+    live.edit('Full name', 'Edited by guest')
+    fresh = guest.get('/connector/jobs/1/review', headers=H).json()
+    ok = guest.post('/connector/jobs/1/submit', headers=H,
+                    json={'confirm_digest': fresh['submit_digest'], 'shown_hash': fresh['review']['shown_hash']})
+    assert ok.status_code == 200 and live.rebound == [fresh['submit_digest']]

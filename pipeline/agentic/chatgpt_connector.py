@@ -258,7 +258,8 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str, shown_has
                 blocked = task_state.retry_blocked(conn, posting_id)       # a refused Submit must not confirm the edit
             if blocked:
                 raise RuntimeErrorSafe(blocked)
-            _live_form().rebind(person, posting_id, review_digest)
+            with users.use(person):
+                _live_form().rebind(person, posting_id, review_digest)
     with users.use(person), job_connection(load_config(), write=True) as conn:
         application_id, current = _application_and_digest(conn, posting_id)
         if current is None:
