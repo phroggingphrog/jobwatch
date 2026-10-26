@@ -957,7 +957,14 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
 
     if execution is None:
         import uuid
-        execution = invocation.Execution(uuid.uuid4().hex)
+        from jobwatch.config import load_config
+        from pipeline.agentic.service import _config
+        with users.use(person):
+            config = config if config is not None else load_config()
+            settings = _config(config)
+        execution = invocation.Execution(uuid.uuid4().hex,
+            seconds=min(settings['job_seconds'], settings['batch_seconds']),
+            token_ceiling=settings['job_token_ceiling'])
 
     def invoke():
         nonlocal decisions
