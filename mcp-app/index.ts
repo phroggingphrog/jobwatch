@@ -57,6 +57,7 @@ const server = new MCPServer({
   version: "2.0.0",
   description:
     "Your job applications: what needs you, job details, task status, and a review step before anything is sent.",
+  ...(oauthCfg ? { allowedHosts: [oauthCfg.publicUrl.hostname] } : {}),
   oauth,
 });
 
