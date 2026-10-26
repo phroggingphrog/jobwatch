@@ -6,5 +6,5 @@ export default function ReviewView() {
   const { status, toolOutput, error, meta } = useToolContext<"review_submission">();
   if (status === "pending") return <Loading label="Preparing the review" />;
   if (status === "error") return <ErrorNote message={error.message} />;
-  return <Page><ReviewPane r={toolOutput as Review} digest={metaString(meta, "submit_digest")} /></Page>;
+  return <Page><ReviewPane r={toolOutput as Review} keys={{ digest: metaString(meta, "submit_digest"), shown: metaString(meta, "shown_hash") }} /></Page>;
 }

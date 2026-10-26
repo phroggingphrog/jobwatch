@@ -44,3 +44,9 @@ ul.list { margin: 4px 0; padding-left: 18px; list-style: disc; } ul.list li { pa
 .note.bad { border-left-color: var(--bad); }
 .empty { color: var(--text-muted); padding: 16px 6px; }
 .skel { height: 14px; border-radius: 4px; background: rgba(255,255,255,0.07); margin: 10px 0; }
+.mono { font: 12px var(--mono); color: var(--text-sub); overflow-wrap: anywhere; }
+.btn.quiet { border-color: transparent; color: var(--text-muted); }
+dl.qa { display: block; margin: 0; border-top: 1px solid var(--line); }
+.qa-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; padding: 8px 6px; border-bottom: 1px solid var(--line-soft); }
+.qa-row dt { color: var(--text-muted); } .qa-row dd { color: var(--text); }
+@media (max-width: 520px) { .qa-row { grid-template-columns: 1fr; } }

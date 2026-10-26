@@ -56,11 +56,14 @@ export const reviewOut = z.object({
   posting_id: z.number().int(),
   found: z.boolean(),
   ready: z.boolean(),
+  reason: z.enum(["not_prepared", "not_ready", "edited_in_browser"]).optional(),
   employer: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
   state: z.string().optional(),
-  draft_version: z.number().nullable().optional(),
   ad_url: z.string().nullable().optional(),
+  // every filled form answer, question to answer, exactly what the digest was taken over
+  answers: z.array(z.object({ question: z.string(), answer: z.string(), source: z.string() })),
+  documents: z.array(z.object({ role: z.string(), label: z.string(), file: z.string(), sha256: z.string() })),
 });
 
 export const submitOut = z.object({

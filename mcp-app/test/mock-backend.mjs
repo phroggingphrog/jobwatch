@@ -3,12 +3,14 @@ import http from "node:http";
 
 export const BACKEND_TOKEN = "b".repeat(40);
 export const DIGEST = "d".repeat(64);
+export const SHOWN = "e".repeat(64);
 
 export function startMock(port = 0) {
   const log = [];
   const jobs = {
     1: { posting_id: 1, found: true, employer: "Acme Pty Ltd", title: "Data Analyst", location: "Melbourne VIC", ad_url: "https://example.com/ad/1", score: 4.2, why_it_fits: "Matches the SQL and reporting work in your profile.", pros: ["SQL and dashboards", "Hybrid, 3 days"], cons: ["Contract, 6 months"], state: "draft ready", state_detail: "", documents_ready: true, draft_version: 2, can_submit: true },
     2: { posting_id: 2, found: true, employer: "Globex", title: "BI Developer", location: "Sydney NSW", ad_url: null, score: 3.6, why_it_fits: null, pros: [], cons: [], state: "drafting", state_detail: "", documents_ready: false, draft_version: null, can_submit: false },
+    4: { posting_id: 4, found: true, employer: "Hooli", title: "Data Engineer", location: null, ad_url: null, score: 3.9, state: "draft ready", state_detail: "", documents_ready: true, draft_version: 1, can_submit: false },
     3: { posting_id: 3, found: true, employer: "Initech", title: "Reporting Analyst", location: null, ad_url: null, score: null, state: "outcome unknown", state_detail: "Outcome unknown; retries are paused.", documents_ready: true, draft_version: 1, can_submit: false },
   };
   let queued = 0;
@@ -27,7 +29,21 @@ export function startMock(port = 0) {
     }
     if (req.method === "GET" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)$/))) {
       const j = jobs[m[1]] ?? { posting_id: Number(m[1]), found: false };
-      return send(200, { job: j, submit_digest: j.can_submit ? DIGEST : null });
+      return send(200, { job: j });
+    }
+    if (req.method === "GET" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/review$/))) {
+      const j = jobs[m[1]];
+      if (!j) return send(200, { review: { posting_id: Number(m[1]), found: false, ready: false, answers: [], documents: [] }, submit_digest: null });
+      const base = { posting_id: j.posting_id, found: true, employer: j.employer, title: j.title, ad_url: j.ad_url, state: j.state, answers: [], documents: [] };
+      if (j.posting_id === 1) return send(200, { review: { ...base, ready: true, shown_hash: SHOWN,
+        answers: [
+          { question: "Full name", answer: "Alex Example", source: "profile" },
+          { question: "Right to work in Australia?", answer: "Yes", source: "profile" },
+          { question: "Salary expectation", answer: "$85,000", source: "saved_answer" },
+          { question: "Why this role", answer: "I enjoy turning messy reporting data into dashboards people trust, and this role is mostly that.", source: "agent_draft" },
+        ], documents: [{ role: "cv", label: "CV", file: "cv.pdf", sha256: "a1b2c3d4e5f6" }, { role: "letter", label: "Cover letter", file: "letter.pdf", sha256: "f6e5d4c3b2a1" }] }, submit_digest: DIGEST });
+      if (j.posting_id === 4) return send(200, { review: { ...base, ready: false, reason: "edited_in_browser" }, submit_digest: null });
+      return send(200, { review: { ...base, ready: false, reason: j.posting_id === 2 ? "not_prepared" : "not_ready" }, submit_digest: null });
     }
     if (req.method === "GET" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/status$/))) {
       const j = jobs[m[1]];
@@ -44,6 +60,7 @@ export function startMock(port = 0) {
     }
     if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/submit$/))) {
       if (body.confirm_digest !== DIGEST) return send(400, { error: "submit_digest_mismatch" });
+      if (body.shown_hash !== SHOWN) return send(400, { error: "review_changed" });
       if (queued) return send(400, { error: "submit_already_queued" });
       queued += 1;
       return send(200, { view: "submit", posting_id: Number(m[1]), status: "queued" });

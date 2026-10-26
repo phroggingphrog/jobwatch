@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 // @ts-expect-error plain JS helper
-import { startMock, DIGEST, BACKEND_TOKEN } from "./mock-backend.mjs";
+import { startMock, DIGEST, SHOWN, BACKEND_TOKEN } from "./mock-backend.mjs";
 
 const MCP_TOKEN = "a".repeat(40);
 const PORT = 18943;
@@ -66,7 +66,7 @@ describe("read tools", () => {
   it("jobs_overview returns matching structured content", async () => {
     const r = await call("jobs_overview", {});
     expect(r.isError).toBeFalsy();
-    expect(r.structuredContent.jobs).toHaveLength(3);
+    expect(r.structuredContent.jobs).toHaveLength(4);
     expect(r.structuredContent.counts.needs_you).toBe(2);
     expect(r.content[0].text).toContain("Acme Pty Ltd");
   });
@@ -90,31 +90,45 @@ describe("digest handling", () => {
   it("never appears in what the model reads; only review_submission _meta carries it", async () => {
     const d = await call("job_detail", { posting_id: 1 });
     expect(JSON.stringify(d)).not.toContain(DIGEST);
+    expect(d._meta?.submit_digest).toBeUndefined();
     const o = await call("jobs_overview", {});
     expect(JSON.stringify(o)).not.toContain(DIGEST);
     const r = await call("review_submission", { posting_id: 1 });
-    expect(r.structuredContent).toMatchObject({ ready: true });
+    expect(r.structuredContent).toMatchObject({ ready: true, employer: "Acme Pty Ltd" });
+    expect(r.structuredContent.answers).toHaveLength(4);
+    expect(r.structuredContent.answers[1]).toMatchObject({ question: "Right to work in Australia?", answer: "Yes" });
+    expect(r.structuredContent.documents.map((d: any) => d.file)).toEqual(["cv.pdf", "letter.pdf"]);
     expect(modelVisible(r)).not.toContain(DIGEST);
+    expect(modelVisible(r)).not.toContain(SHOWN);
     expect(r._meta.submit_digest).toBe(DIGEST);
-    const none = await call("review_submission", { posting_id: 2 });
-    expect(none.structuredContent.ready).toBe(false);
-    expect(none._meta?.submit_digest).toBeUndefined();
+    expect(r._meta.shown_hash).toBe(SHOWN);
+    for (const [id, reason] of [[2, "not_prepared"], [3, "not_ready"], [4, "edited_in_browser"]] as const) {
+      const none = await call("review_submission", { posting_id: id });
+      expect(none.structuredContent).toMatchObject({ ready: false, reason });
+      expect(none._meta?.submit_digest).toBeUndefined();
+      expect(none._meta?.shown_hash).toBeUndefined();
+    }
+    const unknown = await call("review_submission", { posting_id: 99 });
+    expect(unknown.structuredContent).toMatchObject({ found: false, ready: false });
   });
 });
 
 describe("submit safety (mock backend only)", () => {
   it("refuses a missing or wrong digest, queues once with the right one", async () => {
-    for (const args of [{ posting_id: 1 }, { posting_id: 1, confirm_digest: "" }]) {
+    for (const args of [{ posting_id: 1 }, { posting_id: 1, confirm_digest: "" }, { posting_id: 1, confirm_digest: DIGEST }, { posting_id: 1, confirm_digest: DIGEST, shown_hash: "" }]) {
       const r = await client.callTool({ name: "submit_reviewed", arguments: args }).catch(() => ({ isError: true }));
       expect((r as any).isError).toBe(true);
     }
-    const wrong = await call("submit_reviewed", { posting_id: 1, confirm_digest: "a".repeat(64) });
+    const wrong = await call("submit_reviewed", { posting_id: 1, confirm_digest: "a".repeat(64), shown_hash: SHOWN });
     expect(wrong.isError).toBe(true);
     expect(wrong.content[0].text).toContain("submit_digest_mismatch");
+    const stale = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST, shown_hash: "f".repeat(64) });
+    expect(stale.isError).toBe(true);
+    expect(stale.content[0].text).toContain("review_changed");
     expect(mock.queuedCount()).toBe(0);
-    const ok = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST });
+    const ok = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST, shown_hash: SHOWN });
     expect(ok.structuredContent).toEqual({ posting_id: 1, status: "queued" });
-    const again = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST });
+    const again = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST, shown_hash: SHOWN });
     expect(again.isError).toBe(true);
     expect(mock.queuedCount()).toBe(1);
   });

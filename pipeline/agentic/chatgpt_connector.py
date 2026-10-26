@@ -188,11 +188,15 @@ def submit_digest(person: str, posting_id: int) -> str | None:
         return _application_and_digest(conn, posting_id)[1]
 
 
-def submit_reviewed(person: str, posting_id: int, confirm_digest: str) -> dict:
+def submit_reviewed(person: str, posting_id: int, confirm_digest: str, shown_hash: str | None = None) -> dict:
     """Queue the one press for the exact reviewed form. The web process re-checks the live form before pressing."""
     from jobwatch.apply import submit_confirm
     if type(posting_id) is not int or posting_id < 1 or type(confirm_digest) is not str:
         raise RuntimeErrorSafe('invalid_request')
+    if shown_hash is not None:      # the JSON front passes it: refuse unless the person saw exactly what is now ready
+        current_review, _ = review(person, posting_id)
+        if not current_review.get('ready') or not hmac.compare_digest(str(shown_hash), current_review['shown_hash']):
+            raise RuntimeErrorSafe('review_changed')
     with users.use(person), job_connection(load_config(), write=True) as conn:
         application_id, current = _application_and_digest(conn, posting_id)
         if current is None:
@@ -215,6 +219,61 @@ def status(person: str, posting_id: int) -> dict:
         raise RuntimeErrorSafe('invalid_request')
     with users.use(person), job_connection(load_config()) as conn:
         return task_state.task_card(conn, posting_id)
+
+
+_DOC_LABEL = {'cv': ('CV', 'cv.pdf'), 'letter': ('Cover letter', 'letter.pdf')}
+
+
+def _answer_text(value) -> str:
+    if isinstance(value, bool):
+        return 'Yes' if value else 'No'
+    if isinstance(value, list):
+        return ', '.join(str(v) for v in value)
+    return '' if value is None else str(value)
+
+
+def review(person: str, posting_id: int) -> tuple[dict, str | None]:
+    """What the owner is approving, from the same preparation the Submit digest binds to: every filled answer
+    (question -> answer), the attached documents (the file names the employer's form receives), employer and role.
+    Returns (public review, digest). `shown_hash` covers exactly the shown content plus the digest, so Submit can
+    refuse when anything the person saw has changed. The digest itself is never part of the public review."""
+    from jobwatch.apply import prepare, submit_confirm
+    from jobwatch.apply.paths import data_dir
+    if type(posting_id) is not int or posting_id < 1:
+        raise RuntimeErrorSafe('invalid_request')
+    base = {'posting_id': posting_id, 'found': False, 'ready': False, 'answers': [], 'documents': []}
+    with users.use(person), job_connection(load_config()) as conn:
+        conn.row_factory = sqlite3.Row
+        post = conn.execute('SELECT title, company, url FROM postings WHERE id=?', (posting_id,)).fetchone()
+        if post is None:
+            return base, None
+        base |= {'found': True, 'employer': post['company'], 'title': post['title'], 'ad_url': _http_url(post['url'])}
+        card = task_state.task_card(conn, posting_id)
+        base['state'] = card['state']
+        row = conn.execute('SELECT id FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
+        if row is None:
+            return base | {'reason': 'not_prepared'}, None
+        try:
+            prepared = prepare.latest_preparation(data_dir(), str(row['id']))
+        except prepare.PreparationRefused:
+            return base | {'reason': 'not_prepared'}, None
+    digest = submit_confirm.digest(prepared)
+    if prepared is None or digest is None:
+        return base | {'reason': 'not_prepared'}, None
+    answers = [{'question': str(r.get('question') or r.get('key'))[:500], 'answer': _answer_text(r.get('value'))[:2000],
+                'source': str(r.get('source') or '')}
+               for r in prepared.get('review_answers') or [] if isinstance(r, dict) and r.get('value') is not None]
+    docs = [{'role': role, 'label': _DOC_LABEL.get(role, (role, role))[0], 'file': _DOC_LABEL.get(role, (role, role + '.pdf'))[1],
+             'sha256': str(h)[:12]} for role, h in sorted((prepared.get('attached_documents') or {}).items())]
+    out = base | {'answers': answers, 'documents': docs}
+    if card['state'] not in ('draft ready', 'awaiting browser press'):
+        return out | {'reason': 'not_ready'}, None
+    if (data_dir() / 'browser' / hashlib.sha256(str(row['id']).encode()).hexdigest() / prepared['run_id'] / 'owner-review.json').exists():
+        # The owner changed the live form after the fill; these answers are the fill-time ones, so do not offer Submit.
+        return out | {'reason': 'edited_in_browser'}, None
+    out['ready'] = True
+    out['shown_hash'] = hashlib.sha256(json.dumps([out, digest], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return out, digest
 
 
 def _overview_text(data: dict) -> str:

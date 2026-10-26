@@ -11,12 +11,13 @@ per-person binding and "already queued" refusal all stay in Python.
 | `jobs_overview` | yes | jobs-overview | read-only |
 | `job_detail` | yes | job-detail | read-only, never carries the digest |
 | `task_status` | yes | task-status | read-only |
-| `review_submission` | yes | review | read-only; digest only in result `_meta` |
+| `review_submission` | yes | review | read-only; shows every filled answer, attached files, employer and role; digest and shown_hash only in result `_meta` |
 | `prepare_application`, `revise_application` | yes | task-prepare / task-revise | hand work to Jobwatch's agent; never submit; approval binding only in `_meta` |
 | `decide` | app only | - | Approve/Reject button |
 | `submit_reviewed` | app only | - | destructiveHint + openWorldHint; needs the digest |
 
 ## Safety
+- Submit needs the confirm digest of the reviewed form AND the `shown_hash` of exactly what the review showed (answers, documents, digest); Python refuses `review_changed` if either differs, and does not offer Submit when the owner edited the live form after the fill (`edited_in_browser`). Answers shown are the fill-time ones from the same preparation the digest binds; the web process still re-checks the live form before pressing.
 - Submit needs the confirm digest of the reviewed form. The view gets it from `_meta` (view-only data) and passes it
   to `submit_reviewed`; Python re-checks it against the live reviewed form and queues once.
 - Residual risk: `_meta` is not model-visible by MCP Apps convention, but a host may still forward it to the model.

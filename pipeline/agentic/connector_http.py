@@ -34,6 +34,7 @@ class Decide(BaseModel):
 
 class Submit(BaseModel):
     confirm_digest: str = Field(max_length=200)
+    shown_hash: str = Field(max_length=200)
 
 
 def create_app(*, token: str | None = None, person: str | None = None) -> FastAPI:
@@ -60,10 +61,13 @@ def create_app(*, token: str | None = None, person: str | None = None) -> FastAP
 
     @app.get('/connector/jobs/{posting_id}')
     def job(posting_id: int, who: str = Depends(authed)):
-        data = cc.detail(who, posting_id)
-        # Kept apart from the job fields: the TypeScript front puts it in view-only _meta, never in what the model reads.
-        digest = cc.submit_digest(who, posting_id) if data.get('can_submit') else None
-        return {'job': data, 'submit_digest': digest}
+        return {'job': cc.detail(who, posting_id)}
+
+    @app.get('/connector/jobs/{posting_id}/review')
+    def review(posting_id: int, who: str = Depends(authed)):
+        # The digest is a separate field: the TypeScript front puts it in view-only _meta, never in model-visible content.
+        data, digest = cc.review(who, posting_id)
+        return {'review': data, 'submit_digest': digest}
 
     @app.get('/connector/jobs/{posting_id}/status')
     def status(posting_id: int, who: str = Depends(authed)):
@@ -90,7 +94,7 @@ def create_app(*, token: str | None = None, person: str | None = None) -> FastAP
 
     @app.post('/connector/jobs/{posting_id}/submit')
     def submit(posting_id: int, body: Submit, who: str = Depends(authed)):
-        return cc.submit_reviewed(who, posting_id, body.confirm_digest)
+        return cc.submit_reviewed(who, posting_id, body.confirm_digest, body.shown_hash)
 
     return app
 

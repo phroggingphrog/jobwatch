@@ -112,7 +112,7 @@ export const jobDetail = server.tool(
   },
   async ({ posting_id }) => {
     try {
-      const { job } = (await call<{ job: unknown }>(cfg, "GET", `/connector/jobs/${posting_id}`));
+      const { job } = await call<{ job: unknown }>(cfg, "GET", `/connector/jobs/${posting_id}`);
       const d = jobOut.parse(job);
       const t = d.found
         ? `#${d.posting_id} ${d.employer ?? "?"} - ${d.title ?? "?"}${d.score != null ? `, score ${d.score}` : ""}. State: ${d.state}; ${d.documents_ready ? "documents ready" : "no documents ready"}.`
@@ -163,7 +163,7 @@ export const reviewSubmission = server.tool(
   {
     name: "review_submission",
     description:
-      "Open the review step for one job: shows what is about to be sent and offers the Submit button. Does not send anything.",
+      "Open the review step for one job: shows the exact filled form (every answer, attached CV and letter) that would be sent, with a Submit button. Does not send anything.",
     inputSchema: z.object({ posting_id: posting }),
     outputSchema: reviewOut,
     annotations: READ,
@@ -171,23 +171,18 @@ export const reviewSubmission = server.tool(
   },
   async ({ posting_id }) => {
     try {
-      const r = await call<{ job: Record<string, unknown>; submit_digest: string | null }>(cfg, "GET", `/connector/jobs/${posting_id}`);
-      const j = jobOut.parse(r.job);
-      const ready = Boolean(j.found && j.can_submit && r.submit_digest);
-      const d = reviewOut.parse({
-        posting_id,
-        found: j.found,
-        ready,
-        employer: j.employer,
-        title: j.title,
-        state: j.state,
-        draft_version: j.draft_version,
-        ad_url: j.ad_url,
-      });
+      const r = await call<{ review: Record<string, unknown>; submit_digest: string | null }>(cfg, "GET", `/connector/jobs/${posting_id}/review`);
+      // shown_hash and the digest are removed from model-visible output and placed in view-only _meta.
+      const { shown_hash, ...visible } = r.review as { shown_hash?: string } & Record<string, unknown>;
+      const d = reviewOut.parse(visible);
+      const ready = Boolean(d.ready && r.submit_digest && shown_hash);
+      const t = ready
+        ? `#${posting_id} ${d.employer ?? "?"} - ${d.title ?? "?"}: ${d.answers.length} answers and ${d.documents.length} documents ready for review. The person presses Submit in the view; do not call submit_reviewed.`
+        : `#${posting_id} has nothing to submit (${d.reason ?? "not found"}).`;
       return {
-        content: text(ready ? `#${posting_id} is ready for review. The person presses Submit in the view; do not call submit_reviewed.` : `#${posting_id} has no reviewed application to submit (state: ${j.state ?? "unknown"}).`),
+        content: text(t),
         structuredContent: d,
-        ...(ready ? { _meta: { submit_digest: r.submit_digest } } : {}),
+        ...(ready ? { _meta: { submit_digest: r.submit_digest, shown_hash } } : {}),
       };
     } catch (e) {
       return fail(e);
@@ -283,15 +278,15 @@ export const submitReviewed = server.tool(
     name: "submit_reviewed",
     description:
       "View Submit button only. Sends the reviewed application to the employer if confirm_digest matches the reviewed form. The model must not call this.",
-    inputSchema: z.object({ posting_id: posting, confirm_digest: z.string().min(1).max(200) }),
+    inputSchema: z.object({ posting_id: posting, confirm_digest: z.string().min(1).max(200), shown_hash: z.string().min(1).max(200) }),
     outputSchema: submitOut,
     // Sends the application to the employer: destructive and open-world.
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true, idempotentHint: false },
     visibility: "app",
   },
-  async ({ posting_id, confirm_digest }) => {
+  async ({ posting_id, confirm_digest, shown_hash }) => {
     try {
-      const q = await call<{ status?: unknown }>(cfg, "POST", `/connector/jobs/${posting_id}/submit`, { confirm_digest });
+      const q = await call<{ status?: unknown }>(cfg, "POST", `/connector/jobs/${posting_id}/submit`, { confirm_digest, shown_hash });
       const d = { posting_id, status: String(q.status ?? "unknown") };
       return { content: text(`Submit ${d.status} for job ${posting_id}.`), structuredContent: d };
     } catch (e) {

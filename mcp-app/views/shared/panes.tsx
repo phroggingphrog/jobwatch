@@ -8,14 +8,17 @@ export interface Job {
   state?: string; state_detail?: string; documents_ready?: boolean; draft_version?: number | null; can_submit?: boolean;
 }
 export interface Review {
-  posting_id: number; found: boolean; ready: boolean; employer?: string | null; title?: string | null;
-  state?: string; draft_version?: number | null; ad_url?: string | null;
+  posting_id: number; found: boolean; ready: boolean; reason?: "not_prepared" | "not_ready" | "edited_in_browser";
+  employer?: string | null; title?: string | null; state?: string; ad_url?: string | null;
+  answers: { question: string; answer: string; source: string }[];
+  documents: { role: string; label: string; file: string; sha256: string }[];
 }
+export interface ReviewKeys { digest?: string; shown?: string }
 
 export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
   const review = useCallTool("review_submission");
-  const [shown, setShown] = useState<{ r: Review; digest?: string } | null>(null);
-  if (shown) return <ReviewPane r={shown.r} digest={shown.digest} onBack={() => setShown(null)} />;
+  const [shown, setShown] = useState<{ r: Review; keys: ReviewKeys } | null>(null);
+  if (shown) return <ReviewPane r={shown.r} keys={shown.keys} onBack={() => setShown(null)} />;
   const ad = safeUrl(d.ad_url);
   return (
     <div>
@@ -43,7 +46,7 @@ export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
                 onClick={async () => {
                   try {
                     const res = await review.callTool({ posting_id: d.posting_id });
-                    setShown({ r: res.structuredContent as Review, digest: metaString(res._meta, "submit_digest") });
+                    setShown({ r: res.structuredContent as Review, keys: { digest: metaString(res._meta, "submit_digest"), shown: metaString(res._meta, "shown_hash") } });
                   } catch { /* shown through review.error */ }
                 }}>
                 {review.isPending ? "Opening..." : "Review before submit"}
@@ -56,52 +59,68 @@ export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
   );
 }
 
-/** Review-before-submit. The digest lives only in this component's props (from view-only _meta), never in view state. */
-export function ReviewPane({ r, digest, onBack }: { r: Review; digest?: string; onBack?: () => void }) {
+const WHY: Record<string, string> = {
+  not_prepared: "Nothing is filled in yet. Prepare the application first.",
+  not_ready: "This application is not ready to submit.",
+  edited_in_browser: "You changed the form in the browser after it was filled. Review and submit it from the Jobwatch web app.",
+};
+
+/** Review-before-submit: the exact form, then one primary Submit. The keys live only in props (view-only _meta), never in view state. */
+export function ReviewPane({ r, keys, onBack }: { r: Review; keys: ReviewKeys; onBack?: () => void }) {
   const submit = useCallTool("submit_reviewed");
-  const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [declined, setDeclined] = useState(false);
   const [failed, setFailed] = useState(false);
   const ad = safeUrl(r.ad_url);
-  const what = `${r.title || "this job"} at ${r.employer || "the employer"}`;
+  const employer = r.employer || "the employer";
+  const canSubmit = r.found && r.ready && keys.digest && keys.shown;
   return (
     <div>
       {onBack && <button type="button" className="link" onClick={onBack}>Back</button>}
       <div className="head"><div>
         <h1>Review before submit</h1>
-        <p className="sub">{what}</p>
-      </div></div>
-      <dl>
-        <dt>State</dt><dd><Status state={r.state ?? "not started"} /></dd>
-        <dt>Draft</dt><dd>{r.draft_version ? `v${r.draft_version}` : "None"}</dd>
-      </dl>
-      {ad && <p><a className="link" href={ad} target="_blank" rel="noopener noreferrer">Open the job ad</a></p>}
-      {!r.found || !r.ready || !digest ? (
-        <p className="note">Nothing is ready to submit for this job. Prepare and review an application first.</p>
+        <p className="sub">{r.found ? `${r.title || "(untitled)"} at ${employer}` : "That job was not found."}</p>
+      </div>{r.found && <Status state={r.state ?? "not started"} />}</div>
+      {r.found && r.answers.length > 0 && (
+        <>
+          <h2>Form answers</h2>
+          <dl className="qa">{r.answers.map((a, i) => (<div key={i} className="qa-row"><dt>{a.question}</dt><dd>{a.answer || "(blank)"}</dd></div>))}</dl>
+        </>
+      )}
+      {r.found && r.documents.length > 0 && (
+        <>
+          <h2>Attachments</h2>
+          <ul className="rows">{r.documents.map((d) => (
+            <li key={d.role}><div className="row" style={{ cursor: "default" }}>
+              <span className="grow"><div className="t">{d.label}</div></span><span className="mono">{d.file}</span>
+            </div></li>))}</ul>
+        </>
+      )}
+      {ad && <p style={{ marginTop: 10 }}><a className="link" href={ad} target="_blank" rel="noopener noreferrer">Open the job ad</a></p>}
+      {!canSubmit ? (
+        r.found && <p className="note" role="status">{WHY[r.reason ?? "not_ready"]}</p>
       ) : result ? (
         <p className="note" role="status">{result}</p>
-      ) : !confirming ? (
-        <div className="actions">
-          <button type="button" className="btn primary" onClick={() => setConfirming(true)}>Submit application</button>
-        </div>
+      ) : declined ? (
+        <p className="note" role="status">Not sent. Nothing was submitted.</p>
       ) : (
         <>
-          <p className="note">This sends your application for {what} exactly as filled and reviewed. Nothing is sent if the form changed.</p>
-          {failed && <p className="note bad" role="alert">Not submitted. The reviewed form may have changed; open the job again.</p>}
+          <p className="note">This will send your application to {employer}.</p>
+          {failed && <p className="note bad" role="alert">Not submitted. The form may have changed; open the review again.</p>}
           <div className="actions">
             <button type="button" className="btn primary" disabled={submit.isPending}
               onClick={async () => {
                 setFailed(false);
                 try {
-                  const res = await submit.callTool({ posting_id: r.posting_id, confirm_digest: digest });
+                  const res = await submit.callTool({ posting_id: r.posting_id, confirm_digest: keys.digest!, shown_hash: keys.shown! });
                   setResult(res.structuredContent.status === "queued"
                     ? "Queued. Jobwatch presses Submit within 15 minutes if the form is unchanged."
                     : `Submit status: ${res.structuredContent.status}.`);
                 } catch { setFailed(true); }
               }}>
-              {submit.isPending ? "Sending..." : "Send to employer"}
+              {submit.isPending ? "Sending..." : "Submit application"}
             </button>
-            <button type="button" className="btn" disabled={submit.isPending} onClick={() => setConfirming(false)}>Cancel</button>
+            <button type="button" className="btn quiet" disabled={submit.isPending} onClick={() => setDeclined(true)}>Not yet</button>
           </div>
         </>
       )}
