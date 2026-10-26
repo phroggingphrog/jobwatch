@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -166,6 +167,57 @@ def decide(person: str, interaction_id: str, decision: str, binding: str) -> dic
     data, meta = _outcome(person, {'view': 'work', 'posting_id': item.get('posting_id'),
                                    'thread_id': pending['thread_id']}, result)
     return data | {'decision': decision}, meta
+
+
+# -- chat pass-through: the same dispatch as the Python MCP server's career_ops_start_chat / continue_chat ---------
+_CHAT_NOTE = ('Show the question(s) to the person and wait for their answer. Do not answer for them and do not guess; '
+              'send their words with career_ops_continue_chat.')
+
+
+def chat_turn(person: str, thread_id: str | None, message: str) -> dict:
+    """One chat turn for `person` (never an argument of any tool). A human question comes back as plain content
+    ("needs_answer": question + options) and is answered only by the person's own next message on the same thread;
+    approvals are never answered here: they are rejected (a rejection authorises nothing) and named, so the thread stays
+    usable and the person uses the app's own buttons. Nothing is invented on the person's behalf."""
+    if type(message) is not str or not message.strip() or len(message) > 16000:
+        raise RuntimeErrorSafe('invalid_request')
+    if thread_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', thread_id or ''):
+        raise RuntimeErrorSafe('invalid_request')
+    thread_id = thread_id or secrets.token_urlsafe(32)
+    result = dispatch(person=person, thread_id=thread_id, message=message)
+    declined: list[str] = []
+    for _ in range(4):
+        if result.get('status') != 'interrupted':
+            break
+        items = result.get('interactions') or []
+        if not items or len(items) > 8:
+            raise RuntimeErrorSafe('unsupported_chat_interaction')
+        questions = [i for i in items if i.get('type') == 'question' and isinstance(i.get('question'), str)
+                     and i['question'].strip() and len(i['question']) <= 4000]
+        if questions:
+            shown = [{'question': q['question']} | ({'options': [str(o)[:200] for o in q['options'][:20]]}
+                     if isinstance(q.get('options'), list) and q['options'] else {}) for q in questions]
+            out = {'schema_version': 1, 'type': 'assistant_message', 'status': 'needs_answer', 'thread_id': thread_id,
+                   'questions': shown, 'note': _CHAT_NOTE, 'tools': result.get('tools', [])}
+            others = sorted({str(i.get('operation') or i.get('type')) for i in items if i not in questions})
+            if others:
+                out['approvals_not_answerable_here'] = others
+            return out
+        declined += [str(i.get('operation') or i.get('type')) for i in items]
+        result = dispatch(person=person, thread_id=thread_id, human_decision=True,
+                          expected_checkpoint=result.get('checkpoint_id'),
+                          approval_bindings=[i.get('binding') for i in items],
+                          decisions=[{'type': 'reject'} if i.get('type') == 'approval' else
+                                     {'type': 'respond', 'message': 'This client cannot ask the person for that. '
+                                      'Do not infer or invent the answer.'} for i in items])
+    else:
+        raise RuntimeErrorSafe('unsupported_chat_interaction')
+    out = {'schema_version': 1, 'type': 'assistant_message', 'status': 'complete', 'thread_id': thread_id,
+           'answer': result.get('answer', ''), 'todos': result.get('todos', []), 'tools': result.get('tools', [])}
+    if declined:
+        out['declined'] = sorted(set(declined))
+        out['note'] = 'Jobwatch asked for approval and it was declined here: nothing was run or sent. The person approves in the Jobwatch app.'
+    return out
 
 
 # -- stage 3: Submit, only with the digest of the reviewed fill ----------------------------------------------

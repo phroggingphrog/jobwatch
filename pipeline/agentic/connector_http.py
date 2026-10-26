@@ -11,7 +11,7 @@ import os
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from jobwatch import users
 from pipeline.agentic import chatgpt_connector as cc
@@ -30,6 +30,17 @@ class Decide(BaseModel):
     interaction_id: str = Field(max_length=100)
     decision: str
     binding: str = Field(max_length=200)
+
+
+class ChatStart(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    message: str = Field(max_length=16000)
+
+
+class ChatContinue(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    thread_id: str = Field(pattern=r'^[A-Za-z0-9_-]{1,100}$')
+    message: str = Field(max_length=16000)
 
 
 class Submit(BaseModel):
@@ -95,6 +106,14 @@ def create_app(*, token: str | None = None, person: str | None = None) -> FastAP
     @app.post('/connector/jobs/{posting_id}/submit')
     def submit(posting_id: int, body: Submit, who: str = Depends(authed)):
         return cc.submit_reviewed(who, posting_id, body.confirm_digest, body.shown_hash)
+
+    @app.post('/connector/chat/start')
+    def chat_start(body: ChatStart, who: str = Depends(authed)):
+        return cc.chat_turn(who, None, body.message)
+
+    @app.post('/connector/chat/continue')
+    def chat_continue(body: ChatContinue, who: str = Depends(authed)):
+        return cc.chat_turn(who, body.thread_id, body.message)
 
     return app
 
