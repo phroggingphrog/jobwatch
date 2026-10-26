@@ -265,7 +265,6 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str, shown_has
             raise RuntimeErrorSafe('submit_not_ready')
         if not hmac.compare_digest(confirm_digest, current):
             raise RuntimeErrorSafe('submit_digest_mismatch')
-        from pipeline.agentic import task_state
         blocked = task_state.retry_blocked(conn, posting_id)
         if blocked:
             raise RuntimeErrorSafe(blocked)
