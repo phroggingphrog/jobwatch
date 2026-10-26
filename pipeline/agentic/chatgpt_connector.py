@@ -254,6 +254,10 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str, shown_has
             # The form was edited after the fill and the person has now seen and confirmed exactly this edited form.
             if not hmac.compare_digest(confirm_digest, review_digest):
                 raise RuntimeErrorSafe('submit_digest_mismatch')
+            with users.use(person), job_connection(load_config()) as conn:
+                blocked = task_state.retry_blocked(conn, posting_id)       # a refused Submit must not confirm the edit
+            if blocked:
+                raise RuntimeErrorSafe(blocked)
             _live_form().rebind(person, posting_id, review_digest)
     with users.use(person), job_connection(load_config(), write=True) as conn:
         application_id, current = _application_and_digest(conn, posting_id)

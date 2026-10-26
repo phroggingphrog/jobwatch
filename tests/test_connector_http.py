@@ -223,3 +223,15 @@ def test_the_live_form_that_cannot_be_read_is_not_ready(live, client):
     assert 'shown_hash' not in body['review']
     live.blocked = 'weird <script> text'
     assert _review(client)['review']['reason'] == 'browser_unavailable'
+
+def test_a_refused_submit_records_no_confirmation_of_an_edited_form(live, client):
+    """After one press is queued, an edit plus a fresh review must not be rebound (confirmed) by a Submit that is
+    then refused as already queued."""
+    first = _review(client)
+    assert _submit(client, first, None).status_code == 200
+    live.edit('Why this role', 'Edited after the press was queued')
+    fresh = _review(client)
+    assert fresh['review']['ready'] and fresh['review']['shown_hash'] != first['review']['shown_hash']
+    refused = _submit(client, fresh, None)
+    assert refused.status_code == 400 and refused.json()['error'] == 'submit_already_queued'
+    assert live.rebound == [] and len(_requests('owner')) == 1
