@@ -4,6 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pipeline.agentic import connector_http
+from pipeline.agentic.runtime import RuntimeErrorSafe
 from tests.test_mcp_server import PREPARED, reviewed, two_people, _requests  # noqa: F401
 
 TOKEN = 'x' * 40
@@ -102,3 +103,123 @@ def test_a_changed_answer_changes_the_shown_hash(filled, client, monkeypatch):
 def test_unknown_approval_is_refused(client):
     r = client.post('/connector/decide', headers=H, json={'interaction_id': 'nope', 'decision': 'approve', 'binding': 'b'})
     assert r.status_code == 400 and r.json() == {'error': 'approval_not_found'}
+
+
+# --- review from the current form -------------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _no_native_browser(monkeypatch):
+    monkeypatch.delenv('JOBWATCH_NATIVE_BROWSER_URL', raising=False)
+
+LIVE_FIELDS = [
+    {'label': 'Full name', 'type': 'text', 'value': 'Alex Example'},
+    {'label': 'Right to work in Australia?', 'type': 'checkbox', 'value': 'Selected'},
+    {'label': 'Why this role', 'type': 'textarea', 'value': 'I like SQL.\n\nSecond paragraph of a long answer.'},
+    {'label': 'CV', 'type': 'file', 'value': 'Alex_CV.pdf'},
+    {'label': 'Cover letter', 'type': 'file', 'value': 'Letter Acme.pdf'},
+    {'label': 'Password', 'type': 'password', 'value': '[private]'}]
+NAMED = dict(FILLED, document_names={'cv': 'Alex_CV.pdf', 'letter': 'Letter Acme.pdf'})
+
+class FakeLive:
+    """Stands in for the native browser's review (BrowserService.review) for one person: the live fields, the form
+    state they hash to, and the owner-review overlay that a rebind writes."""
+    def __init__(self, prepared_module):
+        self.fields, self.form_state, self.blocked, self.rebound = [dict(f) for f in LIVE_FIELDS], 'f', None, []
+        self.overlay = {}
+        self.prepared_module = prepared_module
+
+    def prepared(self, root=None, app_id=None):
+        return dict(NAMED, **self.overlay)
+
+    def digest(self):
+        from jobwatch.apply import submit_confirm
+        return submit_confirm.digest(dict(NAMED, form_state=self.form_state))
+
+    def read(self, person, posting_id):
+        if self.blocked:
+            return {'status': 'blocked', 'reason': self.blocked}
+        recorded = self.overlay.get('form_state', 'f')
+        return {'fields': [dict(f) for f in self.fields], 'review_digest': self.digest(),
+                'confirmed_digest': self.digest() if recorded == self.form_state else None}
+
+    def rebind(self, person, posting_id, digest):
+        if digest != self.digest():
+            raise RuntimeErrorSafe('review_changed')
+        self.rebound.append(digest)
+        self.overlay = {'form_state': self.form_state}
+
+    def edit(self, label, value):
+        next(f for f in self.fields if f['label'] == label)['value'] = value
+        self.form_state += '+'
+
+@pytest.fixture
+def live(two_people, monkeypatch):
+    from jobwatch.apply import prepare
+    from pipeline.agentic import chatgpt_connector
+    fake = FakeLive(prepare)
+    monkeypatch.setattr(prepare, 'latest_preparation', fake.prepared)
+    monkeypatch.setattr(chatgpt_connector, '_live_form', lambda: fake)
+    return fake
+
+def _review(client):
+    return client.get('/connector/jobs/1/review', headers=H).json()
+
+def _submit(client, body, review):
+    return client.post('/connector/jobs/1/submit', headers=H,
+                       json={'confirm_digest': body['submit_digest'] if review is None else review['submit_digest'],
+                             'shown_hash': (review or body)['review']['shown_hash']})
+
+def test_review_shows_the_current_live_form_with_original_file_names(live, client):
+    body = _review(client)
+    r = body['review']
+    assert r['ready'] and body['submit_digest'] == live.digest()
+    answers = {a['question']: a for a in r['answers']}
+    assert answers['Why this role']['answer'] == 'I like SQL.\n\nSecond paragraph of a long answer.'
+    assert answers['Why this role']['source'] == 'agent_draft' and answers['Full name']['source'] == 'form'
+    assert 'Password' not in answers and 'CV' not in answers and 'Cover letter' not in answers
+    assert [(d['label'], d['file']) for d in r['documents']] == [('CV', 'Alex_CV.pdf'), ('Cover letter', 'Letter Acme.pdf')]
+
+def test_file_names_are_part_of_the_shown_hash(live, client, monkeypatch):
+    from jobwatch.apply import prepare
+    first = _review(client)['review']['shown_hash']
+    monkeypatch.setattr(prepare, 'latest_preparation',
+                        lambda root, app_id: dict(NAMED, document_names={'cv': 'Other.pdf', 'letter': 'Letter Acme.pdf'}))
+    second = _review(client)['review']
+    assert second['documents'][0]['file'] == 'Other.pdf' and second['shown_hash'] != first
+
+def test_old_preparations_without_names_show_the_generic_names(filled, client):
+    r = client.get('/connector/jobs/1/review', headers=H).json()['review']
+    assert [d['file'] for d in r['documents']] == ['cv.pdf', 'letter.pdf']
+
+def test_an_edited_form_is_reviewed_again_and_submit_needs_the_fresh_hash(live, client):
+    first = _review(client)
+    live.edit('Why this role', 'EDITED in the browser')
+    second = _review(client)
+    assert second['review']['ready'] and 'reason' not in second['review']      # no dead end
+    assert {a['question']: a['answer'] for a in second['review']['answers']}['Why this role'] == 'EDITED in the browser'
+    assert second['review']['shown_hash'] != first['review']['shown_hash'] and second['submit_digest'] != first['submit_digest']
+    # what the person saw before the edit is refused, and nothing is rebound or queued
+    assert _submit(client, first, None).status_code == 400
+    mixed = client.post('/connector/jobs/1/submit', headers=H, json={
+        'confirm_digest': second['submit_digest'], 'shown_hash': first['review']['shown_hash']})
+    assert mixed.status_code == 400 and live.rebound == [] and _requests('owner') == []
+    ok = _submit(client, second, None)
+    assert ok.status_code == 200 and ok.json()['status'] == 'queued'
+    assert live.rebound == [second['submit_digest']] and len(_requests('owner')) == 1
+    assert _submit(client, second, None).status_code == 400 and len(_requests('owner')) == 1     # never twice
+
+def test_an_edit_between_review_and_submit_is_refused_and_queues_nothing(live, client):
+    body = _review(client)
+    live.edit('Full name', 'Someone Else')
+    assert _submit(client, body, None).status_code == 400 and _requests('owner') == [] and live.rebound == []
+
+def test_an_unedited_form_needs_no_rebind(live, client):
+    body = _review(client)
+    assert _submit(client, body, None).json()['status'] == 'queued' and live.rebound == []
+
+def test_the_live_form_that_cannot_be_read_is_not_ready(live, client):
+    live.blocked = 'application_changed'
+    body = _review(client)
+    assert body['review']['ready'] is False and body['review']['reason'] == 'application_changed' and body['submit_digest'] is None
+    assert 'shown_hash' not in body['review']
+    live.blocked = 'weird <script> text'
+    assert _review(client)['review']['reason'] == 'browser_unavailable'
