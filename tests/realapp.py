@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -243,11 +244,21 @@ def main(argv=None) -> int:
         raise SystemExit('refusing: --root must be under /tmp')
     with real_application(root, connector_port=args.connector_port, native_port=args.native_port) as app:
         print(json.dumps({'connector': app.connector, 'connector_token': CONNECTOR_TOKEN, 'native': app.native}), flush=True)
+        # Control channel for hand/driver use: one JSON line per command on stdin, e.g. {"edit": "motivation", "value": "..."}
+        # (the owner typing into the live employer form). Ends when stdin closes or on Ctrl-C.
         try:
-            while True:
+            for line in sys.stdin:
+                if not line.strip():
+                    continue
+                command = json.loads(line)
+                if 'edit' in command:
+                    app.edit(str(command['edit']), str(command['value']))
+                    print(json.dumps({'edited': command['edit']}), flush=True)
+            while sys.stdin.isatty():
                 time.sleep(3600)
         except KeyboardInterrupt:
-            return 0
+            pass
+        return 0
 
 
 if __name__ == '__main__':

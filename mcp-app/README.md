@@ -13,18 +13,24 @@ per-person binding and "already queued" refusal all stay in Python.
 | `task_status` | yes | task-status | read-only |
 | `review_submission` | yes | review | read-only; shows every filled answer, attached files, employer and role; digest and shown_hash only in result `_meta` |
 | `prepare_application`, `revise_application` | yes | task-prepare / task-revise | hand work to Jobwatch's agent; never submit; approval binding only in `_meta` |
+| `career_ops_start_chat`, `career_ops_continue_chat` | yes | - | same Career Ops agent as the Python MCP server; a question for the person comes back as plain `needs_answer` content (question + options) and is answered only by the person's own words via continue_chat; approvals are declined, never answered here |
 | `decide` | app only | - | Approve/Reject button |
 | `submit_reviewed` | app only | - | destructiveHint + openWorldHint; needs the digest |
 
 ## Safety
-- Submit needs the confirm digest of the reviewed form AND the `shown_hash` of exactly what the review showed (answers, documents, digest); Python refuses `review_changed` if either differs, and does not offer Submit when the owner edited the live form after the fill (`edited_in_browser`). Answers shown are the fill-time ones from the same preparation the digest binds; the web process still re-checks the live form before pressing.
+- Submit needs the confirm digest of the reviewed form AND the `shown_hash` of exactly what the review showed (answers, documents, digest); Python refuses `review_changed` if either differs, and does not offer Submit when the owner edited the live form after the fill (`edited_in_browser`). Answers shown are read from the CURRENT live form (the native browser review, same source as the web app); an edit after the fill is re-reviewed and Submit needs the fresh hash. The web process still re-checks the live form before pressing.
 - Submit needs the confirm digest of the reviewed form. The view gets it from `_meta` (view-only data) and passes it
   to `submit_reviewed`; Python re-checks it against the live reviewed form and queues once.
 - Residual risk: `_meta` is not model-visible by MCP Apps convention, but a host may still forward it to the model.
   Even then the model could only replay `submit_reviewed` with a digest for a form the person has already reviewed;
   hosts hide app-only tools from the model, and Python still refuses a changed form or a second press.
 - Auth: a bearer token is required (`JOBWATCH_MCP_TOKEN`, 32+ chars; the server will not start without it).
-  The OAuth consent flow stays in the Python service; this server only verifies the static bearer.
+  OAuth login (ChatGPT needs it) is OFF by default. `JOBWATCH_MCP_OAUTH=1` + `JOBWATCH_MCP_PUBLIC_URL=https://<public origin of this server>`
+  proxies `/.well-known/oauth-protected-resource`, `/authorize`, `/token`, `/register`, `/revoke`, `/oauth/consent` to Python and
+  accepts an OAuth access token Python vouches for, besides the static token. Python needs `JOBWATCH_CONNECTOR_OAUTH=1`,
+  the same `JOBWATCH_MCP_PUBLIC_URL`, and `JOBWATCH_MCP_OAUTH_PASSPHRASE` (16+ chars). Tokens persist hashed in a 0600 file
+  (`JOBWATCH_CONNECTOR_OAUTH_STATE`, default `$JOBWATCH_CONFIG_DIR|~/.config/jobwatch/connector-oauth.json`).
+  Nothing here opens a public URL; exposing the port is the owner's decision.
 - Never run write tools against real data in tests: use `test/mock-backend.mjs`.
 
 ## Run (local, mock backend)
@@ -36,3 +42,7 @@ per-person binding and "already queued" refusal all stay in Python.
 ## Real backend
     JOBWATCH_CONNECTOR_TOKEN=... python -m pipeline.agentic.connector_http --port 18940   # JOBWATCH_MCP_PERSON picks the person
     JOBWATCH_MCP_TOKEN=... JOBWATCH_CONNECTOR_TOKEN=... JOBWATCH_BACKEND_URL=http://127.0.0.1:18940 npx mcp-use start --port <port>
+
+## Real-application check (temp dir only)
+    python -m tests.realapp serve --root /tmp/opencode/realapp --connector-port 18952 --native-port 18951   # real fill + browser; prints the token
+    JOBWATCH_REAL_APP_TEST=1 JOBWATCH_PYTHON=<venv python> npx vitest run test/realapp.test.ts
