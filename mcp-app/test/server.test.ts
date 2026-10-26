@@ -49,7 +49,7 @@ describe("tools list", () => {
   it("has the expected tools, hints, views and visibility", async () => {
     const { tools } = await client.listTools();
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(by).sort()).toEqual(["decide", "job_detail", "jobs_overview", "prepare_application", "review_submission", "revise_application", "submit_reviewed", "task_status"]);
+    expect(Object.keys(by).sort()).toEqual(["career_ops_continue_chat", "career_ops_start_chat", "decide", "job_detail", "jobs_overview", "prepare_application", "review_submission", "revise_application", "submit_reviewed", "task_status"]);
     for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
@@ -153,6 +153,57 @@ describe("work tools", () => {
   });
 });
 
+describe("chat tools", () => {
+  it("a plain request goes to Python and comes back with an opaque thread id", async () => {
+    const r = await call("career_ops_start_chat", { message: "What needs me?" });
+    expect(r.isError).toBeFalsy();
+    expect(r.structuredContent).toMatchObject({ status: "complete", thread_id: "thread-3", answer: "Two jobs need you." });
+    expect(r.content[0].text).toContain("Two jobs need you.");
+    expect((mock.log as any[]).filter((e) => e.path === "/connector/chat/start").at(-1).body).toEqual({ message: "What needs me?" });
+  });
+  it("a question for the person is plain content with options, and never answered here", async () => {
+    const r = await call("career_ops_start_chat", { message: "Which city should I tailor for?" });
+    expect(r.structuredContent.status).toBe("needs_answer");
+    expect(r.structuredContent.questions).toEqual([{ question: "Which city do you want to work in?", options: ["Melbourne", "Sydney"] }]);
+    const t = r.content[0].text;
+    expect(t).toContain("Which city do you want to work in?");
+    expect(t).toContain("Melbourne | Sydney");
+    expect(t).toMatch(/do not answer for them/i);
+    expect(t).toContain("career_ops_continue_chat");
+    const sent = (mock.log as any[]).filter((e) => e.path.startsWith("/connector/chat"));
+    expect(sent.at(-1).path).toBe("/connector/chat/start");                // nothing was sent on the person's behalf
+  });
+  it("the person's answer goes back through continue_chat on the same thread", async () => {
+    const r = await call("career_ops_continue_chat", { thread_id: "thread-1", message: "Melbourne" });
+    expect(r.structuredContent).toMatchObject({ status: "complete", answer: "Letter tailored for Melbourne." });
+    expect((mock.log as any[]).filter((e) => e.path === "/connector/chat/continue").at(-1).body).toEqual({ thread_id: "thread-1", message: "Melbourne" });
+  });
+  it("a declined approval is reported, not hidden", async () => {
+    const r = await call("career_ops_start_chat", { message: "Please submit job 1" });
+    expect(r.structuredContent.declined).toEqual(["submit_application"]);
+    expect(r.content[0].text).toContain("nothing was run or sent");
+  });
+  it("refuses bad input before calling Python and surfaces only the fixed backend code", async () => {
+    const before = (mock.log as any[]).length;
+    await expect(call("career_ops_continue_chat", { thread_id: "bad id!", message: "x" })).resolves.toMatchObject({ isError: true });
+    await expect(call("career_ops_start_chat", { message: "" })).resolves.toMatchObject({ isError: true });
+    expect((mock.log as any[]).length).toBe(before);
+    const r = await call("career_ops_continue_chat", { thread_id: "unknown", message: "x" });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toBe("Jobwatch refused: invalid_request");
+  });
+  it("takes no person argument and is not app-only", async () => {
+    const { tools } = await client.listTools();
+    for (const n of ["career_ops_start_chat", "career_ops_continue_chat"]) {
+      const t = tools.find((x) => x.name === n)!;
+      expect(JSON.stringify(t.inputSchema)).not.toMatch(/person|user/i);
+      expect((t._meta as any)?.ui?.visibility).toBeUndefined();
+      expect(t.annotations?.destructiveHint).toBe(false);
+    }
+  });
+});
+
+// Last: it closes the mock backend.
 describe("failure", () => {
   it("reports a generic error without secrets when the backend is down", async () => {
     mock.server.close(); mock.server.closeAllConnections();

@@ -1,9 +1,10 @@
-import { timingSafeEqual } from "node:crypto";
 import { MCPServer } from "mcp-use";
 import { OAuthError, OAuthErrorCode, oauthCustomProvider, type OAuthMetadata } from "mcp-use/oauth";
 import { z } from "zod";
 import { backendConfig, call, BackendError } from "./src/backend.js";
+import { authorizationServerMetadata, oauthConfig, PROXIED, proxy, same, verifyWithBackend } from "./src/oauth.js";
 import {
+  chatOut,
   jobOut,
   overviewOut,
   reviewOut,
@@ -13,39 +14,35 @@ import {
 } from "./src/schemas.js";
 
 // ---- auth: a bearer token is required. There is no unauthenticated mode. -------------------------------------
+// Accepted: the static JOBWATCH_MCP_TOKEN (constant time), or, when OAuth login is switched on
+// (JOBWATCH_MCP_OAUTH=1 + JOBWATCH_MCP_PUBLIC_URL), an OAuth access token the Python service issued (Python is asked).
+// Either way the request acts as the ONE person configured server-side in Python; no token or argument names a person.
 const mcpToken = process.env.JOBWATCH_MCP_TOKEN ?? "";
 if (mcpToken.length < 32) throw new Error("JOBWATCH_MCP_TOKEN (32+ chars) is required");
 const cfg = backendConfig();
-
-const same = (a: string, b: string) => {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
-};
+const oauthCfg = oauthConfig();
 
 const oauth = oauthCustomProvider<{ id: string }, (resource: URL) => OAuthMetadata>({
-  // Static bearer only. The OAuth 2.1 authorization flow (consent page) stays in the Python service;
-  // the metadata below only names this origin so the resource-server gate can mount.
+  ...(oauthCfg ? { resource: new URL("/mcp", oauthCfg.publicUrl) } : {}),
   createTokenVerifier: (resource) => ({
     async verifyAccessToken(token: string) {
-      if (!same(token, mcpToken)) {
-        throw new OAuthError(OAuthErrorCode.InvalidToken, "invalid token");
+      if (same(token, mcpToken)) {
+        return { token, clientId: "jobwatch", scopes: ["jobwatch"], expiresAt: Math.floor(Date.now() / 1000) + 3600, resource };
       }
-      return {
-        token,
-        clientId: "jobwatch",
-        scopes: ["jobwatch"],
-        expiresAt: Math.floor(Date.now() / 1000) + 3600,
-        resource,
-      };
+      const verdict = oauthCfg ? await verifyWithBackend(cfg, token) : ({ valid: false } as const);
+      if (!verdict.valid) throw new OAuthError(OAuthErrorCode.InvalidToken, "invalid token");
+      return { token, clientId: "jobwatch-oauth", scopes: ["jobwatch"], expiresAt: verdict.expiresAt, resource };
     },
   }),
-  oauthMetadata: (resource: URL) => ({
-    issuer: resource.origin,
-    authorization_endpoint: `${resource.origin}/authorize`,
-    token_endpoint: `${resource.origin}/token`,
-    response_types_supported: ["code"],
-  }),
+  oauthMetadata: (resource: URL) =>
+    oauthCfg
+      ? (authorizationServerMetadata(oauthCfg.publicUrl.origin) as unknown as OAuthMetadata)
+      : {
+          issuer: resource.origin,
+          authorization_endpoint: `${resource.origin}/authorize`,
+          token_endpoint: `${resource.origin}/token`,
+          response_types_supported: ["code"],
+        },
   requiredScopes: ["jobwatch"],
   mapAuthInfo: (info) => ({
     user: { id: info.clientId },
@@ -289,6 +286,73 @@ export const submitReviewed = server.tool(
       const q = await call<{ status?: unknown }>(cfg, "POST", `/connector/jobs/${posting_id}/submit`, { confirm_digest, shown_hash });
       const d = { posting_id, status: String(q.status ?? "unknown") };
       return { content: text(`Submit ${d.status} for job ${posting_id}.`), structuredContent: d };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+// ---- OAuth login: the public paths are proxied to the Python service (only when switched on) ----------------------
+if (oauthCfg) {
+  for (const r of PROXIED) {
+    server.app.on(r.method, r.path, (c) => proxy(cfg, c));
+  }
+}
+
+// ---- chat: pass-through to the same Career Ops agent as the Python MCP server --------------------------------
+// A question only the person can answer comes back as plain content ("needs your answer"), never answered here;
+// the answer goes back with career_ops_continue_chat on the same opaque thread_id. Approvals are not handled here.
+function chatResult(raw: unknown) {
+  const d = chatOut.parse(raw);
+  const asks = d.status === "needs_answer";
+  const t = asks
+    ? [
+        "Jobwatch needs the person's answer. Show this to them and wait; do not answer for them or guess.",
+        ...(d.questions ?? []).map(
+          (q, i) => `${i + 1}. ${q.question}${q.options?.length ? ` Options: ${q.options.join(" | ")}` : ""}`,
+        ),
+        `Then call career_ops_continue_chat with thread_id ${d.thread_id} and their own words.`,
+        ...(d.approvals_not_answerable_here?.length ? [`Not answerable here (use the Jobwatch app): ${d.approvals_not_answerable_here.join(", ")}.`] : []),
+      ].join("\n")
+    : [d.answer ?? "", ...(d.declined?.length ? [`Declined here, nothing was run or sent: ${d.declined.join(", ")}. The person approves in the Jobwatch app.`] : [])]
+        .filter(Boolean)
+        .join("\n\n");
+  return { content: text(t), structuredContent: d };
+}
+
+export const startChat = server.tool(
+  {
+    name: "career_ops_start_chat",
+    description:
+      "Start a persistent Jobwatch Career Ops chat from a natural-language request. Returns the assistant's answer and a thread_id, or a question for the person (status needs_answer): show it to them, wait for their answer, and send it with career_ops_continue_chat. Never answer a question for the person. Cannot submit an application.",
+    inputSchema: z.object({ message: z.string().min(1).max(16000) }),
+    outputSchema: chatOut,
+    annotations: WORK,
+  },
+  async ({ message }) => {
+    try {
+      return chatResult(await call(cfg, "POST", "/connector/chat/start", { message }));
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+export const continueChat = server.tool(
+  {
+    name: "career_ops_continue_chat",
+    description:
+      "Continue a Jobwatch Career Ops chat using the opaque thread_id from career_ops_start_chat. Use it to send the person's own answer to a question (status needs_answer) or a follow-up message.",
+    inputSchema: z.object({
+      thread_id: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),
+      message: z.string().min(1).max(16000),
+    }),
+    outputSchema: chatOut,
+    annotations: WORK,
+  },
+  async ({ thread_id, message }) => {
+    try {
+      return chatResult(await call(cfg, "POST", "/connector/chat/continue", { thread_id, message }));
     } catch (e) {
       return fail(e);
     }

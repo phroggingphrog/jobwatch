@@ -56,7 +56,14 @@ export const reviewOut = z.object({
   posting_id: z.number().int(),
   found: z.boolean(),
   ready: z.boolean(),
-  reason: z.enum(["not_prepared", "not_ready", "edited_in_browser"]).optional(),
+  reason: z
+    .enum([
+      "not_prepared", "not_ready", "edited_in_browser",
+      // the live form could not be read just now (browser closed, page moved, unsupported widget): never offers Submit
+      "browser_unavailable", "application_changed", "final_control_changed", "unsupported_form_review",
+      "form_review_unavailable", "form_review_changed", "application_not_ready",
+    ])
+    .optional(),
   employer: z.string().nullable().optional(),
   title: z.string().nullable().optional(),
   state: z.string().optional(),
@@ -66,9 +73,22 @@ export const reviewOut = z.object({
   documents: z.array(z.object({ role: z.string(), label: z.string(), file: z.string(), sha256: z.string() })),
 });
 
+// A chat turn: either the assistant's answer, or one or more questions only the person can answer.
+export const chatOut = z.object({
+  thread_id: z.string(),
+  status: z.enum(["complete", "needs_answer"]),
+  answer: z.string().optional(),
+  questions: z.array(z.object({ question: z.string(), options: z.array(z.string()).optional() })).optional(),
+  note: z.string().optional(),
+  declined: z.array(z.string()).optional(),
+  approvals_not_answerable_here: z.array(z.string()).optional(),
+  tools: z.array(z.string()).optional(),
+});
+
 export const submitOut = z.object({
   posting_id: z.number().int(),
   status: z.string(),
 });
 
 export type TaskOut = z.infer<typeof taskOut>;
+export type ChatOut = z.infer<typeof chatOut>;

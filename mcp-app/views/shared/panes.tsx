@@ -8,7 +8,7 @@ export interface Job {
   state?: string; state_detail?: string; documents_ready?: boolean; draft_version?: number | null; can_submit?: boolean;
 }
 export interface Review {
-  posting_id: number; found: boolean; ready: boolean; reason?: "not_prepared" | "not_ready" | "edited_in_browser";
+  posting_id: number; found: boolean; ready: boolean; reason?: string;
   employer?: string | null; title?: string | null; state?: string; ad_url?: string | null;
   answers: { question: string; answer: string; source: string }[];
   documents: { role: string; label: string; file: string; sha256: string }[];
@@ -62,7 +62,14 @@ export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
 const WHY: Record<string, string> = {
   not_prepared: "Nothing is filled in yet. Prepare the application first.",
   not_ready: "This application is not ready to submit.",
-  edited_in_browser: "You changed the form in the browser after it was filled. Review and submit it from the Jobwatch web app.",
+  edited_in_browser: "The form was changed after it was filled. Open the review again to see the form as it is now.",
+  browser_unavailable: "Jobwatch cannot read the live application form right now. Open the application browser in Jobwatch, then review again.",
+  application_changed: "The application page moved on since it was filled. Prepare it again, then review.",
+  final_control_changed: "The Submit button on the page changed. Prepare the application again, then review.",
+  unsupported_form_review: "This form uses controls Jobwatch cannot read back, so it cannot be reviewed here.",
+  form_review_unavailable: "Jobwatch could not read the form just now. Try the review again.",
+  form_review_changed: "The form changed while it was being read. Try the review again.",
+  application_not_ready: "This application is not ready to submit.",
 };
 
 /** Review-before-submit: the exact form, then one primary Submit. The keys live only in props (view-only _meta), never in view state. */
@@ -98,7 +105,7 @@ export function ReviewPane({ r, keys, onBack }: { r: Review; keys: ReviewKeys; o
       )}
       {ad && <p style={{ marginTop: 10 }}><a className="link" href={ad} target="_blank" rel="noopener noreferrer">Open the job ad</a></p>}
       {!canSubmit ? (
-        r.found && <p className="note" role="status">{WHY[r.reason ?? "not_ready"]}</p>
+        r.found && <p className="note" role="status">{WHY[r.reason ?? "not_ready"] ?? WHY.not_ready}</p>
       ) : result ? (
         <p className="note" role="status">{result}</p>
       ) : declined ? (
