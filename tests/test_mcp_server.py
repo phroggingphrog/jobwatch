@@ -216,6 +216,38 @@ def test_current_canonical_assessment_is_projected_without_changing_application_
     assert guest['assessment_state'] == 'not_assessed' and guest['score'] == 4.2
 
 
+def test_assessment_activity_lists_posting_without_application_or_preparation(two_people, monkeypatch):
+    from ranking_support import make_evaluation
+
+    evaluation = make_evaluation([], posting_id=2, score=4.9)
+    current_key = evaluation.run_key.value
+    with users.use('owner'):
+        conn = dbm.connect(users.db_path())
+        conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,company,first_seen_at,last_seen_at)"
+                     " VALUES(2,'s','2','https://example.com/ad/2','h2','d2','Researcher','New Co','t','t')")
+        conn.execute('CREATE TABLE agentic_activity(id INTEGER PRIMARY KEY, posting_id INTEGER, at REAL)')
+        conn.execute('INSERT INTO agentic_activity(posting_id,at) VALUES(2,100)')
+        conn.commit()
+        conn.close()
+    latest = {'run_key': current_key, 'reason': 'hard_gate', 'status': 'archived',
+              'evaluation': evaluation.model_dump(mode='json')}
+    monkeypatch.setattr(cc, 'latest_result', lambda conn, posting_id, **kw:
+                        latest if posting_id == 2 else None)
+    monkeypatch.setattr(cc.service, 'snapshot_inventory', lambda conn, config, *, posting_ids, limit:
+                        [{'posting_id': pid, 'run_key': current_key} for pid in posting_ids])
+
+    overview = _call('owner', 'jobs_overview', {}, monkeypatch).structured_content
+    assessed = next(row for row in overview['jobs'] if row['posting_id'] == 2)
+    assert assessed['assessment_state'] == 'current'
+    assert assessed['assessment_reason'] == 'hard_gate' and assessed['score'] == 4.9
+    assert assessed['state'] == 'not started'
+    assert overview['counts'] == {'needs_you': 1, 'needs_info': 0, 'outcome_unknown': 0, 'submitted': 0}
+
+    detail = _call('owner', 'job_detail', {'posting_id': 2}, monkeypatch).structured_content
+    assert detail['assessment_state'] == 'current' and detail['score'] == 4.9
+    assert detail['state'] == 'not started' and detail['can_submit'] is False
+
+
 def test_stale_or_invalid_canonical_assessment_does_not_fall_back_to_legacy_score(two_people, monkeypatch):
     from ranking_support import make_evaluation
 
