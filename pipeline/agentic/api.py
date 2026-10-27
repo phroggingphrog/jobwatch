@@ -103,6 +103,10 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
 
     def process(person, row):
         with users.use(person):
+            result = None
+            execution = None
+            is_discovery = False
+            handler_returned = False
             def cancelled():
                 with APIStore(person) as store:
                     return stopping.is_set() or bool(store.raw_run(row['id'])['cancel_requested'])
@@ -127,6 +131,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                     with invocation.use(execution):
                         result = discovery_ops.execute(person, cfg, row['id'], payload,
                             seconds=max(0, execution.deadline-time.monotonic()))
+                    handler_returned = type(result) is dict
                 elif is_selection:
                     from pipeline.agentic import selection, execution as invocation
                     from jobwatch.execution_mode import effective_mode
@@ -174,8 +179,22 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 with APIStore(person) as store:
                     if code == 'cancelled' and stopping.is_set() and not store.raw_run(row['id'])['cancel_requested']:
                         code = 'worker_interrupted'  # shutdown, not a user cancel: stay retryable (see CHAT.md recovery)
-                    store.finish(row['id'], error=code)
+                    preserve_partial_discovery = (is_discovery and handler_returned and type(result) is dict
+                                                  and code == 'deadline_exceeded' and execution is not None)
+                    if preserve_partial_discovery:
+                        result['usage'] = execution.usage()
+                        store.finish(row['id'], result=result, error=code)
+                    else:
+                        store.finish(row['id'], error=code)
                 payload=json.loads(row['input_json'])
+                if preserve_partial_discovery:
+                    # discovery_ops has already closed its registry row as
+                    # completed. The outer API deadline still makes this run
+                    # incomplete, so keep that status consistent with the API
+                    # failure while retaining the completed work summary.
+                    with job_connection(get_config(person), write=True) as jobs:
+                        jobs.execute("UPDATE agentic_invocations SET state='failed',updated_at=? WHERE run_id=?",
+                                     (time.time(), row['id']))
                 if payload.get('discovery') is True and code == 'worker_interrupted':
                     from pipeline.agentic import incidents
                     with job_connection(get_config(person), write=True) as jobs:
