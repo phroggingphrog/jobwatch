@@ -1,5 +1,6 @@
-"""Read-only discovery views. Identity is selected by bearer authentication."""
+"""Typed discovery operations. Identity is selected by bearer authentication."""
 from fastapi import Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 
 from jobwatch import users
 from jobwatch.occupations.hypotheses import cached_hypotheses
@@ -11,6 +12,17 @@ PREFIX = '/api/agent/discovery'
 NOTE = 'Related occupations are search hypotheses, not qualification proof.'
 
 
+class DiscoveryRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    request_id: str = Field(min_length=1, max_length=100)
+
+
+class RetryRequest(DiscoveryRequest):
+    incident_id: str = Field(min_length=1, max_length=100)
+    posting_id: int = Field(gt=0)
+    expected_context: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
 def flags(config):
     values = discovery.settings(config)
     return {k: values[k] for k in ('search_plan','relevance','dedupe','ordering')}
@@ -18,6 +30,22 @@ def flags(config):
 
 def mount(app, require, get_config):
     read = require('read')
+    write = require('run')
+
+    @app.get(PREFIX + '/status')
+    def status(principal=Depends(read)):
+        from pipeline.agentic import discovery_ops
+        return discovery_ops.status(principal.person, get_config(principal.person))
+
+    @app.post(PREFIX + '/start', status_code=202)
+    def start(body: DiscoveryRequest, principal=Depends(write)):
+        from pipeline.agentic import discovery_ops
+        return discovery_ops.start(principal.person, get_config(principal.person), body.request_id)
+
+    @app.post(PREFIX + '/retry', status_code=202)
+    def retry(body: RetryRequest, principal=Depends(write)):
+        from pipeline.agentic import discovery_ops
+        return discovery_ops.start(principal.person, get_config(principal.person), **body.model_dump())
 
     @app.get(PREFIX + '/fields')
     def fields(principal=Depends(read)):

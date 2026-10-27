@@ -112,16 +112,22 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 settings = _config(cfg)
                 payload = json.loads(row['input_json'])
                 is_selection = 'selection_id' in payload
+                is_discovery = payload.get('discovery') is True
                 with APIStore(person) as store:
                     usage = store.usage_checkpoint(row['id'])
-                execution = Execution(row['id'], seconds=settings['batch_seconds'] if is_selection else min(settings['job_seconds'], settings['batch_seconds']),
-                    token_ceiling=settings['batch_token_ceiling'] if is_selection else settings['job_token_ceiling'],
+                execution = Execution(row['id'], seconds=min(600, settings['batch_seconds']) if is_discovery else settings['batch_seconds'] if is_selection else min(settings['job_seconds'], settings['batch_seconds']),
+                    token_ceiling=settings['batch_token_ceiling'] if is_selection or is_discovery else settings['job_token_ceiling'],
                     emit=lambda kind, data: event(person, row['id'], kind, data), cancelled=cancelled, **usage)
                 with APIStore(person) as store:
                     if store.thread(row['thread_id'])['skill_hash'] != skill_version():
                         raise RuntimeErrorSafe('thread_skill_version_changed')
                 execution.check()
-                if is_selection:
+                if is_discovery:
+                    from pipeline.agentic import discovery_ops, execution as invocation
+                    with invocation.use(execution):
+                        result = discovery_ops.execute(person, cfg, row['id'], payload,
+                            seconds=max(0, execution.deadline-time.monotonic()))
+                elif is_selection:
                     from pipeline.agentic import selection, execution as invocation
                     from jobwatch.execution_mode import effective_mode
                     if effective_mode(cfg)=='off':
@@ -170,6 +176,14 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                         code = 'worker_interrupted'  # shutdown, not a user cancel: stay retryable (see CHAT.md recovery)
                     store.finish(row['id'], error=code)
                 payload=json.loads(row['input_json'])
+                if payload.get('discovery') is True and code == 'worker_interrupted':
+                    from pipeline.agentic import incidents
+                    with job_connection(get_config(person), write=True) as jobs:
+                        incidents.ensure(jobs)
+                        active = jobs.execute('SELECT posting_id,phase FROM agentic_invocations WHERE run_id=?',
+                                              (row['id'],)).fetchone()
+                        incidents.report(jobs, run_id=row['id'], posting_id=active[0] if active else None,
+                                         reason='worker_interrupted', phase=active[1] if active else 'discovery')
                 if 'selection_id' in payload:
                     from pipeline.agentic import selection
                     with job_connection(get_config(person),write=True) as jobs:
@@ -212,6 +226,13 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
             for person in people:
                 with APIStore(person) as store:
                     store.recover()
+                with users.use(person):
+                    cfg = get_config(person)
+                    if job_database(cfg).exists():
+                        from pipeline.agentic import incidents
+                        with job_connection(cfg, write=True) as jobs:
+                            incidents.reconcile_service_exit(jobs, unit='jobwatch-agent.service', reason='worker_interrupted')
+                            incidents.reconcile_known_failures(jobs)
             stopping.clear()
             task = asyncio.create_task(worker())
             app.state.worker = task
@@ -357,7 +378,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         return dict(schema_version=1, execution_mode=effective_mode(get_config(principal.person)),
                     skill_version=skill_version(), protocol='native-http',
                     human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes),
-                    discovery=dict(read_only=True, flags=discovery_api.flags(get_config(principal.person))),
+                    discovery=dict(read_only=False, operations=['status','start','retry'], flags=discovery_api.flags(get_config(principal.person))),
                     shortlist=dict(labels=shortlist_api.LABELS,orderings=['provisional','personalised'],
                                    rules_version='ranking-rules-v1',refresh_paid=False),
                     profile=dict(upload_max_bytes=intake.MAX_UPLOAD_BYTES, kinds=list(intake.KINDS),
