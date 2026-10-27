@@ -1,7 +1,7 @@
-"""Loopback JSON front for the ChatGPT connector logic, so a thin MCP server (mcp-app/, TypeScript) can call it.
+"""Authenticated loopback operations for the TypeScript MCP server.
 
-All safety logic stays in chatgpt_connector (digest check, single-use approvals, per-person data). This module only
-authenticates one bearer token, binds it to one configured person (never an argument) and maps errors to fixed codes.
+Onboarding calls canonical intake functions directly; job work uses the existing
+Career Ops service. Identity always comes from the configured bearer mapping.
 Run: JOBWATCH_CONNECTOR_TOKEN=... python -m pipeline.agentic.connector_http --port 18940
 """
 from __future__ import annotations
@@ -9,14 +9,19 @@ from __future__ import annotations
 import hmac
 import os
 from pathlib import Path
+from typing import Annotated, Literal
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from jobwatch import users
+from jobwatch.candidate import intake
+from jobwatch.candidate.contracts import CandidateError
 from pipeline.agentic import chatgpt_connector as cc
+from pipeline.agentic import connector_onboarding as onboarding
+from pipeline.agentic.profile_api import STATUS as INTAKE_STATUS
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
 
@@ -34,19 +39,59 @@ class Decide(BaseModel):
     binding: str = Field(max_length=200)
 
 
-class ChatStart(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    message: str = Field(max_length=16000)
+class OnboardingBody(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
 
 
-class ChatContinue(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    thread_id: str = Field(pattern=r'^[A-Za-z0-9_-]{1,100}$')
-    message: str = Field(max_length=16000)
+class OnboardingStart(OnboardingBody):
+    upload_ids: list[str] = Field(min_length=1, max_length=20)
+    base_version: int | None = Field(default=None, ge=1)
 
 
-class ChatDecide(Decide):
-    model_config = ConfigDict(extra='forbid')
+class OnboardingProposal(OnboardingBody):
+    proposal_id: str = Field(pattern=r'^[0-9a-f]{16}$')
+
+
+class AddFact(OnboardingBody):
+    op: Literal['add']
+    section: str = Field(min_length=1, max_length=64)
+    value: JsonValue
+
+
+class SetFact(OnboardingBody):
+    op: Literal['set']
+    fact_id: str = Field(min_length=1, max_length=64)
+    basis: Literal['evidence'] = 'evidence'
+    value: JsonValue
+
+
+class RemoveFact(OnboardingBody):
+    op: Literal['remove']
+    fact_id: str = Field(min_length=1, max_length=64)
+
+
+class OnboardingUpdate(OnboardingProposal):
+    expected_revision: int = Field(ge=1)
+    edits: list[Annotated[AddFact | SetFact | RemoveFact, Field(discriminator='op')]] = Field(min_length=1, max_length=100)
+
+
+class OnboardingAnswer(OnboardingProposal):
+    expected_revision: int = Field(ge=1)
+    question_id: str = Field(min_length=1, max_length=64)
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class OnboardingConfirm(OnboardingProposal):
+    proposal_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    scope_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    confirmed: Literal[True]
+
+    @field_validator('confirmed', mode='before')
+    @classmethod
+    def explicit_confirmation(cls, value):
+        if value is not True:
+            raise ValueError('confirmed must be true')
+        return value
 
 
 class Submit(BaseModel):
@@ -109,6 +154,14 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     async def _safe(_, exc: RuntimeErrorSafe):
         return JSONResponse({'error': str(exc)}, status_code=400)
 
+    @app.exception_handler(intake.IntakeError)
+    async def _intake_failed(_, exc):
+        return JSONResponse({'error': exc.code}, status_code=INTAKE_STATUS.get(exc.code, 400))
+
+    @app.exception_handler(CandidateError)
+    async def _candidate_failed(_, exc):
+        return JSONResponse({'error': 'profile_invalid'}, status_code=409)
+
     @app.get('/connector/overview')
     def overview(limit: int = 50, who: str = Depends(authed)):
         return cc.overview(who, limit)
@@ -150,17 +203,30 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     def submit(posting_id: int, body: Submit, who: str = Depends(authed)):
         return cc.submit_reviewed(who, posting_id, body.confirm_digest, body.shown_hash)
 
-    @app.post('/connector/chat/start')
-    def chat_start(body: ChatStart, who: str = Depends(authed)):
-        return cc.chat_turn(who, None, body.message)
+    @app.get('/connector/onboarding/status')
+    def onboarding_status(who: str = Depends(authed)):
+        return onboarding.status(who)
 
-    @app.post('/connector/chat/continue')
-    def chat_continue(body: ChatContinue, who: str = Depends(authed)):
-        return cc.chat_turn(who, body.thread_id, body.message)
+    @app.post('/connector/onboarding/start')
+    def onboarding_start(body: OnboardingStart, who: str = Depends(authed)):
+        return onboarding.start(who, body.upload_ids, body.base_version)
 
-    @app.post('/connector/chat/decide')
-    def chat_decide(body: ChatDecide, who: str = Depends(authed)):
-        return cc.chat_decide(who, body.interaction_id, body.decision, body.binding)
+    @app.post('/connector/onboarding/update')
+    def onboarding_update(body: OnboardingUpdate, who: str = Depends(authed)):
+        return onboarding.update(who, body.proposal_id, body.expected_revision,
+                                 [edit.model_dump() for edit in body.edits])
+
+    @app.post('/connector/onboarding/answer')
+    def onboarding_answer(body: OnboardingAnswer, who: str = Depends(authed)):
+        return onboarding.answer(who, body.proposal_id, body.expected_revision, body.question_id, body.text)
+
+    @app.post('/connector/onboarding/review')
+    def onboarding_review(body: OnboardingProposal, who: str = Depends(authed)):
+        return onboarding.review(who, body.proposal_id)
+
+    @app.post('/connector/onboarding/confirm')
+    def onboarding_confirm(body: OnboardingConfirm, who: str = Depends(authed)):
+        return onboarding.confirm(who, body.proposal_id, body.proposal_digest, body.scope_digest)
 
     if provider is not None:
         _mount_oauth(app, provider, token, person)
