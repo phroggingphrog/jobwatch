@@ -9,6 +9,26 @@
   <p class="wk-sub" style="margin-top:6px">Choose the job you would most want to pursue, or none of these. This teaches your personal ranking; it never applies for a job.</p></div>
   <form method="post" action="/preferences/new" style="margin:0"><button class="btn primary" type="submit"{% if preference_error %} disabled aria-disabled="true"{% endif %}>Compare three jobs</button></form></div>
   {% if preference_error %}<div class="wk-note bad" role="alert">{{ preference_error }}</div>{% endif %}
+  <section class="wk-sec" aria-labelledby="discovery-limit-heading">
+    <div><h2 class="wk-h2" id="discovery-limit-heading">Daily discovery token allowance</h2>
+      <p class="wk-sub">This sets the daily token allowance for discovery. The 40-assessment daily cap and each run’s own limits still apply. It does not change your learned job ranking.</p></div>
+    {% if token_settings_error %}<div class="wk-note bad" role="alert">{{ token_settings_error }}</div>{% endif %}
+    {% if token_error %}<div class="wk-note bad" role="alert">{{ token_error }}</div>{% endif %}
+    <form method="post" action="/preferences/discovery-settings" class="wk-form wk-panel wk-pad">
+      <div class="wk-field" role="group" aria-labelledby="daily-token-mode-label">
+        <span class="wk-lab" id="daily-token-mode-label">Daily token allowance mode</span>
+        <label class="wk-prow"><input type="radio" name="mode" value="unlimited"{% if token_mode == 'unlimited' %} checked{% endif %}>Unlimited</label>
+        <label class="wk-prow"><input type="radio" name="mode" value="limited"{% if token_mode == 'limited' %} checked{% endif %}>Limited</label>
+      </div>
+      <div class="wk-field">
+        <label for="daily-token-ceiling">Daily token limit</label>
+        <input id="daily-token-ceiling" name="daily_token_ceiling" type="number" min="1" step="1" inputmode="numeric" value="{{ token_value }}" aria-describedby="daily-token-hint">
+        <small class="wk-hint" id="daily-token-hint">Enter a positive whole number for Limited. This value is ignored for Unlimited.</small>
+      </div>
+      <div class="wk-row"><button class="btn primary" type="submit">Save daily allowance</button>
+        <span class="wk-sub">Current setting: {% if token_settings_error %}Unavailable{% elif daily_token_ceiling is none %}Unlimited{% else %}{{ daily_token_ceiling }} tokens per day{% endif %}</span></div>
+    </form>
+  </section>
   <div class="wk-panel wk-pad wk-statgrid">
     <div><div class="wk-eyebrow">Learning status</div><div style="margin-top:6px"><span class="st"{% if tone %} data-t="{{ tone }}"{% endif %}><span class="pip" aria-hidden="true"></span>{{ preference_state.status|replace('_', ' ') }}</span></div></div>
     <div><div class="wk-row" style="justify-content:space-between"><span class="wk-sub">Training choices</span><b class="wk-mono">{{ preference_state.n_train }} / {{ preference_state.minimum_train }}</b></div><div class="wk-meter" style="margin-top:8px"><i style="width:{{ [100, (100 * preference_state.n_train / preference_state.minimum_train)|round|int]|min if preference_state.minimum_train else 0 }}%"></i></div></div>
