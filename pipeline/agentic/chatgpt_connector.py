@@ -19,8 +19,9 @@ from fastmcp.tools import ToolResult
 
 from jobwatch import users
 from jobwatch.config import load_config
-from pipeline.agentic import task_state
-from pipeline.agentic.chat import dispatch, job_connection
+from pipeline.agentic import task_state, shortlist, selection
+from jobwatch import preference_service
+from pipeline.agentic.chat import dispatch, job_connection, job_database
 from pipeline.agentic.contracts import AgenticEvaluation
 from pipeline.agentic.persistence import latest_result
 from pipeline.agentic.runtime import RuntimeErrorSafe, validate_model_payload
@@ -59,9 +60,15 @@ def _list(value) -> list[str]:
     return [str(i)[:300] for i in items if isinstance(i, (str, int, float))][:8] if isinstance(items, list) else []
 
 
-def overview(person: str, limit: int = 50) -> dict:
+def _person_config(person: str):
+    # Config eagerly reads per-person rules and searches, before a DB is opened.
+    with users.use(person):
+        return load_config()
+
+
+def application_overview(person: str, limit: int = 50) -> dict:
     limit = max(1, min(int(limit), 100))
-    config = load_config()
+    config = _person_config(person)
     with users.use(person), job_connection(config) as conn:
         rows = task_state.jobs_overview(conn, limit)
         assessments = _assessment_projection(conn, config, [row['posting_id'] for row in rows])
@@ -74,6 +81,61 @@ def overview(person: str, limit: int = 50) -> dict:
                 row['score'] = None
             row.update(assessment)
     return {'view': 'list', 'counts': task_state.overview_counts(rows), 'jobs': rows}
+
+
+def overview(person: str, limit: int = 50, *, refresh: bool = False) -> dict:
+    """Project the current canonical shortlist; activity is never a recommendation."""
+    config = _person_config(person)
+    with users.use(person):
+        if not job_database(config).exists():
+            return dict(shortlist._empty('not_built'), view='list', jobs=[], counts=task_state.overview_counts([]))
+    with users.use(person), job_connection(config, write=refresh) as conn:
+        if refresh:
+            shortlist.build_shortlist(conn, config)
+        result = shortlist.load_latest(conn, config=config, limit=max(1, min(int(limit), 100)))
+        rows = []
+        if result['status'] == 'ok':
+            _, _, _, runs = preference_service.current_runs(conn, config)
+            eligible = {r.posting_id for r in runs if (r.decision.route, r.decision.reason) == ('draft', 'eligible')}
+            for entry in result['entries']:
+                post = entry['posting']
+                card = task_state.task_card(conn, entry['posting_id'])
+                rows.append(dict(entry, employer=post.get('company'), title=post.get('title'),
+                    score=entry['holistic_score'], state=card['state'], detail=card.get('message', ''),
+                    can_prepare=entry['posting_id'] in eligible))
+            checked = shortlist.load_latest(conn, config=config, limit=1)
+            if checked['status'] != 'ok' or checked.get('shortlist_id') != result.get('shortlist_id'):
+                result = shortlist._empty('stale')
+                rows = []
+        return dict(result, view='list', jobs=rows, counts=task_state.overview_counts([]))
+
+
+def recommended_detail(person: str, posting_id: int) -> dict:
+    listing = overview(person, 100)
+    entry = next((row for row in listing['jobs'] if row['posting_id'] == posting_id), None)
+    if entry is None:
+        return dict(view='detail', found=False, posting_id=posting_id, shortlist_status=listing['status'])
+    result = detail(person, posting_id)
+    checked = overview(person, 100)
+    if checked['status'] != 'ok' or checked.get('shortlist_id') != listing.get('shortlist_id'):
+        return dict(view='detail', found=False, posting_id=posting_id, shortlist_status='stale')
+    return dict(result, **{k: v for k, v in entry.items() if k not in result},
+                shortlist_status='ok', shortlist_entry=entry)
+
+
+def prepare_selected(person: str, posting_id: int, *, expected_entry_id: str,
+                     expected_run_key: str, request_id: str, confirmed: bool) -> dict:
+    if confirmed is not True:
+        raise RuntimeErrorSafe('confirmation_required')
+    config = _person_config(person)
+    with users.use(person), job_connection(config, write=True) as conn:
+        row = selection.request(conn, config, posting_ids=[posting_id],
+            expected_entry_ids={str(posting_id): expected_entry_id},
+            expected_run_keys={str(posting_id): expected_run_key}, request_id=request_id,
+            actor='person', source='chat')
+    state = 'queued' if row['state'] == 'pending_dispatch' else row['state']
+    return dict(view='work', status='complete', answer=f'Preparation {state}. Nothing submitted.',
+                posting_id=posting_id, state=state, selection_id=row['id'], authorises='preparation_only')
 
 
 def _assessment_projection(conn, config, posting_ids: list[int]) -> dict[int, dict]:
@@ -147,7 +209,7 @@ def _assessment_projection(conn, config, posting_ids: list[int]) -> dict[int, di
 def detail(person: str, posting_id: int) -> dict:
     if type(posting_id) is not int or posting_id < 1:
         raise RuntimeErrorSafe('invalid_request')
-    config = load_config()
+    config = _person_config(person)
     with users.use(person), job_connection(config) as conn:
         conn.row_factory = sqlite3.Row
         post = conn.execute('SELECT title, company, location, url FROM postings WHERE id=?', (posting_id,)).fetchone()
@@ -300,10 +362,9 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str) -> dict:
 
 
 def _overview_text(data: dict) -> str:
-    lines = [f"{counts_text(data['counts'])}. {len(data['jobs'])} jobs with activity."]
-    lines += [f"#{j['posting_id']} {j['employer'] or '?'} - {j['title'] or '?'}: {j['state']}; "
-              f"assessment {j['assessment_state']}" +
-              (f" ({j['assessment_reason']}): {j['assessment_summary']}" if j['assessment_state'] == 'current' else '')
+    lines = [f"Shortlist {data['status']}: {len(data['jobs'])} current matches. Labels describe evidence fit, not approval to apply."]
+    lines += [f"#{j['posting_id']} {j['employer'] or '?'} - {j['title'] or '?'}: {j['label']}; "
+              f"{j['objective_fit']}; unresolved: {', '.join(j['unresolved']) or 'none recorded'}"
               for j in data['jobs'][:10]]
     return '\n'.join(lines)
 
@@ -327,10 +388,32 @@ def register(server: FastMCP, person_from_request) -> None:
         'ui': {'resourceUri': LIST_URI}, 'openai/outputTemplate': LIST_URI,
         'openai/toolInvocation/invoking': 'Reading your jobs', 'openai/toolInvocation/invoked': 'Jobs ready'})
     def jobs_overview_tool(limit: int = 50) -> ToolResult:
-        """List the person's jobs with activity (newest first) with a plain state for each and counts of
-        what needs them. Read-only. 'draft ready' is never 'submitted'."""
+        """Read current canonical shortlist matches, including labelled evidence holds. Never raw assessment activity."""
         data = overview(person_from_request(), limit)
         return ToolResult(content=_overview_text(data), structured_content=data)
+
+    @server.tool(name='applications_overview', annotations=READ_ONLY)
+    def applications_overview_tool(limit: int = 50) -> dict:
+        """Read application history only, never recommendations or assessment-only activity."""
+        return application_overview(person_from_request(), limit)
+
+    @server.tool(name='refresh_shortlist', annotations=READ_ONLY | {'readOnlyHint': False})
+    def refresh_shortlist_tool(limit: int = 50) -> dict:
+        """Rebuild the canonical shortlist from stored assessments without paid model work."""
+        return overview(person_from_request(), limit, refresh=True)
+
+    @server.tool(name='assessment_detail', annotations=READ_ONLY)
+    def assessment_detail_tool(posting_id: int) -> dict:
+        """Explicit diagnostic lookup, including exclusions; never a recommendation."""
+        return detail(person_from_request(), posting_id)
+
+    @server.tool(name='application_detail', annotations=READ_ONLY, meta={'ui': {'resourceUri': DETAIL_URI}})
+    def application_detail_tool(posting_id: int) -> ToolResult:
+        """Read an application's history and document state; not a recommendation."""
+        person = person_from_request()
+        data = detail(person, posting_id)
+        meta = {'submit_digest': submit_digest(person, posting_id)} if data.get('can_submit') else None
+        return ToolResult(content=_detail_text(data), structured_content=data, meta=meta)
 
     @server.tool(name='job_detail', title='Job detail', annotations=READ_ONLY, meta={
         'ui': {'resourceUri': DETAIL_URI}, 'openai/outputTemplate': DETAIL_URI,
@@ -339,7 +422,7 @@ def register(server: FastMCP, person_from_request) -> None:
         """Employer, title, score, why it fits, state, whether documents are ready, and the ad link for one job.
         Read-only."""
         person = person_from_request()
-        data = detail(person, posting_id)
+        data = recommended_detail(person, posting_id)
         # The Submit digest is for the widget button only: it is in _meta, not in what the model reads.
         meta = {'submit_digest': submit_digest(person, posting_id)} if data.get('can_submit') else None
         return ToolResult(content=_detail_text(data), structured_content=data, meta=meta)
@@ -354,11 +437,11 @@ def register(server: FastMCP, person_from_request) -> None:
         'ui': {'resourceUri': DETAIL_URI}, 'openai/outputTemplate': DETAIL_URI,
         'openai/widgetAccessible': True,
         'openai/toolInvocation/invoking': 'Handing to Jobwatch', 'openai/toolInvocation/invoked': 'Jobwatch replied'})
-    def prepare_application_tool(posting_id: int, instructions: str = '') -> ToolResult:
-        """Hand the heavy work of preparing an application (cover letter, CV, form fill) to Jobwatch's own agent.
-        Returns the status and any approval it needs; the person approves with the widget buttons. Never submits."""
-        message = f'Prepare the application for posting {posting_id}.' + (f' Instructions: {instructions}' if instructions else '')
-        return _work_result(*_hand_off(person_from_request(), posting_id, message))
+    def prepare_application_tool(posting_id: int, expected_entry_id: str, expected_run_key: str,
+                                 request_id: str, confirmed: bool) -> dict:
+        """Only after explicit user consent, prepare one exact current eligible shortlist entry. Never Submit."""
+        return prepare_selected(person_from_request(), posting_id, expected_entry_id=expected_entry_id,
+            expected_run_key=expected_run_key, request_id=request_id, confirmed=confirmed)
 
     @server.tool(name='revise_application', title='Revise an application', annotations=WORK, meta={
         'ui': {'resourceUri': DETAIL_URI}, 'openai/outputTemplate': DETAIL_URI,
@@ -458,12 +541,12 @@ function sc(r){return r&&(r.structuredContent||(r.result&&r.result.structuredCon
 var COUNTS=[['needs_you','need you'],['needs_info','need info'],['outcome_unknown','outcome unknown'],['submitted','submitted']];
 function countsText(c){var p=[];COUNTS.forEach(function(k){if(c&&c[k[0]])p.push(c[k[0]]+' '+k[1])});return p.join(' · ')||'Nothing needs you'}
 function renderList(d){listData=d;app.textContent='';
-app.appendChild(el('h1',null,'Your jobs'));app.appendChild(el('p','sub',countsText(d.counts)));
-if(!d.jobs||!d.jobs.length){app.appendChild(el('p',null,'No jobs with activity yet.'));return}
+app.appendChild(el('h1',null,'Your jobs'));app.appendChild(el('p','sub',d.meaning||'Current canonical shortlist'));
+if(!d.jobs||!d.jobs.length){app.appendChild(el('p',null,'No current shortlist matches. Refresh the shortlist or inspect discovery progress.'));return}
 var ul=el('ul');d.jobs.forEach(function(j){var li=el('li'),b=el('button','row');b.type='button';
 b.setAttribute('aria-label',(j.employer||'Unknown employer')+', '+(j.title||'untitled')+', '+j.state+'. Open details.');
 var g=el('span','grow');g.appendChild(el('div','t',j.title||'(untitled)'));g.appendChild(el('div','e',j.employer||'Unknown employer'));
-b.appendChild(g);if(j.score!=null)b.appendChild(el('span','score','Score '+j.score));b.appendChild(badge(j.state));
+g.appendChild(el('div','e',(j.label||'').replaceAll('_',' ')));g.appendChild(el('div','e',j.objective_fit||''));b.appendChild(g);
 b.addEventListener('click',function(){open(j.posting_id,b)});li.appendChild(b);ul.appendChild(li)});app.appendChild(ul)}
 function open(id,from){lastFocus=from||null;app.setAttribute('aria-busy','true');
 callTool('job_detail',{posting_id:id}).then(function(r){var d=sc(r);if(d)renderDetail(d,true,mt(r));else fail()},fail)}
