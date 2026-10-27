@@ -13,11 +13,16 @@ per-person binding and "already queued" refusal all stay in Python.
 | `task_status` | yes | task-status | read-only |
 | `review_submission` | yes | review | read-only; shows every filled answer, attached files, employer and role; digest and shown_hash only in result `_meta` |
 | `prepare_application`, `revise_application` | yes | task-prepare / task-revise | hand work to Jobwatch's agent; never submit; approval binding only in `_meta` |
-| `career_ops_start_chat`, `career_ops_continue_chat` | yes | - | same Career Ops agent as the Python MCP server; a question for the person comes back as plain `needs_answer` content (question + options) and is answered only by the person's own words via continue_chat; approvals are declined, never answered here |
+| `onboarding_status` | yes | - | saved facts, all open questions and current confirmed version |
+| `start_onboarding` | yes | - | starts canonical document parsing from uploaded document IDs |
+| `update_onboarding`, `answer_onboarding_question` | yes | - | saves the person's supplied answers in an unconfirmed draft, with revision checks |
+| `review_onboarding` | yes | - | exact profile, search scope, limits and review digests |
+| `confirm_onboarding` | yes | - | coordinating assistant passes the person's explicit confirmation and reviewed digests; refuses changed draft/scope |
 | `decide` | app only | - | Approve/Reject button |
 | `submit_reviewed` | app only | - | destructiveHint + openWorldHint; needs the digest |
 
 ## Safety
+- The coordinating assistant owns onboarding conversation and collects the person's answers and consent. Onboarding tools call canonical intake operations directly; they do not start a second chat agent or require widget approval. Only call `confirm_onboarding` after the person explicitly approves the reviewed profile and scope. The backend requires `confirmed: true`, validates both digests under the canonical locks, saves the confirmed version and enables its discovery scope. This does not authorise document preparation, employer messages or application submission. Existing job-work agents remain responsible for heavy application preparation.
 - Submit needs the confirm digest of the reviewed form AND the `shown_hash` of exactly what the review showed (answers, documents, digest); Python refuses `review_changed` if either differs, and does not offer Submit when the owner edited the live form after the fill (`edited_in_browser`). Answers shown are read from the CURRENT live form (the native browser review, same source as the web app); an edit after the fill is re-reviewed and Submit needs the fresh hash. The web process still re-checks the live form before pressing.
 - Submit needs the confirm digest of the reviewed form. The view gets it from `_meta` (view-only data) and passes it
   to `submit_reviewed`; Python re-checks it against the live reviewed form and queues once.

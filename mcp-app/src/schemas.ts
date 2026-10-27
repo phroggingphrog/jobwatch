@@ -73,32 +73,42 @@ export const reviewOut = z.object({
   documents: z.array(z.object({ role: z.string(), label: z.string(), file: z.string(), sha256: z.string() })),
 });
 
-// A chat turn: either the assistant's answer, or one or more questions only the person can answer.
-export const chatOut = z.object({
-  thread_id: z.string(),
-  status: z.enum(["complete", "needs_answer", "awaiting_approval"]),
-  approval: z.object({
-    interaction_id: z.string(),
-    operation: z.literal("profile_confirm"),
-    summary: z.string(),
-    review: z.object({
-      revision: z.number().int(),
-      facts: z.array(z.object({ section: z.string(), value: z.unknown(), basis: z.string() })),
-      questions: z.array(z.object({ text: z.string() })),
-      scope: z.object({
-        basis: z.array(z.string()), locations: z.array(z.string()),
-        daily_assessments: z.number(), daily_token_ceiling: z.number(),
-      }),
-      authorises: z.unknown(), does_not_authorise: z.unknown(),
-    }),
-  }).optional(),
-  answer: z.string().optional(),
-  questions: z.array(z.object({ question: z.string(), options: z.array(z.string()).optional() })).optional(),
-  note: z.string().optional(),
-  declined: z.array(z.string()).optional(),
-  approvals_not_answerable_here: z.array(z.string()).optional(),
-  tools: z.array(z.string()).optional(),
+export const onboardingProposal = z.object({
+  id: z.string(), revision: z.number().int(),
+  status: z.enum(["parsing", "draft", "confirmed", "superseded"]),
+  facts: z.array(z.object({ id: z.string(), section: z.string(), value: z.unknown(), basis: z.string() }).passthrough()),
+  questions: z.array(z.object({ id: z.string(), section: z.string(), text: z.string(), why: z.string() }).passthrough()),
+  parse_error: z.string(),
+}).passthrough();
+
+export const onboardingScope = z.object({
+  basis: z.array(z.string()), locations: z.array(z.string()),
+  daily_assessments: z.number().int(), daily_token_ceiling: z.number().int(),
 });
+
+export const onboardingStatusOut = z.object({
+  status: z.enum(["draft", "parsing", "confirmed", "not_started"]),
+  proposal: onboardingProposal.nullable(),
+  current_version: z.record(z.string(), z.unknown()).nullable(),
+});
+
+export const onboardingReviewOut = z.object({
+  status: z.literal("ready"), proposal: onboardingProposal, scope: onboardingScope,
+  proposal_digest: z.string(), scope_digest: z.string(),
+  authorises: z.array(z.string()), does_not_authorise: z.array(z.string()),
+});
+
+export const onboardingConfirmOut = z.object({
+  status: z.literal("confirmed"), version: z.number().int(),
+  discovery: onboardingScope.nullable(), discovery_enabled: z.boolean(),
+  authorises: z.array(z.string()), does_not_authorise: z.array(z.string()),
+});
+
+export const onboardingEdit = z.discriminatedUnion("op", [
+  z.strictObject({ op: z.literal("add"), section: z.string().min(1), value: z.json() }),
+  z.strictObject({ op: z.literal("set"), fact_id: z.string().min(1), basis: z.literal("evidence"), value: z.json() }),
+  z.strictObject({ op: z.literal("remove"), fact_id: z.string().min(1) }),
+]);
 
 export const submitOut = z.object({
   posting_id: z.number().int(),
@@ -106,4 +116,3 @@ export const submitOut = z.object({
 });
 
 export type TaskOut = z.infer<typeof taskOut>;
-export type ChatOut = z.infer<typeof chatOut>;

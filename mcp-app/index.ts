@@ -2,7 +2,10 @@ import { MCPServer } from "mcp-use";
 import { z } from "zod";
 import { backendConfig, call, BackendError } from "./src/backend.js";
 import {
-  chatOut,
+  onboardingStatusOut,
+  onboardingReviewOut,
+  onboardingConfirmOut,
+  onboardingEdit,
   jobOut,
   overviewOut,
   reviewOut,
@@ -255,93 +258,71 @@ export const submitReviewed = server.tool(
   },
 );
 
-// ---- chat: pass-through to the same Career Ops agent as the Python MCP server --------------------------------
-// A question only the person can answer comes back as plain content ("needs your answer"), never answered here;
-// the answer goes back with career_ops_continue_chat on the same opaque thread_id.
-function chatResult(raw: unknown) {
-  const d = chatOut.parse(raw);
-  const meta = raw && typeof raw === "object" ? (raw as Record<string, unknown>)._meta : undefined;
-  const binding = meta && typeof meta === "object" ? (meta as Record<string, unknown>).binding : undefined;
-  if (d.status === "awaiting_approval") {
-    return {
-      content: text("Review the exact profile and search scope in the view, then press Confirm profile or Keep as draft. Nothing has been confirmed yet."),
-      structuredContent: d,
-      ...(typeof binding === "string" ? { _meta: { binding } } : {}),
-    };
-  }
-  const asks = d.status === "needs_answer";
-  const t = asks
-    ? [
-        "Jobwatch needs the person's answer. Show this to them and wait; do not answer for them or guess.",
-        ...(d.questions ?? []).map(
-          (q, i) => `${i + 1}. ${q.question}${q.options?.length ? ` Options: ${q.options.join(" | ")}` : ""}`,
-        ),
-        `Then call career_ops_continue_chat with thread_id ${d.thread_id} and their own words.`,
-        ...(d.approvals_not_answerable_here?.length ? [`Not answerable here (use the Jobwatch app): ${d.approvals_not_answerable_here.join(", ")}.`] : []),
-      ].join("\n")
-    : [d.answer ?? "", ...(d.declined?.length ? [`Declined here, nothing was run or sent: ${d.declined.join(", ")}. The person approves in the Jobwatch app.`] : [])]
-        .filter(Boolean)
-        .join("\n\n");
-  return { content: text(t), structuredContent: d };
+const proposalId = z.string().regex(/^[a-f0-9]{16}$/);
+const revision = z.number().int().min(1);
+const digest = z.string().regex(/^[a-f0-9]{64}$/);
+
+async function onboardingStatusResult(path: string, body?: unknown) {
+  const d = onboardingStatusOut.parse(await call(cfg, body === undefined ? "GET" : "POST", path, body));
+  return { content: text(`Onboarding: ${d.status}. ${d.proposal?.questions.length ?? 0} saved questions. Use the structured facts and questions to coordinate onboarding with the person.`), structuredContent: d };
 }
 
-export const startChat = server.tool(
-  {
-    name: "career_ops_start_chat",
-    description:
-      "Start a persistent Jobwatch Career Ops chat from a natural-language request. Returns the assistant's answer and a thread_id, or a question for the person (status needs_answer): show it to them, wait for their answer, and send it with career_ops_continue_chat. Never answer a question for the person. Cannot submit an application.",
-    inputSchema: z.object({ message: z.string().min(1).max(16000) }),
-    outputSchema: chatOut,
-    annotations: WORK,
-    view: { name: "chat-review" },
-  },
-  async ({ message }) => {
-    try {
-      return chatResult(await call(cfg, "POST", "/connector/chat/start", { message }));
-    } catch (e) {
-      return fail(e);
-    }
-  },
-);
+export const onboardingStatus = server.tool({
+  name: "onboarding_status",
+  description: "Read the person's saved onboarding draft, all facts, all outstanding questions and confirmed version. Coordinate the conversation yourself; this calls no chatbot.",
+  inputSchema: z.strictObject({}), outputSchema: onboardingStatusOut, annotations: READ,
+}, async () => {
+  try { return await onboardingStatusResult("/connector/onboarding/status"); } catch (e) { return fail(e); }
+});
 
-export const continueChat = server.tool(
-  {
-    name: "career_ops_continue_chat",
-    description:
-      "Continue a Jobwatch Career Ops chat using the opaque thread_id from career_ops_start_chat. Use it to send the person's own answer to a question (status needs_answer) or a follow-up message.",
-    inputSchema: z.object({
-      thread_id: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/),
-      message: z.string().min(1).max(16000),
-    }),
-    outputSchema: chatOut,
-    annotations: WORK,
-    view: { name: "chat-continue" },
-  },
-  async ({ thread_id, message }) => {
-    try {
-      return chatResult(await call(cfg, "POST", "/connector/chat/continue", { thread_id, message }));
-    } catch (e) {
-      return fail(e);
-    }
-  },
-);
+export const startOnboarding = server.tool({
+  name: "start_onboarding",
+  description: "Start a draft from the person's existing uploaded document IDs. Document parsing runs in Jobwatch; collect missing answers in your own conversation. Never confirms a profile.",
+  inputSchema: z.strictObject({ upload_ids: z.array(proposalId).min(1).max(20), base_version: z.number().int().min(1).nullable().optional() }),
+  outputSchema: onboardingStatusOut, annotations: WORK,
+}, async (input) => {
+  try { return await onboardingStatusResult("/connector/onboarding/start", input); } catch (e) { return fail(e); }
+});
 
-export const decideProfile = server.tool(
-  {
-    name: "decide_profile",
-    description: "View button only. Confirm or reject the exact displayed profile and search scope. Never submits an application.",
-    inputSchema: z.object({ interaction_id: z.string().max(100), decision: z.enum(["approve", "reject"]), binding: z.string().min(1).max(200) }),
-    outputSchema: chatOut,
-    annotations: WORK,
-    visibility: "app",
-  },
-  async (input) => {
-    try {
-      return chatResult(await call(cfg, "POST", "/connector/chat/decide", input));
-    } catch (e) {
-      return fail(e);
-    }
-  },
-);
+export const updateOnboarding = server.tool({
+  name: "update_onboarding",
+  description: "Atomically save the person's stated facts or corrections in their unconfirmed draft. Use only answers the person supplied; never invent facts. expected_revision prevents overwriting another edit. Does not confirm or start discovery.",
+  inputSchema: z.strictObject({ proposal_id: proposalId, expected_revision: revision, edits: z.array(onboardingEdit).min(1).max(100) }),
+  outputSchema: onboardingStatusOut, annotations: WORK,
+}, async (input) => {
+  try { return await onboardingStatusResult("/connector/onboarding/update", input); } catch (e) { return fail(e); }
+});
+
+export const answerOnboarding = server.tool({
+  name: "answer_onboarding_question",
+  description: "Save the person's answer to one saved onboarding question. Gather all needed answers together in your conversation, then save them with current revisions. Never answer for the person or confirm a profile.",
+  inputSchema: z.strictObject({ proposal_id: proposalId, expected_revision: revision, question_id: z.string().min(1).max(64), text: z.string().min(1).max(4000) }),
+  outputSchema: onboardingStatusOut, annotations: WORK,
+}, async (input) => {
+  try { return await onboardingStatusResult("/connector/onboarding/answer", input); } catch (e) { return fail(e); }
+});
+
+export const reviewOnboarding = server.tool({
+  name: "review_onboarding",
+  description: "Read the exact current draft, search scope and limits for the person's review. Show these in your conversation, collect their confirmation, then call confirm_onboarding with these unchanged digests. No separate chat or widget approval is required.",
+  inputSchema: z.strictObject({ proposal_id: proposalId }), outputSchema: onboardingReviewOut, annotations: READ,
+}, async (input) => {
+  try {
+    const d = onboardingReviewOut.parse(await call(cfg, "POST", "/connector/onboarding/review", input));
+    return { content: text("Show the returned profile facts, search scope, unknowns and limits to the person. Confirmation authorises discovery and assessment only. After their explicit confirmation, call confirm_onboarding with these exact digests."), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
+
+export const confirmOnboarding = server.tool({
+  name: "confirm_onboarding",
+  description: "Confirm the exact profile and search scope the person reviewed and explicitly approved in this conversation. The coordinating assistant handles their consent; call only after it is given. Both digests must match the latest review or Jobwatch refuses. Authorises discovery and assessment only; never documents, employer messages or application submission.",
+  inputSchema: z.strictObject({ proposal_id: proposalId, proposal_digest: digest, scope_digest: digest, confirmed: z.literal(true) }),
+  outputSchema: onboardingConfirmOut, annotations: WORK,
+}, async (input) => {
+  try {
+    const d = onboardingConfirmOut.parse(await call(cfg, "POST", "/connector/onboarding/confirm", input));
+    return { content: text(`Profile confirmed as version ${d.version}. Discovery eligibility: ${d.discovery_enabled ? "enabled" : "disabled"}. No application submission is authorised.`), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
 
 export default server;

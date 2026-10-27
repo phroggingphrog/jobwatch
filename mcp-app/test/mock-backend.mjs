@@ -73,24 +73,16 @@ export function startMock(port = 0) {
       pending = null;
       return send(200, { data: { view: "work", status: "complete", answer: body.decision === "approve" ? "Prepared. The draft is ready for your review." : "", decision: body.decision }, meta: {} });
     }
-    if (req.method === "POST" && url.pathname === "/connector/chat/start") {
-      if (/confirm profile/i.test(body.message)) return send(200, { status: "awaiting_approval", thread_id: "profile-thread", approval: {
-        interaction_id: "profile-review", operation: "profile_confirm", summary: "Confirm the exact profile and scope.",
-        review: { revision: 2, facts: [{ section: "location", value: "Melbourne", basis: "person" }], questions: [],
-          scope: { basis: ["Accounting"], locations: ["Victoria"], daily_assessments: 40, daily_token_ceiling: 2000000 },
-          authorises: ["discovery", "assessment"], does_not_authorise: ["submission"] },
-      }, _meta: { binding: "profile-binding-private" } });
-      if (/which city/i.test(body.message)) return send(200, { type: "assistant_message", status: "needs_answer", thread_id: "thread-1", questions: [{ question: "Which city do you want to work in?", options: ["Melbourne", "Sydney"] }], note: "Show the question(s) to the person and wait for their answer.", tools: [] });
-      if (/submit/i.test(body.message)) return send(200, { type: "assistant_message", status: "complete", thread_id: "thread-2", answer: "Understood.", declined: ["submit_application"], todos: [], tools: [] });
-      return send(200, { type: "assistant_message", status: "complete", thread_id: "thread-3", answer: "Two jobs need you.", todos: [], tools: ["jobs_overview"] });
-    }
-    if (req.method === "POST" && url.pathname === "/connector/chat/continue") {
-      if (body.thread_id === "thread-1") return send(200, { type: "assistant_message", status: "complete", thread_id: "thread-1", answer: `Letter tailored for ${body.message}.`, todos: [], tools: [] });
-      return send(400, { error: "invalid_request" });
-    }
-    if (req.method === "POST" && url.pathname === "/connector/chat/decide") {
-      if (body.interaction_id !== "profile-review" || body.binding !== "profile-binding-private") return send(400, { error: "approval_not_found" });
-      return send(200, { status: "complete", thread_id: "profile-thread", answer: body.decision === "approve" ? "Profile confirmed." : "Profile remains a draft." });
+    if (url.pathname.startsWith("/connector/onboarding/")) {
+      const scope={basis:["Accounting"],locations:["Victoria"],daily_assessments:40,daily_token_ceiling:2000000};
+      const proposal={id:"1111111111111111",revision:2,status:"draft",parse_error:"",facts:[{id:"f1",section:"career_focus",value:"Accounting",basis:"evidence"}],questions:[{id:"q1",section:"location",text:"Where?",why:"Search coverage"},{id:"q2",section:"availability",text:"When?",why:"Availability"}]};
+      if(url.pathname.endsWith("/review")) return send(200,{status:"ready",proposal,scope,proposal_digest:"a".repeat(64),scope_digest:"c".repeat(64),authorises:["discovery","assessment"],does_not_authorise:["submission"]});
+      if(url.pathname.endsWith("/confirm")) {
+        if(body.proposal_digest!=="a".repeat(64))return send(409,{error:"proposal_changed"});
+        if(body.scope_digest!=="c".repeat(64))return send(409,{error:"scope_changed"});
+        return send(200,{status:"confirmed",version:1,discovery:scope,discovery_enabled:true,authorises:["discovery","assessment"],does_not_authorise:["submission"]});
+      }
+      return send(200,{status:"draft",proposal,current_version:null});
     }
     if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/submit$/))) {
       if (body.confirm_digest !== DIGEST) return send(400, { error: "submit_digest_mismatch" });
