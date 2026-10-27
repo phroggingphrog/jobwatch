@@ -377,3 +377,27 @@ backend authenticates the human channel and checks the current inputs; the model
 Artifacts cannot grant approval. A correction or changed draft needs another review.
 This supersedes the per-answer approval and screen-only profile-confirmation design.
 Other protected operations, including final Submit, retain their existing review paths.
+
+
+## Canonical MCP results and interactive widgets
+
+Owner direction on 2026-10-27:
+
+> AI should only show the filtered and approved by the models
+
+The owner approved the canonical-results and interactive-widgets implementation plan
+and selected evidence holds **alongside eligible matches**. MCP must present Jobwatch's
+existing canonical shortlist and ranking, including clearly labelled unresolved facts;
+it must not turn collection, assessment attempts, exclusions or application activity
+into recommendations. Evidence holds remain visible but cannot proceed to preparation.
+Scores remain advisory and personal preferences come from the confirmed profile.
+
+Keep Jobs, application history, Discovery progress/failures and supported configuration
+as distinct surfaces over the same backend. Use the redesigned web dashboard as the
+visual reference for contextual MCP Apps widgets. The host assistant handles conversation
+and explicit consent through typed canonical operations; it is not a relay for another
+onboarding or preparation chatbot. Preparation must bind the exact current eligible
+entry/run, remain idempotent and never authorise Submit. Keep the existing separate
+reviewed-form Submit confirmation, failure pauses, per-person configuration and spending
+history. Verify actual intended-client rendering separately from builds and protocol
+checks, and report any remaining host limitation honestly.
