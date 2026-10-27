@@ -243,7 +243,7 @@ person's jobs DB: code running as the agent API can write that DB, so the approv
 protects the chat path, not a compromised agent process. The approval shows the posting id,
 while the application card reads actual live values and attachments before its separate final Submit confirmation.
 
-`find_jobs`, `application_status` and `source_health` support read-only discovery; `jobs_overview` lists jobs with activity, newest first, each with the `task_status` state (no approval).
+`find_jobs`, `application_status` and `source_health` support read-only discovery. On the MCP connector, `jobs_overview` reads the current canonical shortlist, including labelled evidence holds, in canonical rank order. `applications_overview` separately reads application/preparation/submission history with the `task_status` state. Assessment-only activity is neither a recommendation nor an application.
 The reader can retrieve canonical evidence by source name, hash and explicit line
 pages. The researcher uses saved public employer identity; candidate details cannot
 be supplied as search queries. Approved writing references are retrieved locally.
@@ -794,3 +794,50 @@ chat agent as `jobwatch-tui`. Install the extra once: `uv pip install -e ".[acp]
 - Not exposed: client files and terminals are never read or written. Submit still needs the exact-form
   approval and the browser press; nothing here can bypass those gates. Limits: no token streaming
   (the answer arrives once the turn returns), no session/load (a session lasts for the process).
+
+
+## Canonical MCP results and contextual widgets (2026-10-27)
+
+The TypeScript MCP front and retained Python connector use the existing shortlist
+projection for `jobs_overview`. Jobs preserves canonical membership, ordering and the
+`stronger_match`, `stretch` and `needs_clarification` labels. Evidence holds appear
+alongside eligible entries with their unresolved facts, but only the canonical
+`draft`/`eligible` decision may prepare. Scores remain advisory. The MCP adapter adds
+no score threshold, senior-title exclusion or profile preference of its own.
+
+`jobs_overview` returns canonical snapshot status, shortlist/entry/run identities and
+explained entries. `job_detail` reads only a current entry and exposes its evidence,
+citations, conditions, questions and permitted actions. `not_built`,
+`no_confirmed_profile`, `stale` and valid-empty states have no activity or legacy-score
+fallback. Current profile, evidence, ad, liveness, configuration and implementation
+fences remain authoritative. `refresh_shortlist` reuses the database-only canonical
+rebuild, without collection, assessment, preparation or model calls.
+
+`applications_overview` and `application_detail` retain application/preparation/Submit
+history independently of shortlist membership. `assessment_detail` is an explicit
+diagnostic lookup that can include exclusions and failed/incomplete work; it must not
+be presented as a recommendation. Discovery shows attempts, actual failures, queued
+work and separate notification handoff state. Settings exposes supported per-person
+configuration, including a nullable Unlimited daily token allowance. Neither collection
+counts nor completed service runs imply model-approved matches.
+
+MCP `prepare_application` takes `posting_id`, `expected_entry_id`, `expected_run_key`,
+`request_id` and `confirmed: true` after the person's explicit consent to that exact
+reviewed entry. It requests canonical selected preparation directly rather than
+starting a second chat agent. Evidence holds and changed inputs are refused; stable
+request IDs preserve the original selection on retry and conflict on changed payloads.
+The selection authorises preparation only. Final Submit still requires its separate
+exact reviewed-form confirmation. The host assistant may coordinate the existing
+consent contract; a widget is not an additional mandatory conversation relay.
+
+The contextual MCP Apps widgets follow the redesigned web dashboard's visual hierarchy,
+compact rows and host-selected dark/light themes. Jobs, Applications, Discovery and
+Settings remain separate surfaces. Resources declare `_meta.ui.resourceUri` and embed
+their assets; controls call typed tools, preserve unsaved allowance edits during polling
+and reuse pending request identities. Build, resource and bridge checks are necessary
+but do not establish rendering in the intended ChatGPT client. Record that host journey
+or its remaining limitation explicitly in rollout evidence.
+
+This contract supersedes the earlier MCP activity-as-Jobs list and chatbot-mediated
+preparation handoff. Existing native operations and retained historical client notes
+above do not add a second recommendation policy or weaken human confirmation.
