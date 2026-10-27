@@ -14,6 +14,74 @@ K_VALUES = (5, 10)
 METRICS_VERSION = 'evaluation-metrics-v2'
 
 
+def native_acceptance_report(*, usage, native_counts, digest_counts, classifier_calls,
+                             checks, gate_route, ledger_charged, seconds, resume_usage=None):
+    """Count-only evidence from invocation deltas after canonical validation."""
+    def required_count(value):
+        if type(value) is not int or value < 0:
+            raise ValueError('invalid_acceptance_counts')
+        return value
+
+    total = required_count(usage.get('model_calls'))  # Execution names all paid operations model_calls.
+    actual = required_count(usage.get('actual_tokens'))
+    charged = required_count(usage.get('charged_tokens'))
+    unknown = required_count(usage.get('unknown_usage_calls'))
+    if ledger_charged is not None:
+        required_count(ledger_charged)
+    native = required_count(native_counts.get('calls'))
+    embedding = required_count(native_counts.get('purposes', {}).get('evidence_embeddings', 0))
+    classifiers = required_count(classifier_calls)
+    digest_calls = required_count(digest_counts.get('calls'))
+    digest_charged = required_count(digest_counts.get('charged_tokens'))
+    if embedding > native or not _number(seconds):
+        raise ValueError('invalid_acceptance_counts')
+    unattributed = total - native - classifiers - digest_calls
+    model_calls = total - embedding - digest_calls
+    attribution_complete = unattributed == 0 and model_calls >= 0
+    reconciled = (type(ledger_charged) is int and ledger_charged == charged
+                  and actual <= charged and attribution_complete)
+    required_checks = ('canonical_evaluation', 'coverage', 'citations', 'judgments',
+                       'gate', 'identity', 'protocol', 'digest_current')
+    safe_checks = {name: checks.get(name) is True for name in required_checks}
+    safe_checks['fresh_native_generation'] = native > embedding
+    safe_route = gate_route if gate_route in {'draft', 'archive', 'hold'} else None
+    quality = all(safe_checks.values()) and safe_route is not None
+    warm = digest_counts.get('reused') is True and digest_calls == digest_charged == 0
+    efficiency = attribution_complete and warm and 1 <= model_calls <= 6
+    reuse_verified = (isinstance(resume_usage, Mapping) and all(
+        type(resume_usage.get(key)) is int and resume_usage[key] == 0
+        for key in ('model_calls', 'charged_tokens', 'actual_tokens', 'unknown_usage_calls')))
+    cold = digest_counts.get('cold') or {}
+    details = native_counts.get('details') or []
+    def detail_sum(section, key):
+        return sum(_count(item.get(section, {}).get(key)) for item in details if isinstance(item, Mapping))
+    return {
+        'accepted': quality and efficiency and reconciled and reuse_verified,
+        'quality': {'passed': quality, 'checks': safe_checks, 'gate_route': safe_route},
+        'efficiency': {'passed': efficiency, 'per_job_model_calls': model_calls,
+                       'target_max_model_calls': 6},
+        'paid_operations': {'native_model': native - embedding, 'classifier_model': classifiers,
+            'embedding': embedding, 'digest_model': digest_calls, 'other_model': max(0, unattributed),
+            'total': total},
+        'tokens': {'known_actual': actual, 'charged': charged, 'unknown_usage_calls': unknown,
+            'native_prompt': _count(native_counts.get('prompt_tokens')),
+            'native_completion': _count(native_counts.get('completion_tokens')),
+            'reasoning': detail_sum('completion_tokens_details', 'reasoning_tokens'),
+            'cached_prompt': detail_sum('prompt_tokens_details', 'cached_tokens')},
+        'digest': {'reused': warm, 'new_calls': digest_calls, 'new_charged_tokens': digest_charged,
+            'historical_cold_calls': cold.get('calls') if type(cold.get('calls')) is int else None,
+            'historical_cold_known_tokens': cold.get('tokens') if type(cold.get('tokens')) is int else None,
+            'historical_cold_charged_tokens': cold.get('charged_tokens') if type(cold.get('charged_tokens')) is int else None},
+        'accounting': {'reconciled': reconciled, 'ledger_charged': ledger_charged,
+                      'unattributed_paid_operations': unattributed},
+        'completed_reuse': {'verified': reuse_verified,
+            'additional_paid_operations': (resume_usage['model_calls']
+                if isinstance(resume_usage, Mapping) and type(resume_usage.get('model_calls')) is int
+                and resume_usage['model_calls'] >= 0 else None)},
+        'wall_seconds': seconds,
+    }
+
+
 def _label_value(label, field):
     return label.get(field) if isinstance(label, Mapping) else getattr(label, field, None)
 

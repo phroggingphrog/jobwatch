@@ -1,5 +1,30 @@
 # Assessment failures, first filtering and candidate understanding
 
+## Acceptance follow-up readiness
+
+The `native-assessment-acceptance` follow-up reproduces the recorded multi-search,
+repeated-read and candidate-filename sequence through the real graph with synthetic
+evidence. It reaches canonical completion without opening the filename, restores
+reasoning/source payloads on interruption, and preserves exhausted correction
+allowances across restart. The focused native/recovery group passed 43 tests.
+These scripted responses are correctness fixtures, not evidence of provider
+quality or a successful eight-call efficiency result.
+
+Count-only acceptance diagnostics in `eval_metrics.native_acceptance_report`
+separate canonical quality, efficiency, current-digest reuse, ledger reconciliation
+and zero-paid completed reuse. They require at least one fresh native generation;
+a cached result plus classifier/embedding charges cannot masquerade as provider
+acceptance. Every per-job generation, including public classifiers, contributes
+to the 3–6-call target. Embeddings remain visible separately and in all paid
+operations. Thus the previous warm run had seven model calls and eight paid
+operations; it failed quality and did not establish the efficiency target.
+
+The authenticated discovery API now has an invocation-only `max_assessments`
+control for the eventual one-posting runtime check. Its scope, deferral and cost
+limits are documented in [the backend contract](../../pipeline/agentic/CHAT.md).
+This is development source; provider acceptance and deployment remain open until
+the measured execution below establishes otherwise.
+
 ## Recovery follow-up: warm-digest acceptance still blocked
 
 One further controlled evaluate-only run on posting 7621 reused the current digest

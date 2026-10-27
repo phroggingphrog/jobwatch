@@ -1014,7 +1014,15 @@ def _refresh_shortlist(conn, config):
         return {'shortlist': {'error':'shortlist_failed'}}
 
 
-def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, deadline=None, run_id=None):
+def validate_max_assessments(value):
+    if value is not None and (type(value) is not int or not 1 <= value <= 20):
+        raise AgenticError('invalid_max_assessments')
+    return value
+
+
+def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, deadline=None, run_id=None,
+                  max_assessments=None):
+    validate_max_assessments(max_assessments)
     if not enabled(config):
         return {'skipped': 'disabled'}
     from jobwatch import users
@@ -1033,7 +1041,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
             seconds=max(0, deadline-time.time()), token_ceiling=cfg['batch_token_ceiling'], max_calls=1_000_000)
         with execution.use(invocation):
             return after_collect(conn, config, max_seconds=max_seconds, collector_run_id=collector_run_id,
-                                 deadline=deadline, run_id=run_id)
+                                 deadline=deadline, run_id=run_id, max_assessments=max_assessments)
     phase_seconds = {}
     phase_name, phase_started = None, time.monotonic()
     def phase(name, *, completed_previous=False):
@@ -1191,9 +1199,15 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
                                time.time() + min(cfg['batch_seconds'], max_seconds if max_seconds is not None else cfg['batch_seconds']))
             extra['batch_id'] = ident
         cut = ids[room:]
+        selected = ids[:room]
+        if max_assessments is not None:
+            deferred = selected[max_assessments:]
+            selected = selected[:max_assessments]
+            if deferred:
+                details['assessment_limit_deferred'] = deferred
         # Collection only evaluates; documents are drafted on an explicit request, never as a side effect of a timer.
         phase('assessment', completed_previous=True)
-        out = agentic_batch_run(ids[:room], config, conn, max_seconds=max_seconds, deadline=deadline,
+        out = agentic_batch_run(selected, config, conn, max_seconds=max_seconds, deadline=deadline,
                                 run_id=run_id, token_allowance=left, token_allowance_reason=budget_reason,
                                 collector_run_id=collector_run_id, operation='evaluate', **extra)
         phase('shortlist')

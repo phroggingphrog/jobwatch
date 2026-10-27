@@ -152,6 +152,27 @@ explicitly configured sources; there is no automatic acquisition of new provider
 uncalibrated, there is no lexical hybrid, and these routes do not establish
 matching accuracy or deployment.
 
+Authenticated `POST /api/agent/discovery/start` accepts
+`{"request_id":"reader-check-1","max_assessments":1}` with run scope. The optional
+`max_assessments` is a strict integer from 1 through 20; omission or null retains
+the existing reader selection of up to 20 postings, subject to daily allowance.
+The durable request receipt binds this control: reusing the same request ID with
+a different limit, including changing between a limit and omission, returns
+`409 idempotency_conflict`. Authentication selects the person; client-supplied
+person fields are rejected. The queued worker passes the control to canonical
+`service.after_collect`, including its native invocation wrapper.
+
+The limit applies to posting attempts in the final assessment selection. Remaining
+selected postings appear in `assessment_limit_deferred` and retain their queued
+state; daily-allowance deferrals remain separately labelled
+`daily_budget_deferred`. Collection, ingestion, candidate-digest preparation,
+deduplication, relevance and ordering retain their existing behavior and can
+consume their own accounted work before assessment. A limit of one is therefore
+not a one-model-call or spending cap. Invocation usage includes preparation and
+per-job operations; all existing daily/job limits and approved profile scope,
+including saved Unlimited settings, remain unchanged. This operation evaluates
+only and does not authorize document preparation or submission.
+
 ### Guided onboarding in the chat agent
 
 The chat agent guides a new person through the same draft instead of waiting for a finished parse. Answers given

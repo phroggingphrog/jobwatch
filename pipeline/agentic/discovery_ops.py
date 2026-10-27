@@ -65,9 +65,13 @@ def set_settings(person, config, daily_token_ceiling, **job_limits):
         return discovery_settings.set_settings(person, config, daily_token_ceiling, **job_limits)
 
 
-def start(person, config, request_id, *, incident_id=None, posting_id=None, expected_context=None):
+def start(person, config, request_id, *, incident_id=None, posting_id=None, expected_context=None,
+          max_assessments=None):
+    service.validate_max_assessments(max_assessments)
     with users.use(person):
         payload = {'discovery': True}
+        if max_assessments is not None:
+            payload['max_assessments'] = max_assessments
         if incident_id is not None:
             payload.update(incident_id=incident_id, posting_id=posting_id, expected_context=expected_context)
         # A replay reads its immutable receipt, even when the admitted work has
@@ -92,6 +96,7 @@ def start(person, config, request_id, *, incident_id=None, posting_id=None, expe
 
 
 def execute(person, config, run_id, payload, *, seconds=600):
+    service.validate_max_assessments(payload.get('max_assessments'))
     with users.use(person), job_connection(config, write=True) as conn:
         deadline = time.time() + min(780, max(0, seconds))
         service.AgenticStore(conn).ensure()
@@ -133,7 +138,10 @@ def execute(person, config, run_id, payload, *, seconds=600):
                             batch_id=batch_id, token_allowance=remaining,
                             token_allowance_reason=allowance_reason)
             else:
-                result = service.after_collect(conn, config, max_seconds=seconds, deadline=deadline, run_id=run_id)
+                controls = ({'max_assessments': payload['max_assessments']}
+                            if payload.get('max_assessments') is not None else {})
+                result = service.after_collect(conn, config, max_seconds=seconds, deadline=deadline,
+                                               run_id=run_id, **controls)
             return result
         except Exception as exc:
             state = 'failed'
