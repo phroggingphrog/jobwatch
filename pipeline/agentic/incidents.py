@@ -17,8 +17,9 @@ FAILURE_REASONS = frozenset({
     'model_invalid_response', 'model_truncated_response', 'invalid_requirements',
     'invalid_tool_arguments', 'invalid_tool_call', 'invalid_citation', 'artifact_invalid',
     'checkpoint_invalid', 'checkpoint_unavailable', 'checkpoint_conflict',
+    'invalid_checkpoint', 'unknown_batch', 'batch_conflict', 'invalid_transition', 'candidate_hash_mismatch',
     'service_timeout', 'service_terminated', 'worker_interrupted',
-    'invocation_budget_exhausted', 'chat_execution_failed', 'invalid_model_response',
+    'chat_execution_failed', 'invalid_model_response',
 })
 _CODE = re.compile(r'^[a-z][a-z0-9_]{0,79}$')
 _RETRY_SECONDS = (60, 300, 900, 3600)
@@ -32,7 +33,7 @@ def ensure(conn):
     conn.executescript('''
         CREATE TABLE IF NOT EXISTS agentic_incidents (
             incident_id TEXT PRIMARY KEY, posting_id INTEGER, run_id TEXT NOT NULL,
-            reason TEXT NOT NULL, phase TEXT, state TEXT NOT NULL DEFAULT 'paused',
+            reason TEXT NOT NULL, phase TEXT, last_successful_phase TEXT, state TEXT NOT NULL DEFAULT 'paused',
             created_at REAL NOT NULL, resolved_at REAL,
             notification_state TEXT NOT NULL DEFAULT 'pending', notification_attempts INTEGER NOT NULL DEFAULT 0,
             next_notification_at REAL NOT NULL DEFAULT 0, notification_lease_until REAL,
@@ -40,8 +41,17 @@ def ensure(conn):
         CREATE INDEX IF NOT EXISTS agentic_incidents_posting ON agentic_incidents(posting_id,state);
         CREATE TABLE IF NOT EXISTS agentic_invocations (
             run_id TEXT PRIMARY KEY, unit TEXT, phase TEXT NOT NULL, posting_id INTEGER,
-            state TEXT NOT NULL, started_at REAL NOT NULL, updated_at REAL NOT NULL);
+            state TEXT NOT NULL, started_at REAL NOT NULL, updated_at REAL NOT NULL, last_successful_phase TEXT);
     ''')
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        for table in ('agentic_incidents', 'agentic_invocations'):
+            if 'last_successful_phase' not in {r[1] for r in conn.execute(f'PRAGMA table_info({table})')}:
+                conn.execute(f'ALTER TABLE {table} ADD COLUMN last_successful_phase TEXT')
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
 
 
 def _dict(cursor, row):
@@ -98,8 +108,10 @@ def report(conn, *, posting_id=None, run_id=None, reason, phase=None, now=None):
             conn.commit()
             return existing
         ident = hashlib.sha256(f'{run_id}:{posting_id}'.encode()).hexdigest()[:32] if run_id else uuid.uuid4().hex
-        conn.execute('INSERT INTO agentic_incidents(incident_id,posting_id,run_id,reason,phase,created_at) VALUES(?,?,?,?,?,?)',
-                     (ident, posting_id, run_id, reason, phase, now))
+        completed = conn.execute('SELECT last_successful_phase,posting_id FROM agentic_invocations WHERE run_id=?', (run_id,)).fetchone()
+        conn.execute('INSERT INTO agentic_incidents(incident_id,posting_id,run_id,reason,phase,last_successful_phase,created_at) VALUES(?,?,?,?,?,?,?)',
+                     (ident, posting_id, run_id, reason, phase,
+                      completed[0] if completed and completed[1] == posting_id else None, now))
         row = _get(conn, ident)
         stamp = notify._now()
         message = conn.execute("INSERT INTO chat_messages(role,text,created_at,push) VALUES('jobwatch',?,?,0)",
@@ -109,7 +121,7 @@ def report(conn, *, posting_id=None, run_id=None, reason, phase=None, now=None):
     except BaseException:
         conn.rollback()
         raise
-    flush_notifications(conn, now=now)
+    flush_notifications(conn, now=now, incident_id=ident)
     return _get(conn, ident)
 
 
@@ -131,23 +143,29 @@ def release(conn, incident_id, posting_id, *, expected_run_id=None):
     return _get(conn, incident_id)
 
 
-def flush_notifications(conn, *, force=False, now=None):
-    """Retry delivery only. A successful SSH append is a handoff, not a receipt."""
+def flush_notifications(conn, *, force=False, now=None, incident_id=None):
+    """Attempt at most one bounded delivery. SSH append acknowledges handoff only."""
     if not _exists(conn, 'agentic_incidents') or not notify.is_live(conn):
         return 0
     now = time.time() if now is None else now
     configured = bool(notify._setting('JOBWATCH_HERMES_SSH') and notify._setting('JOBWATCH_HERMES_FILE'))
-    cur = conn.execute("SELECT incident_id FROM agentic_incidents WHERE notification_state<>'handed_off' "
-                       "AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
-                       + ('' if force else 'AND next_notification_at<=? ') + 'ORDER BY created_at LIMIT 20',
-                       (now,) if force else (now, now))
+    params = [now]
+    where = "notification_state<>'handed_off' AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
+    if not force:
+        where += 'AND next_notification_at<=? '
+        params.append(now)
+    if incident_id is not None:
+        where += 'AND incident_id=? '
+        params.append(incident_id)
+    cur = conn.execute('SELECT incident_id FROM agentic_incidents WHERE ' + where + 'ORDER BY created_at LIMIT 1', params)
     ids = [r[0] for r in cur.fetchall()]
     handed_off = 0
     for ident in ids:
         with conn:
             claimed = conn.execute("UPDATE agentic_incidents SET notification_state='sending',notification_lease_until=?, "
                 "notification_attempts=notification_attempts+1 WHERE incident_id=? AND notification_state<>'handed_off' "
-                'AND (notification_lease_until IS NULL OR notification_lease_until<=?)', (now + 60, ident, now)).rowcount
+                'AND (notification_lease_until IS NULL OR notification_lease_until<=?) AND (? OR next_notification_at<=?)',
+                (now + 60, ident, now, bool(force), now)).rowcount
         if not claimed:
             continue
         row = _get(conn, ident)
@@ -169,18 +187,20 @@ def begin_run(conn, run_id, unit=None):
     ensure(conn)
     now = time.time()
     with conn:
-        conn.execute("INSERT OR IGNORE INTO agentic_invocations VALUES(?,?,'starting',NULL,'running',?,?)",
+        conn.execute("INSERT OR IGNORE INTO agentic_invocations(run_id,unit,phase,posting_id,state,started_at,updated_at) VALUES(?,?,'starting',NULL,'running',?,?)",
                      (str(run_id), unit, now, now))
     flush_notifications(conn)
 
 
-def mark_phase(conn, run_id, phase, posting_id=None):
+def mark_phase(conn, run_id, phase, posting_id=None, *, completed=False):
     if not _CODE.fullmatch(phase):
         raise ValueError('invalid_phase')
     ensure(conn)
     with conn:
-        conn.execute("UPDATE agentic_invocations SET phase=?,posting_id=?,updated_at=? WHERE run_id=? AND state='running'",
-                     (phase, posting_id, time.time(), str(run_id)))
+        conn.execute("UPDATE agentic_invocations SET phase=?,posting_id=?,updated_at=?,"
+                     "last_successful_phase=CASE WHEN ? THEN ? WHEN posting_id IS NOT ? THEN NULL ELSE last_successful_phase END "
+                     "WHERE run_id=? AND state='running'",
+                     (phase, posting_id, time.time(), bool(completed), phase, posting_id, str(run_id)))
 
 
 def end_run(conn, run_id, state='completed'):
