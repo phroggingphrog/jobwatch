@@ -23,10 +23,16 @@ per-person binding and "already queued" refusal all stay in Python.
 | `update_onboarding`, `answer_onboarding_question` | yes | - | saves the person's supplied answers in an unconfirmed draft, with revision checks |
 | `review_onboarding` | yes | - | exact profile, search scope, limits and review digests |
 | `confirm_onboarding` | yes | - | coordinating assistant passes the person's explicit confirmation and reviewed digests; refuses changed draft/scope |
+| `jobwatch_guide` | yes | - | read-only; topic guide built from `pipeline/agentic/skills/*/SKILL.md` (env `JOBWATCH_SKILLS_DIR` overrides; bundled fallback if missing). The same skills are MCP resources `skill://jobwatch/<name>/SKILL.md` |
+| `approve_application` | yes | - | chat-callable twin of `decide` for one pending prepare/revise approval; needs the `confirm_digest` shown with the approval and the person's verbatim `user_quote`; never reaches submit |
 | `decide` | app only | - | Approve/Reject button |
 | `submit_reviewed` | app only | - | destructiveHint + openWorldHint; needs the digest |
 
+## Host guidance
+The server sends `instructions` on initialize (operating protocol, `src/guidance.ts`). Every tool result has a compact text summary (not JSON), the structured data, and `next_actions`. Views are optional: a host that cannot render one presents the summary itself.
+
 ## Safety
+- `approve_application` uses the same pending approval, person check, expiry, single use and checkpoint as `decide` (Python `approve_in_chat` calls `decide`). It adds a digest derived from the pending approval (not the secret binding) that Python shows with the approval, and a non-empty `user_quote`. Python cannot verify that a person actually typed the quote; that trust rests on the host, as for `confirm_onboarding`. It only covers preparation approvals; submit approvals are never pending and `submit_reviewed` stays app-only.
 - The coordinating assistant owns onboarding conversation and collects the person's answers and consent. Onboarding tools call canonical intake operations directly; they do not start a second chat agent or require widget approval. Only call `confirm_onboarding` after the person explicitly approves the reviewed profile and scope. The backend requires `confirmed: true`, validates both digests under the canonical locks, saves the confirmed version and enables its discovery scope. This does not authorise document preparation, employer messages or application submission. Existing job-work agents remain responsible for heavy application preparation.
 - Submit needs the confirm digest of the reviewed form AND the `shown_hash` of exactly what the review showed (answers, documents, digest); Python refuses `review_changed` if either differs, and does not offer Submit when the owner edited the live form after the fill (`edited_in_browser`). Answers shown are read from the CURRENT live form (the native browser review, same source as the web app); an edit after the fill is re-reviewed and Submit needs the fresh hash. The web process still re-checks the live form before pressing.
 - Submit needs the confirm digest of the reviewed form. The view gets it from `_meta` (view-only data) and passes it

@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 // @ts-expect-error plain JS helper
-import { startMock, DIGEST, SHOWN, BACKEND_TOKEN } from "./mock-backend.mjs";
+import { startMock, DIGEST, SHOWN, BACKEND_TOKEN, APPROVE_DIGEST } from "./mock-backend.mjs";
 
 const PORT = 18943;
 const URL_ = `http://127.0.0.1:${PORT}/mcp`;
@@ -48,7 +48,7 @@ describe("tools list", () => {
   it("has the expected tools, hints, views and visibility", async () => {
     const { tools } = await client.listTools();
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "confirm_onboarding", "decide", "discovery_status", "get_discovery_settings", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "set_discovery_settings", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
+    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "approve_application", "confirm_onboarding", "decide", "discovery_status", "get_discovery_settings", "job_detail", "jobs_overview", "jobwatch_guide", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "set_discovery_settings", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
     for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
@@ -146,7 +146,7 @@ describe("submit safety (mock backend only)", () => {
     expect(stale.content[0].text).toContain("review_changed");
     expect(mock.queuedCount()).toBe(0);
     const ok = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST, shown_hash: SHOWN });
-    expect(ok.structuredContent).toEqual({ posting_id: 1, status: "queued" });
+    expect(ok.structuredContent).toMatchObject({ posting_id: 1, status: "queued" });
     const again = await call("submit_reviewed", { posting_id: 1, confirm_digest: DIGEST, shown_hash: SHOWN });
     expect(again.isError).toBe(true);
     expect(mock.queuedCount()).toBe(1);
@@ -169,6 +169,126 @@ describe("work tools", () => {
   it("revise needs changes", async () => {
     const r = await client.callTool({ name: "revise_application", arguments: { posting_id: 1, changes: "" } }).catch(() => ({ isError: true }));
     expect((r as any).isError).toBe(true);
+  });
+});
+
+describe("host guidance", () => {
+  it("initialize returns instructions with the operating protocol", async () => {
+    const ins = client.getInstructions() ?? "";
+    expect(ins.length).toBeGreaterThan(1500);
+    expect(ins.length).toBeLessThan(5500);
+    for (const phrase of ["authoritative", "NEVER paste raw JSON", "OPTIONAL", "NOT a recommendation", "onboarding_status", "discovery_status", "jobs_overview", "job_detail", "prepare_application", "approve_application", "review_submission", "user_quote", "verbatim", "never call submit_reviewed", "start a new thread", "own action", "next_actions"]) {
+      expect(ins.toLowerCase()).toContain(phrase.toLowerCase());
+    }
+  });
+  it("lists jobwatch_guide and approve_application with the right hints and visibility", async () => {
+    const { tools } = await client.listTools();
+    const by = Object.fromEntries(tools.map((t) => [t.name, t]));
+    expect(by.jobwatch_guide.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    expect(by.approve_application.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false, openWorldHint: false });
+    expect((by.approve_application._meta as any)?.ui?.visibility).toBeUndefined();
+    expect(by.approve_application.inputSchema.required).toEqual(expect.arrayContaining(["posting_id", "interaction_id", "decision", "confirm_digest", "user_quote"]));
+    expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
+    for (const t of tools) {
+      if (t.name === "decide" || t.name === "submit_reviewed") continue;
+      expect(t.description!.length, t.name).toBeGreaterThan(150);
+      expect(t.description!.length, t.name).toBeLessThanOrEqual(620);
+    }
+  });
+  it("guide topics return text built from the skills", async () => {
+    for (const topic of ["overview", "onboarding", "discovery", "assess", "prepare", "submit", "troubleshooting"]) {
+      const r = await call("jobwatch_guide", { topic });
+      expect(r.isError).toBeFalsy();
+      expect(r.content[0].text).toContain(`JOBWATCH GUIDE: ${topic}`);
+      expect(() => JSON.parse(r.content[0].text)).toThrow();
+      expect(r.structuredContent.topic).toBe(topic);
+      expect(r.structuredContent.next_actions.length).toBeGreaterThan(0);
+    }
+    const assess = await call("jobwatch_guide", { topic: "assess" });
+    expect(assess.content[0].text).toContain("evaluation_complete");        // from skills/assess-fit/SKILL.md
+    expect(assess.structuredContent.sources).toEqual(expect.arrayContaining([{ name: "assess-fit", from: "repo" }]));
+    expect((await call("jobwatch_guide", { topic: "nope" })).isError).toBe(true);
+    expect((await call("jobwatch_guide", { topic: "submit" })).content[0].text).toContain("submit_reviewed");
+  });
+  it("publishes every skill as a skill:// resource", async () => {
+    const { resources } = await client.listResources();
+    const uris = resources.map((r) => r.uri).filter((u) => u.startsWith("skill://jobwatch/"));
+    for (const n of ["career-ops", "assess-fit", "prepare-application", "inspect-jobs", "company-research", "followup-draft", "interview-prep", "model-insights"]) {
+      expect(uris).toContain(`skill://jobwatch/${n}/SKILL.md`);
+    }
+    const r = await client.readResource({ uri: "skill://jobwatch/career-ops/SKILL.md" });
+    expect(r.contents[0].text).toContain("name: career-ops");
+  });
+  it("every tool result is a readable summary, not JSON, and carries next_actions", async () => {
+    const calls: [string, Record<string, unknown>][] = [
+      ["jobs_overview", {}], ["job_detail", { posting_id: 1 }], ["job_detail", { posting_id: 99 }], ["task_status", { posting_id: 2 }],
+      ["review_submission", { posting_id: 1 }], ["review_submission", { posting_id: 2 }], ["onboarding_status", {}],
+      ["review_onboarding", { proposal_id: "1111111111111111" }], ["discovery_status", {}], ["get_discovery_settings", {}],
+      ["jobwatch_guide", {}],
+    ];
+    for (const [name, args] of calls) {
+      const r = await call(name, args);
+      const t: string = r.content[0].text;
+      expect(r.isError, name).toBeFalsy();
+      expect(() => JSON.parse(t), name).toThrow();
+      expect(t.trimStart().startsWith("{") || t.trimStart().startsWith("["), name).toBe(false);
+      expect(Array.isArray(r.structuredContent.next_actions), name).toBe(true);
+      expect(r.structuredContent.next_actions.length, name).toBeGreaterThan(0);
+      expect(t, name).toContain("Next actions:");
+    }
+    const o = await call("jobs_overview", {});
+    expect(o.content[0].text).toMatch(/#1 Acme Pty Ltd - Data Analyst \| score 4.2 \| assessment: assessed \(evaluation_complete\)/);
+    expect(o.content[0].text).toContain("not a recommendation");
+    expect(o.structuredContent.next_actions[0]).toContain("job_detail");
+    const rev = await call("review_submission", { posting_id: 1 });
+    expect(rev.content[0].text).toContain("Alex Example");
+    expect(rev.content[0].text).not.toContain(DIGEST);
+    const onb = await call("onboarding_status", {});
+    expect(onb.content[0].text).toContain("q1");
+    expect(onb.structuredContent.next_actions.join(" ")).toContain("answer_onboarding_question");
+  });
+});
+
+describe("chat approval (approve_application)", () => {
+  const prep = async (posting_id = 2) => (await call("prepare_application", { posting_id, instructions: "" }));
+  const base = (p: any, over: Record<string, unknown> = {}) => ({ posting_id: 2, interaction_id: p.structuredContent.approval.interaction_id, decision: "approve", confirm_digest: p.structuredContent.approval.confirm_digest, user_quote: "yes, prepare it", ...over });
+  const refused = async (args: Record<string, unknown>) => {
+    const r = await client.callTool({ name: "approve_application", arguments: args }).catch(() => ({ isError: true, content: [] }));
+    return r as any;
+  };
+  it("prepare shows the digest and tells the host how to approve, without the binding", async () => {
+    const p = await prep();
+    expect(p.structuredContent.approval.confirm_digest).toBe(APPROVE_DIGEST);
+    expect(p.content[0].text).toContain(APPROVE_DIGEST);
+    expect(p.content[0].text).toContain("approve_application");
+    expect(modelVisible(p)).not.toContain("bind-1");
+  });
+  it("refuses a wrong digest, empty or blank quote, wrong posting and extra fields, and leaves the approval pending", async () => {
+    const p = await prep();
+    const logBefore = (mock.log as any[]).filter((x) => x.path === "/connector/approve").length;
+    for (const over of [{ confirm_digest: "0".repeat(64) }, { confirm_digest: "bind-1" }, { user_quote: "" }, { user_quote: "   " }, { decision: "maybe" }, { person: "other" }]) {
+      expect((await refused(base(p, over))).isError, JSON.stringify(over)).toBe(true);
+    }
+    const wrongPosting = await refused(base(p, { posting_id: 1 }));
+    expect(wrongPosting.isError).toBe(true);
+    const mismatch = await refused(base(p, { confirm_digest: "0".repeat(64) }));
+    expect(mismatch.content[0].text).toContain("approval_digest_mismatch");
+    // schema-level refusals never reach the backend; the two server-side ones did, and nothing was queued or submitted
+    expect((mock.log as any[]).filter((x) => x.path === "/connector/approve").length - logBefore).toBe(3);
+    expect((mock.log as any[]).some((x) => x.path.endsWith("/submit") && x.body?.posting_id === 2)).toBe(false);
+    const ok = await call("approve_application", base(p));
+    expect(ok.isError).toBeFalsy();
+    expect(ok.structuredContent).toMatchObject({ state: "complete", decision: "approve" });
+    expect((mock.log as any[]).at(-1).body).toMatchObject({ confirm_digest: APPROVE_DIGEST, user_quote: "yes, prepare it" });
+    expect(ok.content[0].text).toContain("task_status");
+    const again = await refused(base(p));
+    expect(again.isError).toBe(true);
+  });
+  it("can reject, and never reaches submit", async () => {
+    const p = await prep();
+    const r = await call("approve_application", base(p, { decision: "reject", user_quote: "no, not this one" }));
+    expect(r.structuredContent).toMatchObject({ state: "rejected", decision: "reject" });
+    expect((mock.log as any[]).some((x) => /\/submit$/.test(x.path) && x.body?.posting_id === 2)).toBe(false);
   });
 });
 
@@ -219,9 +339,9 @@ describe("direct onboarding", () => {
 
 describe("discovery operations", () => {
   it("persists a typed unlimited daily allowance and rejects identity or invalid limits", async () => {
-    expect((await call("get_discovery_settings")).structuredContent).toEqual({daily_token_ceiling:2000000});
-    expect((await call("set_discovery_settings",{daily_token_ceiling:null})).structuredContent).toEqual({daily_token_ceiling:null});
-    expect((await call("get_discovery_settings")).structuredContent).toEqual({daily_token_ceiling:null});
+    expect((await call("get_discovery_settings")).structuredContent).toMatchObject({daily_token_ceiling:2000000});
+    expect((await call("set_discovery_settings",{daily_token_ceiling:null})).structuredContent).toMatchObject({daily_token_ceiling:null});
+    expect((await call("get_discovery_settings")).structuredContent).toMatchObject({daily_token_ceiling:null});
     expect((await call("discovery_status")).structuredContent.scope.daily_token_ceiling).toBeNull();
     expect((await call("set_discovery_settings",{daily_token_ceiling:0})).isError).toBe(true);
     expect((await call("set_discovery_settings",{daily_token_ceiling:null,person:"other"})).isError).toBe(true);
@@ -230,7 +350,7 @@ describe("discovery operations", () => {
     const status=await call("discovery_status");
     expect(status.isError).toBeFalsy();
     expect(status.structuredContent.incidents[0]).toMatchObject({reason:"deadline_exceeded",state:"paused",notification_state:"failed"});
-    expect((await call("start_discovery",{request_id:"start-one"})).structuredContent).toEqual({run_id:"discovery-one",state:"queued"});
+    expect((await call("start_discovery",{request_id:"start-one"})).structuredContent).toMatchObject({run_id:"discovery-one",state:"queued"});
     expect((await call("retry_assessment",{request_id:"retry-one",incident_id:"incident-one",posting_id:42,expected_context:"f".repeat(64)})).isError).toBeFalsy();
     const refused=await call("retry_assessment",{request_id:"retry-stale",incident_id:"incident-one",posting_id:42,expected_context:"0".repeat(64)});
     expect(refused.isError).toBe(true);

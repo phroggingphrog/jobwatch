@@ -41,6 +41,15 @@ class Decide(BaseModel):
     binding: str = Field(max_length=200)
 
 
+class Approve(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    posting_id: int = Field(gt=0)
+    interaction_id: str = Field(max_length=100)
+    decision: Literal['approve', 'reject']
+    confirm_digest: str = Field(pattern=r'^[a-f0-9]{64}$')
+    user_quote: str = Field(min_length=2, max_length=1000)
+
+
 class OnboardingBody(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
 
@@ -201,19 +210,26 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
         message = f'Prepare the application for posting {posting_id}.' + (
             f' Instructions: {body.instructions}' if body.instructions else '')
         data, meta = cc._hand_off(who, posting_id, message)
-        return {'data': data, 'meta': meta}
+        return {'data': cc.with_confirm_digest(who, data), 'meta': meta}
 
     @app.post('/connector/jobs/{posting_id}/revise')
     def revise(posting_id: int, body: Revise, who: str = Depends(authed)):
         if not body.changes.strip():
             raise RuntimeErrorSafe('invalid_request')
         data, meta = cc._hand_off(who, posting_id, f'Revise the application for posting {posting_id}. Changes: {body.changes}')
-        return {'data': data, 'meta': meta}
+        return {'data': cc.with_confirm_digest(who, data), 'meta': meta}
 
     @app.post('/connector/decide')
     def decide(body: Decide, who: str = Depends(authed)):
         data, meta = cc.decide(who, body.interaction_id, body.decision, body.binding)
-        return {'data': data, 'meta': meta}
+        return {'data': cc.with_confirm_digest(who, data), 'meta': meta}
+
+    @app.post('/connector/approve')
+    def approve(body: Approve, who: str = Depends(authed)):
+        # Chat-callable twin of /connector/decide: same pending approval and binding, plus the shown digest and quote.
+        data, meta = cc.approve_in_chat(who, body.posting_id, body.interaction_id, body.decision,
+                                        body.confirm_digest, body.user_quote)
+        return {'data': cc.with_confirm_digest(who, data), 'meta': meta}
 
     @app.post('/connector/jobs/{posting_id}/submit')
     def submit(posting_id: int, body: Submit, who: str = Depends(authed)):

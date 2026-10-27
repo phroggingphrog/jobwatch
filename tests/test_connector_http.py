@@ -5,7 +5,8 @@ from fastapi.testclient import TestClient
 
 from pipeline.agentic import connector_http
 from pipeline.agentic.runtime import RuntimeErrorSafe
-from tests.test_mcp_server import PREPARED, reviewed, two_people, _requests  # noqa: F401
+from pipeline.agentic import chatgpt_connector as cc
+from tests.test_mcp_server import PREPARED, reviewed, two_people, _requests, _interrupt, _clear_pending  # noqa: F401
 
 TOKEN = 'x' * 40
 H = {'Authorization': 'Bearer ' + TOKEN}
@@ -103,6 +104,72 @@ def test_a_changed_answer_changes_the_shown_hash(filled, client, monkeypatch):
 def test_unknown_approval_is_refused(client):
     r = client.post('/connector/decide', headers=H, json={'interaction_id': 'nope', 'decision': 'approve', 'binding': 'b'})
     assert r.status_code == 400 and r.json() == {'error': 'approval_not_found'}
+
+
+# --- chat approval: the same pending approval and binding as the widget button ---------------------------------------
+
+def _prepare_card(client, monkeypatch, op='prepare_application'):
+    seen = []
+    def fake(**kw):
+        seen.append(kw)
+        return _interrupt(op) if 'message' in kw else {'status': 'complete', 'answer': 'Draft saved.', 'tools': []}
+    monkeypatch.setattr(cc, 'dispatch', fake)
+    r = client.post('/connector/jobs/1/prepare', headers=H, json={'instructions': 'short'})
+    assert r.status_code == 200
+    return r.json(), seen
+
+
+def _approve(client, card, **over):
+    body = {'posting_id': 1, 'interaction_id': card['data']['interaction_id'], 'decision': 'approve',
+            'confirm_digest': card['data']['confirm_digest'], 'user_quote': 'yes, go ahead and prepare it'} | over
+    return client.post('/connector/approve', headers=H, json=body)
+
+
+def test_prepare_card_shows_a_chat_digest_that_is_not_the_binding(client, monkeypatch):
+    card, _ = _prepare_card(client, monkeypatch)
+    assert len(card['data']['confirm_digest']) == 64 and card['meta']['binding'] == 'd1'
+    assert card['data']['confirm_digest'] != 'd1' and 'd1' not in str(card['data'].get('summary'))
+
+
+def test_chat_approval_answers_through_the_widget_binding_once(client, monkeypatch):
+    card, seen = _prepare_card(client, monkeypatch)
+    r = _approve(client, card)
+    assert r.status_code == 200 and r.json()['data']['answer'] == 'Draft saved.'
+    assert r.json()['data']['decision'] == 'approve' and r.json()['data']['user_quote'].startswith('yes')
+    assert seen[1]['decisions'] == [{'type': 'approve'}] and seen[1]['expected_checkpoint'] == 'cp1'
+    assert seen[1]['approval_bindings'][0]['digest'] == 'd1'
+    assert _approve(client, card).json() == {'error': 'approval_not_found'}      # single use
+
+
+def test_chat_approval_refuses_wrong_digest_empty_quote_wrong_posting_and_leaves_it_pending(client, monkeypatch):
+    card, seen = _prepare_card(client, monkeypatch)
+    assert _approve(client, card, confirm_digest='0' * 64).json() == {'error': 'approval_digest_mismatch'}
+    assert _approve(client, card, confirm_digest='d1').status_code == 422
+    assert _approve(client, card, user_quote='').status_code == 422
+    assert _approve(client, card, user_quote='  ').status_code in (400, 422)
+    assert _approve(client, card, posting_id=2).json() == {'error': 'approval_not_found'}
+    assert _approve(client, card, decision='maybe').status_code == 422
+    assert _approve(client, card, extra='x').status_code == 422
+    assert len(seen) == 1 and card['data']['interaction_id'] in cc._PENDING        # nothing was answered or consumed
+    assert _approve(client, card).status_code == 200
+
+
+def test_chat_approval_can_reject_and_needs_the_bearer_and_the_same_person(client, monkeypatch):
+    card, seen = _prepare_card(client, monkeypatch)
+    assert client.post('/connector/approve', json={}).status_code == 401
+    cc._PENDING[card['data']['interaction_id']]['person'] = 'guest'
+    assert _approve(client, card).json() == {'error': 'approval_not_found'}
+    cc._PENDING[card['data']['interaction_id']]['person'] = 'owner'
+    assert _approve(client, card, decision='reject').json()['data']['decision'] == 'reject'
+    assert seen[1]['decisions'] == [{'type': 'reject'}]
+
+
+def test_chat_approval_never_reaches_submit_and_expired_approvals_are_gone(client, monkeypatch):
+    card, _ = _prepare_card(client, monkeypatch)
+    cc._PENDING[card['data']['interaction_id']]['expires'] = 0
+    assert _approve(client, card).json() == {'error': 'approval_not_found'}
+    sub, _ = _prepare_card(client, monkeypatch, op='submit_application')          # a submit approval is never pending
+    assert sub['data']['status'] == 'complete' and not cc._PENDING
 
 
 # --- review from the current form -------------------------------------------------------------------------------
