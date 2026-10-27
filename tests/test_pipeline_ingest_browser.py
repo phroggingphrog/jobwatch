@@ -14,20 +14,20 @@ def test_seek_ad_text_comes_from_the_browser_when_download_fails(monkeypatch):
 
 def test_one_site_cannot_take_the_whole_fetch_budget(monkeypatch):
     rows = [{"id": i, "source": "ats_smartrecruiters", "url": "u", "company": "c", "title": "t", "location": "Melbourne",
-             "raw_json": None} for i in range(20)]
+             "raw_json": None, "description": ""} for i in range(20)]
     rows += [{"id": 100 + i, "source": "seek", "url": "u", "company": "c", "title": "t", "location": "Melbourne",
-              "raw_json": None} for i in range(5)]
+              "raw_json": None, "description": ""} for i in range(5)]
     tried = []
     monkeypatch.setattr(ingest, "candidates", lambda conn, ids=None: rows)
     monkeypatch.setattr(ingest.store, "ensure", lambda conn: None)
-    monkeypatch.setattr(ingest, "Rules", lambda *a: SimpleNamespace(location_rule=lambda p: "melbourne"))
+    monkeypatch.setattr(ingest, "Rules", lambda *a, **kw: SimpleNamespace(location_rule=lambda p: "melbourne", prescreen=None))
     monkeypatch.setattr(ingest, "posting_of", lambda r: r)
     monkeypatch.setattr(ingest.adtext, "fetch_host", lambda src: src)
     monkeypatch.setattr(ingest.adtext, "wants_fetch", lambda conn, r: True)
     monkeypatch.setattr(ingest.adtext, "pace", lambda: None)
     monkeypatch.setattr(ingest, "BROWSER_FALLBACK", set())
 
-    def ensure_text(conn, r, fetcher=None, *, allow_fetch=True):
+    def ensure_text(conn, r, fetcher=None, *, allow_fetch=True, deadline=None):
         if allow_fetch:
             tried.append(r["source"])
         return "", "teaser"

@@ -689,7 +689,7 @@ def test_ai_budget_is_what_is_left_of_the_unit_time():
     now = time.monotonic()
     assert 775 < pipeline.ai_budget(now) <= 780
     assert 375 < pipeline.ai_budget(now - 400) <= 380
-    assert pipeline.ai_budget(now - 5000) == 60                 # always a minute
+    assert pipeline.ai_budget(now - 5000) == 0                  # an exhausted invocation has no remaining time
     cfg = make_config(settings={"reader": {"max_seconds": 100}})
     assert pipeline.ai_budget(now, cfg) == 100                  # the owner's own, lower limit still counts
     assert 375 < pipeline.ai_budget(now - 400, make_config(settings={"reader": {"max_seconds": 0}})) <= 380

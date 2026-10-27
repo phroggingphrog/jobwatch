@@ -55,7 +55,8 @@ def test_native_assessment_three_calls_skills_and_idempotency(tmp_path, monkeypa
     assert all('tools' in body and 'response_format' not in body for body in seen)
     names = {t['function']['name'] for t in seen[0]['tools']}
     assert 'complete_evaluation' in names
-    assert not names & {'task', 'complete_requirement_matches', 'complete_job_assessment'}
+    assert not names & {'task', 'complete_requirement_matches', 'complete_job_assessment',
+                        'ls', 'glob', 'grep', 'execute', 'write_file', 'edit_file'}
     first = json.dumps(seen[0]['messages'])
     assert 'autonomous-screening' in first and 'autonomous-evaluation' in first
     assert 'Synthetic candidate' not in first and bundle.bundle_hash not in first
@@ -235,3 +236,16 @@ def test_evidence_and_candidate_identity_mismatch_refused_before_paid_calls(tmp_
         with pytest.raises(Exception, match=field + '_mismatch'):
             evaluate_autonomous(changed, ad, budget(changed), llm, **args)
     assert not seen
+
+
+def test_incomplete_native_requirements_get_schema_feedback_without_protocol_fallback(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = [{'tool':'complete_requirements','arguments':{'requirements':roles[1]['arguments']['requirements']}},
+               *native_choices(roles)]
+    llm, seen = transport(choices)
+    with sqlite3.connect(':memory:',check_same_thread=False) as conn:
+        result=evaluate_autonomous(key,ad,budget(key),llm,conn=conn,posting={},
+            screen={'outcome':'admit'},evidence_bundle=bundle,model='claude/sonnet')
+    assert result.matches and len(seen)==4
+    assert 'missing_required_fields' in json.dumps(seen[1]['messages'])
+    assert all('response_format' not in body for body in seen)

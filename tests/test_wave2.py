@@ -243,7 +243,7 @@ def test_cli_run_exits_1_when_every_collector_errors(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "t.db"))
     from conftest import confirm_discovery
     confirm_discovery(make_config())
-    assert cli.main(["run", "--tier", "fast", "--dry-run"]) == 1
+    assert cli.main(["run", "--tier", "fast"]) == 1
     summary["collectors"].append({**summary["collectors"][0], "status": "ok", "errors": []})
     assert cli.main(["run", "--tier", "fast", "--dry-run"]) == 0
 

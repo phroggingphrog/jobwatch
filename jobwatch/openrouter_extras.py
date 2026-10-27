@@ -9,6 +9,7 @@ Every failure returns None so the pipeline runs as before.
 from __future__ import annotations
 
 import hashlib
+import json
 import contextlib
 import contextvars
 import logging
@@ -68,23 +69,43 @@ def _key(cfg: dict) -> str | None:
     return key or None
 
 
-def _post(cfg: dict, path: str, body: dict) -> dict | None:
+def _post(cfg: dict, path: str, body: dict, *, budget=None) -> dict | None:
     key = _key(cfg)
     if not cfg.get("enabled") or not key:
         return None
     timeout = _timeout(cfg['timeout'])
     if timeout <= 0:
         return None
+    from pipeline.agentic import execution
+    scope, invocation_reservation, job_reservation, result = execution.current(), None, None, None
+    prompt = len(json.dumps(body, ensure_ascii=False).encode())
+    if budget is not None:
+        budget.ensure_live()
+        job_reservation = budget.reserve('evaluator', prompt, 1)
+        if scope:
+            invocation_reservation = scope.reserve(cfg['jev_model'], 'public_screening', prompt, 1)
+        budget.dispatched(job_reservation)
     try:
         r = requests.post(f"{BASE}/{path}", json=body, timeout=timeout,
                           headers={"authorization": f"Bearer {key}", "content-type": "application/json"})
         if r.status_code != 200:
             log.warning("openrouter %s returned %s", path, r.status_code)
             return None
-        return r.json()
+        result = r.json()
+        return result
     except (requests.RequestException, ValueError) as exc:
         log.warning("openrouter %s failed: %s", path, type(exc).__name__)
         return None
+    finally:
+        if job_reservation is not None:
+            from pipeline.agentic.runtime import _usage_total
+            usage = result.get('usage') if isinstance(result, dict) else None
+            try:
+                budget.settle(job_reservation, _usage_total(usage))
+            finally:
+                if invocation_reservation is not None:
+                    scope.settle(invocation_reservation, usage)
+
 
 
 KNOCKOUTS = {
@@ -108,11 +129,12 @@ KNOCKOUTS = {
 KNOCKOUT_REASONS = {"citizen_or_pr": "work_rights:citizen_or_pr", "five_years": "too_senior"}
 
 
-def jev_screen(ad_text: str, config=None) -> dict | None:
+def jev_screen(ad_text: str, config=None, *, budget=None) -> dict | None:
     """{question: probability} for the injection check and the knock-outs; None if Jev was not reached."""
     cfg = extras_settings(config)
     out = _post(cfg, "systemone", {"model": cfg["jev_model"], "state": {"job_ad": ad_text[:MAX_AD_CHARS]},
-                                   "questions": {"injection": INJECTION_QUESTION, **KNOCKOUTS}})
+                                   "questions": {"injection": INJECTION_QUESTION, **KNOCKOUTS}},
+                **({"budget": budget} if budget is not None else {}))
     try:
         return {k: float(out["answers"][k]["noul"]) for k in ("injection", *KNOCKOUTS)}
     except (TypeError, KeyError, ValueError):

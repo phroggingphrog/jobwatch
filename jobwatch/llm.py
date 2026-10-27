@@ -290,7 +290,9 @@ class LLM:
             usage_raw = payload.get("usage")
             usage = {}
             if isinstance(usage_raw, dict):
-                usage = {k: usage_raw.get(k) for k in ("prompt_tokens", "completion_tokens")}
+                usage = {k: usage_raw.get(k) for k in ("prompt_tokens", "completion_tokens",
+                    "total_tokens", "prompt_tokens_details", "completion_tokens_details",
+                    "prompt_cache_hit_tokens", "prompt_cache_miss_tokens") if k in usage_raw}
             calls = message.get("tool_calls") if tools else None
             if native_response:
                 data = message

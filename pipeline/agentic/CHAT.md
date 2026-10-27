@@ -844,38 +844,46 @@ above do not add a second recommendation policy or weaken human confirmation.
 
 ## Opt-in autonomous assessment slice
 
-`pipeline.agentic.autonomous_evaluation: true` selects the native-tool
-Screening -> Evaluation coordinator for one saved posting. The default retains
-the existing evaluator and run identity. Enabling the switch changes the run
-configuration hash; stage-skill changes also invalidate autonomous checkpoints.
-The selected evaluator model and credentials remain unchanged. No services or
-models are activated by this source option.
+`pipeline.agentic.autonomous_evaluation: true` selects Screening -> Evaluation for
+one saved posting. The switch, model, complete approved inputs and packaged skill
+contents bind the run and checkpoint identity. Source configuration does not activate
+services or change a person's model selection.
 
-The Deep Agents coordinator delegates a database/profile-driven screening stage
-and an evaluation stage. Evaluation reuses the canonical whole-ad extraction,
-primary-evidence matcher and advisory summary, each executing native tools.
-The caller still applies `gate_current`; no application or approval tools are
-available. Two packaged autonomous skills describe the actual stage boundaries.
+Screening executes the canonical person-derived prescreen rules and overrides with
+zero model calls. Admit and flag proceed; skip blocks paid assessment. Evaluation
+uses a dedicated Deep Agents native-tool agent. It freezes whole-ad requirements
+before candidate context, retrieves approved primary evidence, and completes the
+canonical assessment directly. It does not call `evaluate_job`, execute the old
+role loop, or buy a separate candidate assessment. Deterministic structural analysis
+and existing model insights remain advisory context. The caller applies
+`gate_current` and canonical eligibility. The assessment agent has no documents,
+profile mutation, employer contact, approval or submission tools.
 
-Private `autonomous-evaluation.sqlite` checkpoints bind person, posting, complete
-run key, ad, evidence, decision policy, rules/overrides, model, inputs and skills.
-A retry resumes unfinished work and replays canonical read/search operations to
-rebuild retrieved-evidence validation. Completed evaluation retries make no model
-calls. JobBudget and invocation reservations remain authoritative across retries;
-the caller must restore its existing budget checkpoint, as the native service does.
-Native transport attempts do not retry with another protocol, route or model.
+The target is 3–6 model calls. Native replies preserve parallel function calls and
+never fall back to JSON-object mode or another model. The owner's per-job and daily
+limits remain separate settings. DeepSeek assessment requires both its evaluator
+selection and native-tools/no-JSON gateway profile; writer, reviewer, answers and
+chat roles retain their own choices. Candidate text stays on approved paid routes
+and out of hosted tracing.
 
-`evaluation_counts` artifacts contain only mode, calls, charged tokens and elapsed
-seconds, for comparison with the existing path. No automatic paid A/B run occurs.
-The SQLite `counts` record describes the latest invocation, including failed work;
-canonical budget checkpoints retain cumulative charges and unknown-usage reserves.
+Private `autonomous-evaluation.sqlite` checkpoints and response records bind person,
+posting, full run key, ad, evidence, decision policy, prescreen rules/overrides,
+model and skills. Successful model replies are saved before tool dispatch so a
+checkpoint failure can reuse them. Resumption reconstructs canonical evidence
+access using saved read/search actions; cached text cannot authorize a citation.
+Completed output is revalidated. The caller restores canonical budget accounting;
+unknown dispatched usage remains charged rather than silently refunded.
 
-This is the first assessment slice, not the six-stage architecture. Candidate
-assessment remains a canonical prerequisite (and uses its existing runtime when
-not cached); documents, discovery scheduling and submission are unchanged. This
-slice adds delegation overhead and makes no quality or call-reduction claim.
-Screening skips refuse evaluation without producing a fabricated evaluation.
-Model validation failures fail closed rather than returning to JSON mode. Live
-provider acceptance, release checks and activation belong to the release owner.
-Undo by disabling the source switch or reverting this commit; retained private
-checkpoints are inert when the switch is off.
+`evaluation_counts` records call count, charged tokens and wall time. Private count
+records additionally retain purpose, prompt/completion totals and numeric provider
+reasoning/cache details when supplied. Counts do not establish assessment quality.
+No automatic paid A/B comparison is performed. Release evidence must state actual
+provider calls, tokens, time, evidence coverage and gate outcome separately from
+synthetic tests.
+
+This delivers the assessment slice. Other autonomous career domains are tracked on
+TASK-279; existing chat specialists do not prove pipeline-stage coverage. To contain
+faulty assessment, pause the reader timer and set execution mode off while keeping
+collect-only timers active. Do not revert only the autonomous switch into the old
+paid evaluator. Source rollback and assessment reactivation are separate operations;
+preserve checkpoints, incidents, accounting and newly collected data.

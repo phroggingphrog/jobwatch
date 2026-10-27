@@ -71,7 +71,7 @@ def current_runs(conn, config):
             if not service.observation_current(service.latest_observation(conn,posting_id),
                     posting_id=posting_id,url=captured[0]['url'],ad_hash=sha256(captured[1].encode()).hexdigest()):
                 continue
-            key = service._run_key(posting_id, captured, bundle, policy, cfg, inputs, structural)
+            key = service._run_key(posting_id, captured, bundle, policy, cfg, inputs, structural, conn=conn)
             if key.value != result['run_key']:
                 continue
             try:

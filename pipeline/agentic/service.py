@@ -237,16 +237,32 @@ def _capture(conn, posting_id):
     if posting is None:
         return None
     text, kind = adtext.local_text(conn, posting)
-    identity = {k: posting.get(k) or '' for k in ('title', 'company', 'location', 'url', 'source')}
+    identity = {k: posting.get(k) or '' for k in ('title', 'company', 'location', 'url', 'source', 'remote', 'work_type', 'classification')}
     return identity, text, kind
 
 
-def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=None):
+def _prescreen_fingerprint(conn):
+    if conn is None:
+        raise AgenticError('prescreen_snapshot_required')
+    values = {}
+    for table in ('prescreen_terms', 'prescreen_rules', 'prescreen_overrides'):
+        exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        if not exists:
+            values[table] = []
+            continue
+        cursor = conn.execute(f'SELECT * FROM {table} ORDER BY id')
+        names = [column[0] for column in cursor.description]
+        values[table] = [dict(zip(names, row)) for row in cursor]
+    return digest(values)
+
+
+def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=None, *, conn=None):
     posting, text, _ = captured
     reference, mappings = load_inputs(bundle, cfg) if inputs is None else inputs
     structural = structural or analyse_candidate(bundle, reference, mappings, policy)
-    candidate_hash = assessment_run_key(bundle.bundle_hash, content_hash(career_profile_text(bundle).encode()),
-                                        digest(policy.model_dump(mode='json')), structural.run_key, cfg['evaluator_model'])
+    candidate_hash = (structural.run_key if cfg.get('autonomous_evaluation', False) else
+        assessment_run_key(bundle.bundle_hash, content_hash(career_profile_text(bundle).encode()),
+                           digest(policy.model_dump(mode='json')), structural.run_key, cfg['evaluator_model']))
     from jobwatch.candidate import intake
     approved = intake.current_version(users.current())
     confirmed_hash = digest(approved) if approved else None
@@ -257,6 +273,7 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
                   config_hash=digest({'policy': policy.model_dump(mode='json'), 'runtime': cfg,
                                       'implementation': IMPLEMENTATION_VERSION,
                                       'confirmed_profile': confirmed_hash,
+                                      **({'prescreen': _prescreen_fingerprint(conn)} if cfg.get('autonomous_evaluation', False) else {}),
                                       **({'revision':revision_hash} if revision_hash else {}),
                                       'location_reference': LOCATION_REFERENCE_HASH, 'posting': posting}))
 
@@ -294,7 +311,7 @@ def snapshot_inventory(conn, config, *, posting_ids=None, limit=20, evidence_bun
         captured = _capture(conn, ident)
         if captured is None:
             continue
-        key = _run_key(ident, captured, bundle, pol, cfg, inputs, structural)
+        key = _run_key(ident, captured, bundle, pol, cfg, inputs, structural, conn=conn)
         result.append({'posting_id': ident, 'run_key': key.value, 'ad_hash': key.ad_hash,
                        'evidence_hash': key.evidence_hash, 'candidate_hash': key.candidate_hash,
                        'text_kind': captured[2], 'eligible_for_evaluation': captured[2] == 'full'})
@@ -464,8 +481,14 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     if captured is None:
         skip('posting_missing')
         return None
+    if cfg.get('autonomous_evaluation', False):
+        from jobwatch.prescreen.engine import Engine, fields_of_row
+        prescreen = Engine.load(conn, dp).evaluate(fields_of_row(captured[0], captured[1]), posting_id=posting_id)
+        if prescreen.outcome == 'skip':
+            skip('prescreen_skip')
+            return None
     reference, mappings = load_inputs(bundle, cfg)
-    key = _run_key(posting_id, captured, bundle, pol, cfg, (reference, mappings))
+    key = _run_key(posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn)
     approved_after_key = intake.current_version(users.current())
     if (digest(approved_after_key) if approved_after_key else None) != confirmed_hash:
         raise AgenticError('snapshot_changed')
@@ -571,7 +594,15 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         # hold the job; a requirement the ad states that the owner cannot meet archives it (owner, 2026-10-12).
         # None means Jev was not reached; the job then runs exactly as before.
         with deadline_scope(_invocation_deadline):
-            screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
+            if cfg.get('autonomous_evaluation', False) and text_kind == 'full' and saved_package is None:
+                prior_screen = adapter.load_artifact(key.value, 'public_screening')
+                if prior_screen is None:
+                    screen = jev_screen(ad_text, config, budget=budget)
+                    adapter.save_artifact(claim, 'public_screening', {'result': screen})
+                else:
+                    screen = prior_screen['result']
+            else:
+                screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
         extras = extras_settings(config)
         applicable = applicable_knockouts(dp)
         knockout = next((KNOCKOUT_REASONS[q] for q, at in extras['knockout_at'].items()
@@ -586,26 +617,37 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             # A completed package can recover without loading any credential.
             if llm is None and saved_package is None:
                 llm = configured_llm(config)
-            saved_candidate = adapter.load_artifact(key.value, 'candidate')
-            if saved_package is not None and saved_candidate is None:
-                raise AgenticError('artifact_invalid')
-            if saved_candidate is not None:
-                candidate = validate_assessment(validate_model_payload(CandidateAssessment, saved_candidate), bundle, pol)
-            elif candidate_cache is not None and key.candidate_hash in candidate_cache:
-                candidate = validate_assessment(candidate_cache[key.candidate_hash], bundle, pol)
-            else:
-                candidate = _reusable_candidate(adapter, key, bundle, pol)
-                if candidate is None:
-                    candidate = evaluate_candidate(bundle, budget, llm, policy=pol, model=cfg['evaluator_model'],
-                                                   reference=reference, mappings=mappings)
-                if candidate_cache is not None:
-                    candidate_cache[key.candidate_hash] = candidate
             expected_structural = analyse_candidate(bundle, reference, mappings, pol)
-            if candidate.structural_analysis != expected_structural:
-                raise AgenticError('candidate_hash_mismatch')
-            if candidate.run_key != key.candidate_hash:
-                raise AgenticError('candidate_hash_mismatch')
-            adapter.save_artifact(claim, 'candidate', candidate.model_dump(mode='json'))
+            if cfg.get('autonomous_evaluation', False):
+                # Native assessment reads primary evidence directly. Structural measures
+                # are deterministic context; no separate paid candidate assessment runs.
+                candidate = expected_structural
+                saved_candidate = adapter.load_artifact(key.value, 'candidate')
+                if saved_candidate is not None and saved_candidate != candidate.model_dump(mode='json'):
+                    raise AgenticError('candidate_hash_mismatch')
+                if candidate.run_key != key.candidate_hash:
+                    raise AgenticError('candidate_hash_mismatch')
+                adapter.save_artifact(claim, 'candidate', candidate.model_dump(mode='json'))
+            else:
+                saved_candidate = adapter.load_artifact(key.value, 'candidate')
+                if saved_package is not None and saved_candidate is None:
+                    raise AgenticError('artifact_invalid')
+                if saved_candidate is not None:
+                    candidate = validate_assessment(validate_model_payload(CandidateAssessment, saved_candidate), bundle, pol)
+                elif candidate_cache is not None and key.candidate_hash in candidate_cache:
+                    candidate = validate_assessment(candidate_cache[key.candidate_hash], bundle, pol)
+                else:
+                    candidate = _reusable_candidate(adapter, key, bundle, pol)
+                    if candidate is None:
+                        candidate = evaluate_candidate(bundle, budget, llm, policy=pol, model=cfg['evaluator_model'],
+                                                       reference=reference, mappings=mappings)
+                    if candidate_cache is not None:
+                        candidate_cache[key.candidate_hash] = candidate
+                if candidate.structural_analysis != expected_structural:
+                    raise AgenticError('candidate_hash_mismatch')
+                if candidate.run_key != key.candidate_hash:
+                    raise AgenticError('candidate_hash_mismatch')
+                adapter.save_artifact(claim, 'candidate', candidate.model_dump(mode='json'))
             completed_phase = 'candidate_assessment'
             incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
             incidents.mark_phase(conn, incident_run_id, 'evaluation', posting_id=posting_id)
@@ -625,8 +667,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 evaluator = evaluate_posting
                 evaluation_extras = {'source_conn': conn, 'posting': posting}
             evaluation_started = time.monotonic()
-            evaluation_calls = sum(budget.snapshot().role_turns.values())
-            evaluation_tokens = budget.charged_tokens
+            evaluation_calls = sum(budget.snapshot().role_turns.values()) if budget is not None else 0
+            evaluation_tokens = budget.charged_tokens if budget is not None else 0
             evaluation = validate_model_payload(AgenticEvaluation, saved_evaluation) if saved_evaluation is not None else evaluator(
                 key, ad_text, budget, llm, evidence_bundle=bundle, candidate_analysis=candidate,
                 model=cfg['evaluator_model'], research=_research(posting, budget, cfg),
@@ -635,9 +677,13 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if saved_evaluation is None and adapter.load_artifact(key.value, 'evaluation_counts') is None:
                 adapter.save_artifact(claim, 'evaluation_counts', {
                     'mode': 'autonomous_native' if cfg.get('autonomous_evaluation', False) else 'existing',
-                    'calls': sum(budget.snapshot().role_turns.values()) - evaluation_calls,
-                    'charged_tokens': budget.charged_tokens - evaluation_tokens,
+                    'calls': sum(budget.snapshot().role_turns.values()) - (0 if cfg.get('autonomous_evaluation', False) else evaluation_calls),
+                    'charged_tokens': budget.charged_tokens - (0 if cfg.get('autonomous_evaluation', False) else evaluation_tokens),
                     'seconds': time.monotonic() - evaluation_started})
+            if cfg.get('autonomous_evaluation', False):
+                if _capture(conn, posting_id) != captured or _run_key(
+                        posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn).value != key.value:
+                    raise AgenticError('snapshot_changed')
             decision = gate_current(evaluation, posting=posting, ad_text=ad_text, decision_policy=dp, policy=pol,
                                     captured_complete=text_kind == 'full', expected_run_key=key,
                                     evidence_bundle=bundle)
@@ -692,7 +738,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 adapter.save_artifact(claim, 'package_bundle', _package_payload(artifacts))
                 if saved_package is None:
                     budget.ensure_live()
-                if _run_key(posting_id, captured, bundle, pol, cfg).value != key.value:
+                if _run_key(posting_id, captured, bundle, pol, cfg, conn=conn).value != key.value:
                     raise AgenticError('snapshot_changed')
                 if _capture(conn, posting_id) != captured:
                     raise AgenticError('snapshot_changed')
@@ -929,7 +975,7 @@ def _without_completed(conn, config, pending):
             if captured is None:
                 result.append(pid)
                 continue
-            key = _run_key(pid,captured,bundle,policy,cfg,inputs,structural)
+            key = _run_key(pid,captured,bundle,policy,cfg,inputs,structural,conn=conn)
             if not _evaluation_current(conn,pid,captured,key,dp):
                 result.append(pid)
             if len(result)>=200:

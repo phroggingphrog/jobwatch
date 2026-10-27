@@ -25,7 +25,10 @@ FAILURE_REASONS = frozenset({
     'unknown_tool', 'invalid_registry', 'invalid_reservation', 'invalid_model_payload',
     'invalid_research_operation', 'terminal_already_selected',
     'model_deadline', 'model_rate_limited', 'model_transient',
-    'invalid_configuration', 'credential_unavailable',
+    'invalid_configuration', 'credential_unavailable', 'assessment_call_limit',
+    'invalid_native_response', 'invalid_cached_evaluation', 'missing_evaluation',
+    'requirements_required', 'requirements_changed', 'unretrieved_evidence',
+    'invalid_evaluation', 'invalid_candidate_citation', 'skill_path_not_allowed',
 })
 _CODE = re.compile(r'^[a-z][a-z0-9_]{0,79}$')
 _RETRY_SECONDS = (60, 300, 900, 3600)
