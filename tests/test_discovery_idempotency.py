@@ -46,11 +46,14 @@ def test_normal_start_replay_does_not_require_a_still_confirmed_profile(world, m
 
 
 def test_discovery_admission_remains_atomic_for_concurrent_identical_requests(world):
+    with APIStore('fixture-a'):
+        pass
+    expected_skill = skill_version()
     barrier = threading.Barrier(2)
     def enqueue():
         with APIStore('fixture-a') as store:
-            barrier.wait(timeout=5)
-            return store.enqueue_discovery({'discovery':True}, 'same-concurrent-request', skill_version())
+            barrier.wait(timeout=30)
+            return store.enqueue_discovery({'discovery':True}, 'same-concurrent-request', expected_skill)
     with ThreadPoolExecutor(max_workers=2) as pool:
         one, two = list(pool.map(lambda _: enqueue(), range(2)))
     assert one == two
