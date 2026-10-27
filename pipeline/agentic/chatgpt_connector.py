@@ -22,7 +22,10 @@ from jobwatch import users
 from jobwatch.config import load_config
 from pipeline.agentic import task_state
 from pipeline.agentic.chat import dispatch, job_connection
-from pipeline.agentic.runtime import RuntimeErrorSafe
+from pipeline.agentic.contracts import AgenticEvaluation
+from pipeline.agentic.persistence import latest_result
+from pipeline.agentic.runtime import RuntimeErrorSafe, validate_model_payload
+from pipeline.agentic import service
 
 MIME = 'text/html;profile=mcp-app'
 LIST_URI = 'ui://jobwatch/chatgpt-jobs-v1.html'
@@ -59,32 +62,119 @@ def _list(value) -> list[str]:
 
 def overview(person: str, limit: int = 50) -> dict:
     limit = max(1, min(int(limit), 100))
-    with users.use(person), job_connection(load_config()) as conn:
+    config = load_config()
+    with users.use(person), job_connection(config) as conn:
         rows = task_state.jobs_overview(conn, limit)
+        assessments = _assessment_projection(conn, config, [row['posting_id'] for row in rows])
+        for row in rows:
+            assessment = assessments[row['posting_id']]
+            score = assessment.pop('_assessment_score')
+            if assessment['assessment_state'] == 'current':
+                row['score'] = score
+            elif assessment['assessment_state'] != 'not_assessed':
+                row['score'] = None
+            row.update(assessment)
     return {'view': 'list', 'counts': task_state.overview_counts(rows), 'jobs': rows}
+
+
+def _assessment_projection(conn, config, posting_ids: list[int]) -> dict[int, dict]:
+    """Read validated assessments only when the canonical run key still matches current inputs."""
+    results = {}
+    candidate_ids = []
+    for posting_id in posting_ids:
+        try:
+            result = latest_result(conn, posting_id, parse=frozenset({'evaluation'}))
+        except Exception:
+            result = {'evaluation': None}
+        results[posting_id] = result
+        if result is not None and result.get('evaluation') is not None:
+            candidate_ids.append(posting_id)
+
+    current_keys = {}
+    for offset in range(0, len(candidate_ids), 20):
+        batch = candidate_ids[offset:offset + 20]
+        try:
+            inventory = service.snapshot_inventory(conn, config, posting_ids=batch, limit=len(batch))
+        except Exception:
+            continue
+        current_keys.update({row['posting_id']: row['run_key'] for row in inventory})
+
+    projected = {}
+    for posting_id, result in results.items():
+        if result is None:
+            projected[posting_id] = {
+                'assessment_state': 'not_assessed', 'assessment_reason': None,
+                'assessment_summary': None, '_assessment_score': None,
+            }
+            continue
+        raw = result.get('evaluation')
+        if raw is None:
+            projected[posting_id] = {
+                'assessment_state': 'incomplete', 'assessment_reason': None,
+                'assessment_summary': None, '_assessment_score': None,
+            }
+            continue
+        current_key = current_keys.get(posting_id)
+        if (current_key is None or result.get('run_key') != current_key):
+            projected[posting_id] = {
+                'assessment_state': 'stale', 'assessment_reason': None,
+                'assessment_summary': None, '_assessment_score': None,
+            }
+            continue
+        try:
+            evaluation = validate_model_payload(AgenticEvaluation, raw)
+        except RuntimeErrorSafe:
+            projected[posting_id] = {
+                'assessment_state': 'incomplete', 'assessment_reason': None,
+                'assessment_summary': None, '_assessment_score': None,
+            }
+            continue
+        if evaluation.run_key.value != current_key:
+            projected[posting_id] = {
+                'assessment_state': 'stale', 'assessment_reason': None,
+                'assessment_summary': None, '_assessment_score': None,
+            }
+            continue
+        report = evaluation.report
+        reason = result.get('reason') if type(result.get('reason')) is str else None
+        projected[posting_id] = {
+            'assessment_state': 'current', 'assessment_reason': reason,
+            'assessment_summary': report.get('A', '')[:600],
+            '_assessment_score': evaluation.global_score,
+        }
+    return projected
 
 
 def detail(person: str, posting_id: int) -> dict:
     if type(posting_id) is not int or posting_id < 1:
         raise RuntimeErrorSafe('invalid_request')
-    with users.use(person), job_connection(load_config()) as conn:
+    config = load_config()
+    with users.use(person), job_connection(config) as conn:
         conn.row_factory = sqlite3.Row
         post = conn.execute('SELECT title, company, location, url FROM postings WHERE id=?', (posting_id,)).fetchone()
         if post is None:
-            return {'view': 'detail', 'posting_id': posting_id, 'found': False}
+            return {'view': 'detail', 'posting_id': posting_id, 'found': False,
+                    'assessment_state': 'not_assessed', 'assessment_reason': None,
+                    'assessment_summary': None}
         has = lambda t: bool(conn.execute('SELECT 1 FROM sqlite_master WHERE name=?', (t,)).fetchone())
         review = conn.execute('SELECT score, reason, pros_json, cons_json FROM ad_reviews WHERE posting_id=?',
                               (posting_id,)).fetchone() if has('ad_reviews') else None
         card = task_state.task_card(conn, posting_id)
+        assessment = _assessment_projection(conn, config, [posting_id])[posting_id]
+        assessment_score = assessment.pop('_assessment_score')
         ready_digest = _application_and_digest(conn, posting_id)[1]
         draft = conn.execute('SELECT d.version FROM drafts d JOIN applications a ON a.id=d.application_id '
                              "WHERE a.posting_id=? AND d.status='ready' ORDER BY d.version DESC LIMIT 1",
                              (posting_id,)).fetchone() if has('drafts') and has('applications') else None
     return {'view': 'detail', 'posting_id': posting_id, 'found': True, 'employer': post['company'],
             'title': post['title'], 'location': post['location'], 'ad_url': _http_url(post['url']),
-            'score': review['score'] if review else None, 'why_it_fits': (review['reason'] if review else None),
+            'score': (assessment_score if assessment['assessment_state'] == 'current'
+                      else (review['score'] if review and assessment['assessment_state'] == 'not_assessed' else None)),
+            'why_it_fits': (assessment['assessment_summary'] if assessment['assessment_state'] == 'current'
+                            else (review['reason'] if review and assessment['assessment_state'] == 'not_assessed' else None)),
             'pros': _list(review['pros_json']) if review else [], 'cons': _list(review['cons_json']) if review else [],
             'state': card['state'], 'state_detail': card.get('message') or (card.get('submit') or {}).get('reason') or '',
+            **assessment,
             'documents_ready': draft is not None, 'draft_version': draft['version'] if draft else None,
             'can_submit': ready_digest is not None and card['state'] in ('draft ready', 'awaiting browser press')}
 
@@ -360,7 +450,10 @@ def _review(person: str, posting_id: int) -> tuple[dict, str | None, bool]:
 
 def _overview_text(data: dict) -> str:
     lines = [f"{counts_text(data['counts'])}. {len(data['jobs'])} jobs with activity."]
-    lines += [f"#{j['posting_id']} {j['employer'] or '?'} - {j['title'] or '?'}: {j['state']}" for j in data['jobs'][:10]]
+    lines += [f"#{j['posting_id']} {j['employer'] or '?'} - {j['title'] or '?'}: {j['state']}; "
+              f"assessment {j['assessment_state']}" +
+              (f" ({j['assessment_reason']}): {j['assessment_summary']}" if j['assessment_state'] == 'current' else '')
+              for j in data['jobs'][:10]]
     return '\n'.join(lines)
 
 
@@ -369,7 +462,11 @@ def _detail_text(d: dict) -> str:
         return f"No job {d['posting_id']} found."
     docs = 'documents ready' if d['documents_ready'] else 'no documents ready'
     score = f", score {d['score']}" if d['score'] is not None else ''
-    return f"#{d['posting_id']} {d['employer'] or '?'} - {d['title'] or '?'}{score}. State: {d['state']}; {docs}."
+    assessment = f"Assessment {d['assessment_state']}"
+    if d['assessment_state'] == 'current':
+        assessment += f" ({d['assessment_reason']}): {d['assessment_summary']}"
+    return (f"#{d['posting_id']} {d['employer'] or '?'} - {d['title'] or '?'}{score}. "
+            f"Application state: {d['state']}; {docs}. {assessment}.")
 
 
 def register(server: FastMCP, person_from_request) -> None:

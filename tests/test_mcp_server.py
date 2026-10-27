@@ -187,6 +187,58 @@ def test_overview_and_detail_return_structured_content_for_this_person_only(two_
     assert _call('owner', 'job_detail', {'posting_id': 99}, monkeypatch).structured_content['found'] is False
 
 
+def test_current_canonical_assessment_is_projected_without_changing_application_state(two_people, monkeypatch):
+    from ranking_support import make_evaluation
+
+    evaluation = make_evaluation([], posting_id=1, score=4.8)
+    current_key = evaluation.run_key.value
+    latest = {'run_key': current_key, 'reason': 'hard_gate', 'status': 'archived',
+              'evaluation': evaluation.model_dump(mode='json')}
+    monkeypatch.setattr(cc, 'latest_result', lambda conn, posting_id, **kw:
+                        latest if users.current() == 'owner' else None)
+    monkeypatch.setattr(cc.service, 'snapshot_inventory', lambda conn, config, *, posting_ids, limit:
+                        [{'posting_id': pid, 'run_key': current_key} for pid in posting_ids])
+
+    result = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    detail = result.structured_content
+    assert detail['assessment_state'] == 'current'
+    assert detail['assessment_reason'] == 'hard_gate'
+    assert detail['assessment_summary'] == 'Synthetic report.'
+    assert detail['score'] == 4.8 and detail['why_it_fits'] == 'Synthetic report.'
+    assert detail['state'] == 'draft ready' and detail['can_submit'] is False
+    assert 'Assessment current (hard_gate)' in result.content[0].text
+
+    overview = _call('owner', 'jobs_overview', {}, monkeypatch).structured_content['jobs'][0]
+    assert overview['assessment_state'] == 'current' and overview['assessment_reason'] == 'hard_gate'
+    assert overview['score'] == 4.8
+
+    guest = _call('guest', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    assert guest['assessment_state'] == 'not_assessed' and guest['score'] == 4.2
+
+
+def test_stale_or_invalid_canonical_assessment_does_not_fall_back_to_legacy_score(two_people, monkeypatch):
+    from ranking_support import make_evaluation
+
+    evaluation = make_evaluation([], posting_id=1, score=4.8)
+    stale = {'run_key': evaluation.run_key.value, 'reason': 'hard_gate', 'status': 'archived',
+             'evaluation': evaluation.model_dump(mode='json')}
+    monkeypatch.setattr(cc, 'latest_result', lambda conn, posting_id, **kw: stale)
+    monkeypatch.setattr(cc.service, 'snapshot_inventory', lambda conn, config, *, posting_ids, limit:
+                        [{'posting_id': pid, 'run_key': 'b' * 64} for pid in posting_ids])
+
+    detail = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    assert detail['assessment_state'] == 'stale'
+    assert detail['assessment_reason'] is None and detail['assessment_summary'] is None
+    assert detail['score'] is None and detail['why_it_fits'] is None
+    assert detail['state'] == 'draft ready' and detail['can_submit'] is False
+
+    stale['run_key'] = 'b' * 64
+    stale['evaluation'] = {'not': 'an evaluation'}
+    detail = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    assert detail['assessment_state'] == 'incomplete'
+    assert detail['score'] is None and detail['why_it_fits'] is None
+
+
 def test_unauthenticated_request_reads_nothing(two_people, monkeypatch):
     def deny():
         raise RuntimeErrorSafe('mcp_auth_required')
