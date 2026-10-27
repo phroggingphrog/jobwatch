@@ -312,6 +312,9 @@ def test_interruption_resumes_saved_candidate_evaluation_and_package(world, monk
     # Recovery rechecks the public source and publishes within the existing
     # deadline, without purchasing another model call.
     monkeypatch.setattr(PersistenceAdapter, 'finalize_package', original)
+    from pipeline.agentic import incidents
+    incident = incidents.list_incidents(conn)[0]
+    incidents.release(conn, incident['incident_id'], 42)
     assert run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm) == Stage.READY, latest_result(conn, 42)['reason']
     assert len(gateway.calls) == calls
     assert conn.execute('SELECT SUM(charged) FROM agentic_batches').fetchone()[0] == charge
@@ -421,6 +424,11 @@ def test_resumed_batch_summary_preserves_and_reports_original_budget(world, monk
     first = agentic_batch_run([42], config, conn, evidence_bundle=bundle, llm=llm)
     assert first['held'] == 1 and first['charged_tokens'] > 0
     monkeypatch.setattr(service, 'evaluate_job', original)
+    from pipeline.agentic import incidents
+    paused = agentic_batch_run([42], config, conn, evidence_bundle=bundle, llm=llm)
+    assert paused['skipped_reasons'] == {'paused_error': 1}
+    incident = incidents.list_incidents(conn)[0]
+    incidents.release(conn, incident['incident_id'], 42)
     second = agentic_batch_run([42], config, conn, evidence_bundle=bundle, llm=llm)
     assert second['ready'] == 1
     assert first['batch_id'] != second['batch_id']
@@ -588,6 +596,9 @@ def test_expired_package_recovers_without_models_or_new_draft_admission(world,mo
     charge = conn.execute('SELECT SUM(charged) FROM agentic_batches').fetchone()[0]
     config.settings['pipeline']['drafts_per_day'] = 0
     monkeypatch.setattr(PersistenceAdapter, 'finalize_package', original)
+    from pipeline.agentic import incidents
+    incident = incidents.list_incidents(conn)[0]
+    incidents.release(conn, incident['incident_id'], 42)
     assert run_agentic_job(42,config,conn,evidence_bundle=bundle)==Stage.READY
     assert len(gateway.calls)==calls
     assert conn.execute('SELECT SUM(charged) FROM agentic_batches').fetchone()[0] == charge

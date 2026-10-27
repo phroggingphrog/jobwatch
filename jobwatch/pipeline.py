@@ -144,18 +144,21 @@ PEOPLE_SHARE: contextvars.ContextVar[float] = contextvars.ContextVar("jobwatch_p
 
 
 def ai_budget(started: float, config: Config | None = None, tier: str = "fast") -> float:
-    """Seconds the AI step may use: what is left of UNIT_BUDGET_S since the run started (at least MIN_AI_S), and no
-    more than reader.max_seconds when the owner set one."""
+    """Remaining unit time, capped by the reader limit when the owner set one."""
     unit = (SLOW_UNIT_BUDGET_S if tier == "slow" else UNIT_BUDGET_S) * PEOPLE_SHARE.get()
-    left = max(MIN_AI_S, unit - (time.monotonic() - started))
+    left = max(0, unit - (time.monotonic() - started))
     own = ((config.settings.get("reader") or {}).get("max_seconds") if config else None)
     return min(left, own) if isinstance(own, (int, float)) and own > 0 else left
 
 
 def run(config: Config, tier: str, dry_run: bool = False, only: str | None = None,
-        limit: int | None = None, printer=print, now=None) -> dict:
+        limit: int | None = None, printer=print, now=None, *, assess: bool = True,
+        deadline: float | None = None, run_id: str | None = None) -> dict:
     started = time.monotonic()
+    deadline = min(deadline if deadline is not None else float('inf'),
+                   time.time() + (SLOW_UNIT_BUDGET_S if tier == 'slow' else UNIT_BUDGET_S) * PEOPLE_SHARE.get())
     conn = dbm.connect(config.db_path)
+    discovery_run_id = run_id
     run_id = dbm.start_run(conn, "run", only or tier, dry_run)
     results: list[dict] = []
     note: dict = {}
@@ -169,12 +172,16 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         config = discovery.prepare_run(conn, config)
         rules = Rules(config.rules, config.employers)
         http_conf = config.settings.get("http") or {}
-        http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5))
+        http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5),
+                       deadline=deadline)
         for name in tier_collectors(config, tier, only):
+            if time.time() >= deadline:
+                ai = {'deferred': 'collection_deadline'}
+                break
             results.append(run_collector(conn, config, rules, http, name, run_id, limit, tier))
         note = publish(conn, dry_run)
         pruned = dbm.prune(conn, int(config.settings.get("retention_days", 90)))
-        if not dry_run:
+        if not dry_run and assess:
             # last on purpose: it is the only step that waits on outside services; its budget is what is left of the
             # unit's time, so a stalled model can no longer cost the publish and prune above or the run record below
             from . import reader
@@ -188,7 +195,8 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                 if intake.discovery_scope(users.current()) is None:    # no tier assesses without a confirmed scope
                     ai = {'skipped': 'no_confirmed_profile'}
                 elif mode == 'agentic':
-                    ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier), collector_run_id=run_id)}
+                    ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
+                        collector_run_id=run_id, deadline=deadline, run_id=discovery_run_id)}
                 elif mode == 'pipeline':
                     ai = {"pipeline": graph.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))}
                 elif mode == 'reader':

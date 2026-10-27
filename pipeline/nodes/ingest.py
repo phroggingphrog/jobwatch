@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
 from datetime import timedelta
 
 from jobwatch import adtext
@@ -52,7 +53,7 @@ def candidates(conn, posting_ids: list[int] | None = None):
 
 
 def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
-        posting_ids: list[int] | None = None) -> dict:
+        posting_ids: list[int] | None = None, deadline: float | None = None) -> dict:
     """Admit up to `limit` new jobs. Returns counts. Deterministic: same DB + same pages = same result."""
     store.ensure(conn)
     rules = Rules(config.rules, config.employers)
@@ -61,6 +62,9 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
     blocked: set[str] = set()
     per_host: dict[str, int] = {}
     for r in candidates(conn, posting_ids):
+        if deadline is not None and time.time() >= deadline:
+            stats['deferred'] = 'batch_deadline'
+            break
         if stats["admitted"] >= limit:
             break
         stats["seen"] += 1
@@ -72,7 +76,7 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         can_fetch = bool(fetcher) or (host and fetch_budget > 0 and host not in blocked
                                       and per_host.get(host, 0) < PER_HOST_FETCHES and adtext.wants_fetch(conn, r))
         try:
-            text, kind = adtext.ensure_text(conn, r, fetcher, allow_fetch=bool(can_fetch))
+            text, kind = adtext.ensure_text(conn, r, fetcher, allow_fetch=bool(can_fetch), deadline=deadline)
         except adtext.Blocked as exc:           # the site said stop: no more requests to it this run
             blocked.add(host)
             log.info("ingest: %s blocked: %s", host, exc)
@@ -84,12 +88,15 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         if kind != "full" and can_fetch and not fetcher and r["source"] in BROWSER_FALLBACK:
             # Seek's plain page download often fails while the safe browser reader opens the ad (2026-10-12:
             # "Graduate Accountant - 2027" and "Finance and Accounting Intern" waited forever for text).
-            text, kind = _browser_text(conn, r, text, kind)
+            text, kind = _browser_text(conn, r, text, kind, deadline=deadline)
         if can_fetch and not fetcher:
             fetch_budget -= 1
             per_host[host] = per_host.get(host, 0) + 1
             stats["fetched"] += 1
-            adtext.pace()
+            if deadline is None:
+                adtext.pace()
+            elif deadline > time.time():
+                adtext.pace(min(2.5, deadline-time.time()))
         if kind != "full":
             stats["waiting_text"] += 1
             continue
@@ -119,11 +126,14 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
 BROWSER_FALLBACK = {"seek", "jobspy_src"}
 
 
-def _browser_text(conn, r, text: str, kind: str) -> tuple[str, str]:
+def _browser_text(conn, r, text: str, kind: str, *, deadline: float | None = None) -> tuple[str, str]:
     import time
     from jobwatch.interview_browser import browser_ad
     try:
-        ad = browser_ad(r["url"] or "", deadline=time.monotonic() + 45)
+        remaining = 45 if deadline is None else min(45, deadline-time.time())
+        if remaining <= 0:
+            return text, kind
+        ad = browser_ad(r["url"] or "", deadline=time.monotonic() + remaining)
     except Exception as exc:                    # noqa: BLE001 - unreadable now; asked again on a later run
         log.info("ingest: posting %s browser read failed: %s", r["id"], type(exc).__name__)
         return text, kind

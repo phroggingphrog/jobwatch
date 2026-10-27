@@ -23,7 +23,7 @@ from jobwatch.candidate.evidence import career_profile_text, snapshot_evidence, 
 from jobwatch.candidate.policy import DecisionPolicy, default_policy, policy_for
 from jobwatch.llm import LLM
 from jobwatch.openrouter_extras import (KNOCKOUT_REASONS, extras_settings, jev_screen, rank_by_target,
-                                       same_vacancy, vectors)
+                                       same_vacancy, vectors, deadline_scope)
 from pipeline import store as pipeline_store
 from pipeline.schemas import Stage
 from pipeline.agentic.contracts import (AgenticError, AgenticEvaluation, AgenticGateDecision, DraftProposal,
@@ -32,10 +32,10 @@ from pipeline.agentic.evaluator import evaluate_job
 from pipeline.agentic.gate import decide
 from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, km_from_home
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
-from pipeline.agentic import decision_log, jev_skills
+from pipeline.agentic import decision_log, jev_skills, incidents
 from pipeline.agentic.forms import build_form_map
 from pipeline.agentic.persistence import PersistenceAdapter, latest_result
-from pipeline.agentic.runtime import BatchBudget, JobBudget, validate_model_payload
+from pipeline.agentic.runtime import BatchBudget, JobBudget, RuntimeErrorSafe, validate_model_payload
 from pipeline.agentic.store import AgenticStore
 from pipeline.agentic.liveness import observe_posting, latest_observation, observation_current
 from pipeline.agentic.research import LocalSearxSearch, PublicSnapshot, ResearchCapability, SafeFetcher
@@ -349,7 +349,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     batch: BatchBudget | None = None, candidate_cache: dict | None = None,
                     expected_run_key: str | None = None, _batch_registry: dict | None = None,
                     _invocation_deadline: float | None = None, operation: str = 'prepare',
-                    _skip_reasons=None, collector_run_id=None) -> Stage | None:
+                    _skip_reasons=None, collector_run_id=None, _discovery_run_id=None) -> Stage | None:
     if operation not in ('evaluate', 'prepare'):
         raise AgenticError('invalid_operation')
     def skip(reason, next_eligible_at=None):
@@ -357,6 +357,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             _skip_reasons.append({'posting_id': posting_id, 'reason': reason, 'next_eligible_at': next_eligible_at})
     if not enabled(config):
         skip('agentic_disabled')
+        return None
+    if incidents.is_paused(conn, posting_id):
+        skip('paused_error')
         return None
     from jobwatch.candidate import intake
     approved_snapshot = intake.current_version(users.current())
@@ -406,6 +409,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     from pipeline.agentic.execution import current
     scope = current()
     trace_id = scope.run_id if scope else invocation_id
+    incident_run_id = _discovery_run_id or trace_id
+    completed_phase = 'claimed'
     def activity(event, code=None):
         try:
             conn.execute('INSERT INTO agentic_activity(run_key,posting_id,collector_run_id,batch_id,invocation_id,event,at,reason) '
@@ -421,6 +426,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     stage, reason, final_status = Stage.DLQ, 'execution_failed', 'held'
     try:
         activity('started')  # inside the try: a failure here must still release the claim
+        incidents.mark_phase(conn, incident_run_id, 'liveness', posting_id=posting_id)
         # Cached READY rechecks are public-only and do not renew exhausted model budgets.
         saved_package = adapter.load_artifact(key.value, 'package_bundle')
         if cached_ready or saved_package is not None:
@@ -432,6 +438,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             raise AgenticError('deadline_exceeded')
         observation = observe_posting({'id': posting_id, **captured[0]}, deadline=time.monotonic()+max(0,remaining))
         changed = adapter.record_observation(claim, observation, captured)
+        completed_phase = 'liveness'
+        incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
         try:
             from jobwatch import expiry
             expiry.record(conn, posting_id, observation)
@@ -468,10 +476,14 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             'reference_utf8': reference.raw_contents.decode('utf-8') if reference else None,
             'reference_hash': reference.reference_hash if reference else None,
             'mappings': [m.model_dump(mode='json') for m in mappings]})
+        completed_phase = 'evidence_snapshot'
+        incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
+        incidents.mark_phase(conn, incident_run_id, 'assessment', posting_id=posting_id)
         # Jev (OpenRouter, public ad text only), before Opus reads the ad: hidden instructions aimed at the AI
         # hold the job; a requirement the ad states that the owner cannot meet archives it (owner, 2026-10-12).
         # None means Jev was not reached; the job then runs exactly as before.
-        screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
+        with deadline_scope(_invocation_deadline):
+            screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
         extras = extras_settings(config)
         applicable = applicable_knockouts(dp)
         knockout = next((KNOCKOUT_REASONS[q] for q, at in extras['knockout_at'].items()
@@ -504,6 +516,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if candidate.run_key != key.candidate_hash:
                 raise AgenticError('candidate_hash_mismatch')
             adapter.save_artifact(claim, 'candidate', candidate.model_dump(mode='json'))
+            completed_phase = 'candidate_assessment'
+            incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
             from pipeline.agentic.model_insights import pipeline_insights
             models = adapter.load_artifact(key.value, 'model_insights')
             if models is None:
@@ -524,6 +538,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if dp is not None:
                 decision_log.record(conn, key.value, dp, decision)
             adapter.save_artifact(claim, 'evaluation', evaluation.model_dump(mode='json'))
+            completed_phase = 'evaluation'
+            incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
             # Jev skills (owner 2026-10-12, career facts only): a second-opinion fit score and a requirement map
             # for the board and the writer. Failures only mean they are missing.
             # Candidate-derived facts may only use the approved paid gateway.
@@ -589,6 +605,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         # codes owned by this codebase; never repr/str an arbitrary exception.
         code = getattr(exc, 'code', None)
         reason = code if isinstance(exc, AgenticError) and type(code) is str and code.replace('_', '').isalnum() else 'execution_failed'
+        if isinstance(exc, RuntimeErrorSafe) and reason == 'invocation_budget_exhausted':
+            reason = 'daily_budget'
     finally:
         try:
             try:
@@ -597,6 +615,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             finally:
                 store.release(claim, status=final_status, reason=reason)  # even if the projection write fails (sqlite error)
             activity('finished', reason)
+            if reason in incidents.FAILURE_REASONS:
+                incidents.report(conn, posting_id=posting_id, run_id=incident_run_id,
+                                 reason=reason, phase='liveness' if completed_phase == 'claimed' else 'assessment')
         except AgenticError:
             # A stale worker cannot overwrite the current worker's projection.
             pass
@@ -606,17 +627,35 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     return stage
 
 
-def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, expected_run_keys=None, **kwargs):
+def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
+                      run_id=None, token_allowance=None, expected_run_keys=None, **kwargs):
     summary = {'processed': 0, 'ready': 0, 'archived': 0, 'held': 0, 'skipped': 0,
                'deferred': [], 'skipped_reasons': {}}
     if not enabled(config):
         return summary
+    if token_allowance is not None:
+        from pipeline.agentic import execution
+        scope = execution.current()
+        if scope is None:
+            scope = execution.Execution(run_id or ('assessment-' + uuid.uuid4().hex),
+                seconds=max_seconds if max_seconds is not None else _config(config)['batch_seconds'],
+                token_ceiling=max(0, int(token_allowance)), max_calls=1_000_000)
+        else:
+            # A resumed checkpoint retains its historical batch, but cannot
+            # consume more than this invocation's remaining daily allowance.
+            scope.token_ceiling = min(scope.token_ceiling, scope.charged_tokens + max(0, int(token_allowance)))
+        with execution.use(scope):
+            return agentic_batch_run(snapshot_ids, config, conn, batch_id=batch_id,
+                max_seconds=max_seconds, deadline=deadline, run_id=run_id,
+                expected_run_keys=expected_run_keys, **kwargs)
     store = AgenticStore(conn); store.ensure()
     cfg = _config(config)
     invocation_deadline = time.time() + min(cfg['batch_seconds'],
                                            max_seconds if max_seconds is not None else cfg['batch_seconds'])
+    if deadline is not None:
+        invocation_deadline = min(invocation_deadline, deadline)
     previous_charges = dict(conn.execute('SELECT batch_id,charged FROM agentic_batches'))
-    batch = _make_batch(store, cfg, seconds=max_seconds, batch_id=batch_id)
+    batch = _make_batch(store, cfg, seconds=max(0, invocation_deadline-time.time()), batch_id=batch_id)
     batches = {batch.batch_id: batch}
     bundle = kwargs.pop('evidence_bundle', None) or snapshot_evidence(profile_dir())
     cache = {}
@@ -635,11 +674,13 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             stage = run_agentic_job(pid, config, conn, batch=batch, evidence_bundle=bundle,
                                     candidate_cache=cache, _batch_registry=batches, _invocation_deadline=invocation_deadline,
                                     expected_run_key=expected_run_keys.get(pid) if expected_run_keys is not None else None,
-                                    _skip_reasons=skips, **kwargs)
+                                    _skip_reasons=skips, _discovery_run_id=run_id, **kwargs)
         except AgenticError:
             raise  # a refused snapshot or bad operation aborts the batch by design
         except Exception as exc:  # noqa: BLE001 - one bad job (e.g. a sqlite error) never stops the batch; type only, no content
             log.warning('agentic job %s crashed: %s', pid, type(exc).__name__)
+            incidents.report(conn, posting_id=pid, run_id=run_id or batch.batch_id,
+                             reason='execution_failed', phase='assessment')
             summary['skipped'] += 1
             summary['deferred'].append({'posting_id': pid, 'reason': 'job_crashed', 'next_eligible_at': None})
             continue
@@ -652,7 +693,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             # "posting_unavailable" without being read, and that false hold sends it to the back of the rotation.
             stage = run_agentic_job(pid, config, conn, batch=batch, evidence_bundle=bundle,
                                     candidate_cache=cache, _batch_registry=batches,
-                                    _invocation_deadline=invocation_deadline, **kwargs)
+                                    _invocation_deadline=invocation_deadline, _discovery_run_id=run_id, **kwargs)
         if stage is None:
             summary['skipped'] += 1
             summary['deferred'].extend(skips or [{'posting_id': pid, 'reason': 'not_admitted', 'next_eligible_at': None}])
@@ -661,8 +702,14 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
         summary[{Stage.READY: 'ready', Stage.ARCHIVED: 'archived', Stage.DLQ: 'held'}[stage]] += 1
         if stage == Stage.READY:
             _tell_owner_ready(conn, pid)
-        elif stage == Stage.DLQ:
-            _alert_if_error(conn, pid)
+        if run_id is not None:
+            incidents.mark_phase(conn, run_id, 'assessment')
+        if last is not None and last[0] == 'daily_budget':
+            remaining = todo[n+1:]
+            summary['skipped'] += len(remaining)
+            summary['deferred'].extend({'posting_id': p, 'reason': 'daily_budget', 'next_eligible_at': None}
+                                       for p in remaining)
+            break
     summary['batch_id'] = batch.batch_id
     # Resumed jobs retain their original conservative batch ceilings, deadlines
     # and circuit state. Expose every participating identity instead of hiding
@@ -776,7 +823,7 @@ def _refresh_shortlist(conn, config):
         return {'shortlist': {'error':'shortlist_failed'}}
 
 
-def after_collect(conn, config, max_seconds=None, collector_run_id=None):
+def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, deadline=None, run_id=None):
     if not enabled(config):
         return {'skipped': 'disabled'}
     from jobwatch import users
@@ -787,20 +834,43 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
     # The scope's daily limits (jobs evaluated, tokens charged since the person's local midnight) are checked before
     # any work, so a spent day does no ad fetching either. Deferred jobs are left untouched and stay queued.
     cfg = _config(config)
+    deadline = min(deadline if deadline is not None else float('inf'),
+                   time.time() + (max_seconds if max_seconds is not None else cfg['batch_seconds']))
+    phase_seconds = {}
+    phase_name, phase_started = None, time.monotonic()
+    def phase(name, *, completed_previous=False):
+        nonlocal phase_name, phase_started
+        now = time.monotonic()
+        if phase_name is not None:
+            phase_seconds[phase_name] = round(now-phase_started, 3)
+            if completed_previous and run_id is not None:
+                incidents.mark_phase(conn, run_id, phase_name, completed=True)
+        phase_name, phase_started = name, now
+        if run_id is not None:
+            incidents.mark_phase(conn, run_id, name)
+    def timed_out():
+        phase('deferred')
+        return {'deferred': 'batch_deadline', 'phase_seconds': phase_seconds}
+    if deadline <= time.time():
+        return timed_out()
     AgenticStore(conn).ensure()
     jobs, tokens = _spent_today(conn, _local_midnight(_now()))
     room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
     if room <= 0 or left <= 0:
         return {'deferred': 'daily_budget', **_refresh_shortlist(conn,config)}
-    started = time.monotonic()
     from contextlib import ExitStack
     from pipeline.agentic import discovery
     with adtext.review_lock(adtext.lock_path(config)) as acquired, ExitStack() as discovery_stack:
         if not acquired:
             return {'skipped': 'busy'}
+        discovery_stack.enter_context(deadline_scope(deadline))
         from pipeline.nodes import ingest
         # Collection/ad capture is deterministic and may fetch public full ads.
-        ingest.run(conn, config, limit=200, fetch_budget=25)
+        phase('ingestion')
+        ingest.run(conn, config, limit=200, fetch_budget=25, deadline=deadline)
+        if deadline <= time.time():
+            return timed_out()
+        phase('deduplication', completed_previous=True)
         discovery_cfg = discovery.settings(config)
         excluded = discovery.enforce_exclusions(conn, config)
         discovery.reconsider(conn, config)
@@ -808,7 +878,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
         if discovery_cfg['dedupe'] == 'semantic' or discovery_cfg['ordering'] == 'hypotheses':
             try:
                 discovery_context = discovery_stack.enter_context(discovery.context_for(conn, config,
-                    seconds=min(300., max(0.001, max_seconds - (time.monotonic() - started))) if max_seconds is not None else 300.))
+                    seconds=min(300., max(0, deadline-time.time()))))
             except Exception as exc:
                 log.info('discovery context: %s', type(exc).__name__)
         if discovery_cfg['dedupe'] == 'legacy':
@@ -818,8 +888,14 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
                 discovery.semantic_duplicates(conn, config, context=discovery_context)
             except Exception as exc:
                 log.info('discovery dedupe: %s', type(exc).__name__)
+        if deadline <= time.time():
+            return timed_out()
+        phase('screening', completed_previous=True)
         rel = discovery.screen_step(conn, config, context=discovery_context,
-            seconds=min(300., max(0.001, max_seconds - (time.monotonic() - started))) if max_seconds is not None else 300.)
+            seconds=min(300., max(0, deadline-time.time())))
+        if deadline <= time.time():
+            return timed_out()
+        phase('ordering', completed_previous=True)
         # Reserve space for both unfinished work and public READY refreshes.
         # Each successful attempt updates pipeline_state.updated_at, rotating the
         # queues so an old held job or a large READY backlog cannot starve either.
@@ -841,7 +917,8 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
                         url=captured[0]['url'], ad_hash=content_hash(captured[1].encode())):
                     refresh.append(pid)
         AgenticStore(conn).ensure()
-        pending = [pid for pid in unseen[:25] + pending if not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
+        pending = [pid for pid in unseen[:25] + pending if not incidents.is_paused(conn, pid)
+                   and not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
         if pending:
             pending = _without_completed(conn,config,pending)[:200]
         if discovery_cfg['ordering'] == 'legacy':
@@ -866,8 +943,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
                 if index < len(queue) and len(ids) < 20: ids.append(queue[index])
         # Ingest, duplicate check and ordering count against the same unit budget (2026-10-12: they ran outside
         # it and the fast timer was killed at systemd's 15 min limit).
-        if max_seconds is not None:
-            max_seconds = max(60, max_seconds - (time.monotonic() - started))
+        max_seconds = max(0, deadline-time.time())
         store = AgenticStore(conn)
         jobs, tokens = _spent_today(conn, _local_midnight(_now()))
         room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
@@ -885,10 +961,14 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None):
             extra['batch_id'] = ident
         cut = ids[room:]
         # Collection only evaluates; documents are drafted on an explicit request, never as a side effect of a timer.
-        out = agentic_batch_run(ids[:room], config, conn, max_seconds=max_seconds, collector_run_id=collector_run_id,
-                                operation='evaluate', **extra)
+        phase('assessment', completed_previous=True)
+        out = agentic_batch_run(ids[:room], config, conn, max_seconds=max_seconds, deadline=deadline,
+                                run_id=run_id, token_allowance=left, collector_run_id=collector_run_id, operation='evaluate', **extra)
+        phase('shortlist')
         out.update(details)
         out.update(_refresh_shortlist(conn,config))
+        phase('completed', completed_previous=True)
+        out['phase_seconds'] = phase_seconds
         return {**out, 'daily_budget_deferred': cut} if cut else out
 
 
