@@ -57,6 +57,8 @@ markers = ["real_cv_printer: run the real Chromium CV printer instead of the in-
 
 "jobwatch.candidate" = ["data/*.json", "data/*.md"]
 
+"jobwatch.prescreen" = ["seed/*.json"]
+
 "jobwatch.preferences" = ["*.R", "*.jags"]
 
 "pipeline.agentic" = ["data/*.json", "data/*.md", "skills/*/SKILL.md", "controls.html", "controls.js", "controls.css", "jobwatch-app.html"]

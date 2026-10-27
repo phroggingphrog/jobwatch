@@ -443,6 +443,69 @@ MIGRATIONS: list[str] = [
         BEGIN SELECT RAISE(ABORT,'immutable'); END;
     """,
     NOTIFY_DDL,   # notification channels, outbox and receipts (idempotent: IF NOT EXISTS)
+    # v18: prescreen (cheap deterministic checks before any model). Tables only; seeds are loaded by
+    # jobwatch.prescreen.store.ensure_seeds (idempotent, keyed by seed_key) so a public install gets a working bank.
+    """
+    CREATE TABLE prescreen_terms (
+        id INTEGER PRIMARY KEY,
+        category TEXT NOT NULL CHECK(category IN ('seniority_level','off_target_occupation','location_outside',
+                                                  'employment_type','work_rights','experience')),
+        term TEXT NOT NULL,
+        match_type TEXT NOT NULL CHECK(match_type IN ('word','phrase','regex')),
+        applies_to TEXT NOT NULL CHECK(applies_to IN ('title','location','hours','ad_text')),
+        polarity TEXT NOT NULL DEFAULT 'exclude' CHECK(polarity IN ('exclude','allow')),
+        strength TEXT NOT NULL DEFAULT 'weak' CHECK(strength IN ('obvious','weak')),
+        value TEXT,
+        field_tag TEXT,
+        scope TEXT NOT NULL DEFAULT 'person' CHECK(scope IN ('shared','person')),
+        source TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+        seed_key TEXT UNIQUE,
+        created_at TEXT NOT NULL
+    );
+    CREATE INDEX prescreen_terms_active ON prescreen_terms(enabled, category, applies_to);
+    CREATE TABLE prescreen_rules (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('term_hit','level_not_approved','years_over','region_outside')),
+        params_json TEXT NOT NULL DEFAULT '{}',
+        effect TEXT NOT NULL DEFAULT 'skip' CHECK(effect IN ('skip','flag')),
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+        scope TEXT NOT NULL DEFAULT 'person' CHECK(scope IN ('shared','person')),
+        derived_from_profile_version INTEGER,
+        source TEXT NOT NULL DEFAULT '',
+        seed_key TEXT UNIQUE,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE prescreen_overrides (
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('term','posting','employer')),
+        term_id INTEGER REFERENCES prescreen_terms(id) ON DELETE CASCADE,
+        posting_id INTEGER REFERENCES postings(id) ON DELETE CASCADE,
+        employer TEXT,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        CHECK((kind='term' AND term_id IS NOT NULL) OR (kind='posting' AND posting_id IS NOT NULL)
+              OR (kind='employer' AND employer IS NOT NULL))
+    );
+    CREATE UNIQUE INDEX prescreen_overrides_once ON prescreen_overrides(kind, COALESCE(term_id,0), COALESCE(posting_id,0),
+                                                                        COALESCE(employer,''));
+    CREATE TABLE prescreen_decisions (
+        id INTEGER PRIMARY KEY,
+        posting_id INTEGER NOT NULL REFERENCES postings(id) ON DELETE CASCADE,
+        at TEXT NOT NULL,
+        stage TEXT NOT NULL CHECK(stage IN ('metadata','full')),
+        outcome TEXT NOT NULL CHECK(outcome IN ('admit','skip','flag')),
+        rule_id INTEGER,
+        term_id INTEGER,
+        category TEXT,
+        matched_text TEXT,
+        reason TEXT NOT NULL DEFAULT '',
+        parsed_fields_json TEXT NOT NULL DEFAULT '{}',
+        rules_hash TEXT NOT NULL
+    );
+    CREATE INDEX prescreen_decisions_posting ON prescreen_decisions(posting_id, id);
+    CREATE INDEX prescreen_decisions_term ON prescreen_decisions(term_id, outcome);
+    """,
 ]
 
 
@@ -456,6 +519,11 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA busy_timeout=30000")
     migrate(conn)
+    try:
+        from .prescreen.store import ensure_seeds
+        ensure_seeds(conn)
+    except Exception:                         # a seed problem must never stop the app opening its database
+        log.exception("prescreen seeds could not be loaded")
     return conn
 
 

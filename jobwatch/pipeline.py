@@ -81,6 +81,9 @@ def run_collector(conn, config: Config, rules: Rules, http: Fetcher, name: str, 
             continue
         stats["new"] += 1
         decision = rules.evaluate(p)
+        if rules.prescreen is not None and rules.last_outcome is not None:
+            from .prescreen import store as prescreen_store
+            prescreen_store.record_decision(conn, posting_id, "metadata", rules.last_outcome)
         if not decision.matched:
             stats["rejected"][decision.reason] = stats["rejected"].get(decision.reason, 0) + 1
             continue
@@ -172,7 +175,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         from pipeline.agentic import discovery
         # The scope projection is read-only and unpaid, including dry runs.
         config = discovery.prepare_run(conn, config)
-        rules = Rules(config.rules, config.employers)
+        rules = Rules(config.rules, config.employers, conn=conn)
         http_conf = config.settings.get("http") or {}
         http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5),
                        deadline=deadline)

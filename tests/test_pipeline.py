@@ -210,7 +210,8 @@ def test_citizenship_quoted_from_the_ad_is_an_absolute_fail(world):
         "requirement": "citizen_or_pr", "quote": "Applicants must be Australian citizens or permanent residents."})},
         evaluate={"Payroll Officer": score(5, 5, 5)}))
     row = store.get(conn, pid)
-    assert row["stage"] == "archived" and row["reason"] == "work_rights_incompatible" and drafts["n"] == 0
+    # prescreen now catches the explicit citizenship text first (reason "prescreened"); the gate's own check is the backstop
+    assert row["stage"] == "archived" and row["reason"] in ("prescreened", "work_rights_incompatible") and drafts["n"] == 0
 
 
 def test_a_rights_claim_the_ad_does_not_say_goes_to_review_not_to_a_guess(world):

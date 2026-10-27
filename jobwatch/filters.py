@@ -39,10 +39,16 @@ class Decision:
 
 
 class Rules:
-    def __init__(self, rules: dict, employers: list[dict] | None = None):
+    def __init__(self, rules: dict, employers: list[dict] | None = None, conn=None):
         from . import users
         from .candidate.policy import policy_for
         self.profile_policy = policy_for(users.current())
+        # With a confirmed profile and a database, the early screening reads its vocabulary and rules from the prescreen_* tables.
+        self.prescreen = None
+        self.last_outcome = None
+        if conn is not None and self.profile_policy is not None:
+            from .prescreen.engine import Engine
+            self.prescreen = Engine.load(conn, self.profile_policy)
         self.arms = [
             Arm(id=a["id"], tier=a.get("tier", "core"), anzsco=str(a.get("anzsco", "")),
                 keywords=[(k, _phrase(k)) for k in a.get("keywords", []) if str(k).strip()],
@@ -107,8 +113,7 @@ class Rules:
 
     def seniority_hit(self, title: str) -> str | None:
         if self.profile_policy is not None:
-            # Titles aid recall. Final evidence assessment checks approved levels.
-            return None
+            return self._prescreen_title_hit(title, {"seniority_level"})
         low = fold(title)
         for phrase in self.exempt:
             low = low.replace(phrase, " ")
@@ -125,6 +130,13 @@ class Rules:
             return rule.rule_id if rule else None
         low = fold(title)
         return next((p.pattern for p in self.off_target if p.search(low)), None)
+
+    def _prescreen_title_hit(self, title: str, categories: set[str]) -> str | None:
+        if self.prescreen is None:
+            return None
+        from .prescreen.engine import PostingFields
+        out = self.prescreen.evaluate(PostingFields(title=title), categories=categories)
+        return out.matched_text if out.skip else None
 
     def title_relevant(self, title: str) -> bool:
         """Cheap pre-check collectors use to decide whether a detail fetch is worth it."""
@@ -214,9 +226,18 @@ class Rules:
             loc = self.location_rule(p)
             if not loc:
                 return Decision(False, 'location', rules={'location': p.location})
-            # Metadata admits recall; full-ad evidence decides qualifications.
+            rules = {'location': loc}
+            flags = list(p.flags)
+            if self.prescreen is not None:
+                from .prescreen.engine import fields_of_posting
+                out = self.last_outcome = self.prescreen.evaluate(fields_of_posting(p))
+                rules['prescreen'] = out.summary()
+                if out.skip:
+                    return Decision(False, out.legacy_reason or out.category or 'prescreen', rules={'prescreen': out.summary()})
+                flags += out.flags
+            # Anything not clearly ruled out is admitted for the evidence assessment (a skip above is reversible, see docs/prescreen.md).
             return Decision(True, arm='profile_discovery', arm_tier='core', arms=['profile_discovery'],
-                            rules={'location': loc}, flags=list(p.flags))
+                            rules=rules, flags=list(dict.fromkeys(flags)))
         hits = self.arm_hits(p.title)
         if not hits:
             return Decision(False, "title")

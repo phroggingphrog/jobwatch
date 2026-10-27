@@ -56,7 +56,7 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         posting_ids: list[int] | None = None, deadline: float | None = None) -> dict:
     """Admit up to `limit` new jobs. Returns counts. Deterministic: same DB + same pages = same result."""
     store.ensure(conn)
-    rules = Rules(config.rules, config.employers)
+    rules = Rules(config.rules, config.employers, conn=conn)
     stats = {"seen": 0, "admitted": 0, "duplicate": 0, "sponsored": 0, "out_of_area": 0, "waiting_text": 0,
              "fetched": 0}
     blocked: set[str] = set()
@@ -71,6 +71,11 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         loc = rules.location_rule(posting_of(r))
         if not loc:
             stats["out_of_area"] += 1
+            continue
+        pre = _prescreen(conn, rules, r, r["description"] or "", "metadata")
+        if pre is not None and pre.skip:           # a clear mismatch from the listing alone: no ad fetch, no model
+            stats["prescreened"] = stats.get("prescreened", 0) + 1
+            conn.commit()
             continue
         host = adtext.fetch_host(r["source"])
         can_fetch = bool(fetcher) or (host and fetch_budget > 0 and host not in blocked
@@ -104,6 +109,12 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         ad = JobAd(posting_id=r["id"], source=r["source"], title=r["title"], company=r["company"] or "",
                    location=r["location"] or "", url=r["url"] or "", location_rule=loc, text_kind="full",
                    content_hash=h)
+        full = _prescreen(conn, rules, r, text, "full", content_hash=h, ad=ad)
+        if full is not None and full.skip:         # the full ad shows a clear mismatch (years, work rights, level): no model
+            stats["prescreened"] = stats.get("prescreened", 0) + 1
+            conn.commit()
+            continue
+        extra = {"prescreen": full.summary()} if full is not None else {}
         dup = conn.execute("SELECT posting_id FROM pipeline_state WHERE content_hash=? LIMIT 1", (h,)).fetchone()
         # Description hashes do not distinguish stores, cities or requisitions.
         # Semantic mode applies its company/title/location/source guards later.
@@ -111,16 +122,32 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         if discovery_settings(config)['dedupe'] == 'semantic':
             dup = None
         if dup:
-            store.admit(conn, r["id"], h, {"ingest": ad.model_dump()}, Stage.ARCHIVED, f"duplicate_of:{dup[0]}")
+            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), **extra}, Stage.ARCHIVED, f"duplicate_of:{dup[0]}")
             stats["duplicate"] += 1
         elif is_sponsored(r["raw_json"]):
-            store.admit(conn, r["id"], h, {"ingest": ad.model_dump()}, Stage.ARCHIVED, "sponsored_ad")
+            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), **extra}, Stage.ARCHIVED, "sponsored_ad")
             stats["sponsored"] += 1
         else:
-            store.admit(conn, r["id"], h, {"ingest": ad.model_dump()})
+            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), **extra})
             stats["admitted"] += 1
         conn.commit()
     return stats
+
+
+def _prescreen(conn, rules, r, text: str, stage: str, *, content_hash: str | None = None, ad=None):
+    """Run the prescreen engine for one row. A clear mismatch is archived (reason 'prescreened', reversible: see
+    jobwatch.prescreen.reconsider). Returns the outcome, or None when prescreen is off (no confirmed profile)."""
+    engine = rules.prescreen
+    if engine is None:
+        return None
+    from jobwatch.prescreen.engine import fields_of_row
+    out = engine.screen(conn, r["id"], fields_of_row(r, text), stage=stage)
+    if out.skip:
+        data = {"prescreen": out.summary()}
+        if ad is not None:
+            data["ingest"] = ad.model_dump()
+        store.admit(conn, r["id"], content_hash or f"prescreen:{r['id']}", data, Stage.ARCHIVED, "prescreened")
+    return out
 
 
 BROWSER_FALLBACK = {"seek", "jobspy_src"}

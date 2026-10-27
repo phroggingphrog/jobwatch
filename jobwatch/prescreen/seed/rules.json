@@ -1,0 +1,9 @@
+{
+ "version": 1,
+ "description": "Shared rules. Profile-derived rules are not seeded: they are written to prescreen_rules when a profile is confirmed (jobwatch.prescreen.sync).",
+ "rules": [
+  {"key": "flag:work_rights_any", "kind": "term_hit", "effect": "flag", "source": "new generic",
+   "params": {"category": "work_rights", "values": null, "match": "any", "legacy_reason": "work_rights",
+              "reason": "Ad mentions a work-rights condition (\"{matched}\"); check it before applying."}}
+ ]
+}

@@ -74,7 +74,7 @@ HIDE_REASONS = [("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real
                 ("excluded_by_rule", "Excluded by your rule")]
 NOT_TARGET_KEYS = frozenset(k for k, _ in HIDE_REASONS[HIDE_REASONS.index(("low_fit", "Not a fit")) + 1:])
 HIDE_LABEL = {**dict(HIDE_REASONS), "not_target": "Not a target role (not sorted yet)", "other": "Other reason",
-              "duplicate": "Same ad as another job",
+              "duplicate": "Same ad as another job", "prescreened": "Skipped by an early check (the reason is on the job)",
               "hard_gate": "Ruled out by a hard requirement (work rights, level or years)"}
 # the same reasons in running text where the label alone would read badly ("Hidden: full-time only: not possible...")
 HIDE_SENTENCE = {"full_time_only": "full-time only, which does not fit your hours",
@@ -695,7 +695,7 @@ def ai_from_row(r: dict) -> dict | None:
 # pipeline has not judged yet (ingested / extracted / scored) keeps the reader's review, or waits.
 PL_SHOW = ("draft_queued", "drafted", "ready")
 PL_HIDE_REASON = {"not_a_real_job": "not_a_real_job", "sponsored_ad": "sponsored_ad", "too_senior": "too_senior",
-                  "not_relevant": "not_relevant", "excluded_by_rule": "excluded_by_rule",
+                  "not_relevant": "not_relevant", "excluded_by_rule": "excluded_by_rule", "prescreened": "prescreened",
                   "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
                   "work_rights:citizen_or_pr": "needs_citizen_or_pr", "work_rights:citizen_only": "needs_citizen_or_pr",
                   "work_rights:clearance": "needs_citizen_or_pr",

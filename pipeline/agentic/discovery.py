@@ -222,6 +222,8 @@ def enforce_exclusions(conn, config, *, person=None):
                 reason='excluded_by_rule', output={'rule_id': rule.rule_id})
             out.append(pid)
     conn.commit()
+    from jobwatch.prescreen import lifecycle
+    out += lifecycle.screen_ingested(conn, policy)       # early deterministic screening of what is already queued
     return out
 
 
@@ -328,7 +330,7 @@ def screen_step(conn, config, *, person=None, llm=None, context=None, seconds=30
     return out
 
 
-def restore_archived(conn, reasons=('not_relevant', 'excluded_by_rule')):
+def restore_archived(conn, reasons=('not_relevant', 'excluded_by_rule', 'prescreened')):
     from pipeline import store
     from pipeline.schemas import Stage
     if not _has_table(conn, 'pipeline_state'):
@@ -435,6 +437,8 @@ def reconsider(conn, config, *, person=None):
     policy, plan = _current_plan(person or users.current())
     if policy is None:
         return 0
+    from jobwatch.prescreen import lifecycle
+    restored += lifecycle.reconsider(conn, policy)       # skips whose rules, profile or overrides changed return to the queue
     rows = conn.execute("SELECT posting_id,reason FROM pipeline_state WHERE stage='archived' AND reason IN ('not_relevant','excluded_by_rule') ORDER BY updated_at").fetchall()
     for pid, reason in rows:
         posting = service._posting(conn, pid)

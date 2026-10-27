@@ -111,7 +111,7 @@ def triage_new(conn, config, *, limit: int | None = 400, llm: LLM | None = None,
     max_seconds: no new batch is started after this many seconds (stats["time_limit"]); the rest is asked next run. None = no limit."""
     cfg = settings(config)
     model = cfg.get("triage_model") or __import__("jobwatch.model_choice", fromlist=["x"]).get_model("reader")
-    rules = Rules(config.rules, config.employers)
+    rules = Rules(config.rules, config.employers, conn=conn)
     # only the owner's interest decisions go to the triage model, never the CV
     profile = load_interest() or _PROFILE_FALLBACK
     llm = llm or LLM()
