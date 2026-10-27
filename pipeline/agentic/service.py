@@ -271,6 +271,15 @@ def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=N
         invocation_deadline = batch.deadline if batch is not None else time.time() + cfg['batch_seconds']
     offset = store.resume_quota_clock(claim)
     prior = store.load_checkpoint(claim)
+    if prior is not None and not prior.reservations and prior.job_charged == 0 \
+            and not any(prior.role_turns.values()):
+        previous = store.conn.execute("SELECT reason FROM agentic_activity WHERE run_key=? AND event='finished' "
+                                      'ORDER BY id DESC LIMIT 1', (claim.run_key,)).fetchone()
+        if previous and previous[0] == 'daily_budget':
+            # No model work ran; the old batch's allocation must not cap a new invocation.
+            # Its charge ledger and completed artifacts remain intact.
+            store.discard_checkpoint(claim)
+            prior = None
     if prior is not None and prior.job_deadline <= time.time() - offset:
         # An old run's deadline has passed: every resume would fail at once ("posting_unavailable"), so start fresh.
         store.discard_checkpoint(claim)
