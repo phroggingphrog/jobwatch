@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
+import uuid
 
 from . import collectors as registry
 from . import db as dbm
@@ -67,19 +69,21 @@ def main(argv: list[str] | None = None) -> int:
     # People run one after another inside one unit: split its time over those who will actually run (a person
     # without a confirmed scope is skipped in ~0 s), so the whole run stays inside the unit's TimeoutStartSec.
     from . import pipeline
+    unit_seconds = pipeline.SLOW_UNIT_BUDGET_S if '--tier' in argv and argv[argv.index('--tier')+1] == 'slow' else pipeline.UNIT_BUDGET_S
+    invocation_deadline = time.time() + unit_seconds
     from .candidate import intake
     running = sum(1 for name in names if name and intake.discovery_scope(name) is not None)
     share = pipeline.PEOPLE_SHARE.set(1.0 / max(1, running))
     try:
         for name in names:
             with (users.use(name) if name else contextlib.nullcontext()):
-                rc = _main(argv) or rc
+                rc = _main(argv, deadline=min(invocation_deadline, time.time()+unit_seconds/max(1,running))) or rc
     finally:
         pipeline.PEOPLE_SHARE.reset(share)
     return rc
 
 
-def _main(argv: list[str]) -> int:
+def _main(argv: list[str], *, deadline=None) -> int:
     parser = argparse.ArgumentParser(prog="jobwatch", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config-dir", help="config directory (default: <repo>/config)")
@@ -90,7 +94,10 @@ def _main(argv: list[str]) -> int:
     p_run.add_argument("--dry-run", action="store_true", help="store postings and matches, but leave new matches queued (not on the board)")
     p_run.add_argument("--only", choices=registry.COLLECTORS, help="run one collector")
     p_run.add_argument("--limit", type=int, help="max postings per collector (also stops requests early)")
+    p_run.add_argument('--collect-only', action='store_true', help='Publish postings without running assessment')
     sub.add_parser("read", help="AI reader only: read and judge waiting ads, no collecting")
+    p_exit = sub.add_parser('service-exit', help='Record an abnormal managed worker exit and flush error notifications')
+    p_exit.add_argument('--unit', required=True)
     chk = sub.add_parser("check", help="list misspelled or wrong lines in your profile and settings files")
     chk.add_argument("--code", action="store_true", help="also list places where your own facts appear in the code")
     p_dig = sub.add_parser("digest", help="weekly Reddit chatter + stats digest")
@@ -107,6 +114,20 @@ def _main(argv: list[str]) -> int:
     for noisy in ("JobSpy", "jobspy", "urllib3"):
         logging.getLogger(noisy).setLevel(logging.ERROR)
     config = load_config(args.config_dir)
+
+    if args.cmd == 'service-exit':
+        from pipeline.agentic import incidents
+        conn = dbm.connect(config.db_path)
+        try:
+            import os
+            result = os.environ.get('SERVICE_RESULT', 'success')
+            if result != 'success':
+                incidents.reconcile_service_exit(conn, unit=args.unit,
+                    reason='service_timeout' if result == 'timeout' else 'worker_interrupted')
+            incidents.flush_notifications(conn)
+        finally:
+            conn.close()
+        return 0
 
     if args.cmd == "init-db":
         conn = dbm.connect(config.db_path)
@@ -152,13 +173,54 @@ def _main(argv: list[str]) -> int:
         for problem in _check_profile():
             print("profile check:", problem)
         part = PEOPLE_SHARE.get()                     # --user all: this person's share of the unit
-        swept = expiry.sweep(conn, max_seconds=180 * part)  # stale-ad check first, at most 3 of the reader's minutes
-        print({"expiry": swept})
-        print(agentic.after_collect(conn, config, max_seconds=max(60, (UNIT_BUDGET_S - 180) * part)))
+        from pipeline.agentic import incidents
+        import os
+        run_id = 'reader-' + uuid.uuid4().hex
+        deadline = deadline if deadline is not None else time.time()+UNIT_BUDGET_S*part
+        incidents.reconcile_known_failures(conn)
+        incidents.begin_run(conn, run_id, unit=os.environ.get('JOBWATCH_SERVICE_UNIT', 'manual'))
+        state = 'completed'
+        try:
+            incidents.mark_phase(conn, run_id, 'expiry')
+            phase_start = time.monotonic()
+            swept = expiry.sweep(conn, max_seconds=max(0,min(180*part, deadline-time.time())))
+            incidents.mark_phase(conn, run_id, 'expiry', completed=True)
+            print({'expiry': swept, 'phase_seconds': {'expiry': time.monotonic()-phase_start}}, flush=True)
+            result = agentic.after_collect(conn, config, max_seconds=max(0,deadline-time.time()),
+                deadline=deadline, run_id=run_id)
+            print(result, flush=True)
+        except Exception as exc:
+            state = 'failed'
+            incidents.report(conn, run_id=run_id, reason=getattr(exc,'code','execution_failed'), phase='reader')
+            raise
+        finally:
+            incidents.end_run(conn, run_id, state=state)
+            conn.close()
         return 0
     if args.cmd == "run":
         from .pipeline import run
-        summary = run(config, args.tier, dry_run=args.dry_run, only=args.only, limit=args.limit)
+        if args.dry_run:
+            summary = run(config, args.tier, dry_run=True, only=args.only, limit=args.limit,
+                assess=False, deadline=deadline)
+            _print_run(summary)
+            return 0
+        from pipeline.agentic import incidents
+        import os
+        conn = dbm.connect(config.db_path)
+        run_id = 'collector-' + uuid.uuid4().hex
+        incidents.begin_run(conn, run_id, unit=os.environ.get('JOBWATCH_SERVICE_UNIT', 'manual'))
+        state = 'completed'
+        try:
+            incidents.mark_phase(conn, run_id, 'collection')
+            summary = run(config, args.tier, dry_run=args.dry_run, only=args.only, limit=args.limit,
+                assess=not args.collect_only, deadline=deadline, run_id=run_id)
+        except Exception as exc:
+            state = 'failed'
+            incidents.report(conn, run_id=run_id, reason=getattr(exc,'code','execution_failed'), phase='collection')
+            raise
+        finally:
+            incidents.end_run(conn, run_id, state=state)
+            conn.close()
         _print_run(summary)
         if all_failed(summary):
             print("every collector in this run errored", file=sys.stderr)
