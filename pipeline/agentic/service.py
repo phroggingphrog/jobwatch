@@ -566,6 +566,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             adapter.save_artifact(claim, 'candidate', candidate.model_dump(mode='json'))
             completed_phase = 'candidate_assessment'
             incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
+            incidents.mark_phase(conn, incident_run_id, 'evaluation', posting_id=posting_id)
             from pipeline.agentic.model_insights import pipeline_insights
             models = adapter.load_artifact(key.value, 'model_insights')
             if models is None:
