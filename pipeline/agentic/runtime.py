@@ -20,6 +20,10 @@ from pipeline.agentic.contracts import AgenticError, BudgetCheckpoint, Reservati
 
 # Moves one agent step may take; employer research uses several (8 ran out on real ads, 2026-10-12).
 MAX_ROLE_TURNS = 16
+# "No per-job token limit": the stored checkpoint needs an integer, so unlimited is a ceiling no job can reach.
+UNLIMITED_JOB_TOKENS = 10 ** 12
+# Longest wait for one model reply (seconds); a reasoning role is allowed longer. None in JobBudget = only the job's own clock.
+CALL_SECONDS, CALL_SECONDS_REASONING = 180, 600
 # Model replies a job may get wrong (bad format, failed check) before it is held; 3 ran out on real drafts.
 MAX_FAILED_ATTEMPTS = 6
 
@@ -119,14 +123,20 @@ class BatchBudget:
 class JobBudget:
     def __init__(self, run_key: str, batch: BatchBudget, *, checkpoint: BudgetCheckpoint | None = None,
                  persist: Callable[..., Any] | None = None, token_ceiling: int = 150_000,
-                 clock: Callable[[], float] = time.time, deadline: float | None = None):
+                 clock: Callable[[], float] = time.time, deadline: float | None = None,
+                 role_turn_limit: int | None = MAX_ROLE_TURNS, call_seconds: float | None = CALL_SECONDS,
+                 call_seconds_reasoning: float | None = CALL_SECONDS_REASONING):
         if type(run_key) is not str or len(run_key) != 64 or any(c not in "0123456789abcdef" for c in run_key):
             raise RuntimeErrorSafe("invalid_run_key")
         self.run_key, self.batch, self._clock = run_key, batch, clock
         self._persist = persist or self._memory_persist
         self.events: list[tuple] = []
         self._revision = 0
-        self._job_ceiling = token_ceiling
+        # None = unlimited for the three per-job limits below. Not stored in the checkpoint: they come from
+        # the person's settings each time a job starts.
+        self._job_ceiling = UNLIMITED_JOB_TOKENS if token_ceiling is None else token_ceiling
+        self.role_turn_limit = role_turn_limit
+        self.call_seconds, self.call_seconds_reasoning = call_seconds, call_seconds_reasoning
         self._job_deadline = deadline if deadline is not None else min(clock() + 900, batch.deadline)
         self._reservations: dict[str, Reservation] = {}
         self._role_turns = {name: 0 for name in ("candidate_evaluator", "evaluator", "researcher", "drafter", "reviewer", "prefill_answers")}
@@ -365,7 +375,7 @@ def _json_bytes(value: Any) -> int:
         raise RuntimeErrorSafe("invalid_request") from None
 
 
-def run_role(role: RoleSpec, context: Any, budget: JobBudget, llm: Any, *, max_turns: int = MAX_ROLE_TURNS,
+def run_role(role: RoleSpec, context: Any, budget: JobBudget, llm: Any, *, max_turns: int | None = None,
              max_output_tokens: int = 12_000) -> RoleResult:
     """Execute the real Deep Agents graph through the counted local gateway."""
     from pipeline.agentic.deepagents_runtime import run_deepagents_role

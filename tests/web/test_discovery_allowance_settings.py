@@ -96,3 +96,29 @@ def test_daily_token_allowance_rejects_cross_origin_posts(tmp_path, monkeypatch)
     response = client.post('/preferences/discovery-settings',
         data={'mode': 'unlimited'}, headers={'origin': 'https://evil.example'}, follow_redirects=False)
     assert response.status_code == 403
+
+
+def test_job_limits_form_saves_unlimited_and_finite_values_without_touching_the_daily_value(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    page = client.get('/preferences')
+    assert 'Limits for each job assessment' in page.text and 'Time per job' in page.text
+    client.post('/preferences/discovery-settings', data={'mode': 'limited', 'daily_token_ceiling': '125000'})
+
+    saved = client.post('/preferences/job-limits', data={
+        'job_token_mode': 'unlimited', 'job_token_ceiling': '', 'job_seconds_mode': 'unlimited', 'job_seconds': '',
+        'job_turns_mode': 'limited', 'job_max_turns': '40'}, follow_redirects=False)
+    assert saved.status_code == 303
+    page = client.get('/preferences')
+    assert 'Current setting: 125000 tokens per day' in page.text
+    assert 'name="job_token_mode" value="unlimited" checked' in page.text
+    assert 'name="job_seconds_mode" value="unlimited" checked' in page.text
+    assert 'name="job_turns_mode" value="limited" checked' in page.text and 'value="40"' in page.text
+
+
+@pytest.mark.parametrize('turns', ['', '0', '-3', '2.5', 'many'])
+def test_job_limits_form_refuses_a_bad_limited_value(tmp_path, monkeypatch, turns):
+    client = _client(tmp_path, monkeypatch)
+    response = client.post('/preferences/job-limits', data={
+        'job_token_mode': 'unlimited', 'job_seconds_mode': 'unlimited',
+        'job_turns_mode': 'limited', 'job_max_turns': turns})
+    assert response.status_code == 400 and 'positive whole number' in response.text

@@ -18,10 +18,10 @@ def test_native_settings_persist_unlimited_without_accepting_client_identity(wor
     with TestClient(create_api(credentials=credentials, config=config)) as client:
         path = '/api/agent/discovery/settings'
         assert client.get(path).status_code == 401
-        assert client.get(path, headers=headers_a).json() == {'daily_token_ceiling': 2_000_000}
-        assert client.post(path, headers=headers_a, json={'daily_token_ceiling': None}).json() == {'daily_token_ceiling': None}
-        assert client.get(path, headers=headers_a).json() == {'daily_token_ceiling': None}
-        assert client.get(path, headers=headers_b).json() == {'daily_token_ceiling': 2_000_000}
+        assert client.get(path, headers=headers_a).json()['daily_token_ceiling'] == 2_000_000
+        assert client.post(path, headers=headers_a, json={'daily_token_ceiling': None}).json()['daily_token_ceiling'] is None
+        assert client.get(path, headers=headers_a).json()['daily_token_ceiling'] is None
+        assert client.get(path, headers=headers_b).json()['daily_token_ceiling'] == 2_000_000
         for body in ({'daily_token_ceiling': -1}, {'daily_token_ceiling': False},
                      {'daily_token_ceiling': None, 'person': 'fixture-b'}):
             assert client.post(path, headers=headers_a, json=body).status_code == 422

@@ -44,17 +44,17 @@ def _confirmed_profile(person, ceiling=900):
 
 def test_default_is_finite_and_inherits_confirmed_scope(data_dir, monkeypatch):
     monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
-    assert discovery_settings.get_settings('sam', CONFIG) == {'daily_token_ceiling': 1234}
+    assert discovery_settings.get_settings('sam', CONFIG)['daily_token_ceiling'] == 1234
     _, _, _ = _confirmed_profile('sam', ceiling=876)
-    assert discovery_settings.get_settings('sam', CONFIG) == {'daily_token_ceiling': 876}
+    assert discovery_settings.get_settings('sam', CONFIG)['daily_token_ceiling'] == 876
     assert discovery_settings._path('sam').parent == data_dir / 'users' / 'sam' / 'config'
 
 
 def test_unlimited_setting_is_person_scoped_and_written_privately(data_dir, monkeypatch):
     monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
-    assert discovery_settings.set_settings('sam', CONFIG, None) == {'daily_token_ceiling': None}
-    assert discovery_settings.get_settings('sam', CONFIG) == {'daily_token_ceiling': None}
-    assert discovery_settings.get_settings('sue', CONFIG) == {'daily_token_ceiling': 1234}
+    assert discovery_settings.set_settings('sam', CONFIG, None)['daily_token_ceiling'] is None
+    assert discovery_settings.get_settings('sam', CONFIG)['daily_token_ceiling'] is None
+    assert discovery_settings.get_settings('sue', CONFIG)['daily_token_ceiling'] == 1234
     path = discovery_settings._path('sam')
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
     assert stat.S_IMODE(path.stat().st_mode) == 0o600

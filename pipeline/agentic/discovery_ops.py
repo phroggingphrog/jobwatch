@@ -60,9 +60,9 @@ def get_settings(person, config):
         return discovery_settings.get_settings(person, config)
 
 
-def set_settings(person, config, daily_token_ceiling):
+def set_settings(person, config, daily_token_ceiling, **job_limits):
     with users.use(person):
-        return discovery_settings.set_settings(person, config, daily_token_ceiling)
+        return discovery_settings.set_settings(person, config, daily_token_ceiling, **job_limits)
 
 
 def start(person, config, request_id, *, incident_id=None, posting_id=None, expected_context=None):

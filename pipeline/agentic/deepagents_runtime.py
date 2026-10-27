@@ -58,7 +58,7 @@ class _Execution:
     context: Any
     budget: JobBudget
     llm: Any
-    max_turns: int
+    max_turns: int | None          # None = no turn limit
     max_output_tokens: int
     calls: int = 0
     trace: list[str] = field(default_factory=list)
@@ -67,6 +67,7 @@ class _Execution:
     corrections: int = 0
     transient_retried: bool = False
     last_error: str = ""
+    profile: dict = field(default_factory=lambda: dict(model_choice.PROFILE_DEFAULT))
 
     def fail(self, code: str) -> None:
         if not self.failure_recorded:
@@ -133,6 +134,19 @@ class GatewayChatModel(BaseChatModel):
             raise RuntimeErrorSafe("invalid_registry")
         return self.bind()
 
+    def _style(self, profile):
+        """Extra gateway arguments for a model profile; empty for the default JSON-per-step path."""
+        extra = {}
+        if profile["native_tools"]:
+            extra["tools"] = [{"type": "function", "function": {
+                "name": tool.name,
+                "description": f"Run the {tool.name} role operation."
+                               + (" Calling it finishes the role." if tool.name in self.execution.role.terminal_tools else ""),
+                "parameters": tool.arguments_model.model_json_schema()}} for tool in self.execution.role.tools]
+        if not profile["json_mode"]:
+            extra["json_mode"] = False
+        return extra
+
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         execution = self.execution
         try:
@@ -162,11 +176,13 @@ class GatewayChatModel(BaseChatModel):
         execution = self.execution
         budget = execution.budget
         budget.ensure_live()
-        if execution.calls >= execution.max_turns:
+        if execution.max_turns is not None and execution.calls >= execution.max_turns:
             raise RuntimeErrorSafe("turn_limit")
         transcript = _messages_for_gateway(messages)
-        reservation = budget.reserve(execution.role.name, _json_bytes(transcript) + 512,
-                                     execution.max_output_tokens)
+        profile = execution.profile
+        # A reasoning model spends part of max_tokens thinking; below its floor the reply can come back empty.
+        max_tokens = max(execution.max_output_tokens, profile["min_output_tokens"] or 0)
+        reservation = budget.reserve(execution.role.name, _json_bytes(transcript) + 512, max_tokens)
         budget.dispatched(reservation)
         execution.failure_recorded = False
         execution.calls += 1
@@ -177,12 +193,15 @@ class GatewayChatModel(BaseChatModel):
         raw = None
         exc_text = None
         try:
-            remaining = min(600 if execution.role.reasoning else 180, budget.remaining_seconds())  # high reasoning takes longer
+            per_call = getattr(budget, 'call_seconds_reasoning' if execution.role.reasoning else 'call_seconds',
+                               600 if execution.role.reasoning else 180)  # high reasoning takes longer; None = job clock only
+            remaining = budget.remaining_seconds() if per_call is None else min(per_call, budget.remaining_seconds())
             if remaining <= 0:
                 raise RuntimeErrorSafe("deadline_exceeded")
             result = gateway_call(execution.llm, execution.role.model, transcript,
-                role=execution.role.name, max_tokens=execution.max_output_tokens, timeout=remaining,
-                deadline=time.monotonic() + remaining, reasoning_effort=execution.role.reasoning)
+                role=execution.role.name, max_tokens=max_tokens, timeout=remaining,
+                deadline=time.monotonic() + remaining, reasoning_effort=execution.role.reasoning,
+                **self._style(profile))
             budget.ensure_live()
             payload = getattr(result, "data", result)
             raw = payload
@@ -298,22 +317,27 @@ def _invoke(execution):
     with tracing_context(enabled=False):
         graph.invoke({"messages": [HumanMessage(content=json.dumps(execution.context,
                      ensure_ascii=False, allow_nan=False))]},
-                     config={"callbacks": [], "recursion_limit": 4 * execution.max_turns + 10})
+                     config={"callbacks": [], "recursion_limit": 1_000_000 if execution.max_turns is None
+                                        else 4 * execution.max_turns + 10})
     if execution.output is None:
         raise RuntimeErrorSafe("missing_terminal")
     return RoleResult(execution.output, tuple(execution.trace), execution.calls)
 
 
-def run_deepagents_role(role, context, budget, llm, *, max_turns=MAX_ROLE_TURNS, max_output_tokens=12_000):
+def run_deepagents_role(role, context, budget, llm, *, max_turns=None, max_output_tokens=12_000):
     error = None
     last_exc = None
     result = None
     execution = _Execution(role, context, budget, llm, MAX_ROLE_TURNS, max_output_tokens)
     try:
-        if (type(max_turns) is not int or max_turns < 1
+        if ((max_turns is not None and (type(max_turns) is not int or max_turns < 1))
                 or type(max_output_tokens) is not int or max_output_tokens < 1):
             raise RuntimeErrorSafe("invalid_request")
-        execution.max_turns = min(MAX_ROLE_TURNS, max_turns)
+        # The caller's own cap (e.g. 3 for a quick screen) always applies; otherwise the job's limit (None = unlimited).
+        job_limit = getattr(budget, 'role_turn_limit', MAX_ROLE_TURNS)
+        limits = [v for v in (max_turns, job_limit) if v is not None]
+        execution.max_turns = min(limits) if limits else None
+        execution.profile = model_choice.gateway_profile(role.model)
         # Global debug logging happens outside model hooks. Refuse it before
         # any private graph inputs can be emitted; never mutate global settings.
         if get_debug() or get_verbose() or any(os.environ.get(key, "").lower() not in ("", "0", "false")

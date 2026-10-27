@@ -28,6 +28,12 @@ ROLES = {
     "answers": ("Fills form answers", ("pipeline", "agentic", "answer_model")),
 }
 
+# Named bundles of role picks. "cheap-assessment" moves only the assessment phases (frozen requirements, candidate
+# evaluation, matching, holistic evaluation: all the `evaluator` role) to the paid OmniRoute combo `deepseek-flash`.
+# CV/letter drafting (`writer`), `reviewer` and `answers` keep their own picks. Candidate facts are sent to that
+# provider, so a profile is applied only on the person's (or owner's) explicit choice, never as the install default.
+PROFILES = {"cheap-assessment": {"evaluator": "deepseek-flash"}}
+
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,120}$")
 
 
@@ -106,6 +112,61 @@ def set_models(picks: dict, user: str | None = None) -> None:
         else:
             cur[role] = check(model, role, user)
     _write_private(_cfg_dir(user) / "models.json", cur)
+
+
+# -- how to talk to one model (per person, per model) ---------------------------------------------
+# Defaults are the JSON-per-step path every install already uses. A model behind the gateway that cannot do
+# that (a reasoning model that spends its token budget thinking, or rejects response_format) is described in
+# <person>/config/model_profiles.json, or for everyone under pipeline.agentic.model_profiles in config/jobwatch.yaml:
+#   {"deepseek-flash": {"native_tools": true, "json_mode": false, "min_output_tokens": 16000}}
+#   native_tools      send the role's tools as OpenAI `tools` and read the model's tool call (default false)
+#   json_mode         send response_format=json_object (default true; never sent with native_tools)
+#   min_output_tokens raise every reply's max_tokens to at least this (reasoning tokens count against it)
+PROFILE_DEFAULT = {"native_tools": False, "json_mode": True, "min_output_tokens": None}
+
+
+def gateway_profile(model: str, user: str | None = None) -> dict:
+    out = dict(PROFILE_DEFAULT)
+    sources = []
+    try:
+        from .config import load_config
+        node = ((load_config().settings or {}).get("pipeline") or {}).get("agentic") or {}
+        sources.append((node.get("model_profiles") or {}).get(model))
+    except Exception:
+        pass
+    sources.append(_read(_cfg_dir(user) / "model_profiles.json").get(model))
+    for found in sources:
+        if not isinstance(found, dict):
+            continue
+        for key in ("native_tools", "json_mode"):
+            if isinstance(found.get(key), bool):
+                out[key] = found[key]
+        floor = found.get("min_output_tokens")
+        if floor is None and "min_output_tokens" in found:
+            out["min_output_tokens"] = None
+        elif type(floor) is int and floor > 0:
+            out["min_output_tokens"] = floor
+    return out
+
+
+def set_gateway_profile(model: str, profile: dict, user: str | None = None) -> None:
+    """Save how to talk to `model` for this person; an empty dict clears it."""
+    model = check(model, None, user)
+    path = _cfg_dir(user) / "model_profiles.json"
+    current = _read(path)
+    clean = {k: v for k, v in profile.items() if k in PROFILE_DEFAULT}
+    if clean:
+        current[model] = clean
+    else:
+        current.pop(model, None)
+    _write_private(path, current)
+
+
+def apply_profile(name: str, user: str | None = None) -> None:
+    """Save a named bundle of picks for this person (see PROFILES)."""
+    if name not in PROFILES:
+        raise KeyError(name)
+    set_models(PROFILES[name], user)
 
 
 # -- own gateway + key -------------------------------------------------------------------------

@@ -10,8 +10,17 @@ from jobwatch import users
 from jobwatch.candidate import intake
 
 
+# Per-job limits that can pause one assessment. In the file: a number = that limit, null = no limit,
+# key absent = the install's default (config/jobwatch.yaml, else the built-in value).
+JOB_LIMITS = ('job_token_ceiling', 'job_seconds', 'job_max_turns')
+DEFAULT_MAX_TURNS = 16
+
+
 class DailySettings(intake._Model):
     daily_token_ceiling: int | None = Field(gt=0)
+    job_token_ceiling: int | None = Field(default=None, gt=0)
+    job_seconds: int | None = Field(default=None, gt=0)
+    job_max_turns: int | None = Field(default=None, gt=0)
 
 
 _MISSING = object()
@@ -37,11 +46,37 @@ def _override(person: str) -> DailySettings | None:
         raise ValueError("invalid_discovery_settings") from None
 
 
+def job_defaults(cfg: dict) -> dict:
+    """Built-in per-job limits for a person who has not changed them (cfg = service._config(config))."""
+    return {'job_token_ceiling': cfg['job_token_ceiling'], 'job_seconds': int(cfg['job_seconds']),
+            'job_max_turns': DEFAULT_MAX_TURNS}
+
+
+def job_limits(person: str, cfg: dict) -> dict:
+    """Effective per-job limits; None means unlimited. A damaged file falls back to the finite defaults."""
+    values = job_defaults(cfg)
+    try:
+        override = _override(person)
+    except ValueError:
+        return values
+    if override is not None:
+        for key in override.model_fields_set & set(JOB_LIMITS):
+            values[key] = getattr(override, key)
+    return values
+
+
 def get_settings(person: str, config) -> dict:
-    """Return the effective token cap; null means unlimited daily tokens."""
+    """Return the effective daily token cap and per-job limits; null means unlimited."""
+    from pipeline.agentic.service import _config
+    with users.use(person):
+        jobs = job_limits(person, _config(config))
+    return {**_daily(person, config), **jobs}
+
+
+def _daily(person: str, config) -> dict:
     override = _override(person)
     if override is not None:
-        return override.model_dump(mode="json")
+        return {'daily_token_ceiling': override.daily_token_ceiling}
 
     confirmed = intake._confirmed_scope(person)
     if confirmed is not None:
@@ -53,13 +88,23 @@ def get_settings(person: str, config) -> dict:
     return {"daily_token_ceiling": ceiling}
 
 
-def set_settings(person: str, config, daily_token_ceiling: int | None) -> dict:
-    """Persist exactly one strictly validated daily-token setting for this person."""
-    value = DailySettings.model_validate({"daily_token_ceiling": daily_token_ceiling}, strict=True)
-    path = _path(person)
-    intake._write_private(path, json.dumps(value.model_dump(mode="json"), sort_keys=True,
-                                           separators=(",", ":")).encode("utf-8"))
-    return value.model_dump(mode="json")
+def set_settings(person: str, config, daily_token_ceiling: int | None, **job_limits_: int | None) -> dict:
+    """Persist this person's strictly validated settings. A per-job limit that is not passed keeps its
+    stored value (or the default); passing None stores "unlimited"."""
+    if set(job_limits_) - set(JOB_LIMITS):
+        raise ValueError("invalid_discovery_settings")
+    stored = {}
+    try:
+        previous = _override(person)
+    except ValueError:
+        previous = None
+    if previous is not None:
+        stored = {k: getattr(previous, k) for k in previous.model_fields_set & set(JOB_LIMITS)}
+    stored.update(job_limits_)
+    value = DailySettings.model_validate({"daily_token_ceiling": daily_token_ceiling, **stored}, strict=True)
+    intake._write_private(_path(person), json.dumps(value.model_dump(mode="json", exclude_unset=True),
+                                                    sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    return get_settings(person, config)
 
 
 def allowance(daily_token_ceiling: int | None, spent: int, per_run_cap: int) -> int:

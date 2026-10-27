@@ -32,10 +32,11 @@ from pipeline.agentic.evaluator import evaluate_job
 from pipeline.agentic.gate import decide
 from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, km_from_home
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
-from pipeline.agentic import decision_log, jev_skills, incidents
+from pipeline.agentic import decision_log, discovery_settings, jev_skills, incidents
 from pipeline.agentic.forms import build_form_map
 from pipeline.agentic.persistence import PersistenceAdapter, latest_result
-from pipeline.agentic.runtime import BatchBudget, JobBudget, RuntimeErrorSafe, validate_model_payload
+from pipeline.agentic.runtime import (BatchBudget, CALL_SECONDS, UNLIMITED_JOB_TOKENS, CALL_SECONDS_REASONING, JobBudget, RuntimeErrorSafe,
+                                      validate_model_payload)
 from pipeline.agentic.store import AgenticStore
 from pipeline.agentic.liveness import observe_posting, latest_observation, observation_current
 from pipeline.agentic.research import LocalSearxSearch, PublicSnapshot, ResearchCapability, SafeFetcher
@@ -120,6 +121,26 @@ def _config(config):
     if any(values[k] <= 0 for k in ('job_token_ceiling', 'batch_token_ceiling', 'job_seconds', 'batch_seconds')):
         raise AgenticError('invalid_configuration')
     return values
+
+
+def _run_timing(config):
+    """Global timing knobs read straight from the config (kept out of _config, which is hashed into run keys).
+
+    job_start_seconds: a job is only started while at least this much of the run window is left (null = start
+    whenever any is left). model_call_seconds / model_call_reasoning_seconds: longest wait for one model reply
+    (null = only the job's own clock)."""
+    raw = agentic_settings(config)
+    def seconds(name, default):
+        value = raw.get(name, default)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0):
+            raise AgenticError('invalid_configuration')
+        return value
+    start = raw.get('job_start_seconds', MODEL_PASS_SECONDS)
+    if start is not None and (isinstance(start, bool) or not isinstance(start, (int, float)) or start < 0):
+        raise AgenticError('invalid_configuration')
+    return {'job_start_seconds': start or 0,
+            'model_call_seconds': seconds('model_call_seconds', CALL_SECONDS),
+            'model_call_reasoning_seconds': seconds('model_call_reasoning_seconds', CALL_SECONDS_REASONING)}
 
 
 def decision_policy_mode(config) -> Literal['legacy', 'profile']:
@@ -287,7 +308,9 @@ def _make_batch(store, cfg, *, seconds=None, batch_id=None):
     return batch
 
 
-def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=None):
+def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=None, limits=None, timing=None):
+    limits = limits or discovery_settings.job_defaults(cfg)
+    timing = timing or {'model_call_seconds': CALL_SECONDS, 'model_call_reasoning_seconds': CALL_SECONDS_REASONING}
     if invocation_deadline is None:
         invocation_deadline = batch.deadline if batch is not None else time.time() + cfg['batch_seconds']
     offset = store.resume_quota_clock(claim)
@@ -301,6 +324,14 @@ def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=N
             # Its charge ledger and completed artifacts remain intact.
             store.discard_checkpoint(claim)
             prior = None
+    relaxed = prior is not None and (
+        (limits['job_token_ceiling'] is None and prior.job_token_ceiling < UNLIMITED_JOB_TOKENS)
+        or (limits['job_seconds'] is None and prior.job_deadline < invocation_deadline))
+    if prior is not None and relaxed:
+        # The person lifted a limit this saved run was started under; its stored limit is fixed, so start it afresh
+        # (completed artifacts and the day's charge ledger stay).
+        store.discard_checkpoint(claim)
+        prior = None
     if prior is not None and prior.job_deadline <= time.time() - offset:
         # An old run's deadline has passed: every resume would fail at once ("posting_unavailable"), so start fresh.
         store.discard_checkpoint(claim)
@@ -344,14 +375,17 @@ def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=N
     if prior is not None:
         job = JobBudget.restore(prior, batch=batch, persist=persist, clock=lambda: time.time() - offset)
     else:
-        job = JobBudget(claim.run_key, batch, persist=persist, token_ceiling=cfg['job_token_ceiling'],
-                        deadline=min(time.time() + cfg['job_seconds'], batch.deadline))
+        job = JobBudget(claim.run_key, batch, persist=persist, token_ceiling=limits['job_token_ceiling'],
+                        deadline=batch.deadline if limits['job_seconds'] is None
+                        else min(time.time() + limits['job_seconds'], batch.deadline))
         try:
             job._commit('snapshot')
         except BaseException:
             batch.release(job)  # admitted above; the caller never gets the job to release
             raise
     job._invocation_deadline = invocation_deadline
+    job.role_turn_limit = limits['job_max_turns']
+    job.call_seconds, job.call_seconds_reasoning = timing['model_call_seconds'], timing['model_call_reasoning_seconds']
     return job
 
 
@@ -478,7 +512,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         if cached_ready or saved_package is not None:
             remaining = min(60, cfg['job_seconds'], _invocation_deadline-time.time())
         else:
-            budget = _budget(store, claim, cfg, batch, _batch_registry, _invocation_deadline)
+            budget = _budget(store, claim, cfg, batch, _batch_registry, _invocation_deadline,
+                             discovery_settings.job_limits(users.current(), cfg), _run_timing(config))
             remaining = min(60, budget.remaining_seconds())  # Atlassian pages need ~35 s
         if remaining < MIN_READ_SECONDS:
             raise AgenticError('deadline_exceeded')
@@ -685,14 +720,28 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
                'deferred': [], 'skipped_reasons': {}}
     if not enabled(config):
         return summary
+    from pipeline.agentic import execution
+    cfg = _config(config)
+    # Two clocks. `soft` is the run window: it only decides whether another job may START. `hard` is when a started
+    # job is cut off. They are equal unless this person has no per-job time limit and the timer CLI set an absolute
+    # stop (execution.HARD_STOP, just under the systemd unit timeout): then a started job may finish up to that stop.
+    now = time.time()
+    soft = now + min(cfg['batch_seconds'], max_seconds if max_seconds is not None else cfg['batch_seconds'])
+    if deadline is not None:
+        soft = min(soft, deadline)
+    hard_stop = execution.HARD_STOP.get()
+    if hard_stop is not None:
+        soft = min(soft, hard_stop)
+    hard = soft
+    if hard_stop is not None and discovery_settings.job_limits(users.current(), cfg)['job_seconds'] is None:
+        hard = max(soft, min(hard_stop, now + cfg['batch_seconds']))
     if token_allowance is not None:
-        from pipeline.agentic import execution
         scope = execution.current()
         if token_allowance_reason not in {'daily_budget', 'run_budget'}:
             raise AgenticError('invalid_token_allowance_reason')
         if scope is None:
             scope = execution.Execution(run_id or ('assessment-' + uuid.uuid4().hex),
-                seconds=max_seconds if max_seconds is not None else _config(config)['batch_seconds'],
+                seconds=max(0, hard - now),
                 token_ceiling=max(0, int(token_allowance)), max_calls=1_000_000,
                 token_limit_reason=token_allowance_reason)
         else:
@@ -707,11 +756,8 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
                 max_seconds=max_seconds, deadline=deadline, run_id=run_id,
                 expected_run_keys=expected_run_keys, **kwargs)
     store = AgenticStore(conn); store.ensure()
-    cfg = _config(config)
-    invocation_deadline = time.time() + min(cfg['batch_seconds'],
-                                           max_seconds if max_seconds is not None else cfg['batch_seconds'])
-    if deadline is not None:
-        invocation_deadline = min(invocation_deadline, deadline)
+    invocation_deadline = hard
+    start_after = soft - _run_timing(config)['job_start_seconds']
     previous_charges = dict(conn.execute('SELECT batch_id,charged FROM agentic_batches'))
     batch = _make_batch(store, cfg, seconds=max(0, invocation_deadline-time.time()), batch_id=batch_id)
     batches = {batch.batch_id: batch}
@@ -721,7 +767,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
     for n, pid in enumerate(todo):
         if expected_run_keys is not None and pid not in expected_run_keys:
             raise AgenticError('snapshot_changed')
-        if invocation_deadline - time.time() < MODEL_PASS_SECONDS:
+        if time.time() > start_after:
             # Out of time. A job started with ~0 s can only be recorded as "posting_unavailable" without being read,
             # and that false hold sends it to the back of the rotation; leave the rest untouched for the next run.
             summary['skipped'] += len(todo) - n
@@ -745,7 +791,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
         last = conn.execute("SELECT reason FROM agentic_runs WHERE posting_id=? ORDER BY rowid DESC LIMIT 1",
                             (pid,)).fetchone()
         if stage == Stage.DLQ and expected_run_keys is None and last is not None and last[0] == 'snapshot_changed' \
-                and invocation_deadline - time.time() >= MODEL_PASS_SECONDS:
+                and time.time() <= start_after:
             # The first pass only refreshed the full ad text; judge the refreshed ad now, not on the next timer run.
             # Skip the retry once the batch deadline has passed: a job started with ~0 s can only be recorded as
             # "posting_unavailable" without being read, and that false hold sends it to the back of the rotation.

@@ -50,6 +50,10 @@ pipeline:
     embedding_model: openrouter/qwen/qwen3-embedding-8b  # Owner 2026-10-21: Qwen for candidate evidence, via counted OmniRoute adapter
     job_token_ceiling: 1500000  # 2026-10-12 late: retries of one job share this budget; Morrows hit 900k after 10 writer + 2 reviewer turns. Earlier 2026-10-12: writer now also reads the owner's voice guide; 600k ran out in review round 2;  # BUI-350: 250k ran out mid-evaluation; conservative reservations for complete evidence-backed documents
     batch_token_ceiling: 2000000
+    # Optional timing knobs (global; per-person per-job limits are in the person's discovery settings):
+    # job_start_seconds: 120            # start another job only while this much of the run window is left; null = start while any is left
+    # model_call_seconds: 180           # longest wait for one model reply; null = only the job's own clock
+    # model_call_reasoning_seconds: 600 # same, for the high-reasoning writer
     research_enabled: true  # existing local SearXNG; public employer/job facts only
     max_batch_jobs: 20
     concurrency: 2

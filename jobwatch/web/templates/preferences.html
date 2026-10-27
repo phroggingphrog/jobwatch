@@ -29,6 +29,26 @@
         <span class="wk-sub">Current setting: {% if token_settings_error %}Unavailable{% elif daily_token_ceiling is none %}Unlimited{% else %}{{ daily_token_ceiling }} tokens per day{% endif %}</span></div>
     </form>
   </section>
+  <section class="wk-sec" aria-labelledby="job-limits-heading">
+    <div><h2 class="wk-h2" id="job-limits-heading">Limits for each job assessment</h2>
+      <p class="wk-sub">Each assessment stops and pauses when it uses up one of these. Choose Unlimited to remove a limit for your jobs. An Unlimited assessment still ends when the whole run reaches its hard stop, and the 40-assessment daily cap and your daily token allowance still apply.</p></div>
+    {% if job_error %}<div class="wk-note bad" role="alert">{{ job_error }}</div>{% endif %}
+    <form method="post" action="/preferences/job-limits" class="wk-form wk-panel wk-pad">
+      {% for key, label, mode, unit, hint in (
+          ('job_token_ceiling', 'Tokens per job', 'job_token_mode', 'tokens', 'Pauses the job as token_limit.'),
+          ('job_seconds', 'Time per job', 'job_seconds_mode', 'seconds', 'Pauses the job as deadline_exceeded.'),
+          ('job_max_turns', 'Steps per agent', 'job_turns_mode', 'steps', 'Pauses the job as turn_limit.')) %}
+      <div class="wk-field" role="group" aria-labelledby="{{ key }}-label">
+        <span class="wk-lab" id="{{ key }}-label">{{ label }}</span>
+        <label class="wk-prow"><input type="radio" name="{{ mode }}" value="unlimited"{% if job_limits[key] is none %} checked{% endif %}>Unlimited</label>
+        <label class="wk-prow"><input type="radio" name="{{ mode }}" value="limited"{% if job_limits[key] is not none %} checked{% endif %}>Limited to</label>
+        <input id="{{ key }}-value" name="{{ key }}" type="number" min="1" step="1" inputmode="numeric" value="{{ job_limits[key] if job_limits[key] is not none else '' }}" aria-label="{{ label }} ({{ unit }})" aria-describedby="{{ key }}-hint">
+        <small class="wk-hint" id="{{ key }}-hint">{{ hint }} Ignored when Unlimited.</small>
+      </div>
+      {% endfor %}
+      <div class="wk-row"><button class="btn primary" type="submit">Save job limits</button></div>
+    </form>
+  </section>
   <div class="wk-panel wk-pad wk-statgrid">
     <div><div class="wk-eyebrow">Learning status</div><div style="margin-top:6px"><span class="st"{% if tone %} data-t="{{ tone }}"{% endif %}><span class="pip" aria-hidden="true"></span>{{ preference_state.status|replace('_', ' ') }}</span></div></div>
     <div><div class="wk-row" style="justify-content:space-between"><span class="wk-sub">Training choices</span><b class="wk-mono">{{ preference_state.n_train }} / {{ preference_state.minimum_train }}</b></div><div class="wk-meter" style="margin-top:8px"><i style="width:{{ [100, (100 * preference_state.n_train / preference_state.minimum_train)|round|int]|min if preference_state.minimum_train else 0 }}%"></i></div></div>

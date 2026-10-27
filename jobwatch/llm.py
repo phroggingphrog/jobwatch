@@ -168,6 +168,14 @@ OVERLOAD_WAITS = (20, 45)
 OVERLOAD_FALLBACK: dict[str, str] = {}
 
 
+def _rejected_options(status: int, payload: Any, body: dict) -> list[str]:
+    """Optional request fields a 400 reply names as unsupported (never the required ones)."""
+    if status != 400 or not isinstance(payload, dict):
+        return []
+    text = json.dumps(payload.get("error", ""), default=str).lower()
+    return [option for option in ("response_format", "reasoning_effort") if option in body and option in text]
+
+
 def _overloaded(status: int, payload: Any) -> bool:
     if status != 503 or not isinstance(payload, dict):
         return False
@@ -211,7 +219,8 @@ class LLM:
     def chat_once(self, model: str, messages: list[dict], *, json_mode: bool = True,
                   max_tokens: int = 8000, temperature: float | None = None,
                   timeout: float = 60, deadline: float | None = None,
-                  key_index: int = 0, reasoning_effort: str = "") -> LLMResult:
+                  key_index: int = 0, reasoning_effort: str = "", tools: list | None = None,
+                  send_response_format: bool = True) -> LLMResult:
         """Make exactly one paid-route transport attempt using an explicit key.
 
         This method never loads key files or falls back to another credential. An upstream
@@ -230,15 +239,27 @@ class LLM:
             raise SafeLLMError("invalid_response") from None
         body: dict = {"model": model, "messages": messages, "max_tokens": max_tokens}
         if temperature is not None: body["temperature"] = temperature
-        if json_mode: body["response_format"] = {"type": "json_object"}
+        # Native tool calling (`tools`): the model answers with a tool call instead of JSON text, so no response_format.
+        if tools: body["tools"], body["tool_choice"] = tools, "auto"
+        elif json_mode and send_response_format: body["response_format"] = {"type": "json_object"}
         if reasoning_effort: body["reasoning_effort"] = reasoning_effort
         remaining = deadline - time.monotonic() if deadline is not None else timeout
         if remaining <= 0: raise SafeLLMError("deadline") from None
         transport_failed = timed_out = False
         try:
-            status, payload = self._post(model, body,
-                {"Authorization": f"Bearer {keys[key_index]}", "Content-Type": "application/json"},
-                timeout, deadline)
+            headers = {"Authorization": f"Bearer {keys[key_index]}", "Content-Type": "application/json"}
+            status, payload = self._post(model, body, headers, timeout, deadline)
+            # A model behind the gateway may not know an optional OpenAI parameter (DeepSeek and reasoning_effort,
+            # say). A 400 that names it is not billed: send the same request once without it. The reply is still
+            # parsed as JSON, so the parameter only ever made the format stricter.
+            for _ in range(2):          # at most one retry per optional field
+                rejected = _rejected_options(status, payload, body)
+                if not rejected:
+                    break
+                for option in rejected:
+                    body.pop(option, None)
+                log.info("%s rejected %s; retrying without", model, ",".join(rejected))
+                status, payload = self._post(model, body, headers, timeout, deadline)
         except Exception as exc:
             transport_failed = True
             # A call cut off by the run's own clock is a deadline, not an outage (2026-10-18: 102 of 104
@@ -260,12 +281,22 @@ class LLM:
         invalid_response = False
         detail = None
         try:
-            text = payload["choices"][0]["message"]["content"] or ""
+            message = payload["choices"][0]["message"]
+            text = message["content"] or ""
             usage_raw = payload.get("usage")
             usage = {}
             if isinstance(usage_raw, dict):
                 usage = {k: usage_raw.get(k) for k in ("prompt_tokens", "completion_tokens")}
-            data = parse_json(text) if json_mode else None
+            calls = message.get("tool_calls") if tools else None
+            if calls:
+                # Same shape the JSON-per-step path returns. Only the first call is used: the runtime runs one
+                # operation per reply, and the model asks again after seeing the result.
+                function = calls[0]["function"]
+                arguments = function.get("arguments")
+                arguments = json.loads(arguments) if isinstance(arguments, str) else arguments
+                data = {"tool": function["name"], "arguments": arguments}
+            else:
+                data = parse_json(text) if json_mode else None
         except Exception as exc:
             invalid_response = True
             detail = f"{type(exc).__name__}: {exc}\nraw payload: {json.dumps(payload, default=str)[:6000]}"

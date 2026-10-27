@@ -136,6 +136,8 @@ def publish(conn, dry_run: bool = False) -> dict:
 
 UNIT_BUDGET_S = 780          # the whole run stays under the 900 s systemd limit: 120 s for a model call still in flight
 SLOW_UNIT_BUDGET_S = 2100    # the slow unit may run 45 min; collection takes ~12-14 of them, so the AI step gets the rest, bounded
+HARD_STOP_S = 840            # absolute stop for the fast/reader units (systemd TimeoutStartSec=15min): 60 s for cleanup
+SLOW_HARD_STOP_S = 2640      # slow unit (TimeoutStartSec=45min)
 MIN_AI_S = 60                # the AI step always gets at least this long
 
 

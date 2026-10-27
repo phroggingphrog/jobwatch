@@ -10,7 +10,7 @@ from pipeline.agentic import discovery_settings
 
 
 def register(app, config, conn_factory, render):
-    def render_preferences(request, conn, *, token_mode=None, token_value=None, token_error='', status=200):
+    def render_preferences(request, conn, *, token_mode=None, token_value=None, token_error='', job_error='', status=200):
         store = PreferenceStore(conn)
         error = ''
         try:
@@ -29,9 +29,11 @@ def register(app, config, conn_factory, render):
             error = 'Current profile or evaluated jobs are unavailable. Choices are paused.'
 
         settings_error = ''
+        job_limits = {k: None for k in discovery_settings.JOB_LIMITS}
         try:
             settings = discovery_settings.get_settings(users.current(), config)
             ceiling = settings['daily_token_ceiling']
+            job_limits = {k: settings[k] for k in discovery_settings.JOB_LIMITS}
         except (ValueError, OSError, sqlite3.DatabaseError):
             ceiling = None
             settings_error = 'The saved daily allowance could not be read. Choose a replacement below.'
@@ -43,7 +45,7 @@ def register(app, config, conn_factory, render):
                       preference_state=state, choices=sets, preference_error=error,
                       daily_token_ceiling=ceiling, token_mode=token_mode,
                       token_value=token_value, token_error=token_error,
-                      token_settings_error=settings_error)
+                      token_settings_error=settings_error, job_limits=job_limits, job_error=job_error)
 
     @app.get('/preferences')
     def preferences(request: Request):
@@ -76,6 +78,35 @@ def register(app, config, conn_factory, render):
             discovery_settings.set_settings(users.current(), config, ceiling)
         except (ValueError, OSError, sqlite3.DatabaseError):
             return PlainTextResponse('The daily token allowance could not be saved.', status_code=400)
+        finally:
+            conn.close()
+        return RedirectResponse('/preferences', status_code=303)
+
+    @app.post('/preferences/job-limits')
+    def save_job_limits(request: Request, job_token_mode: str = Form(''), job_token_ceiling: str = Form(''),
+                        job_seconds_mode: str = Form(''), job_seconds: str = Form(''),
+                        job_turns_mode: str = Form(''), job_max_turns: str = Form('')):
+        """Per-job limits: each is Limited (a positive whole number) or Unlimited, for this person only."""
+        conn = conn_factory()
+        try:
+            values, bad = {}, False
+            for key, mode, text in (('job_token_ceiling', job_token_mode, job_token_ceiling),
+                                    ('job_seconds', job_seconds_mode, job_seconds),
+                                    ('job_max_turns', job_turns_mode, job_max_turns)):
+                text = text.strip()
+                if mode == 'unlimited':
+                    values[key] = None
+                elif mode == 'limited' and text.isascii() and text.isdecimal() and len(text) <= 12 and int(text) >= 1:
+                    values[key] = int(text)
+                else:
+                    bad = True
+            if bad:
+                return render_preferences(request, conn, status=400,
+                    job_error='For each limit choose Unlimited, or Limited with a positive whole number.')
+            settings = discovery_settings.get_settings(users.current(), config)
+            discovery_settings.set_settings(users.current(), config, settings['daily_token_ceiling'], **values)
+        except (ValueError, OSError, sqlite3.DatabaseError):
+            return PlainTextResponse('The job limits could not be saved.', status_code=400)
         finally:
             conn.close()
         return RedirectResponse('/preferences', status_code=303)

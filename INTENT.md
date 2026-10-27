@@ -401,3 +401,23 @@ entry/run, remain idempotent and never authorise Submit. Keep the existing separ
 reviewed-form Submit confirmation, failure pauses, per-person configuration and spending
 history. Verify actual intended-client rendering separately from builds and protocol
 checks, and report any remaining host limitation honestly.
+
+
+## Owner 2026-10-27
+
+> the limit is unreasonable can we just remove this
+
+> and change it into cheaper model like deepseek flash
+
+Per-job assessment limits (tokens per job, time per job, steps per agent) are removable
+per person: each is a number or Unlimited in the person's discovery settings, and a new
+person starts with finite defaults. Assessment phases (frozen requirements, candidate
+evaluation, matching, holistic evaluation) use the `evaluator` role, which a person can
+point at the paid OmniRoute combo `deepseek-flash` (`model_choice` profile
+`cheap-assessment`). Drafting, reviewing and answers keep their own roles. One absolute
+stop per timer run (`JOBWATCH_HARD_STOP_SECONDS`, default 840 s for the 15 min units)
+and the daily 'assessments per day' count still apply.
+
+| R | date | CAP | question / deviation | ruling | by | ref |
+|---|---|---|---|---|---|---|
+| R3 | 2026-10-27 | CAP-2 | May assessment run on a cheaper paid route, and may per-job limits be removed? The hub INTENT 'Mechanisms required' line says paid `openai/`, `claude/`, `google/` combos only. | **CAP-2 assessment may use the paid OmniRoute `deepseek-flash` combo (owner's explicit choice; candidate facts are sent to that provider).** Per-job limits are removable per person. This is the owner's dated override of the 'Mechanisms required' provider list; free and stealth routes stay refused. | owner (chat 2026-10-27, quotes above) | feat/no-limits-cheap-model |

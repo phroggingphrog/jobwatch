@@ -102,7 +102,10 @@ def messages_for_gateway(messages):
     return result
 
 
-def call(llm, model, transcript, *, role, max_tokens, timeout, deadline, reasoning_effort=None):
+def call(llm, model, transcript, *, role, max_tokens, timeout, deadline, reasoning_effort=None,
+         tools=None, json_mode=True):
+    """One counted model call. `tools` (OpenAI function specs) switches to native tool calling and `json_mode=False`
+    drops response_format; both come from the model's gateway profile and are off by default."""
     execution.require_route(llm, model)
     scope = execution.current()
     reservation = None
@@ -112,8 +115,13 @@ def call(llm, model, transcript, *, role, max_tokens, timeout, deadline, reasoni
         timeout = min(timeout, max(0, deadline - time.monotonic()))
     result = None
     try:
+        extra = {}
+        if tools:
+            extra['tools'] = tools
+        if not json_mode:
+            extra['send_response_format'] = False
         result = llm.chat_once(model, transcript, json_mode=True, max_tokens=max_tokens,
-            timeout=timeout, deadline=deadline, reasoning_effort=reasoning_effort)
+            timeout=timeout, deadline=deadline, reasoning_effort=reasoning_effort, **extra)
         return result
     finally:
         if scope:

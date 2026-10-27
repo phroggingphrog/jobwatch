@@ -13,6 +13,9 @@ from jobwatch import model_choice
 from pipeline.agentic.runtime import RuntimeErrorSafe, _usage_total
 
 _CURRENT = contextvars.ContextVar('jobwatch_execution', default=None)
+# The one absolute outer stop (epoch seconds) of a timer run, set by the CLI just under the systemd unit timeout.
+# No job is allowed to outlive it, whatever a person's per-job time limit says. None outside timer runs.
+HARD_STOP = contextvars.ContextVar('jobwatch_hard_stop', default=None)
 _PAID = re.compile(r'^(?:openai|claude|google)/[A-Za-z0-9._-]+$')
 QWEN_EMBEDDING_MODEL = 'openrouter/qwen/qwen3-embedding-8b'
 

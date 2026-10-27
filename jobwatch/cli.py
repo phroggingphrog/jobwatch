@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 import uuid
@@ -70,7 +71,18 @@ def main(argv: list[str] | None = None) -> int:
     # without a confirmed scope is skipped in ~0 s), so the whole run stays inside the unit's TimeoutStartSec.
     from . import pipeline
     unit_seconds = pipeline.SLOW_UNIT_BUDGET_S if '--tier' in argv and argv[argv.index('--tier')+1] == 'slow' else pipeline.UNIT_BUDGET_S
+    slow = '--tier' in argv and argv[argv.index('--tier')+1] == 'slow'
     invocation_deadline = time.time() + unit_seconds
+    # The one absolute stop: a started assessment may run past its person's window (when that person has no per-job
+    # time limit) but never past this. Override with JOBWATCH_HARD_STOP_SECONDS; keep it below the unit's timeout.
+    from pipeline.agentic import execution as _execution
+    try:
+        hard_seconds = float(os.environ.get('JOBWATCH_HARD_STOP_SECONDS') or (pipeline.SLOW_HARD_STOP_S if slow else pipeline.HARD_STOP_S))
+    except ValueError:
+        hard_seconds = pipeline.SLOW_HARD_STOP_S if slow else pipeline.HARD_STOP_S
+    positional = [a for i, a in enumerate(argv) if not a.startswith('-') and (i == 0 or argv[i-1] != '--config-dir')]
+    timer_run = bool(positional) and positional[0] in ('read', 'run')   # never for the long-running web service
+    hard_stop = _execution.HARD_STOP.set(time.time() + hard_seconds if timer_run else None)
     from .candidate import intake
     running = sum(1 for name in names if name and intake.discovery_scope(name) is not None)
     share = pipeline.PEOPLE_SHARE.set(1.0 / max(1, running))
@@ -80,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                 rc = _main(argv, deadline=min(invocation_deadline, time.time()+unit_seconds/max(1,running))) or rc
     finally:
         pipeline.PEOPLE_SHARE.reset(share)
+        _execution.HARD_STOP.reset(hard_stop)
     return rc
 
 
