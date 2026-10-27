@@ -18,7 +18,23 @@ from dataclasses import dataclass, field
 
 from . import store
 
-_CLAUSE = re.compile(r"[.;\n•]+")
+_CLAUSE = re.compile(r"[;\n•]+|(?<!\d)\.(?!\d)|\b(?:but|however)\b", re.I)
+_OPTIONAL = re.compile(r"\b(?:preferred|desirable|optional|ideally|advantage|nice to have|equivalent|transferable)\b", re.I)
+_NEGATED = re.compile(r"\b(?:not (?:strictly )?(?:required|essential|necessary|mandatory)|no (?:prior )?experience (?:is )?(?:required|necessary)|do not (?:need|require)|don't (?:need|require))\b", re.I)
+_PROGRAM = re.compile(r"\b(?:graduate|internship|cadet|trainee|apprentice|vacation|summer)\b", re.I)
+_HOURS = re.compile(r"(?<![\d.])(?P<n>\d{1,3}(?:\.\d+)?)\s*(?:[-–]\s*\d+(?:\.\d+)?)?\s*(?:hours?|hrs?)\s*(?:per|a|each|/)\s*(?P<period>week|fortnight)\b", re.I)
+ENGINE_VERSION = 2
+
+
+def remote_available(p: PostingFields) -> bool:
+    text = f"{p.location}\n{p.title}\n{p.ad_text}"
+    if re.search(r"\b(?:no remote|not (?:a )?remote|remote (?:work )?(?:is )?not|on[- ]site only|must (?:be (?:based|located)|reside|live) in|based in .{0,50} only|residents? only)\b", text, re.I):
+        return False
+    if re.search(r'\b(?:hybrid or (?:fully )?remote|(?:fully )?remote or hybrid)\b', text, re.I):
+        return True
+    if re.search(r'\bhybrid\b', text, re.I):
+        return False
+    return p.remote or bool(re.search(r"\b(?:remote|work from home|anywhere in australia)\b", f"{p.location}\n{p.title}", re.I))
 
 
 @dataclass
@@ -107,7 +123,7 @@ class Engine:
         self.off_postings = {o["posting_id"] for o in overrides if o["kind"] == "posting"}
         self.off_employers = {o["employer"] for o in overrides if o["kind"] == "employer"}
         self.rules_hash = hashlib.sha256(json.dumps(
-            [[tuple(t[k] for k in ("id", "term", "match_type", "applies_to", "polarity", "strength", "value", "enabled")) for t, _ in self.terms],
+            [ENGINE_VERSION, [tuple(t[k] for k in ("id", "term", "match_type", "applies_to", "polarity", "strength", "value", "enabled")) for t, _ in self.terms],
              [(r["id"], r["kind"], r["params_json"], r["effect"]) for r in self.rules],
              sorted(self.off_terms), sorted(self.off_postings), sorted(self.off_employers)], default=str).encode()).hexdigest()[:16]
 
@@ -139,7 +155,19 @@ class Engine:
                     n = int(m.group("n"))
                 hits.append(Hit(t["id"], t["category"], t["value"], t["applies_to"], t["strength"], t["polarity"],
                                 m.group(0).strip(), m.start(), m.end(), n, t["field_tag"]))
-        return self._inside_longer_hit(self._mask(hits, text_of))
+        hits = self._inside_longer_hit(self._mask(hits, text_of))
+        for h in hits:
+            if h.applies_to != "ad_text" or h.category not in {"experience", "work_rights", "employment_type"}:
+                continue
+            text = text_of[h.applies_to]
+            start = max([m.end() for m in _CLAUSE.finditer(text, 0, h.start)] or [0])
+            end = _CLAUSE.search(text, h.end)
+            clause = text[start:end.start() if end else len(text)]
+            if _NEGATED.search(clause) or _OPTIONAL.search(clause) or re.search(r'\bno (?:visa )?sponsorship (?:is )?(?:required|needed)\b', clause, re.I):
+                h.strength = "weak"
+            if h.category == "experience" and not re.search(r"\bexperience\b", clause, re.I):
+                h.strength = "weak"
+        return hits
 
     @staticmethod
     def _inside_longer_hit(hits: list[Hit]) -> list[Hit]:
@@ -153,6 +181,10 @@ class Engine:
         allow = [h for h in hits if h.polarity == "allow"]
         spans: dict[tuple[str, str], list[tuple[int, int]]] = {}
         for h in allow:
+            if h.category == "work_rights" and not re.search(r"without regard|regardless|irrespective|visa", h.text, re.I):
+                continue  # General eligibility or equal-opportunity wording does not waive a mandatory condition.
+            if h.category == "employment_type" and re.search(r'\b(?:no|not)\s*$', text_of[h.applies_to][max(0, h.start - 10):h.start], re.I):
+                continue
             if h.applies_to == "ad_text":      # a clause of ad text is neutral as a whole
                 text = text_of["ad_text"]
                 start = max([m.end() for m in _CLAUSE.finditer(text, 0, h.start)] or [0])
@@ -164,7 +196,8 @@ class Engine:
         for h in hits:
             if h.polarity == "allow":
                 continue
-            if any(h.start < b and a < h.end for a, b in spans.get((h.category, h.applies_to), ())):
+            maskable = h.category != 'work_rights' or h.value in {'citizen_only', 'citizen_or_pr'}
+            if maskable and any(h.start < b and a < h.end for a, b in spans.get((h.category, h.applies_to), ())):
                 continue
             out.append(h)
         return out
@@ -178,6 +211,9 @@ class Engine:
         out = Outcome(parsed=parsed, rules_hash=self.rules_hash)
         flagged: list[Outcome] = []
         for rule in self.rules:
+            category = rule['params'].get('category') or {'years_over': 'experience', 'level_not_approved': 'seniority_level', 'region_outside': 'location_outside'}.get(rule['kind'])
+            if categories is not None and category not in categories:
+                continue
             found = self._apply(rule, hits, p)
             if found is None:
                 continue
@@ -202,7 +238,7 @@ class Engine:
 
     @staticmethod
     def _parsed(p: PostingFields, hits: list[Hit]) -> dict:
-        d: dict = {"remote": p.remote}
+        d: dict = {"remote": p.remote, "remote_available": remote_available(p)}
         for cat in store.CATEGORIES:
             rows = [h.brief() for h in hits if h.category == cat]
             if rows:
@@ -214,6 +250,8 @@ class Engine:
         params = rule["params"]
         unless = params.get("unless")
         if unless and any(h.category == unless["category"] and h.value in unless["values"] for h in hits):
+            return None
+        if params.get("program_exception") and _PROGRAM.search(p.title):
             return None
         fn = {"term_hit": self._term_hit, "level_not_approved": self._level, "years_over": self._years,
               "region_outside": self._region}[rule["kind"]]
@@ -231,6 +269,10 @@ class Engine:
     # each returns (obvious, hit, extra-format-fields) or None
     @staticmethod
     def _term_hit(params, hits, p):
+        if params.get('measurement') == 'distance':
+            return Engine._distance(params, hits, p)
+        if params.get('measurement') == 'hours':
+            return Engine._hours(params, hits, p)
         cat, values = params["category"], params.get("values")
         mine = [h for h in hits if h.category == cat]
         if not mine:
@@ -242,6 +284,8 @@ class Engine:
         if not wanted:
             return None
         if params.get("match") == "all":
+            if cat == 'employment_type' and re.search(r'(?<!no )\b(?:part[- ]?time|job[- ]?share|flexible hours)\b', p.ad_text, re.I):
+                return False, wanted[0], {}
             strong_vals = {h.value for h in mine if h.strength == "obvious"}
             if strong_vals and strong_vals <= set(values) and not any(h.strength == "weak" and h.value not in values for h in mine):
                 return True, next(h for h in wanted if h.strength == "obvious"), {}
@@ -269,13 +313,51 @@ class Engine:
 
     @staticmethod
     def _years(params, hits, p):
-        cap, ceiling = int(params["max_years"]), int(params.get("ignore_over", 99))
+        cap, ceiling = float(params["max_years"]), float(params.get("ignore_over", 99))
         mine = [h for h in hits if h.category == "experience" and h.n is not None and 0 < h.n <= ceiling]
         over = [h for h in mine if h.n >= cap]
         if not over:
             return None
-        hit = max(over, key=lambda h: h.n)
+        hit = max(over, key=lambda h: (h.strength == "obvious", h.n))
         return hit.strength == "obvious", hit, {"cap": cap}
+
+    @staticmethod
+    def _hours(params, hits, p):
+        if params.get("program_exception") and _PROGRAM.search(p.title):
+            return None
+        candidates = []
+        for clause in _CLAUSE.split(p.ad_text):
+            if _OPTIONAL.search(clause) or _NEGATED.search(clause):
+                continue
+            for match in _HOURS.finditer(clause):
+                hours = float(match['n']) * (2 if match['period'].lower() == 'week' else 1)
+                if hours > params['limit']:
+                    before = re.split(r',|\b(?:while|whereas|although|and|but)\b', clause[:match.start()], flags=re.I)[-1]
+                    operational = bool(re.search(r'\b(?:operat\w*|opening|trading|business|service|office|coverage|open)\b', before, re.I))
+                    role = bool(re.search(r"\b(?:you|your|work|working|contracted|required|roster|shift|role|position)\b", before, re.I))
+                    candidates.append((not operational or role, hours, match.group()))
+        if not candidates:
+            return None
+        role_hours, hours, text = max(candidates)
+        mixed = any(h.category == 'employment_type' and h.value in {'part_time', 'casual'} for h in hits)
+        mixed |= bool(re.search(r'\b(?:part[- ]?time|job[- ]?share|flexible hours)\b', p.ad_text, re.I))
+        mixed |= not role_hours
+        hit = Hit(None, 'employment_type', 'hours', 'ad_text', 'weak' if mixed else 'obvious', 'exclude', text, 0, 0)
+        return not mixed, hit, {'hours': hours}
+
+    @staticmethod
+    def _distance(params, hits, p):
+        from pipeline.agentic.location import commute_km_for
+        if remote_available(p) and params.get('remote_ok') is not False:
+            return None
+        # A single measured place cannot represent alternatives in a listing.
+        if re.search(r'\b(?:or|multiple locations)\b|[;/]', p.location, re.I):
+            return None
+        km = commute_km_for(params['home'], p.location)
+        if km is None or km <= params['limit']:
+            return None
+        hit = Hit(None, 'location_outside', 'distance', 'location', 'obvious', 'exclude', p.location, 0, len(p.location))
+        return True, hit, {'km': km}
 
     @staticmethod
     def _region(params, hits, p):
@@ -284,7 +366,7 @@ class Engine:
             return None
         regions = set(params["regions"])
         remote_ok = params.get("remote_ok")
-        if p.remote and remote_ok is not False:
+        if remote_available(p) and remote_ok is not False:
             skip_tags = set(params.get("remote_exempt_tags", []))
             mine = [h for h in mine if h.tag not in skip_tags]
         by_loc = [h for h in mine if h.applies_to == "location"]

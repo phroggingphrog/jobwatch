@@ -10,11 +10,17 @@ def test_native_service_uses_deterministic_candidate_context(world, monkeypatch)
     config.settings['pipeline']['agentic']['autonomous_evaluation'] = True
     add(42)
     called = []
+    from test_candidate_digest import inputs, budget, transport
+    from pipeline.agentic.candidate_digest import ensure_digest
+    digest_conn, digest_inputs = inputs(world)
+    transport(monkeypatch, bundle)
+    candidate_digest = ensure_digest(digest_conn, **digest_inputs, budget=budget(), llm=object())
 
     def forbidden(*args, **kwargs):
         raise AssertionError('legacy paid evaluator reached')
 
     def native(key, ad, budget, llm, **kwargs):
+        assert kwargs['candidate_digest']['identity'] == candidate_digest.identity
         structural = kwargs['candidate_analysis']
         assert type(structural) is AnalysisResult
         assert structural.run_key == key.candidate_hash
@@ -116,3 +122,37 @@ def test_native_run_identity_binds_prescreen_without_inventory_writes(world):
     before=conn.total_changes
     assert service.snapshot_inventory(conn,config,posting_ids=[42],evidence_bundle=bundle)==changed
     assert conn.total_changes == before
+
+
+def test_cached_native_ready_rechecks_prescreen_after_liveness(world, monkeypatch):
+    from pipeline.agentic import service
+    from pipeline.agentic.evaluator import evaluate_job
+    from test_agentic_service import SyntheticGateway
+    from jobwatch.llm import LLM
+    from pipeline.schemas import Stage
+    conn, config, bundle, add = world
+    add(42)
+    config.settings['pipeline']['agentic']['autonomous_evaluation']=True
+    from test_candidate_digest import inputs, budget, transport
+    from pipeline.agentic.candidate_digest import ensure_digest
+    digest_conn, digest_inputs = inputs(world)
+    transport(monkeypatch, bundle)
+    ensure_digest(digest_conn, **digest_inputs, budget=budget(), llm=object())
+    # Seed a synthetic package through the existing canonical role fixtures;
+    # this test exercises service recovery, without any provider or live data.
+    def fixture_evaluation(key,ad,budget,llm,**kwargs):
+        kwargs.pop('source_conn');kwargs.pop('posting');kwargs.pop('candidate_digest')
+        return evaluate_job(key,ad,budget,llm,**kwargs)
+    monkeypatch.setattr('pipeline.agentic.autonomous.evaluate_posting',fixture_evaluation)
+    llm=LLM(transport=SyntheticGateway(bundle),keys=['synthetic'])
+    assert service.run_agentic_job(42,config,conn,evidence_bundle=bundle,llm=llm)==Stage.READY, service.latest_result(conn,42)['reason']
+    observer=service.observe_posting
+    def changed_rules(*args,**kwargs):
+        conn.execute("UPDATE prescreen_rules SET effect=CASE effect WHEN 'flag' THEN 'skip' ELSE 'flag' END WHERE id=(SELECT MIN(id) FROM prescreen_rules)")
+        conn.commit()
+        return observer(*args,**kwargs)
+    monkeypatch.setattr(service,'observe_posting',changed_rules)
+    calls=len(llm.calls)
+    assert service.run_agentic_job(42,config,conn,evidence_bundle=bundle,llm=llm)==Stage.DLQ
+    assert service.latest_result(conn,42)['reason']=='snapshot_changed'
+    assert len(llm.calls)==calls

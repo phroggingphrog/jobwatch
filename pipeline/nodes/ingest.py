@@ -68,7 +68,8 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         if stats["admitted"] >= limit:
             break
         stats["seen"] += 1
-        loc = rules.location_rule(posting_of(r))
+        # Canonical prescreen records location decisions and applies posting overrides.
+        loc = 'profile_prescreen' if getattr(rules, 'prescreen', None) is not None else rules.location_rule(posting_of(r))
         if not loc:
             stats["out_of_area"] += 1
             continue

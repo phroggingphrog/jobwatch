@@ -10,10 +10,7 @@ import json
 from . import store
 
 LADDER = ("entry", "junior", "mid", "senior", "executive")
-# Largest stated experience (years) a role may ask before it is a clear mismatch for the highest approved level.
-# None = no cap. Editable per person by changing the generated rule's params (jobwatch prescreen rules ...).
-YEARS_CAP = {"entry": 4, "junior": 5, "mid": 8, "senior": None, "executive": None}
-IGNORE_YEARS_OVER = 12                     # "20 years of experience" is usually the company's history, not the requirement
+PROJECTION_VERSION = 2
 SYNC_KEY = "prescreen_profile_sync"
 _WORK_TYPES = {"casual": "casual", "part_time": "part_time", "full_time": "full_time"}
 
@@ -29,17 +26,17 @@ def _rules_for(policy) -> list[tuple[str, dict, str]]:
             "tolerance_above": 1 if max(LADDER.index(x) for x in approved) == 0 else 0,   # "junior" is not far from "entry"
             "legacy_reason": "seniority",
             "reason": "Title says \"{matched}\" ({value} level); your approved levels are: {approved}."}, "skip"))
-        caps = [YEARS_CAP[x] for x in approved]
-        if None not in caps:
-            out.append(("years_over", {
-                "max_years": max(caps), "ignore_over": IGNORE_YEARS_OVER, "legacy_reason": "experience",
-                "reason": "The ad asks for {n}+ years of experience (\"{matched}\"); your profile fits roles asking for fewer than {cap}."},
-                "skip"))
+        # Approved levels do not establish a maximum required experience duration.
+        # Numeric years_over rules remain available for an explicitly confirmed strategy.
     if policy.regions:
         out.append(("region_outside", {
             "regions": [*policy.regions, "AU"],      # "AU": a country-level mention ("Australia-wide") is inside every Australian region
             "region_labels": ", ".join(policy.regions), "remote_ok": policy.remote_ok, "remote_exempt_tags": ["au_state"], "legacy_reason": "location",
             "reason": "Location \"{matched}\" is outside your regions ({region_labels})."}, "skip"))
+    if policy.home and policy.max_commute_km is not None:
+        out.append(("term_hit", {"measurement": "distance", "category": "location_outside",
+            "home": policy.home['place'], "limit": policy.max_commute_km, "remote_ok": policy.remote_ok,
+            "legacy_reason": "location", "reason": "Location \"{matched}\" is {km} straight-line km from your approved home, beyond {limit} km."}, "skip"))
     families = sorted({r.value for r in policy.exclusions if r.kind == "family"})
     if families:
         out.append(("term_hit", {
@@ -53,15 +50,19 @@ def _rules_for(policy) -> list[tuple[str, dict, str]]:
                 "reason": "The posting is {value} only; your confirmed work rights allow up to {limit} hours a fortnight.",
                 "limit": limit}
         if wr.get("full_time_programs_ok") is True:
-            rule["unless"] = {"category": "seniority_level", "values": ["entry"]}
-        out.append(("term_hit", rule, "skip"))
+            rule["program_exception"] = True
+        out.append(("term_hit", rule, "flag"))
+        out.append(("term_hit", {"measurement": "hours", "category": "employment_type",
+            "limit": limit, "program_exception": wr.get("full_time_programs_ok") is True,
+            "legacy_reason": "employment_type",
+            "reason": "The ad states {hours} hours per fortnight (\"{matched}\"), exceeding your approved limit of {limit}."}, "skip"))
     if blocked_types:
         out.append(("term_hit", {
             "category": "employment_type", "values": blocked_types, "match": "all", "legacy_reason": "employment_type",
             "reason": "The posting is {value}, which you excluded."}, "skip"))
     blocked_rights = []
     if wr.get("citizen_or_pr") is False:
-        blocked_rights += ["citizen_or_pr", "citizen_only", "clearance"]
+        blocked_rights += ["citizen_or_pr", "citizen_only"]
     elif wr.get("citizen") is False:
         blocked_rights += ["citizen_only"]
     if wr.get("requires_sponsorship") is True:
@@ -76,7 +77,7 @@ def _rules_for(policy) -> list[tuple[str, dict, str]]:
 
 
 def sync_profile(conn, policy) -> int:
-    key = None if policy is None else [policy.profile_version, policy.policy_hash]
+    key = None if policy is None else [policy.profile_version, policy.policy_hash, PROJECTION_VERSION]
     row = conn.execute("SELECT value FROM state WHERE key=?", (SYNC_KEY,)).fetchone()
     if row and json.loads(row[0]) == key:
         return 0

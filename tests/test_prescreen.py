@@ -119,18 +119,146 @@ def test_no_level_in_the_profile_means_no_level_screen(conn):
 def test_years_stage(conn):
     acc, nur = engine(conn, accountant()), engine(conn, nurse())
     ask5 = '5+ years of experience in accounts payable is required.'
-    assert run(acc, 'Accounts Officer', ad=ask5).skip and run(acc, 'Accounts Officer', ad=ask5).category == 'experience'
+    assert not run(acc, 'Accounts Officer', ad=ask5).skip  # levels alone supply no numeric threshold
     assert not run(acc, 'Accounts Officer', ad='1-2 years experience preferred').skip
     assert not run(acc, 'Accounts Officer', ad='We have 25 years of experience serving clients.').skip
     assert not run(nur, 'Registered Nurse', ad=ask5).skip                          # a mid-level nurse tolerates 5
-    assert run(nur, 'Registered Nurse', ad='Minimum of 10 years experience in acute care.').skip
+    assert not run(nur, 'Registered Nurse', ad='Minimum of 10 years experience in acute care.').skip
     # senior approved: no years cap at all
     assert not run(engine(conn, policy_of(fact('preference', {'seniority': ['senior']}))), 'Analyst', ad=ask5 + ' 15 years experience').skip
 
 
+@pytest.mark.parametrize('ad,skips', [
+    ('Minimum 5 years experience required.', True),
+    ('5 years experience preferred.', False),
+    ('5 years experience is not required.', False),
+    ('We do not require 5 years experience.', False),
+    ('5 years experience or equivalent transferable experience.', False),
+    ('We have 30 years experience; you must have 5 years experience.', True),
+    ('5 years experience preferred; minimum 6 years experience required.', True),
+    ('Minimum 5 years warranty.', False),
+])
+def test_explicit_years_rule_respects_required_clauses(conn, ad, skips):
+    store.add_rule(conn, kind='years_over', params={'max_years': 5})
+    assert run(engine(conn, accountant()), 'Analyst', ad=ad).skip is skips
+
+
+def test_projection_upgrade_removes_old_generated_cap_but_preserves_person_rule(conn):
+    pol = accountant()
+    engine(conn, pol)
+    conn.execute('UPDATE state SET value=? WHERE key=?',
+                 (json.dumps([pol.profile_version, pol.policy_hash]), sync.SYNC_KEY))
+    conn.execute("INSERT INTO prescreen_rules(kind,params_json,effect,enabled,scope,source,created_at) "
+                 "VALUES('years_over',?, 'skip',1,'person','profile',?)", ('{"max_years":5}', db.ts()))
+    personal = store.add_rule(conn, kind='years_over', params={'max_years': 9})
+    engine(conn, pol)
+    rows = conn.execute("SELECT id,source FROM prescreen_rules WHERE kind='years_over'").fetchall()
+    assert [(r['id'], r['source']) for r in rows] == [(personal, 'person')]
+
+
+@pytest.mark.parametrize('ad,skips', [
+    ('Applicants must be an Australian citizen; valid work rights are needed.', True),
+    ('Applicants must be an Australian citizen and have valid work rights.', True),
+    ('Equal opportunity employer; Australian citizens only.', True),
+    ('Australian citizenship is not required.', False),
+    ('Baseline security clearance is not required.', False),
+    ('Must be an Australian citizen or hold a valid visa.', False),
+    ('Visa holders welcome; Australian citizens only.', True),
+])
+def test_rights_exceptions_do_not_hide_independent_mandatory_clause(conn, ad, skips):
+    assert run(engine(conn, accountant()), 'Analyst', ad=ad).skip is skips
+
+
+def test_visa_welcome_does_not_supply_sponsorship(conn):
+    pol = policy_of(fact('work_rights', {'requires_sponsorship': True}))
+    eng = engine(conn, pol)
+    assert run(eng, 'Analyst', ad='Visa holders welcome, no sponsorship available.').skip
+    assert not run(eng, 'Analyst', ad='No sponsorship is required.').skip
+
+
+def test_hours_are_measured_and_program_exception_is_specific(conn):
+    eng = engine(conn, accountant())
+    assert run(eng, 'Analyst', ad='Required hours: 38 hours per week.').skip
+    assert not run(eng, 'Analyst', ad='Required hours: 24 hours per week.').skip
+    assert not run(eng, 'Analyst', ad='Part time or 38 hours per week.').skip
+    assert not run(eng, 'Analyst', ad='24-38 hours per week.').skip
+    assert not run(eng, 'Graduate Program', ad='38 hours per week.').skip
+    assert run(eng, 'Entry Level Analyst', ad='38 hours per week.').skip
+    unlimited = policy_of(fact('work_rights', {'hours_limit_per_fortnight': 80}))
+    assert not run(engine(conn, unlimited), 'Analyst', ad='38 hours per week.').skip
+
+
+@pytest.mark.parametrize('role_hours,expected_skip', [(20, False), (38, True)])
+@pytest.mark.parametrize('sentence', [
+    'Our service operates 80 hours per week. You will work {hours} hours per week.',
+    'You will work {hours} hours per week, while our service operates 80 hours per week.',
+])
+def test_operating_hours_do_not_replace_the_candidates_required_schedule(conn, role_hours, expected_skip, sentence):
+    eng = engine(conn, accountant())
+    out = run(eng, 'Analyst', ad=sentence.format(hours=role_hours))
+    assert out.skip is expected_skip
+    if expected_skip:
+        assert out.matched_text == '38 hours per week'
+
+
+def test_remote_restrictions_and_omitted_provider_flag(conn):
+    eng = engine(conn, accountant())
+    assert not run(eng, 'Analyst', 'Remote - Sydney NSW').skip
+    assert run(eng, 'Analyst', 'Sydney NSW', ad='Hybrid: attend Sydney office three days a week.', remote=True).skip
+    assert run(eng, 'Analyst', 'Sydney NSW', ad='Remote but must be based in NSW.', remote=True).skip
+    assert not run(eng, 'Analyst', 'Sydney NSW', ad='Choose hybrid or fully remote.', remote=True).skip
+
+
+def test_known_commute_and_unknown_places(conn):
+    pol = policy_of(fact('location', {'home': 'Melbourne VIC'}), fact('constraint', {'max_commute_km': 10}))
+    eng = engine(conn, pol)
+    far = run(eng, 'Analyst', 'Geelong VIC')
+    assert far.skip and 'straight-line km' in far.reason
+    assert not run(eng, 'Analyst', 'Melbourne VIC').skip
+    assert not run(eng, 'Analyst', 'Unmapped locality VIC').skip
+    assert not run(eng, 'Analyst', 'Geelong VIC or Melbourne VIC').skip
+    assert not run(eng, 'Analyst', 'Geelong VIC', remote=True).skip
+
+
+def test_rules_defer_until_current_digest_then_screen_without_paid_calls(conn, pinned, monkeypatch):
+    from types import SimpleNamespace
+    from jobwatch import config
+    from pipeline.agentic import candidate_digest
+    pol = accountant()
+    pinned(pol)
+    cfg = make_config(settings={'pipeline': {'agentic': {'autonomous_evaluation': True}}})
+    monkeypatch.setattr(config, 'load_config', lambda: cfg)
+    ready = None
+    lookups = []
+
+    def current(c, p):
+        lookups.append(p.policy_hash)
+        return ready if ready and ready.policy_hash == p.policy_hash else None
+
+    monkeypatch.setattr(candidate_digest, 'current_policy_digest', current)
+    monkeypatch.setattr(candidate_digest, 'ensure_digest', lambda *a, **kw: pytest.fail('paid candidate work from filter'))
+    p = Posting(source='synthetic', source_id='1', url='https://example.invalid/1',
+                title='Senior Accountant', location='Perth WA')
+    rules = Rules(cfg.rules, conn=conn)
+    assert rules.evaluate(p).matched
+    assert rules.evaluate(p).flags == ['candidate_digest_pending']
+    assert rules.title_relevant('Any occupation') and rules.location_rule(p) == 'candidate_digest_pending'
+    assert rules.prescreen is None
+    ready = SimpleNamespace(policy_hash=pol.policy_hash)
+    assert not Rules(cfg.rules, conn=conn).evaluate(p).matched
+    pinned(nurse())
+    assert Rules(cfg.rules, conn=conn).evaluate(p).rules == {'candidate_digest': 'pending'}
+    assert len(lookups) == 3
+    from pipeline.agentic.contracts import AgenticError
+    def invalid(*args):
+        raise AgenticError('candidate_digest_invalid')
+    monkeypatch.setattr(candidate_digest, 'current_policy_digest', invalid)
+    assert Rules(cfg.rules, conn=conn).evaluate(p).rules == {'candidate_digest': 'pending'}
+
+
 def test_employment_stage(conn):
     acc, nur = engine(conn, accountant()), engine(conn, nurse())
-    assert run(acc, 'Accountant - Full Time').skip
+    assert run(acc, 'Accountant - Full Time').outcome == 'flag'  # hours are not stated
     assert not run(acc, 'Graduate Accountant - Full Time').skip                    # programs may be full time
     assert not run(acc, 'Accountant - Part Time').skip
     flagged = run(acc, 'Accounts Officer', hours='FT')
@@ -142,7 +270,7 @@ def test_employment_stage(conn):
 def test_work_rights_stage(conn):
     acc, nur = engine(conn, accountant()), engine(conn, nurse())
     assert run(acc, 'Accounts Officer', ad='Applicants must be an Australian citizen.').skip
-    assert run(acc, 'Analyst', ad='Baseline security clearance is required.').skip
+    assert run(acc, 'Analyst', ad='Baseline security clearance is required.').outcome == 'flag'
     assert run(acc, 'Analyst', ad='Must hold NV1 clearance.').category == 'work_rights'
     assert not run(acc, 'Analyst', ad='Applicants must be Australian citizens or hold a valid visa.').skip
     assert not run(acc, 'Analyst', ad='We employ regardless of citizenship status.').skip
@@ -200,7 +328,8 @@ def test_a_new_field_needs_only_rows(conn):
 def test_profile_is_written_as_rows_and_rewritten_when_it_changes(conn):
     engine(conn, accountant())
     kinds = {r['kind'] for r in conn.execute("SELECT kind FROM prescreen_rules WHERE source='profile'")}
-    assert {'level_not_approved', 'years_over', 'region_outside', 'term_hit'} <= kinds
+    assert {'level_not_approved', 'region_outside', 'term_hit'} <= kinds
+    assert 'years_over' not in kinds
     assert {r[0] for r in conn.execute("SELECT derived_from_profile_version FROM prescreen_rules WHERE source='profile'")} == {2}
     n = conn.execute('SELECT COUNT(*) FROM prescreen_rules').fetchone()[0]
     engine(conn, accountant())
@@ -293,7 +422,7 @@ def test_disabling_a_term_readmits_through_reconsider(conn, tmp_path, pinned):
 def test_screen_ingested_archives_a_queued_mismatch(conn):
     from pipeline import store as pstore
     pstore.ensure(conn)
-    _posting(conn, 1, 'Accounts Officer', text='You need 8 years of experience.')
+    _posting(conn, 1, 'Senior Accounts Officer', text='You need 8 years of experience.')
     _posting(conn, 2, 'Accounts Officer')
     for i in (1, 2):
         conn.execute("INSERT INTO pipeline_state(posting_id,stage,content_hash,data_json,updated_at) VALUES(?, 'ingested', ?, '{}', ?)", (i, f'h{i}', db.ts()))

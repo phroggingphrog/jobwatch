@@ -849,17 +849,28 @@ one saved posting. The switch, model, complete approved inputs and packaged skil
 contents bind the run and checkpoint identity. Source configuration does not activate
 services or change a person's model selection.
 
+Candidate Understanding runs first through a dedicated native-tool Deep Agents
+stage. It reads approved primary evidence and all applicable canonical model tools
+(or their explicit readiness/unavailability), then persists a cited digest and an
+exact code-projected approved policy. Advice cannot silently change exclusions.
+The digest is person/profile/evidence/policy/reference/model/history/implementation
+bound; unchanged jobs reuse it without paid candidate reanalysis. History-only
+refresh can reuse verified evidence findings. Candidate-bearing Jev remains
+unavailable without an approved route. Collection never purchases a digest: missing
+or stale understanding leaves personal filtering pending while postings are stored.
+
 Screening executes the canonical person-derived prescreen rules and overrides with
-zero model calls. Admit and flag proceed; skip blocks paid assessment. Evaluation
+zero per-job model calls. Admit and flag proceed; skip blocks job evaluation. Evaluation
 uses a dedicated Deep Agents native-tool agent. It freezes whole-ad requirements
 before candidate context, retrieves approved primary evidence, and completes the
 canonical assessment directly. It does not call `evaluate_job`, execute the old
-role loop, or buy a separate candidate assessment. Deterministic structural analysis
+role loop, or repeat the separate candidate understanding for each job. Structural analysis
 and existing model insights remain advisory context. The caller applies
 `gate_current` and canonical eligibility. The assessment agent has no documents,
 profile mutation, employer contact, approval or submission tools.
 
-The target is 3–6 model calls. Native replies preserve parallel function calls and
+The target is 3–6 model calls per evaluated job; cold/reused digest cost and
+classifier/embedding operations are also reported separately. Native replies preserve parallel function calls and
 never fall back to JSON-object mode or another model. The owner's per-job and daily
 limits remain separate settings. DeepSeek assessment requires both its evaluator
 selection and native-tools/no-JSON gateway profile; writer, reviewer, answers and
@@ -873,6 +884,10 @@ checkpoint failure can reuse them. Resumption reconstructs canonical evidence
 access using saved read/search actions; cached text cannot authorize a citation.
 Completed output is revalidated. The caller restores canonical budget accounting;
 unknown dispatched usage remains charged rather than silently refunded.
+`candidate-understanding.sqlite` journals native candidate responses/access and
+checkpoints; canonical `candidate_digests` records retain the bound digest. Completion
+tools enforce canonical shape/size constraints and return field-specific correction
+feedback once per validation error boundary, retaining successful earlier work.
 
 `evaluation_counts` records call count, charged tokens and wall time. Private count
 records additionally retain purpose, prompt/completion totals and numeric provider
@@ -881,7 +896,8 @@ No automatic paid A/B comparison is performed. Release evidence must state actua
 provider calls, tokens, time, evidence coverage and gate outcome separately from
 synthetic tests.
 
-This delivers the assessment slice. Other autonomous career domains are tracked on
+These source mechanisms do not establish provider acceptance or live delivery.
+Other autonomous career domains are tracked on
 TASK-279; existing chat specialists do not prove pipeline-stage coverage. To contain
 faulty assessment, pause the reader timer and set execution mode off while keeping
 collect-only timers active. Do not revert only the autonomous switch into the old

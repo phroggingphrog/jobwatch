@@ -29,6 +29,11 @@ FAILURE_REASONS = frozenset({
     'invalid_native_response', 'invalid_cached_evaluation', 'missing_evaluation',
     'requirements_required', 'requirements_changed', 'unretrieved_evidence',
     'invalid_evaluation', 'invalid_candidate_citation', 'skill_path_not_allowed',
+    'candidate_digest_busy', 'candidate_digest_binding_mismatch', 'candidate_digest_stale',
+    'candidate_digest_policy_mismatch', 'candidate_digest_target_not_allowed',
+    'candidate_digest_evidence_unread', 'candidate_digest_invalid', 'candidate_digest_invalid_access',
+    'candidate_digest_models_unread', 'candidate_digest_incomplete', 'invalid_candidate_digest',
+    'candidate_digest_profile_required', 'missing_required_fields', 'invalid_requirements',
 })
 _CODE = re.compile(r'^[a-z][a-z0-9_]{0,79}$')
 _RETRY_SECONDS = (60, 300, 900, 3600)

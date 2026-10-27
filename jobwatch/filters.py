@@ -46,7 +46,18 @@ class Rules:
         # With a confirmed profile and a database, the early screening reads its vocabulary and rules from the prescreen_* tables.
         self.prescreen = None
         self.last_outcome = None
-        if conn is not None and self.profile_policy is not None:
+        self.digest_pending = False
+        if self.profile_policy is not None:
+            from .config import load_config
+            from pipeline.agentic.configuration import agentic_settings
+            if agentic_settings(load_config()).get('autonomous_evaluation') is True:
+                from pipeline.agentic.candidate_digest import current_policy_digest
+                from pipeline.agentic.contracts import AgenticError
+                try:
+                    self.digest_pending = conn is None or current_policy_digest(conn, self.profile_policy) is None
+                except AgenticError:
+                    self.digest_pending = True
+        if conn is not None and self.profile_policy is not None and not self.digest_pending:
             from .prescreen.engine import Engine
             self.prescreen = Engine.load(conn, self.profile_policy)
         self.arms = [
@@ -123,6 +134,8 @@ class Rules:
         return None
 
     def off_target_hit(self, title: str) -> str | None:
+        if self.digest_pending:
+            return None
         if self.profile_policy is not None:
             from .candidate.policy import exclusion_hit
             rule = exclusion_hit(self.profile_policy, family=None, company='', title=title,
@@ -141,6 +154,8 @@ class Rules:
     def title_relevant(self, title: str) -> bool:
         """Cheap pre-check collectors use to decide whether a detail fetch is worth it."""
         if self.profile_policy is not None:
+            if self.digest_pending:
+                return True
             # Shared arms are discovery vocabulary, not personal interests.
             focus = self.profile_policy.focus
             words = set(re.findall(r'\w+', title.casefold()))
@@ -149,6 +164,12 @@ class Rules:
 
     def location_rule(self, p: Posting) -> str | None:
         if self.profile_policy is not None:
+            if self.digest_pending:
+                return 'candidate_digest_pending'
+            if self.prescreen is not None:
+                from .prescreen.engine import fields_of_posting
+                out = self.prescreen.evaluate(fields_of_posting(p), categories={'location_outside'})
+                return None if out.skip else 'profile_location'
             from .discovery_gate import profile_location_rule
             return profile_location_rule(p, self.profile_policy)
         text = p.location or ""
@@ -218,6 +239,9 @@ class Rules:
     # -- main -------------------------------------------------------------------
     def evaluate(self, p: Posting) -> Decision:
         if self.profile_policy is not None:
+            if self.digest_pending:
+                return Decision(True, arm='profile_discovery', arm_tier='core', arms=['profile_discovery'],
+                                rules={'candidate_digest': 'pending'}, flags=[*p.flags, 'candidate_digest_pending'])
             from .candidate.policy import exclusion_hit
             rule = exclusion_hit(self.profile_policy, family=None, company=p.company, title=p.title,
                                  location_text=p.location or '', remote=bool(p.remote), hours='')

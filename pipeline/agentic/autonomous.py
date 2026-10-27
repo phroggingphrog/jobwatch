@@ -14,7 +14,7 @@ from deepagents import create_deep_agent, FilesystemPermission
 from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
 from deepagents.middleware.filesystem import FilesystemState
-from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, convert_to_openai_messages
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -37,9 +37,8 @@ from pipeline.agentic.deepagents_runtime import _NoFilesystem
 from pipeline.agentic.matching import EvidenceSearch, EvidenceSearchBatch, RequirementEvidenceSearch
 from pipeline.agentic.runtime import RuntimeErrorSafe, validate_model_payload, _json_bytes, _usage_total
 
-VERSION = 'autonomous-screen-evaluate-v3'
+VERSION = 'autonomous-screen-evaluate-v4'
 SKILLS = ('autonomous-screening', 'autonomous-evaluation')
-MAX_CALLS = 6
 
 
 def skill_files():
@@ -91,6 +90,22 @@ class _NoSummarization(AgentMiddleware):
         return 'SummarizationMiddleware'
 
 
+class CompletionBoundary(AgentMiddleware):
+    def __init__(self, completed):
+        self.completed = completed
+
+    @hook_config(can_jump_to=['end'])
+    def before_model(self, state, runtime):
+        if self.completed():
+            return {'jump_to': 'end'}
+
+
+class CompletionError(AgenticError):
+    def __init__(self, code, field):
+        super().__init__(code)
+        self.field = field
+
+
 class CachedEmbeddings:
     """Reuse canonical paid embeddings within this person's private database."""
     def __init__(self, run, llm, model, bundle_hash):
@@ -108,7 +123,9 @@ class CachedEmbeddings:
                                     (identity,)).fetchone()
         if row:
             return json.loads(row[0])
-        before = sum(self.run.budget.snapshot().role_turns.values())
+        before_snapshot = self.run.budget.snapshot()
+        before = sum(before_snapshot.role_turns.values())
+        prior_reservations = {r.reservation_id for r in before_snapshot.reservations}
         tokens = self.run.budget.charged_tokens
         started = time.monotonic()
         try:
@@ -123,7 +140,11 @@ class CachedEmbeddings:
             self.run.counts['calls'] += calls
             self.run.counts['purposes']['evidence_embeddings'] = (
                 self.run.counts['purposes'].get('evidence_embeddings', 0) + calls)
-            self.run.counts['tokens'] += self.run.budget.charged_tokens - tokens
+            fresh = [r for r in self.run.budget.snapshot().reservations if r.reservation_id not in prior_reservations]
+            actual = sum(r.actual_usage for r in fresh if r.actual_usage is not None)
+            self.run.counts['tokens'] += actual
+            self.run.counts['charged_tokens'] = self.run.counts.get('charged_tokens', 0) + self.run.budget.charged_tokens - tokens
+            self.run.counts['unknown_usage_calls'] = self.run.counts.get('unknown_usage_calls', 0) + sum(r.actual_usage is None for r in fresh)
             self.run.counts['seconds'] += time.monotonic() - started
             self.run.save_counts()
 
@@ -143,6 +164,7 @@ class NativeModel(BaseChatModel):
     schemas: list = Field(default_factory=list)
     person: str
     scope: object = Field(exclude=True, repr=False, default=None)
+    purpose: str | None = None
 
     @property
     def _llm_type(self):
@@ -158,15 +180,23 @@ class NativeModel(BaseChatModel):
         with users.use(self.person), execution.use(self.scope), self.counts['lock']:
             self.budget.ensure_live()
             transcript = convert_to_openai_messages(messages)
+            if len(transcript) != len(messages):
+                raise RuntimeErrorSafe('invalid_native_response')
+            for message, wire in zip(messages, transcript):
+                if isinstance(message, AIMessage):
+                    reasoning = message.additional_kwargs.get('reasoning_content')
+                    if isinstance(reasoning, str):
+                        wire['reasoning_content'] = reasoning
             request = 'response:' + digest({'messages': transcript, 'tools': self.schemas})
             saved = self.journal.load(request)
             if saved is None:
                 attempts = self.journal.load('attempts') or 0
-                if attempts >= MAX_CALLS:
-                    raise RuntimeErrorSafe('assessment_call_limit')
-                purpose = ('requirements' if self.journal.load('requirements') is None else
+                if self.budget.role_turn_limit is not None and attempts >= self.budget.role_turn_limit:
+                    raise RuntimeErrorSafe('turn_limit')
+                purpose = self.purpose or ('requirements' if self.journal.load('requirements') is None else
                            'evidence_matching' if not self.journal.load('actions') else 'evaluation')
                 output = max(12000, model_choice.gateway_profile(self.selected)['min_output_tokens'] or 0)
+                charged_before = self.budget.charged_tokens
                 rid = self.budget.reserve('evaluator', _json_bytes([transcript, self.schemas]), output)
                 self.journal.save('attempts', attempts + 1)
                 self.budget.dispatched(rid)
@@ -193,10 +223,13 @@ class NativeModel(BaseChatModel):
                     self.budget.settle(rid, usage)
                     self.counts['seconds'] += time.monotonic() - started
                     self.counts['tokens'] += usage if usage is not None else 0
+                    self.counts['unknown_usage_calls'] = self.counts.get('unknown_usage_calls', 0) + int(usage is None)
+                    self.counts['charged_tokens'] = self.counts.get('charged_tokens', 0) + self.budget.charged_tokens - charged_before
                     metrics = _token_metrics(raw)
                     for key in ('prompt_tokens', 'completion_tokens'):
                         self.counts[key] += metrics.get(key, 0)
-                    self.counts['details'].append({'purpose': purpose, **metrics})
+                    self.counts['details'].append({'purpose': purpose, 'usage_known': usage is not None,
+                                                  'actual_tokens': usage or 0, **metrics})
                     self.journal.save_counts()
             try:
                 data = saved['data']
@@ -213,7 +246,9 @@ class NativeModel(BaseChatModel):
                 content = data.get('content') or ''
                 if not isinstance(content, str) or (not calls and not content.strip()):
                     raise ValueError
-                message = AIMessage(content=content, tool_calls=calls)
+                reasoning = data.get('reasoning_content')
+                message = AIMessage(content=content, tool_calls=calls,
+                    additional_kwargs={'reasoning_content': reasoning} if isinstance(reasoning, str) else {})
             except (KeyError, TypeError, ValueError):
                 raise RuntimeErrorSafe('invalid_native_response') from None
             self.budget.ensure_live()
@@ -226,7 +261,8 @@ class Slice:
         self.person, self.scope = users.current(), execution.current()
         self.lock = threading.RLock()
         self.counts = {'calls': 0, 'tokens': 0, 'seconds': 0., 'prompt_tokens': 0,
-                       'completion_tokens': 0, 'purposes': {}, 'details': [], 'lock': threading.RLock()}
+                       'completion_tokens': 0, 'unknown_usage_calls': 0, 'charged_tokens': 0,
+                       'purposes': {}, 'details': [], 'lock': threading.RLock()}
         self.thread = f'pipeline:{self.person}:{key.posting_id}:{key.ad_hash[:12]}:{binding}'
         self.saver = ChatSaver(conn, self.lock)
         with conn:
@@ -280,6 +316,8 @@ def validate_evaluation(value, *, key, extraction, bundle, search, model, commut
     report = dict(value.report)
     if extraction.uncertainties:
         report['E'] += '\nUnresolved ad facts: ' + '; '.join(extraction.uncertainties)
+    if len(report.get('E', '')) > 4000:
+        raise CompletionError('invalid_evaluation', 'report.E')
     return AgenticEvaluation(run_key=key, requirements=extraction.requirements, matches=value.matches,
         archetype=value.archetype, global_score=value.global_score, dimensions=value.dimensions,
         facts=extraction.facts, location_fit=extraction.location_fit, location_evidence=extraction.location_evidence,
@@ -312,7 +350,8 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         'policy': policy.model_dump(mode='json') if policy else None,
         'screen': screen, 'posting': posting, 'version': version(),
         'model': kwargs.get('model'), 'commute': kwargs.get('commute_km'),
-        'analysis': analysis, 'insights': kwargs.get('model_insights'), 'embedding': kwargs.get('embedding_model')})
+        'analysis': analysis, 'insights': kwargs.get('model_insights'), 'embedding': kwargs.get('embedding_model'),
+        'candidate_digest': kwargs.get('candidate_digest')})
     run = Slice(conn, key, budget, llm, kwargs['model'], binding)
     budget.ensure_live()
     run.save('screening', screen)
@@ -332,17 +371,26 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
             return
         if not value.requirements.requirements or value.requirements.ad_hash != key.ad_hash:
             raise AgenticError('invalid_requirements')
-        requirements = value.requirements.model_copy(update={'requirements': tuple(
-            r.model_copy(update={'jd_signal': _exact_ad_citation(r.jd_signal, ad_text, key.ad_hash)})
-            if r.jd_signal else r for r in value.requirements.requirements)})
+        checked = []
+        for index, requirement in enumerate(value.requirements.requirements):
+            try:
+                checked.append(requirement.model_copy(update={
+                    'jd_signal': _exact_ad_citation(requirement.jd_signal, ad_text, key.ad_hash)})
+                    if requirement.jd_signal else requirement)
+            except AgenticError:
+                raise CompletionError('invalid_citation', f'requirements.requirements.{index}.jd_signal') from None
+        requirements = value.requirements.model_copy(update={'requirements': tuple(checked)})
         sources = {'ad': (key.ad_hash, ad_text)}
         validate_citations(tuple(r.jd_signal for r in requirements.requirements if r.jd_signal), sources)
-        location = _exact_ad_citation(value.location_evidence, ad_text, key.ad_hash) if value.location_evidence else None
+        try:
+            location = _exact_ad_citation(value.location_evidence, ad_text, key.ad_hash) if value.location_evidence else None
+        except AgenticError:
+            raise CompletionError('invalid_citation', 'location_evidence') from None
         if location:
             validate_citations((location,), sources)
         rights = value.facts.work_rights
         if (rights.quote and rights.quote not in ad_text) or (rights.requirement != 'none_stated' and not rights.quote):
-            raise AgenticError('invalid_citation')
+            raise CompletionError('invalid_citation', 'facts.work_rights.quote')
         extraction = value.model_copy(update={'requirements': requirements, 'location_evidence': location})
         embedding_model = kwargs.get('embedding_model')
         embeddings = CachedEmbeddings(run, llm, embedding_model, bundle.bundle_hash) if embedding_model else None
@@ -383,6 +431,17 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         return result
 
     def tool(name, schema, handler, terminal=False):
+        def feedback(code, fields):
+            boundary = 'corrections:' + name + ':' + code
+            count = run.load(boundary) or 0
+            if count >= 1:
+                raise RuntimeErrorSafe(code)
+            run.save(boundary, count + 1)
+            return {'error': code, 'fields': fields,
+                    'action': 'Correct only the identified fields using supplied source text and the tool schema. '
+                              'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
+                              'Report sections must each be at most 4000 characters. Retry this operation once.'}
+
         def invoke(**args):
             with users.use(run.person), execution.use(run.scope), run.lock:
                 budget.ensure_live()
@@ -392,26 +451,41 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                     if name == 'complete_requirements':
                         missing = sorted(set(schema.model_json_schema().get('required', ())) - args.keys())
                         if missing:
-                            return {'error': 'missing_required_fields', 'fields': missing,
-                                    'action': 'Call complete_requirements with every required field from its schema.'}
+                            return feedback('missing_required_fields', missing)
+                    if terminal and isinstance(args.get('report'), dict):
+                        oversized = ['report.' + key for key in 'ABCDEFG'
+                                     if isinstance(args['report'].get(key), str) and len(args['report'][key]) > 4000]
+                        if oversized:
+                            return feedback('invalid_model_payload', oversized)
                     return handler(validate_model_payload(schema, args))
-                except AgenticError:
-                    raise
+                except CompletionError as exc:
+                    return feedback(exc.code, [exc.field])
+                except (AgenticError, RuntimeErrorSafe) as exc:
+                    if exc.code not in {'invalid_model_payload', 'invalid_evaluation', 'invalid_citation',
+                                        'invalid_candidate_citation', 'contradictory_match', 'unretrieved_evidence',
+                                        'requirements_required', 'requirements_changed', 'invalid_requirements'}:
+                        raise
+                    return feedback(exc.code, ['matches' if terminal else 'requirements'])
                 except ValueError:
-                    raise RuntimeErrorSafe('invalid_evaluation') from None
+                    return feedback('invalid_evaluation', ['report' if terminal else 'requirements'])
         return StructuredTool(name=name, description=(f'Canonical {name} operation. Required fields: ' +
-                ', '.join(schema.model_json_schema().get('required', ()))),
-            args_schema=schema.model_json_schema(), func=invoke, return_direct=terminal,
+                ', '.join(schema.model_json_schema().get('required', ())) +
+                (' Each report section has a 4000-character maximum.' if terminal else '')),
+            args_schema=schema.model_json_schema(), func=invoke, return_direct=False,
             handle_tool_error=False)
 
     def complete_requirements(value):
         build_requirements(value)
+        candidate_digest = kwargs.get('candidate_digest')
+        understanding = ({name: candidate_digest[name] for name in (
+            'identity', 'strengths', 'gaps', 'target_paths', 'uncertainties',
+            'advisory_suggestions', 'model_interpretation') if name in candidate_digest}
+            if isinstance(candidate_digest, dict) else None)
         return {'requirements_hash': extraction.requirements.requirement_hash,
-            'requirements': extraction.requirements.model_dump(mode='json'),
-            'evidence_hash': bundle.bundle_hash,
             'evidence_inventory': [{'id': item.id, 'kind': item.kind} for item in bundle.items],
-            'initial_candidates': search.initial_candidates(), 'career_profile': career_profile_text(bundle),
+            'retrieval': 'Use search_candidate_evidence_batch for all frozen requirements; results include primary evidence.',
             'candidate_analysis': analysis, 'model_insights': kwargs.get('model_insights') or {},
+            'candidate_digest': understanding,
             'decision_policy': policy.model_dump(mode='json') if policy else None,
             'commute_km_from_home': kwargs.get('commute_km')}
 
@@ -451,10 +525,11 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
             'After batch retrieval, complete_evaluation when the evidence supports a judgment; '
             'refine searches only for unresolved requirements. Follow these loaded stage skills:\n' + '\n'.join(files.values()),
         backend=StateBackend(), skills=['/skills/'], memory=None, subagents=[],
-        middleware=[AssessmentFilesystem(), _NoDelegation(), _NoSummarization()],
+        middleware=[AssessmentFilesystem(), _NoDelegation(), _NoSummarization(),
+                    CompletionBoundary(lambda: run.load('evaluation') is not None)],
         permissions=[FilesystemPermission(operations=['write'], paths=['/**'], mode='deny')],
         checkpointer=run.saver)
-    cfg = {'configurable': {'thread_id': run.thread}, 'callbacks': [], 'recursion_limit': 40}
+    cfg = {'configurable': {'thread_id': run.thread}, 'callbacks': [], 'recursion_limit': (1000000 if budget.role_turn_limit is None else 16 * budget.role_turn_limit + 100)}
 
     def invoke():
         with users.use(run.person), execution.use(run.scope), tracing_context(enabled=False):

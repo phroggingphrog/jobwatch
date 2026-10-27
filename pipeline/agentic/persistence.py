@@ -19,7 +19,7 @@ from pipeline.agentic.store import AgenticStore, Claim
 from pipeline.agentic.liveness import latest_observation, observation_metadata, observation_current
 
 
-KINDS = frozenset({'public_screening', 'snapshot', 'structural_inputs', 'candidate', 'evaluation', 'evaluation_counts', 'proposal', 'review', 'answers',
+KINDS = frozenset({'candidate_digest', 'candidate_digest_counts', 'public_screening', 'snapshot', 'structural_inputs', 'candidate', 'evaluation', 'evaluation_counts', 'proposal', 'review', 'answers',
                    'manifest', 'verify', 'cv', 'letter', 'cv_markdown', 'letter_markdown', 'form_map', 'package_bundle', 'company_research', 'model_insights'})
 
 

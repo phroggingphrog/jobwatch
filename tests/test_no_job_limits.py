@@ -398,4 +398,6 @@ def test_chat_once_native_tools_returns_the_same_shape_as_the_json_path():
               keys=['k'])
     out = llm.chat_once('deepseek-flash', [{'role': 'user', 'content': 'q'}], max_tokens=500,
                         tools=[{'type': 'function', 'function': {'name': 'finish', 'parameters': {}}}])
-    assert out.data == {'tool': 'finish', 'arguments': {'answer': 'x'}} and out.usage == {'prompt_tokens': 11, 'completion_tokens': 7}
+    assert out.data == {'tool': 'finish', 'arguments': {'answer': 'x'}}
+    assert out.usage == {'prompt_tokens': 11, 'completion_tokens': 7,
+                         'completion_tokens_details': {'reasoning_tokens': 4}}

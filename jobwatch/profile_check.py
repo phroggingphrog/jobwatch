@@ -107,7 +107,15 @@ def check(profile_dir: Path | None = None, settings_file: Path | None = None) ->
         cand = profile.get("candidate") if isinstance(profile.get("candidate"), dict) else {}
         _section(cand, CANDIDATE, "candidate.", "profile.yaml", out)
         _section(cand.get("work_rights"), WORK_RIGHTS, "candidate.work_rights.", "profile.yaml", out)
+        approved_regions = ()
+        if profile_dir is None:
+            from . import users
+            from .candidate.policy import policy_for
+            policy = policy_for(users.current())
+            approved_regions = policy.regions if policy is not None else ()
         for path, effect in WANTED:
+            if path == 'candidate.location' and approved_regions:
+                continue  # Region eligibility is known; an unconfirmed home/distance remains unknown.
             if not cand.get(path.split(".", 1)[1]):
                 out.append(f'profile.yaml: "{path}" is empty, so {effect}.')
     interests = _load(d / "interests_and_criteria.yaml", out)

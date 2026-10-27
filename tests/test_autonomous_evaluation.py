@@ -11,7 +11,7 @@ from pipeline.agentic.runtime import RuntimeErrorSafe
 from test_agentic_evaluate import build_case, budget
 
 
-def transport(choices):
+def transport(choices, *, include_usage=True, reasoning=False):
     pending = iter(choices)
     seen = []
     def send(url, headers, body, timeout):
@@ -26,7 +26,12 @@ def transport(choices):
             message = {'content': None, 'tool_calls': [
                 {'id': f'call-{len(seen)}-{i}', 'type': 'function', 'function':
                  {'name': t['tool'], 'arguments': json.dumps(t['arguments'])}} for i, t in enumerate(items)]}
-        return 200, {'choices': [{'message': message}], 'usage': {'prompt_tokens': 11, 'completion_tokens': 7}}
+        if reasoning:
+            message['reasoning_content'] = f'synthetic-reasoning-{len(seen)}'
+        response = {'choices': [{'message': message}]}
+        if include_usage:
+            response['usage'] = {'prompt_tokens': 11, 'completion_tokens': 7}
+        return 200, response
     return LLM(transport=send, keys=['synthetic-key']), seen
 
 
@@ -64,9 +69,37 @@ def test_native_assessment_three_calls_skills_and_idempotency(tmp_path, monkeypa
     assert evaluate_autonomous(key, ad, b, llm, **args) == result and len(seen) == 3
     counts = json.loads(conn.execute("SELECT payload FROM autonomous_results WHERE identity LIKE '%:counts'").fetchone()[0])
     assert counts['calls'] == 3 and counts['tokens'] == 54
+    assert counts['charged_tokens'] == 54 and counts['unknown_usage_calls'] == 0
     assert counts['prompt_tokens'] == 33 and counts['completion_tokens'] == 21
     assert counts['purposes'] == {'requirements': 1, 'evidence_matching': 1, 'evaluation': 1}
     assert len(counts['details']) == 3 and counts['seconds'] >= 0
+
+
+def test_unknown_native_usage_remains_conservatively_charged(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    llm, seen = transport(native_choices(roles), include_usage=False)
+    b = budget(key)
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        evaluate_autonomous(key, ad, b, llm, conn=conn, posting={}, screen={'outcome': 'admit'},
+                            evidence_bundle=bundle, model='claude/sonnet')
+        value = json.loads(conn.execute("SELECT payload FROM autonomous_results WHERE identity LIKE '%:counts'").fetchone()[0])
+    assert len(seen) == 3 and value['unknown_usage_calls'] == 3
+    assert value['tokens'] == 0 and value['charged_tokens'] == b.charged_tokens > 0
+    assert all(d['usage_known'] is False for d in value['details'])
+
+
+def test_native_reasoning_is_preserved_through_tool_turns_and_checkpoint_resume(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    llm, seen = transport(native_choices(roles), reasoning=True)
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        args = dict(conn=conn, posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
+        result = evaluate_autonomous(key, ad, budget(key), llm, **args)
+        assert result.matches
+        for number, request in enumerate(seen[1:], start=1):
+            assistant = [m for m in request['messages'] if m['role'] == 'assistant']
+            assert [m['reasoning_content'] for m in assistant] == [f'synthetic-reasoning-{i}' for i in range(1, number+1)]
+        assert evaluate_autonomous(key, ad, budget(key), llm, **args) == result
+        assert len(seen) == 3
 
 
 @pytest.mark.parametrize('change', ['ad', 'person', 'config', 'screen', 'model', 'skills', 'insights', 'commute'])
@@ -163,6 +196,7 @@ def test_invalid_matching_fails_closed(tmp_path, change, error):
         citation = copy.deepcopy(match['evidence'][0]); citation['quote'] = 'Invented contradiction'
         match.update(match='missing', evidence=[], risk='Gap', mitigation='Ask owner')
         match['judgment'].update(status='contradicted', contradiction_evidence=[citation], open_question='Which proof?')
+    choices.append(copy.deepcopy(choices[-1]))
     llm, seen = transport(choices)
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         with pytest.raises(Exception, match=error):
@@ -180,13 +214,27 @@ def test_canonical_gate_holds_missing_evidence_despite_high_score(tmp_path):
     assert gate.route == 'hold' and gate.reason == 'insufficient_evidence'
 
 
-def test_six_call_limit_survives_resumes(tmp_path):
+def test_configured_turn_limit_survives_resume(tmp_path):
     bundle, ad, key, llm, seen, conn, args = run_case(tmp_path, choices=[
         {'tool': 'read_full_ad', 'arguments': {}} for _ in range(8)])
+    bounded = budget(key)
+    bounded.role_turn_limit = 3
     for _ in range(2):
-        with pytest.raises(RuntimeErrorSafe, match='assessment_call_limit'):
-            evaluate_autonomous(key, ad, budget(key), llm, **args)
-    assert len(seen) == 6
+        with pytest.raises(RuntimeErrorSafe, match='turn_limit'):
+            evaluate_autonomous(key, ad, bounded, llm, **args)
+    assert len(seen) == 3
+
+
+def test_unlimited_does_not_convert_six_call_target_to_a_cap(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = [{'tool':'read_full_ad','arguments':{}} for _ in range(7)] + native_choices(roles)
+    llm, seen = transport(choices)
+    unlimited = budget(key)
+    unlimited.role_turn_limit = None
+    with sqlite3.connect(':memory:',check_same_thread=False) as conn:
+        result=evaluate_autonomous(key,ad,unlimited,llm,conn=conn,posting={},screen={'outcome':'admit'},
+            evidence_bundle=bundle,model='claude/sonnet')
+    assert result.matches and len(seen)==10
 
 
 def test_native_json_text_cannot_trigger_protocol_fallback(tmp_path):
@@ -249,3 +297,43 @@ def test_incomplete_native_requirements_get_schema_feedback_without_protocol_fal
     assert result.matches and len(seen)==4
     assert 'missing_required_fields' in json.dumps(seen[1]['messages'])
     assert all('response_format' not in body for body in seen)
+
+
+@pytest.mark.parametrize('fault', ['rights_quote', 'overlength_report'])
+def test_invalid_completion_gets_one_targeted_correction_without_restarting(tmp_path, fault):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    valid = native_choices(roles)
+    if fault == 'rights_quote':
+        invalid = copy.deepcopy(valid[0])
+        invalid['arguments']['facts']['work_rights'] = {'requirement': 'none_stated', 'quote': 'Absent fabricated quotation'}
+        choices = [invalid, *valid]
+        field = 'facts.work_rights.quote'
+    else:
+        invalid = copy.deepcopy(valid[-1])
+        invalid['arguments']['report']['B'] = 'x' * 4971
+        choices = [*valid[:-1], invalid, valid[-1]]
+        field = 'report.B'
+    llm, seen = transport(choices)
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+            screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
+        assert result.matches
+        assert len(seen) == 4
+        feedback = [m['content'] for body in seen for m in body['messages'] if m['role'] == 'tool']
+        assert any(field in value for value in feedback)
+        assert evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+            screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet') == result
+        assert len(seen) == 4
+
+
+def test_independent_schema_and_citation_errors_each_get_one_correction(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    valid = native_choices(roles)
+    incomplete = {'tool': 'complete_requirements', 'arguments': {'requirements': valid[0]['arguments']['requirements']}}
+    invalid_quote = copy.deepcopy(valid[0])
+    invalid_quote['arguments']['facts']['work_rights'] = {'requirement': 'none_stated', 'quote': 'Invented absence statement'}
+    llm, seen = transport([incomplete, invalid_quote, *valid])
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+            screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
+    assert result.matches and len(seen) == 5

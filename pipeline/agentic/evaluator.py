@@ -101,6 +101,11 @@ class JobSummary(StrictFrozen):
     dimensions: dict[str, Dimension]
     report: dict[str, str]
 
+    @field_validator("dimensions")
+    @classmethod
+    def _canonical_dimensions(cls, value):
+        return AgenticEvaluation._dimensions(value)
+
     @field_validator("report")
     @classmethod
     def _report_headings(cls, value):
@@ -109,7 +114,7 @@ class JobSummary(StrictFrozen):
         keys = [key.split("_", 1)[0] for key in value]
         if len(keys) != 7 or set(keys) != set("ABCDEFG"):
             raise ValueError("invalid report sections")
-        return dict(zip(keys, value.values()))
+        return AgenticEvaluation._report(dict(zip(keys, value.values())))
 
 
 class RequirementAssessments(StrictFrozen):

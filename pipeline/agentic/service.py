@@ -90,44 +90,8 @@ def enabled(config) -> bool:
 
 
 def _config(config):
-    raw = agentic_settings(config)
-    autonomous = raw.get('autonomous_evaluation', False)
-    if type(autonomous) is not bool:
-        raise AgenticError('invalid_configuration')
-    credential_index = raw.get('credential_index', 0)
-    if type(credential_index) is not int or credential_index < 0:
-        raise AgenticError('invalid_configuration')
-    if type(raw.get('research_enabled', False)) is not bool:
-        raise AgenticError('invalid_configuration')
-    from jobwatch.model_choice import chosen   # the person's own pick wins over config/jobwatch.yaml
-    pick = chosen()
-    values = {'worker_model': pick.get('writer') or raw.get('worker_model', DEFAULT_MODEL),
-              'evaluator_model': pick.get('evaluator') or raw.get('evaluator_model', DEFAULT_MODEL),
-              'reviewer_model': pick.get('reviewer') or raw.get('reviewer_model', DEFAULT_MODEL),
-              'answer_model': pick.get('answers') or raw.get('answer_model', DEFAULT_MODEL),
-              'credential_index': credential_index,
-              'embedding_model': raw.get('embedding_model'),
-              'research_enabled': raw.get('research_enabled', False),
-              'job_token_ceiling': int(raw.get('job_token_ceiling', 250_000)),
-              'batch_token_ceiling': int(raw.get('batch_token_ceiling', 2_000_000)),
-              'job_seconds': min(900, float(raw.get('job_seconds', 900))),
-              'batch_seconds': min(1800, float(raw.get('batch_seconds', 1800)))}
-    if autonomous:
-        values['autonomous_evaluation'] = True
-        from pipeline.agentic.autonomous import version
-        values['autonomous_version'] = version()
-    if values['embedding_model'] is not None:
-        from pipeline.agentic.execution import embedding_model_allowed
-        if not embedding_model_allowed(values['embedding_model']):
-            raise AgenticError('invalid_configuration')
-    for name in ('occupation_reference_path', 'occupation_mappings_path'):
-        value = raw.get(name)
-        if value is not None and (type(value) is not str or not value.strip()):
-            raise AgenticError('invalid_configuration')
-        values[name] = value
-    if any(values[k] <= 0 for k in ('job_token_ceiling', 'batch_token_ceiling', 'job_seconds', 'batch_seconds')):
-        raise AgenticError('invalid_configuration')
-    return values
+    from pipeline.agentic.configuration import runtime_config
+    return runtime_config(config)
 
 
 def _run_timing(config):
@@ -253,7 +217,15 @@ def _prescreen_fingerprint(conn):
         cursor = conn.execute(f'SELECT * FROM {table} ORDER BY id')
         names = [column[0] for column in cursor.description]
         values[table] = [dict(zip(names, row)) for row in cursor]
-    return digest(values)
+    from jobwatch.prescreen.engine import ENGINE_VERSION
+    return digest({'engine': ENGINE_VERSION, 'tables': values})
+
+
+def _digest_budget_usage(budget, attribution):
+    """Exclude only digest reservations that this budget actually contains."""
+    ids = set(attribution.get('budget_reservations', ()))
+    matched = [r for r in budget.snapshot().reservations if r.reservation_id in ids]
+    return len(matched), sum(r.charged_tokens for r in matched)
 
 
 def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=None, *, conn=None):
@@ -268,11 +240,16 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
     confirmed_hash = digest(approved) if approved else None
     from pipeline.agentic.revisions import fingerprint
     revision_hash = fingerprint(posting_id)
+    digest_binding = {}
+    if cfg.get('autonomous_evaluation', False):
+        from pipeline.agentic.candidate_digest import input_manifest
+        digest_binding['candidate_digest'] = digest(input_manifest(conn, bundle=bundle, policy=policy,
+            cfg=cfg, structural=structural, approved_profile=approved))
     return RunKey(posting_id=posting_id, ad_hash=content_hash(text.encode()), evidence_hash=bundle.bundle_hash,
                   rubric_version=RUBRIC_VERSION, candidate_hash=candidate_hash,
                   config_hash=digest({'policy': policy.model_dump(mode='json'), 'runtime': cfg,
                                       'implementation': IMPLEMENTATION_VERSION,
-                                      'confirmed_profile': confirmed_hash,
+                                      'confirmed_profile': confirmed_hash, **digest_binding,
                                       **({'prescreen': _prescreen_fingerprint(conn)} if cfg.get('autonomous_evaluation', False) else {}),
                                       **({'revision':revision_hash} if revision_hash else {}),
                                       'location_reference': LOCATION_REFERENCE_HASH, 'posting': posting}))
@@ -481,12 +458,11 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     if captured is None:
         skip('posting_missing')
         return None
+    prescreen_engine = None
     if cfg.get('autonomous_evaluation', False):
-        from jobwatch.prescreen.engine import Engine, fields_of_row
-        prescreen = Engine.load(conn, dp).evaluate(fields_of_row(captured[0], captured[1]), posting_id=posting_id)
-        if prescreen.outcome == 'skip':
-            skip('prescreen_skip')
-            return None
+        from jobwatch.prescreen.engine import Engine
+        # Projection synchronizes approved rows; the personal filter waits for digest readiness.
+        prescreen_engine = Engine.load(conn, dp)
     reference, mappings = load_inputs(bundle, cfg)
     key = _run_key(posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn)
     approved_after_key = intake.current_version(users.current())
@@ -533,6 +509,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         if scope:
             scope.event('job_' + event, posting_id=posting_id, run_key=key.value, reason=code)
     budget = None
+    candidate_understanding = None
+    digest_calls = digest_tokens = 0
     stage, reason, final_status = Stage.DLQ, 'execution_failed', 'held'
     try:
         activity('started')  # inside the try: a failure here must still release the claim
@@ -545,6 +523,39 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             budget = _budget(store, claim, cfg, batch, _batch_registry, _invocation_deadline,
                              discovery_settings.job_limits(users.current(), cfg), _run_timing(config))
             remaining = min(60, budget.remaining_seconds())  # Atlassian pages need ~35 s
+        if cfg.get('autonomous_evaluation', False) and not cached_ready and saved_package is None:
+            from pipeline.agentic.candidate_digest import current_digest, ensure_digest
+            expected_structural = analyse_candidate(bundle, reference, mappings, pol)
+            candidate_understanding = current_digest(conn, bundle=bundle, policy=pol, cfg=cfg,
+                structural=expected_structural, approved_profile=approved_snapshot)
+            if candidate_understanding is None:
+                candidate_understanding = ensure_digest(conn, bundle=bundle, policy=pol, cfg=cfg,
+                    config=config, structural=expected_structural, budget=budget,
+                    llm=llm if llm is not None else configured_llm(config), approved_profile=approved_snapshot)
+            attribution = candidate_understanding.counts.get('by_run', {}).get(key.value, {})
+            digest_calls = attribution.get('calls', 0)
+            digest_tokens = attribution.get('charged_tokens', 0)
+            adapter.save_artifact(claim, 'candidate_digest', candidate_understanding.model_dump(mode='json'))
+            saved_digest_counts = adapter.load_artifact(key.value, 'candidate_digest_counts')
+            if saved_digest_counts is None:
+                saved_digest_counts = {
+                    'identity': candidate_understanding.identity, 'calls': digest_calls,
+                    'charged_tokens': digest_tokens, 'reused': digest_calls == 0,
+                    'cold': candidate_understanding.counts,
+                    'budget_reservations': [r.reservation_id for r in budget.snapshot().reservations] if digest_calls else []}
+                adapter.save_artifact(claim, 'candidate_digest_counts', saved_digest_counts)
+            digest_calls, digest_tokens = _digest_budget_usage(budget, saved_digest_counts)
+            from jobwatch.prescreen.engine import Engine, fields_of_row
+            engine = prescreen_engine
+            if _run_key(posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn).value != key.value:
+                raise AgenticError('snapshot_changed')
+            remaining = min(60, budget.remaining_seconds())
+            prescreen = engine.evaluate(fields_of_row(captured[0], captured[1]), posting_id=posting_id)
+            if prescreen.outcome == 'skip':
+                skip('prescreen_skip')
+                stage, reason, final_status = Stage.ARCHIVED, 'prescreen_skip', 'archived'
+                adapter.set_stage(claim, stage, reason, key.ad_hash)
+                return stage
         if remaining < MIN_READ_SECONDS:
             raise AgenticError('deadline_exceeded')
         observation = observe_posting({'id': posting_id, **captured[0]}, deadline=time.monotonic()+max(0,remaining))
@@ -571,6 +582,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 raise AgenticError('snapshot_changed')
             current_approved = intake.current_version(users.current())
             if (digest(current_approved) if current_approved else None) != confirmed_hash:
+                raise AgenticError('snapshot_changed')
+            if cfg.get('autonomous_evaluation', False) and _run_key(
+                    posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn).value != key.value:
                 raise AgenticError('snapshot_changed')
             adapter.set_stage(claim, Stage.READY, 'agentic_package_ready', key.ad_hash,
                               application_id=previous['application_id'], draft_id=previous['draft_id'])
@@ -619,8 +633,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 llm = configured_llm(config)
             expected_structural = analyse_candidate(bundle, reference, mappings, pol)
             if cfg.get('autonomous_evaluation', False):
-                # Native assessment reads primary evidence directly. Structural measures
-                # are deterministic context; no separate paid candidate assessment runs.
+                # Structural identity remains deterministic; reusable paid understanding
+                # is separately bound and prepared before personal screening.
                 candidate = expected_structural
                 saved_candidate = adapter.load_artifact(key.value, 'candidate')
                 if saved_candidate is not None and saved_candidate != candidate.model_dump(mode='json'):
@@ -665,7 +679,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if cfg.get('autonomous_evaluation', False) and saved_evaluation is None:
                 from pipeline.agentic.autonomous import evaluate_posting
                 evaluator = evaluate_posting
-                evaluation_extras = {'source_conn': conn, 'posting': posting}
+                evaluation_extras = {'source_conn': conn, 'posting': posting,
+                    'candidate_digest': candidate_understanding.model_dump(mode='json')}
             evaluation_started = time.monotonic()
             evaluation_calls = sum(budget.snapshot().role_turns.values()) if budget is not None else 0
             evaluation_tokens = budget.charged_tokens if budget is not None else 0
@@ -677,8 +692,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             if saved_evaluation is None and adapter.load_artifact(key.value, 'evaluation_counts') is None:
                 adapter.save_artifact(claim, 'evaluation_counts', {
                     'mode': 'autonomous_native' if cfg.get('autonomous_evaluation', False) else 'existing',
-                    'calls': sum(budget.snapshot().role_turns.values()) - (0 if cfg.get('autonomous_evaluation', False) else evaluation_calls),
-                    'charged_tokens': budget.charged_tokens - (0 if cfg.get('autonomous_evaluation', False) else evaluation_tokens),
+                    'calls': sum(budget.snapshot().role_turns.values()) - (digest_calls if cfg.get('autonomous_evaluation', False) else evaluation_calls),
+                    'charged_tokens': budget.charged_tokens - (digest_tokens if cfg.get('autonomous_evaluation', False) else evaluation_tokens),
                     'seconds': time.monotonic() - evaluation_started})
             if cfg.get('autonomous_evaluation', False):
                 if _capture(conn, posting_id) != captured or _run_key(
@@ -1010,6 +1025,13 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
     cfg = _config(config)
     deadline = min(deadline if deadline is not None else float('inf'),
                    time.time() + (max_seconds if max_seconds is not None else cfg['batch_seconds']))
+    from pipeline.agentic import execution
+    if cfg.get('autonomous_evaluation', False) and execution.current() is None:
+        invocation = execution.Execution(run_id or ('reader-' + uuid.uuid4().hex),
+            seconds=max(0, deadline-time.time()), token_ceiling=cfg['batch_token_ceiling'], max_calls=1_000_000)
+        with execution.use(invocation):
+            return after_collect(conn, config, max_seconds=max_seconds, collector_run_id=collector_run_id,
+                                 deadline=deadline, run_id=run_id)
     phase_seconds = {}
     phase_name, phase_started = None, time.monotonic()
     def phase(name, *, completed_previous=False):
@@ -1042,6 +1064,33 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
             return {'skipped': 'busy'}
         discovery_stack.enter_context(deadline_scope(deadline))
         from pipeline.nodes import ingest
+        if cfg.get('autonomous_evaluation', False):
+            from jobwatch.occupations.embeddings import discovery_budget
+            from pipeline.agentic.candidate_digest import current_digest, ensure_digest
+            bundle, target = snapshot_evidence(profile_dir()), default_policy()
+            structural = analyse_candidate(bundle, *load_inputs(bundle, cfg), target)
+            ready = current_digest(conn, bundle=bundle, policy=target, cfg=cfg, structural=structural)
+            if ready is None:
+                phase('candidate_understanding')
+                limits = discovery_settings.job_limits(users.current(), cfg)
+                digest_ceiling = min(left, limits['job_token_ceiling']) if limits['job_token_ceiling'] is not None else left
+                digest_seconds = max(0, deadline-time.time())
+                if limits['job_seconds'] is not None:
+                    digest_seconds = min(digest_seconds, limits['job_seconds'])
+                with discovery_budget(conn, 'candidate_digest', token_ceiling=digest_ceiling,
+                        seconds=digest_seconds) as digest_budget:
+                    digest_budget.role_turn_limit = limits['job_max_turns']
+                    digest_budget.call_seconds = _run_timing(config)['model_call_seconds']
+                    digest_budget.call_seconds_reasoning = _run_timing(config)['model_call_reasoning_seconds']
+                    ensure_digest(conn, bundle=bundle, policy=target, cfg=cfg, structural=structural,
+                                  config=config, budget=digest_budget, llm=configured_llm(config))
+            jobs, tokens = _spent_today(conn, _local_midnight(_now()))
+            left = allowance(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
+            invocation = execution.current()
+            left = min(left, max(0, invocation.token_ceiling-invocation.charged_tokens))
+            if left <= 0:
+                return {'deferred': 'daily_budget', **_refresh_shortlist(conn, config)}
+            invocation.token_ceiling = min(invocation.token_ceiling, invocation.charged_tokens+left)
         # Collection/ad capture is deterministic and may fetch public full ads.
         phase('ingestion')
         ingest.run(conn, config, limit=200, fetch_budget=25, deadline=deadline)
