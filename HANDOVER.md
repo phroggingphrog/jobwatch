@@ -51,3 +51,26 @@ Installed `50-discovery-reliability.conf` for agent/fast/slow/reader under user 
 Live MCP advertises discovery_status/start_discovery/retry_assessment, with no chatbot relay. Historical unresolved job286 deadline_exceeded is now durably paused and Hermes handoff succeeded exactly once (handed_off means SSH acceptance only). Bounded live start admitted run033433f938de469a91576686ba2dc0c7 through actual MCP; no documents or applications requested. Acceptance outcome pending. At admission existing usage was12 attempts/1970208 charged tokens against unchanged40/2000000 daily limits.
 
 Undo: check active work; stop only the three timers; revert this task's source commits in reverse order on their own native/MCP branches (or create rollback branches from original05cf019/8096035 preserving branch-specific history), rebuild MCP and restart idle services. Remove only four new50-discovery-reliability.conf files; existing40-sqlite-runtime.conf backups are retained. Restore backed-up native settings.env, daemon-reload, restore original active timers. Preserve candidate profile/archive, incident rows, checkpoints and spend records. Never reset spending or confirmed data for rollback.
+
+### Explicit unavailable archive inventory
+
+Source: local source-import `20261023T164432Z/extracted/MANIFEST.json`, `missing_registry_sources` (10). These original sources remain unavailable; corresponding current derived/confirmed material is not evidence that these originals were recovered:
+
+| Registry document | Missing archive-relative source |
+| --- | --- |
+| profile_yaml | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/profile.yaml |
+| master_resume_md | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/master_resume.md |
+| skills_taxonomy_yaml | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/transferable_skills_taxonomy.yaml |
+| career_ops_md | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/career_ops_profile.md |
+| search_profile_yaml | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/search_profile.yaml |
+| interests_yaml | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/interests_and_criteria.yaml |
+| voice_dna_md | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/voice_dna.md |
+| profile_readme_md | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/README.md |
+| schema_json | archive/job-system-20261004/workspace/job-tracker/agent/candidate-profile/schema.json |
+| tracker_db | archive/job-data-20261004/tracker.db |
+
+The separate excluded registry entry `letter_loe_2023_excluded` remains deliberately excluded. Live reference recheck after rollout:19 style/template references,2 letter examples,130 readable career facts,0 failed active style reads. Active canonical profilev3 remains the single confirmed profile, with previous versions retained as history.
+
+### Acceptance follow-up corrections
+
+Source review of real runtime codes found per-job token/attempt limits were omitted from incident classification. bedc63a fixes that distinction; daily/invocation allowance exhaustion stays a normal deferral.45 focused native checks and50 MCP incident/idempotency/connector checks passed. Deployment waits for current bounded work to settle. The live run also showed finished daily-budget/ad-refresh rows being counted as assessed; a focused correction is being verified to retain all charged spending while reporting those as deferrals.
