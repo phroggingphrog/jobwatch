@@ -90,7 +90,7 @@ the htmx fragments behind them (`/job/{id}/draft`, `POST /job/{id}/{action}`, `P
 |---|---|---|
 | `GET /chat`, `POST /chat`, `POST /chat/ask` | `chat.html` | the app's Chat has no ask cards; this page is the only place they exist |
 | `GET /candidate` | `candidate.html` | profile; not in the app |
-| `GET/POST /preferences...` | `preferences.html` | not in the app |
+| `GET/POST /preferences...` | `preferences.html` | not in the app; includes the per-person daily discovery token allowance |
 | `GET/POST /answers` | `answers.html` | not in the app |
 | `/design...` | `design*.html` | annotation notes and references; not in the app |
 | `GET /job/{id}/prepare` (+ status, browser/*, answers, `POST prepare`) | `prepare.html`, `_preparation.html` | application preparation and the live form browser |
@@ -189,6 +189,8 @@ CLI (`cli_ext.py`): `jobwatch design notes [--open] [--md] [--all] [--page PATH]
 
 ## Preference learning
 `GET /preferences` reads current profile/evaluation provenance and immutable choice history without recording choices, fitting a model or calling an LLM. Context: `preference_state` (status/counts/fit), `choices` (currentness, answered state, three escaped alternatives and an idempotency token), `preference_error` (fixed public message). `POST /preferences/new` snapshots three previously unseen, current eligible evaluated jobs; `POST /preferences/{set_id}/pick` rechecks current provenance and records an explicit owner selection or none, protected by the global same-origin guard. Predictions are never shown before an unanswered comparison, avoiding model-primed validation labels. Fitting is local and on demand through `jobwatch preferences fit --output-dir PRIVATE_DIR`.
+
+`GET /preferences` also reads the effective `daily_token_ceiling` for `users.current()` and renders it as the discovery token allowance; `null` means Unlimited. When no per-person override exists, the value comes from the confirmed discovery scope or the configured batch ceiling. `POST /preferences/discovery-settings` accepts form fields `mode` (`limited` or `unlimited`) and `daily_token_ceiling` (a positive ASCII whole number when Limited). It writes only the current authenticated person's override through `pipeline.agentic.discovery_settings`, then redirects to `/preferences` with 303. Invalid selection or limit returns 400 with a fixed visible explanation; cross-origin posts are refused by the global origin guard. Unlimited removes the daily token cap only; the daily assessment count and per-run ceilings remain in force. The setting is operational and does not change learned preference rankings.
 
 ### Follow-up owner controls (DES-42 / CAP-6)
 Application cards carry `followup` state/kind/due_on/sent_count/reason and a per-render idempotency token. The Applications page shows cadence only for active applications. `POST /applications/{posting_id}/followup` accepts an explicit owner-confirmed event, date pin or pin removal and writes only the existing application event ledger. It never sends a message or marks a draft sent. Date/time inputs are Melbourne local time; ambiguous DST times, future events and pre-submission events are rejected. Ordinary form success redirects to Applications; HTMX success returns the kanban. Invalid input returns422 with a fixed safe explanation. Generated drafts use the separate owner-requested review page described below.
