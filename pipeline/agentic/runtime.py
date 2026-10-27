@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from types import UnionType
 from typing import Annotated, Any, Callable, Union, get_args, get_origin
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from pipeline.agentic.contracts import AgenticError, BudgetCheckpoint, Reservation
 
@@ -354,16 +354,22 @@ def validate_model_payload(model_type: type[BaseModel], payload: Any) -> BaseMod
     schemas apply at both boundaries. Invalid input produces a fixed safe code.
     """
     invalid = False
+    fields = ()
     try:
         if (not isinstance(model_type, type) or not issubclass(model_type, BaseModel)
                 or type(payload) is not dict):
             raise ValueError
         json.dumps(payload, ensure_ascii=False, allow_nan=False)
         value = model_type.model_validate(_json_tuples(payload, model_type), strict=False)
-    except Exception:
+    except Exception as exc:
+        if isinstance(exc, ValidationError):
+            fields = tuple(sorted({error['loc'][0] for error in exc.errors(include_input=False, include_context=False)
+                if error['loc'] and error['loc'][0] in model_type.model_fields}))
         invalid = True
     if invalid:
-        raise RuntimeErrorSafe("invalid_model_payload") from None
+        error = RuntimeErrorSafe("invalid_model_payload")
+        error.fields = fields
+        raise error from None
     return value
 
 

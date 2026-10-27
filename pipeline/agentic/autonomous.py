@@ -31,7 +31,7 @@ from jobwatch.candidate.evidence import bind_career_profile, career_profile_text
 from jobwatch.llm import SafeLLMError
 from pipeline.agentic import execution
 from pipeline.agentic.chat_storage import ChatSaver
-from pipeline.agentic.contracts import AgenticEvaluation, AgenticError, StrictFrozen, validate_citations
+from pipeline.agentic.contracts import AgenticEvaluation, AgenticError, StrictFrozen, validate_citations, DIMENSIONS, REPORT_FIELDS
 from pipeline.agentic.evaluator import JDExtraction, JobAssessment, _exact_ad_citation, _snapshot_analysis
 from pipeline.agentic.gateway import call
 from pipeline.agentic.deepagents_runtime import _NoFilesystem
@@ -108,7 +108,8 @@ class CompletionBoundary(AgentMiddleware):
 class CompletionError(AgenticError):
     def __init__(self, code, field):
         super().__init__(code)
-        self.field = field
+        self.fields = (field,) if isinstance(field, str) else tuple(field)
+        self.field = self.fields[0]
 
 
 class CachedEmbeddings:
@@ -336,6 +337,13 @@ def validate_evaluation(value, *, key, extraction, bundle, search, model, commut
     if value.requirements_hash != extraction.requirements.requirement_hash:
         raise AgenticError('requirements_changed')
     requirements = {r.id: r for r in extraction.requirements.requirements}
+    missing_risk = []
+    for index, match in enumerate(value.matches):
+        requirement = requirements.get(match.requirement_id)
+        if requirement and (requirement.blocker or requirement.importance in {'critical', 'high'}) and match.match in {'partial', 'missing'}:
+            missing_risk.extend(f'matches.{index}.{field}' for field in ('risk', 'mitigation') if not getattr(match, field).strip())
+    if missing_risk:
+        raise CompletionError('invalid_evaluation', missing_risk)
     for match in value.matches:
         requirement = requirements.get(match.requirement_id)
         judgment = match.judgment
@@ -513,6 +521,12 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                               'Evidence IDs must come from the supplied inventory or search results. '
                               'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
                               'Report sections must each be at most 4000 characters. Retry this operation once.'}
+            if 'dimensions' in fields:
+                answer['expected_keys'] = {'dimensions': list(DIMENSIONS)}
+            if any(field == 'report' or field.startswith('report.') for field in fields):
+                answer.setdefault('expected_keys', {})['report'] = list(REPORT_FIELDS)
+            if 'requirements' in fields and name == 'complete_requirements':
+                answer['requirements_shape'] = 'Object with ad_hash and requirements array; not a bare array.'
             run.save_many({boundary: count + 1, journal_key: answer})
             return answer
 
@@ -531,6 +545,17 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                     return feedback(code, fields, journal_key)
                 if runtime.tool_call_id in message.additional_kwargs.get('jobwatch_argument_errors', {}):
                     return respond('invalid_tool_arguments_json', ['arguments'])
+                if name in schemas:
+                    for prior in runtime.state['messages']:
+                        if not isinstance(prior, ToolMessage) or prior.name not in schemas or not isinstance(prior.content, str):
+                            continue
+                        try:
+                            payload = json.loads(prior.content)
+                        except ValueError:
+                            continue
+                        if isinstance(payload, dict):
+                            emitted_evidence.update(item['id'] for item in payload.get('items', ())
+                                if isinstance(item, dict) and isinstance(item.get('id'), str))
                 try:
                     if name == 'complete_requirements':
                         missing = sorted(set(schema.model_json_schema().get('required', ())) - args.keys())
@@ -543,21 +568,38 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                             return respond('invalid_model_payload', oversized)
                     return handler(validate_model_payload(schema, args))
                 except CompletionError as exc:
-                    return respond(exc.code, [exc.field])
+                    return respond(exc.code, list(exc.fields))
                 except (AgenticError, RuntimeErrorSafe) as exc:
                     if exc.code not in {'invalid_model_payload', 'invalid_evaluation', 'invalid_citation',
                                         'invalid_candidate_citation', 'contradictory_match', 'unretrieved_evidence',
                                         'requirements_required', 'requirements_changed', 'invalid_requirements'}:
                         raise
-                    return respond(exc.code, ['matches' if terminal else 'requirements'])
+                    return respond(exc.code, list(getattr(exc, 'fields', ())) or ['matches' if terminal else 'requirements'])
                 except ValueError:
                     return respond('invalid_evaluation', ['report' if terminal else 'requirements'])
+        advertised = schema.model_json_schema()
+        if terminal:
+            for field, keys in (('dimensions', DIMENSIONS), ('report', REPORT_FIELDS)):
+                shape = advertised['properties'][field]
+                value = shape.get('additionalProperties', {'type': 'string'})
+                if field == 'report':
+                    value = {**value, 'maxLength': 4000}
+                shape.update(properties={key: value for key in keys}, required=list(keys), additionalProperties=False)
+            match_shape = advertised.get('$defs', {}).get('RequirementMatch')
+            if match_shape:
+                match_shape['required'] = list(dict.fromkeys([*match_shape.get('required', []), 'risk', 'mitigation']))
+                for field in ('risk', 'mitigation'):
+                    match_shape['properties'][field]['description'] = (
+                        'Must be nonempty for partial/missing matches to blocker/high/critical frozen requirements; '
+                        'empty is permitted otherwise. Explain this gap without inventing candidate facts.')
+        if name == 'complete_requirements':
+            advertised['properties']['requirements']['description'] = 'Object with ad_hash and requirements array, not a bare array.'
         return StructuredTool(name=name, description=(
                 ('Read packaged stage skills only. Candidate records require read_candidate_evidence, not file paths. '
                  if name == 'read_file' else '') + f'Canonical {name} operation. Required fields: ' +
                 ', '.join(schema.model_json_schema().get('required', ())) +
                 (' Each report section has a 4000-character maximum.' if terminal else '')),
-            args_schema=schema.model_json_schema(), func=invoke, return_direct=False,
+            args_schema=advertised, func=invoke, return_direct=False,
             handle_tool_error=False)
 
     def complete_requirements(value):
@@ -583,8 +625,12 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         repeated = [item['id'] for item in items if item['id'] in emitted_evidence]
         fresh = [item for item in items if item['id'] not in emitted_evidence]
         emitted_evidence.update(item['id'] for item in fresh)
+        inventory = {item.id for item in bundle.items}
+        remaining = sorted(inventory - emitted_evidence)
         return {**result, 'items': fresh,
             'already_returned_evidence_ids': repeated,
+            'evidence_progress': {'returned': len(inventory & emitted_evidence), 'total': len(inventory),
+                'remaining_evidence_ids': remaining, 'all_primary_evidence_returned': not remaining},
             'action': 'Primary records are returned once and remain in earlier tool messages. '
                       'Use their exact citations and IDs; repeated reads add no evidence. '
                       'Complete evaluation when each requirement has a justified judgment; '
