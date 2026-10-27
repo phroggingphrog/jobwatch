@@ -169,3 +169,47 @@ def test_additive_migration_preserves_old_rows(conn):
     incidents.ensure(conn)
     saved = incidents.list_incidents(conn)[0]
     assert saved['incident_id'] == row['incident_id'] and saved['last_successful_phase'] is None
+
+
+def activity_rows(conn, rows):
+    conn.execute('CREATE TABLE IF NOT EXISTS agentic_activity(id INTEGER PRIMARY KEY,posting_id INTEGER,run_key TEXT,'
+                 'invocation_id TEXT,event TEXT,reason TEXT,at REAL)')
+    conn.executemany('INSERT INTO agentic_activity(posting_id,run_key,invocation_id,event,reason,at) VALUES(?,?,?,?,?,?)', rows)
+    conn.commit()
+
+
+def test_reconcile_old_failure_pauses_once_and_later_normal_outcome_wins(conn):
+    activity_rows(conn, [(42, 'key-42', 'attempt-42', 'finished', 'deadline_exceeded', 100),
+                         (43, 'key-43', 'attempt-43', 'finished', 'execution_failed', 100),
+                         (43, 'key-43', 'later-43', 'finished', 'evaluated', 120),
+                         (44, 'key-44', 'attempt-44', 'finished', 'posting_unavailable', 100),
+                         (45, 'key-45', 'attempt-45', 'started', None, 100)])
+    rows = incidents.reconcile_known_failures(conn)
+    assert len(rows) == 1 and rows[0]['posting_id'] == 42
+    assert rows[0]['phase'] is None and rows[0]['last_successful_phase'] is None
+    assert incidents.is_paused(conn, 42) and not incidents.is_paused(conn, 43)
+    assert incidents.reconcile_known_failures(conn) == []
+    assert conn.execute('SELECT COUNT(*) FROM chat_messages').fetchone()[0] == 1
+    incidents.release(conn, rows[0]['incident_id'], 42)
+    assert incidents.reconcile_known_failures(conn) == [] and not incidents.is_paused(conn, 42)
+
+
+def test_reconcile_does_not_repause_a_reported_released_failure(conn):
+    activity_rows(conn, [(42, 'key-42', 'attempt-42', 'finished', 'deadline_exceeded', 100)])
+    row = incidents.report(conn, posting_id=42, run_id='reader-trace', reason='deadline_exceeded', now=101)
+    incidents.release(conn, row['incident_id'], 42)
+    assert incidents.reconcile_known_failures(conn) == []
+    assert not incidents.is_paused(conn, 42)
+
+
+def test_reconcile_without_activity_is_read_only_and_handoffs_are_bounded(conn, monkeypatch):
+    assert incidents.reconcile_known_failures(conn) == []
+    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='agentic_incidents'").fetchone()
+    activity_rows(conn, [(pid, f'key-{pid}', f'attempt-{pid}', 'finished', 'deadline_exceeded', 100)
+                         for pid in (1, 2, 3)])
+    sent = []
+    live_transport(monkeypatch, lambda lines: sent.extend(lines) or True)
+    rows = incidents.reconcile_known_failures(conn)
+    assert len(rows) == 3 and len(sent) == 1
+    assert len(incidents.list_incidents(conn)) == 3
+    assert sum(i['notification_state'] == 'pending' for i in incidents.list_incidents(conn)) == 2
