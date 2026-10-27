@@ -171,20 +171,20 @@ def test_read_tools_and_widgets_are_listed_with_the_mcp_apps_fields():
 
 
 def test_overview_and_detail_return_structured_content_for_this_person_only(two_people, monkeypatch):
-    res = _call('owner', 'jobs_overview', {}, monkeypatch)
+    res = _call('owner', 'applications_overview', {}, monkeypatch)
     sc = res.structured_content
     assert sc['view'] == 'list' and sc['counts']['needs_you'] == 1
     assert sc['jobs'][0]['employer'] == 'Acme Pty' and sc['jobs'][0]['state'] == 'draft ready'
-    assert '1 need you' in res.content[0].text
-    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    assert sc['counts']['needs_you'] == 1
+    d = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
     assert d['employer'] == 'Acme Pty' and d['score'] == 4.2 and d['why_it_fits'] == 'Matches your SQL work.'
     assert d['state'] == 'draft ready' and d['ad_url'] == 'https://example.com/ad' and d['documents_ready'] is False
     assert _call('owner', 'task_status', {'posting_id': 1}, monkeypatch).structured_content['state'] == 'draft ready'
     # another person's token reads their own database, never the owner's
-    other = _call('guest', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    other = _call('guest', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
     assert other['employer'] == 'Secret Co'
     assert 'Acme' not in json.dumps(_call('guest', 'jobs_overview', {}, monkeypatch).structured_content)
-    assert _call('owner', 'job_detail', {'posting_id': 99}, monkeypatch).structured_content['found'] is False
+    assert _call('owner', 'application_detail', {'posting_id': 99}, monkeypatch).structured_content['found'] is False
 
 
 def test_current_canonical_assessment_is_projected_without_changing_application_state(two_people, monkeypatch):
@@ -199,7 +199,7 @@ def test_current_canonical_assessment_is_projected_without_changing_application_
     monkeypatch.setattr(cc.service, 'snapshot_inventory', lambda conn, config, *, posting_ids, limit:
                         [{'posting_id': pid, 'run_key': current_key} for pid in posting_ids])
 
-    result = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    result = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch)
     detail = result.structured_content
     assert detail['assessment_state'] == 'current'
     assert detail['assessment_reason'] == 'hard_gate'
@@ -208,15 +208,15 @@ def test_current_canonical_assessment_is_projected_without_changing_application_
     assert detail['state'] == 'draft ready' and detail['can_submit'] is False
     assert 'Assessment current (hard_gate)' in result.content[0].text
 
-    overview = _call('owner', 'jobs_overview', {}, monkeypatch).structured_content['jobs'][0]
+    overview = _call('owner', 'applications_overview', {}, monkeypatch).structured_content['jobs'][0]
     assert overview['assessment_state'] == 'current' and overview['assessment_reason'] == 'hard_gate'
     assert overview['score'] == 4.8
 
-    guest = _call('guest', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    guest = _call('guest', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
     assert guest['assessment_state'] == 'not_assessed' and guest['score'] == 4.2
 
 
-def test_assessment_activity_lists_posting_without_application_or_preparation(two_people, monkeypatch):
+def test_assessment_activity_never_becomes_a_recommendation_or_application(two_people, monkeypatch):
     from ranking_support import make_evaluation
 
     evaluation = make_evaluation([], posting_id=2, score=4.9)
@@ -237,13 +237,11 @@ def test_assessment_activity_lists_posting_without_application_or_preparation(tw
                         [{'posting_id': pid, 'run_key': current_key} for pid in posting_ids])
 
     overview = _call('owner', 'jobs_overview', {}, monkeypatch).structured_content
-    assessed = next(row for row in overview['jobs'] if row['posting_id'] == 2)
-    assert assessed['assessment_state'] == 'current'
-    assert assessed['assessment_reason'] == 'hard_gate' and assessed['score'] == 4.9
-    assert assessed['state'] == 'not started'
-    assert overview['counts'] == {'needs_you': 1, 'needs_info': 0, 'outcome_unknown': 0, 'submitted': 0}
+    assert overview['jobs'] == []
+    assert 2 not in {row['posting_id'] for row in cc.application_overview('owner')['jobs']}
+    assert _call('owner', 'job_detail', {'posting_id': 2}, monkeypatch).structured_content['found'] is False
 
-    detail = _call('owner', 'job_detail', {'posting_id': 2}, monkeypatch).structured_content
+    detail = _call('owner', 'application_detail', {'posting_id': 2}, monkeypatch).structured_content
     assert detail['assessment_state'] == 'current' and detail['score'] == 4.9
     assert detail['state'] == 'not started' and detail['can_submit'] is False
 
@@ -258,7 +256,7 @@ def test_stale_or_invalid_canonical_assessment_does_not_fall_back_to_legacy_scor
     monkeypatch.setattr(cc.service, 'snapshot_inventory', lambda conn, config, *, posting_ids, limit:
                         [{'posting_id': pid, 'run_key': 'b' * 64} for pid in posting_ids])
 
-    detail = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    detail = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
     assert detail['assessment_state'] == 'stale'
     assert detail['assessment_reason'] is None and detail['assessment_summary'] is None
     assert detail['score'] is None and detail['why_it_fits'] is None
@@ -266,7 +264,7 @@ def test_stale_or_invalid_canonical_assessment_does_not_fall_back_to_legacy_scor
 
     stale['run_key'] = 'b' * 64
     stale['evaluation'] = {'not': 'an evaluation'}
-    detail = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch).structured_content
+    detail = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
     assert detail['assessment_state'] == 'incomplete'
     assert detail['score'] is None and detail['why_it_fits'] is None
 
@@ -307,15 +305,16 @@ def _clear_pending():
     cc._PENDING.clear()
 
 
-def test_prepare_hands_off_and_raises_a_widget_approval_with_the_binding_only_in_meta(two_people, monkeypatch):
+def test_revision_hands_off_with_the_binding_only_in_meta(two_people, monkeypatch):
     calls = []
-    monkeypatch.setattr(cc, 'dispatch', lambda **kw: calls.append(kw) or _interrupt())
-    res = _call('owner', 'prepare_application', {'posting_id': 1, 'instructions': 'short letter'}, monkeypatch)
+    binding = 'd' * 64
+    monkeypatch.setattr(cc, 'dispatch', lambda **kw: calls.append(kw) or _interrupt(op='revise_application', digest=binding))
+    res = _call('owner', 'revise_application', {'posting_id': 1, 'changes': 'short letter'}, monkeypatch)
     sc = res.structured_content
-    assert sc['status'] == 'awaiting_approval' and sc['operation'] == 'prepare_application'
+    assert sc['status'] == 'awaiting_approval' and sc['operation'] == 'revise_application'
     assert 'short letter' in calls[0]['message'] and calls[0]['person'] == 'owner'
-    assert 'd1' not in json.dumps(sc) and 'd1' not in res.content[0].text      # the model never sees the binding
-    assert res.meta['binding'] == 'd1'
+    assert binding not in json.dumps(sc) and binding not in res.content[0].text
+    assert res.meta['binding'] == binding
 
 
 def test_decide_needs_the_binding_the_person_and_is_single_use(two_people, monkeypatch):
@@ -324,7 +323,7 @@ def test_decide_needs_the_binding_the_person_and_is_single_use(two_people, monke
         seen.append(kw)
         return _interrupt() if 'message' in kw else {'status': 'complete', 'answer': 'Draft saved.', 'tools': []}
     monkeypatch.setattr(cc, 'dispatch', fake)
-    sc = _call('owner', 'prepare_application', {'posting_id': 1}, monkeypatch).structured_content
+    sc = _call('owner', 'revise_application', {'posting_id': 1, 'changes': 'Revise'}, monkeypatch).structured_content
     iid = sc['interaction_id']
     with pytest.raises(Exception):
         _call('owner', 'decide', {'interaction_id': iid, 'decision': 'approve', 'binding': 'wrong'}, monkeypatch)
@@ -379,7 +378,7 @@ def _requests(person):
 
 
 def test_submit_requires_the_digest_of_the_reviewed_form(reviewed, monkeypatch):
-    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    d = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch)
     assert d.structured_content['can_submit'] is True
     assert d.meta['submit_digest'] == reviewed and reviewed not in json.dumps(d.structured_content) + d.content[0].text
     # a model-style call with no digest, an empty one, or a wrong one refuses and queues nothing
@@ -395,7 +394,7 @@ def test_submit_requires_the_digest_of_the_reviewed_form(reviewed, monkeypatch):
 
 
 def test_submit_is_per_person_and_needs_a_reviewed_fill(two_people, monkeypatch):
-    d = _call('owner', 'job_detail', {'posting_id': 1}, monkeypatch)
+    d = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch)
     assert d.structured_content['can_submit'] is False and 'submit_digest' not in (d.meta or {})
     with pytest.raises(Exception):
         _call('owner', 'submit_reviewed', {'posting_id': 1, 'confirm_digest': 'a' * 64}, monkeypatch)
