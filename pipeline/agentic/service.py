@@ -344,6 +344,22 @@ def _package_payload(value):
             'cv_markdown': value.cv_markdown, 'letter_markdown': value.letter_markdown}
 
 
+def _reusable_candidate(adapter, key, bundle, policy):
+    """Reuse verified job-independent findings only from this person's database."""
+    rows = adapter.conn.execute("SELECT run_key FROM agentic_artifacts WHERE kind='candidate' "
+                                'AND run_key<>? ORDER BY rowid DESC LIMIT 32', (key.value,)).fetchall()
+    for row in rows:
+        try:
+            saved = adapter.load_artifact(row[0], 'candidate')
+            if type(saved) is not dict or saved.get('run_key') != key.candidate_hash:
+                continue
+            candidate = validate_model_payload(CandidateAssessment, saved)
+            return validate_assessment(candidate, bundle, policy)
+        except AgenticError:
+            continue
+    return None
+
+
 def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy: TargetPolicy | None = None,
                     evidence_bundle=None, llm=None, llm_drafter=None, llm_reviewer=None,
                     batch: BatchBudget | None = None, candidate_cache: dict | None = None,
@@ -506,8 +522,10 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             elif candidate_cache is not None and key.candidate_hash in candidate_cache:
                 candidate = validate_assessment(candidate_cache[key.candidate_hash], bundle, pol)
             else:
-                candidate = evaluate_candidate(bundle, budget, llm, policy=pol, model=cfg['evaluator_model'],
-                                               reference=reference, mappings=mappings)
+                candidate = _reusable_candidate(adapter, key, bundle, pol)
+                if candidate is None:
+                    candidate = evaluate_candidate(bundle, budget, llm, policy=pol, model=cfg['evaluator_model'],
+                                                   reference=reference, mappings=mappings)
                 if candidate_cache is not None:
                     candidate_cache[key.candidate_hash] = candidate
             expected_structural = analyse_candidate(bundle, reference, mappings, pol)
