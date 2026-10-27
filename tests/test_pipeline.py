@@ -311,7 +311,11 @@ def test_node_1_dedupes_by_ad_text_skips_other_states_and_archives_paid_ads(worl
     run(Gateway())
     assert stage(conn, a) == "ready"
     assert store.get(conn, b)["reason"] == f"duplicate_of:{a}"
-    assert store.get(conn, away) is None
+    excluded = store.get(conn, away)
+    assert excluded['stage'] == 'archived' and excluded['reason'] == 'prescreened'
+    from jobwatch.prescreen.store import latest_decision
+    decision = latest_decision(conn, away)
+    assert decision['outcome'] == 'skip' and decision['category'] == 'location_outside'
     assert store.get(conn, paid)["reason"] == "sponsored_ad"
 
 

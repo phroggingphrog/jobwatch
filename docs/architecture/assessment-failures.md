@@ -34,7 +34,14 @@ uses reservation identity rather than historical run totals. Focused synthetic
 checks cover both sentence orders and old/resumed/fresh budget accounting.
 
 The checkout is an implementation candidate, not an accepted live release.
-Full release-suite and deployment claims require their own recorded evidence.
+The full file-sharded source run at `178b4c8` collected 4,370 cases: 4,352 passed,
+2 skipped, one stale ingest assertion and 15 application fixture-setup errors.
+Only the old ingest test expectation was changed to assert the canonical archive
+and audit record. A fixture-first targeted follow-up passed 17 tests, including
+the affected cases. Production code was unchanged after the full run; its source
+manifest reported no changes during testing. The original suite was not clean
+and is recorded separately from the follow-up. Native-environment `check --code`
+and bounded review passed. Deployment and valid provider acceptance remain blocked.
 
 Original read-only investigation: 2026-10-27, TASK-279. That investigation made no new paid inference. This supplements
 [the codebase map](codebase-map.md), rather than claiming a repaired deployment.

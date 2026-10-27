@@ -26,10 +26,24 @@
 
 ## 5. Release and observed delivery
 
-- [ ] 5.1 Resolve required local failures and review findings, run the full reconciled release suite once and jobwatch check --code, and record exact results plus relevant prior shard reuse provenance.
+- [x] 5.1 Resolve required local failures and review findings, run the full reconciled release suite once and jobwatch check --code, and record exact results plus relevant prior shard reuse provenance.
 - [ ] 5.2 Commit/reconcile reviewed work into the native release path with backups; verify exact imported revision, DeepSeek assessment-only native protocol and service health after deployment.
 - [ ] 5.3 Observe one canonical live reader outcome and unchanged-input recovery before restoring automatic assessment; verify collectors, identity, limits and accounting remain correct and record rollback/results/remaining scope on TASK-279.
 
 ## Acceptance blocker
 
-The controlled 2026-10-28 provider run failed unknown_evidence after29paidoperations/376015chargedtokens/198.84s. Candidate digest completed but full assessment and3–6call target did not. DeepSeek reasoning_content loss was subsequently repaired and tested offline; no paid revalidation. Release/fullsuite/deployment tasks remain open. Numeric experience exclusions require explicit approved person rules; no duration-based maximum is inferred from a seniority label.
+The controlled 2026-10-28 provider run failed `unknown_evidence` after 29 paid
+operations, 376,015 charged tokens and 198.84 seconds. Candidate digestion completed,
+but full assessment and the 3–6-call target did not. DeepSeek `reasoning_content`
+loss was subsequently repaired and tested offline; there was no paid revalidation.
+Deployment and live observation remain open. Numeric experience exclusions require
+explicit approved person rules; no maximum is inferred from a seniority label.
+
+Local release checks at `178b4c8`: 4,370 collected; the full file-sharded run had
+4,352 passed, 2 skipped, one stale ingest expectation and 15 application fixture
+setup errors, with no source changes during testing (873.72 seconds). Only the
+ingest test was corrected to assert the canonical archive and audit record; the
+isolated fixture-first follow-up passed 17 tests. Production code was unchanged
+after the full run. Report the original suite and follow-up separately. The
+actual native-environment `check --code` and final bounded review passed.
+Deployment and observation remain blocked by provider acceptance.
