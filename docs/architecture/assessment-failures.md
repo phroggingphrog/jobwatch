@@ -1,5 +1,60 @@
 # Assessment failures, first filtering and candidate understanding
 
+## Canonical completion contract repair at 81fd5d2
+
+The subsequent custom-combo run at `4a6e4fb` failed `invalid_model_payload`:
+10 native generations plus one public classifier, one embedding, zero digest
+calls, 168,875 known actual tokens, 173,018 charged tokens and 241.16 seconds.
+Accounting reconciled; no canonical evaluation or completed reuse was established.
+All function arguments were valid JSON in this run.
+
+Private offline inspection found a producer-contract defect. Canonical completion
+requires five exact dimension names, while the tool schema advertised an arbitrary
+dictionary. Validation then incorrectly identified `matches` as the failing field.
+Both completion attempts failed the dimension check. The first otherwise retained
+valid coverage, source/hash/quote citations and retrieved evidence; it also lacked
+risk/mitigation for one essential gap. The wrongly directed rewrite introduced
+additional citation errors. This is evidence of misleading validation feedback,
+not a reason to weaken canonical checks.
+
+The repair advertises exact dimension/report keys and section limits, identifies
+only safe declared validation fields, and returns both missing gap fields. Read
+results report remaining primary IDs from reconstructed tool history; progress
+does not grant citation access. Final focused verification passed 64 tests in
+108.11 seconds; the independent bounded review passed all three new contract
+checks without blockers. The rebuilt wheel matches current agent, validation,
+incident and protocol source bytes. These are offline results; provider acceptance
+and deployment require their separate measured checks.
+
+## Controlled contract revalidation: provider still noncompliant
+
+Run `task279-native-combo-acceptance-895dde66fb804bb2941ba46be632cdd0`
+used `81fd5d2` and the dedicated OmniRoute combo. The ad was active, the digest
+current, and only the recorded previous `invalid_model_payload` incident was
+released. Two native requirements calls plus one classifier cost 18,119 known
+actual tokens / 22,262 charged tokens in 69.48 seconds. There were no digest calls
+or embeddings. The batch ledger reconciled exactly.
+
+Both calls supplied only the `requirements` top-level field. The gateway's saved
+request advertised required `requirements`, `facts`, `location_fit`, `legitimacy`;
+the second request also contained the canonical missing-fields ToolMessage.
+The route nevertheless repeated the incomplete call and exhausted the bounded
+correction. The result is held `missing_required_fields`, with retained incident
+`bfeefce9b5688b93b3af5ab71940a2f0`. This establishes noncompliance on the observed
+route, without attributing it conclusively to DeepSeek or OpenCode mediation.
+No canonical evaluation, gate or real completed reuse exists; three calls before
+failure do not pass efficiency acceptance.
+
+No additional paid attempt was queued. The full normal-context release suite was
+started prematurely and stopped after provider acceptance failed; it is not a
+full-suite pass. Focused checks, code check and rebuilt wheel evidence remain
+valid only for their stated scope. Live source remains `9111a0d`, execution mode
+is off, the reader timer is paused and collect-only timers remain active. Deployed
+Engine-generated rules were resynchronized without changing person-owned rules.
+Native API and web health checks pass. No merge, deployment or automatic assessment
+activation was performed. Count-only evidence is retained under the existing
+Jobwatch backups directory; all journals and charged usage remain intact.
+
 ## Native format recovery and scoped protocol combo
 
 The owner requested continued troubleshooting and authorized a custom combo with

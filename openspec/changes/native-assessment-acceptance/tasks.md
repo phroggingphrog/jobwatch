@@ -50,3 +50,19 @@ evaluation. Ledger reconciled. Numeric call range alone does not pass acceptance
 No further paid attempt or argument normalization was performed. Tasks 4.2–5.4
 remain blocked; the original change's acceptance/release boxes remain open.
 Live remains `9111a0d`, reader scheduling paused and collect-only timers active.
+
+
+### Contract follow-up at 81fd5d2
+
+The custom-combo attempt at `4a6e4fb` failed canonical payload validation after
+10 native generations. Offline reproduction repaired exact dimensions/report
+schema and safe field-specific feedback, plus essential gap fields and evidence
+progress. Final focused checks: 64 passed; bounded independent contract review:
+3 passed/no blockers. Code check passed; wheel source bytes verified.
+
+The controlled revalidation at `81fd5d2` failed `missing_required_fields` after
+two native calls plus one classifier: 22,262 charged tokens, 69.48 seconds,
+zero digest/embedding operations and reconciled ledger. Both native responses
+omitted facts/location_fit/legitimacy despite their required schema and delivered
+correction. The incident is retained. Tasks 4.1–5.4 remain open. Full release
+suite was stopped after acceptance failed; no full-pass claim, merge or deployment.
