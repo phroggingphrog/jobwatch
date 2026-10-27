@@ -7,6 +7,9 @@ export const jobRow = z.object({
   score: z.number().nullable(),
   state: z.string(),
   detail: z.string(),
+  assessment_state: z.string().nullable().optional(),
+  assessment_reason: z.string().nullable().optional(),
+  assessment_summary: z.string().nullable().optional(),
 });
 
 export const overviewOut = z.object({
@@ -35,6 +38,9 @@ export const jobOut = z.object({
   documents_ready: z.boolean().optional(),
   draft_version: z.number().nullable().optional(),
   can_submit: z.boolean().optional(),
+  assessment_state: z.string().nullable().optional(),
+  assessment_reason: z.string().nullable().optional(),
+  assessment_summary: z.string().nullable().optional(),
 });
 
 // task_status, prepare_application and revise_application share this shape so one view renders all three.

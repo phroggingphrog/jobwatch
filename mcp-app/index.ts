@@ -43,14 +43,14 @@ const countsText = (c: z.infer<typeof overviewOut>["counts"]) =>
   ([["needs_you", "need you"], ["needs_info", "need info"], ["outcome_unknown", "outcome unknown"], ["submitted", "submitted"]] as const)
     .filter(([k]) => c[k])
     .map(([k, l]) => `${c[k]} ${l}`)
-    .join(" · ") || "Nothing needs you";
+    .join(" · ") || "No application actions pending";
 
 // ---- read tools -----------------------------------------------------------------------------------------------
 export const jobsOverview = server.tool(
   {
     name: "jobs_overview",
     description:
-      "List the person's jobs with activity (newest first), a plain state for each, and counts of what needs them. 'draft ready' is never 'submitted'.",
+      "List jobs with activity, current assessment results and separate application progress. Counts describe application actions. 'draft ready' is never 'submitted'.",
     inputSchema: z.object({ limit: z.number().int().min(1).max(100).default(50) }),
     outputSchema: overviewOut,
     annotations: READ,
@@ -59,7 +59,7 @@ export const jobsOverview = server.tool(
   async ({ limit }) => {
     try {
       const d = overviewOut.parse(await call(cfg, "GET", `/connector/overview?limit=${limit}`));
-      const lines = d.jobs.slice(0, 10).map((j) => `#${j.posting_id} ${j.employer ?? "?"} - ${j.title ?? "?"}: ${j.state}`);
+      const lines = d.jobs.slice(0, 10).map((j) => `#${j.posting_id} ${j.employer ?? "?"} - ${j.title ?? "?"}: application ${j.state}${j.assessment_state ? `; assessment ${j.assessment_state === "current" ? "assessed" : j.assessment_state}${j.assessment_reason ? ` (${j.assessment_reason})` : ""}` : ""}`);
       return { content: text([`${countsText(d.counts)}. ${d.jobs.length} jobs with activity.`, ...lines].join("\n")), structuredContent: d };
     } catch (e) {
       return fail(e);
@@ -70,7 +70,7 @@ export const jobsOverview = server.tool(
 export const jobDetail = server.tool(
   {
     name: "job_detail",
-    description: "Employer, title, score, why it fits, state, whether documents are ready, and the ad link for one job.",
+    description: "Read a job's current assessment result, score and summary alongside separate application state, document readiness and ad link. An application not started does not mean the job was not assessed.",
     inputSchema: z.object({ posting_id: posting }),
     outputSchema: jobOut,
     annotations: READ,
@@ -81,7 +81,7 @@ export const jobDetail = server.tool(
       const { job } = await call<{ job: unknown }>(cfg, "GET", `/connector/jobs/${posting_id}`);
       const d = jobOut.parse(job);
       const t = d.found
-        ? `#${d.posting_id} ${d.employer ?? "?"} - ${d.title ?? "?"}${d.score != null ? `, score ${d.score}` : ""}. State: ${d.state}; ${d.documents_ready ? "documents ready" : "no documents ready"}.`
+        ? `#${d.posting_id} ${d.employer ?? "?"} - ${d.title ?? "?"}${d.score != null ? `, score ${d.score}` : ""}. ${d.assessment_state ? `Assessment: ${d.assessment_state === "current" ? "assessed" : d.assessment_state}${d.assessment_reason ? ` (${d.assessment_reason})` : ""}. ` : ""}Application: ${d.state}; ${d.documents_ready ? "documents ready" : "no documents ready"}.`
         : `No job ${posting_id} found.`;
       return { content: text(t), structuredContent: d };
     } catch (e) {

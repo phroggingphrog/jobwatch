@@ -14,6 +14,7 @@ export function startMock(port = 0) {
     4: { posting_id: 4, found: true, employer: "Hooli", title: "Data Engineer", location: null, ad_url: null, score: 3.9, state: "draft ready", state_detail: "", documents_ready: true, draft_version: 1, can_submit: false },
     3: { posting_id: 3, found: true, employer: "Initech", title: "Reporting Analyst", location: null, ad_url: null, score: null, state: "outcome unknown", state_detail: "Outcome unknown; retries are paused.", documents_ready: true, draft_version: 1, can_submit: false },
   };
+  Object.assign(jobs[1], {assessment_state:"current", assessment_reason:"evaluation_complete", assessment_summary:"Synthetic assessed role."});
   let queued = 0;
   let pending = null;
   let dailyTokenCeiling = 2000000;
@@ -40,7 +41,8 @@ export function startMock(port = 0) {
     log.push({ method: req.method, path: url.pathname, body });
     let m;
     if (req.method === "GET" && url.pathname === "/connector/overview") {
-      const rows = Object.values(jobs).map((j) => ({ posting_id: j.posting_id, employer: j.employer, title: j.title, score: j.score ?? null, state: j.state, detail: j.state_detail }));
+      const rows = Object.values(jobs).map((j) => ({ posting_id: j.posting_id, employer: j.employer, title: j.title, score: j.score ?? null, state: j.state, detail: j.state_detail,
+        assessment_state:j.assessment_state, assessment_reason:j.assessment_reason, assessment_summary:j.assessment_summary }));
       return send(200, { view: "list", counts: { needs_you: 2, needs_info: 0, outcome_unknown: 1, submitted: 0 }, jobs: rows });
     }
     if (req.method === "GET" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)$/))) {

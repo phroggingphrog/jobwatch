@@ -6,6 +6,7 @@ export interface Job {
   posting_id: number; found: boolean; employer?: string | null; title?: string | null; location?: string | null;
   ad_url?: string | null; score?: number | null; why_it_fits?: string | null; pros?: string[]; cons?: string[];
   state?: string; state_detail?: string; documents_ready?: boolean; draft_version?: number | null; can_submit?: boolean;
+  assessment_state?: string | null; assessment_reason?: string | null; assessment_summary?: string | null;
 }
 export interface Review {
   posting_id: number; found: boolean; ready: boolean; reason?: string;
@@ -30,12 +31,14 @@ export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
             <p className="sub">{d.employer || "Unknown employer"}{d.location ? ` · ${d.location}` : ""}</p>
           </div></div>
           <dl>
-            <dt>State</dt><dd><Status state={d.state ?? "not started"} /></dd>
+            <dt>Application</dt><dd><Status state={d.state ?? "not started"} /></dd>
+            {d.assessment_state && <><dt>Assessment</dt><dd>{d.assessment_state === "current" ? "Assessed" : d.assessment_state.replaceAll("_", " ")}</dd></>}
+            {d.assessment_reason && <><dt>Assessment result</dt><dd>{d.assessment_reason.replaceAll("_", " ")}</dd></>}
             {d.state_detail ? (<><dt>Detail</dt><dd>{d.state_detail}</dd></>) : null}
             <dt>Score</dt><dd>{d.score != null ? <span className="score" style={{ textAlign: "left" }}>{d.score}</span> : "Not scored"}</dd>
             <dt>Documents</dt><dd>{d.documents_ready ? `Ready${d.draft_version ? ` (draft v${d.draft_version})` : ""}` : "None ready"}</dd>
           </dl>
-          {d.why_it_fits && (<><h2>Why it fits</h2><p>{d.why_it_fits}</p></>)}
+          {(d.assessment_summary || d.why_it_fits) && (<><h2>Assessment summary</h2><p>{d.assessment_summary || d.why_it_fits}</p></>)}
           {d.pros?.length ? (<><h2>In its favour</h2><ul className="list">{d.pros.map((t) => <li key={t}>{t}</li>)}</ul></>) : null}
           {d.cons?.length ? (<><h2>Against</h2><ul className="list">{d.cons.map((t) => <li key={t}>{t}</li>)}</ul></>) : null}
           {ad && <p style={{ marginTop: 10 }}><a className="link" href={ad} target="_blank" rel="noopener noreferrer">Open the job ad</a></p>}
