@@ -25,6 +25,12 @@
   </div>
   {% if discovery_status.latest_run %}<div class="wk-sec"><h2 class="wk-h2">Latest requested run</h2>
     <div class="wk-panel wk-pad"><p>{{ discovery_status.latest_run.state|replace('_', ' ') }}{% if discovery_status.latest_run.error %}: {{ discovery_status.latest_run.error|replace('_', ' ') }}{% endif %}.</p></div>
+    {% set result = discovery_status.latest_run.result %}
+    {% if result %}<div class="wk-panel wk-pad">
+      {% if result.processed is defined %}<p>{{ result.processed }} assessment outcomes recorded.</p>{% endif %}
+      {% if result.deferred %}<p>Deferred: {% if result.deferred is string %}{{ result.deferred|replace('_', ' ') }}{% else %}{{ result.deferred|length }} jobs ({{ result.deferred|map(attribute='reason')|unique|join(', ')|replace('_', ' ') }}){% endif %}.</p>{% endif %}
+      {% if result.skipped is string %}<p>Waiting: {{ result.skipped|replace('_', ' ') }}.</p>{% endif %}
+    </div>{% endif %}
   </div>{% endif %}
 </div>
 {% endblock %}

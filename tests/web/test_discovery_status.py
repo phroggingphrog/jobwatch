@@ -24,3 +24,19 @@ def test_discovery_failure_is_visible_and_page_uses_safe_codes(client):
 def test_discovery_empty_state_is_not_an_error(client):
     response = client.get('/discovery-status')
     assert response.status_code == 200 and 'No unresolved failures' in response.text
+
+
+def test_completed_request_shows_budget_deferral_without_claiming_an_assessment(client, monkeypatch):
+    from pipeline.agentic import discovery_ops
+    original = discovery_ops.status
+    def status(*args):
+        result = original(*args)
+        result['latest_run'] = {'state': 'completed', 'error': None,
+            'result': {'processed': 0, 'deferred': [{'posting_id': 1, 'reason': 'daily_budget'}]}}
+        return result
+    monkeypatch.setattr(discovery_ops, 'status', status)
+    response = client.get('/discovery-status')
+    assert response.status_code == 200
+    assert '0 assessment outcomes recorded.' in response.text
+    assert 'Deferred: 1 jobs (daily budget).' in response.text
+    assert 'No unresolved failures' in response.text
