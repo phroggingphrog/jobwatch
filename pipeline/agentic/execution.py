@@ -50,6 +50,7 @@ class Execution:
     deadline: float = field(init=False)
     calls: int = 0
     charged_tokens: int = 0
+    token_limit_reason: str = 'run_budget'
     actual_tokens: int = 0
     unknown_usage_calls: int = 0
     approvals: dict = field(default_factory=dict)
@@ -76,7 +77,9 @@ class Execution:
         with self.lock:
             self.check()
             reserve = prompt_size + output_tokens
-            if self.calls >= self.max_calls or self.charged_tokens + reserve > self.token_ceiling:
+            if self.calls >= self.max_calls:
+                raise RuntimeErrorSafe('invocation_call_limit')
+            if self.charged_tokens + reserve > self.token_ceiling:
                 raise RuntimeErrorSafe('invocation_budget_exhausted')
             self.calls += 1
             self.charged_tokens += reserve

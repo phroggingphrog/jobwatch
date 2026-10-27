@@ -645,6 +645,23 @@ def test_cancelled_invocation_does_not_accumulate_failed_attempts():
     assert b.charged_tokens == b.batch.charged_tokens == b.failed_attempts == 0
 
 
+def test_invocation_call_limit_is_normal_and_never_dispatches_an_extra_call():
+    from pipeline.agentic.execution import Execution, use
+
+    llm, seen = transport_llm([choice('read_evidence', source='synthetic')])
+    b = budget()
+    scope = Execution('synthetic-call-limit', max_calls=1)
+
+    with use(scope):
+        assert_safe_failure('invocation_call_limit', lambda: run_role(role(), {}, b, llm))
+
+    assert len(seen) == 1
+    assert scope.calls == 1 and scope.token_limit_reason == 'run_budget'
+    assert len(b.snapshot().reservations) == 1
+    assert b.charged_tokens == b.batch.charged_tokens == 18
+    assert b.failed_attempts == 0
+
+
 def test_environment_tracing_and_inherited_callbacks_are_isolated(monkeypatch):
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
