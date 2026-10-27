@@ -19,7 +19,7 @@ type DiscoveryStatus = {
 const message = (error: unknown) => error instanceof Error ? error.message : "Could not reach Jobwatch. Try again.";
 const valueText = (value: unknown) => typeof value === "string" && value ? value : undefined;
 
-export function SettingsPanel({ initial, onBack }: { initial?: Settings; onBack?: () => void }) {
+export function SettingsPanel({ initial, onBack, mode: panelMode = "all" }: { initial?: Settings; onBack?: () => void; mode?: "all" | "settings" | "discovery" }) {
   const get = useCallTool("get_discovery_settings");
   const save = useCallTool("set_discovery_settings");
   const readStatus = useCallTool("discovery_status");
@@ -166,15 +166,15 @@ export function SettingsPanel({ initial, onBack }: { initial?: Settings; onBack?
     <section className="discovery-settings" aria-labelledby="settings-title">
       {onBack && <button type="button" className="link settings-back" onClick={onBack}>Back to jobs</button>}
       <div className="settings-head">
-        <div><h1 id="settings-title">Discovery settings</h1><p className="sub">Your daily allowance and current collection progress.</p></div>
+        <div><h1 id="settings-title">{panelMode === "discovery" ? "Discovery" : "Discovery settings"}</h1><p className="sub">{panelMode === "discovery" ? "Collection, assessment progress and paused work. Collected postings are not recommendations." : "Your saved daily allowance. Existing job and run limits still apply."}</p></div>
         <div className="settings-tools">
           <button type="button" className="btn quiet" disabled={loading} onClick={() => void refresh()}>{loading ? "Refreshing…" : "Refresh"}</button>
-          <button type="button" className="btn primary" disabled={start.isPending || loading || discoveryBusy || !status?.enabled}
-            onClick={() => void startRun()}>{start.isPending ? "Starting…" : discoveryBusy ? `Discovery ${busyState}…` : status?.enabled ? "Start discovery" : "Confirm profile to start"}</button>
+          {panelMode !== "settings" && <button type="button" className="btn primary" disabled={start.isPending || loading || discoveryBusy || !status?.enabled}
+            onClick={() => void startRun()}>{start.isPending ? "Starting…" : discoveryBusy ? `Discovery ${busyState}…` : status?.enabled ? "Start discovery" : "Confirm profile to start"}</button>}
         </div>
       </div>
 
-      <section className="settings-section" aria-labelledby="allowance-title">
+      {panelMode !== "discovery" && <section className="settings-section" aria-labelledby="allowance-title">
         <h2 id="allowance-title">Daily token allowance</h2>
         <p className="settings-copy">Changes apply to the next discovery pass; an active run keeps its current allowance. Per-job and per-run limits, and the 40-assessment daily limit, still apply.</p>
         <div className="allowance-options" role="group" aria-label="Daily token allowance mode">
@@ -193,9 +193,9 @@ export function SettingsPanel({ initial, onBack }: { initial?: Settings; onBack?
         {saved && <p className="note" role="status">Saved: {settings?.daily_token_ceiling === null ? "Unlimited daily tokens" : `${settings?.daily_token_ceiling?.toLocaleString()} tokens per day`}.</p>}
         <div className="actions"><button type="button" className="btn primary" disabled={save.isPending || (mode === "limited" && (!limit || !Number.isSafeInteger(Number(limit)) || Number(limit) <= 0))}
           onClick={() => void saveSettings()}>{save.isPending ? "Saving…" : "Save allowance"}</button></div>
-      </section>
+      </section>}
 
-      <section className="settings-section" aria-labelledby="progress-title">
+      {panelMode !== "settings" && <section className="settings-section" aria-labelledby="progress-title">
         <h2 id="progress-title">Discovery progress</h2>
         {refreshError && <p className="note bad" role="alert">{refreshError}</p>}
         {!status ? <p className="sub" role="status">Progress is not available yet. Refresh to try again.</p> : <>
@@ -211,7 +211,7 @@ export function SettingsPanel({ initial, onBack }: { initial?: Settings; onBack?
           {incidents.length > 0 && <div className="incident-list">
             <h3>Paused work</h3>
             <ul className="rows">{incidents.map((incident) => <li key={incident.incident_id}>
-              <div className="incident-row"><Status state={incident.state} />
+              <details><summary className="incident-summary">{incident.posting_id === null ? "Discovery run" : `Job #${incident.posting_id}`} · {incident.reason.replaceAll("_", " ")} · {incident.state}</summary><div className="incident-row"><Status state={incident.state} />
                 <span className="incident-job">{incident.posting_id === null ? `Discovery run ${incident.run_id}` : `Job #${incident.posting_id}`}</span>
                 <span className="incident-reason">{incident.reason.replaceAll("_", " ")}</span>
                 {incident.phase && <span className="sub">at {incident.phase.replaceAll("_", " ")}</span>}
@@ -225,11 +225,11 @@ export function SettingsPanel({ initial, onBack }: { initial?: Settings; onBack?
                 </button>}
                 {incident.state === "paused" && !(incident.posting_id !== null && incident.retry_context) &&
                   <span className="sub">Retry unavailable until current job inputs are available.</span>}
-              </div>
+              </div></details>
             </li>)}</ul>
           </div>}
         </>}
-      </section>
+      </section>}
     </section>
   );
 }

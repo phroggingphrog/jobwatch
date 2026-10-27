@@ -12,14 +12,24 @@ export const jobRow = z.object({
   assessment_summary: z.string().nullable().optional(),
 });
 
-export const overviewOut = z.object({
-  counts: z.object({
-    needs_you: z.number().int(),
-    needs_info: z.number().int(),
-    outcome_unknown: z.number().int(),
-    submitted: z.number().int(),
-  }),
+export const shortlistEntry = jobRow.extend({
+  entry_id: z.string(), shortlist_id: z.string(), run_key: z.string(),
+  label: z.enum(["stronger_match", "stretch", "needs_clarification"]), rank: z.number().int(),
+  ordering: z.enum(["provisional", "personalised"]), rank_reason: z.string(),
+  objective_fit: z.string(), uncertainty: z.string(), can_prepare: z.boolean(),
+  conditions: z.array(z.string()), unresolved: z.array(z.string()),
+  mandatory_requirements: z.array(z.string()), transferable_skills: z.array(z.string()),
+  evidence: z.array(z.record(z.string(), z.unknown())), requirements: z.array(z.record(z.string(), z.unknown())),
+}).passthrough();
+
+export const applicationsOut = z.object({
+  counts: z.object({needs_you: z.number().int(), needs_info: z.number().int(), outcome_unknown: z.number().int(), submitted: z.number().int()}),
   jobs: z.array(jobRow),
+});
+export const overviewOut = applicationsOut.extend({
+  status: z.enum(["ok", "not_built", "no_confirmed_profile", "stale"]),
+  shortlist_id: z.string().optional(), meaning: z.string(), total: z.number().int(),
+  jobs: z.array(shortlistEntry),
 });
 
 export const jobOut = z.object({
@@ -38,6 +48,9 @@ export const jobOut = z.object({
   documents_ready: z.boolean().optional(),
   draft_version: z.number().nullable().optional(),
   can_submit: z.boolean().optional(),
+  can_prepare: z.boolean().optional(),
+  shortlist_status: z.string().optional(),
+  shortlist_entry: shortlistEntry.optional(),
   assessment_state: z.string().nullable().optional(),
   assessment_reason: z.string().nullable().optional(),
   assessment_summary: z.string().nullable().optional(),
@@ -47,6 +60,8 @@ export const jobOut = z.object({
 export const taskOut = z.object({
   posting_id: z.number().int(),
   state: z.string(),
+  selection_id: z.string().optional(),
+  authorises: z.literal("preparation_only").optional(),
   message: z.string().optional(),
   reason: z.string().optional(),
   // set only when Jobwatch's own agent is waiting for the person to press Approve or Reject

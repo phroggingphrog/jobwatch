@@ -48,12 +48,12 @@ describe("tools list", () => {
   it("has the expected tools, hints, views and visibility", async () => {
     const { tools } = await client.listTools();
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "confirm_onboarding", "decide", "discovery_status", "get_discovery_settings", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "set_discovery_settings", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
+    expect(Object.keys(by).sort()).toEqual(["application_detail", "applications_overview", "assessment_detail", "answer_onboarding_question", "confirm_onboarding", "decide", "discovery_status", "get_discovery_settings", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "set_discovery_settings", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding", "refresh_shortlist"].sort());
     for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
     expect((by.decide._meta as any).ui.visibility).toEqual(["app"]);
-    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application", "get_discovery_settings"]) {
+    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application", "get_discovery_settings", "discovery_status", "applications_overview", "application_detail"]) {
       expect((by[n]._meta as any).ui.resourceUri).toMatch(/^ui:\/\//);
       expect(by[n].outputSchema).toBeTruthy();
     }
@@ -82,10 +82,11 @@ describe("read tools", () => {
   it("jobs_overview returns matching structured content", async () => {
     const r = await call("jobs_overview", {});
     expect(r.isError).toBeFalsy();
-    expect(r.structuredContent.jobs).toHaveLength(4);
-    expect(r.structuredContent.counts.needs_you).toBe(2);
+    expect(r.structuredContent.jobs).toHaveLength(2);
+    expect(r.structuredContent.counts.needs_you).toBe(0);
     expect(r.content[0].text).toContain("Acme Pty Ltd");
-    expect(r.structuredContent.jobs[0]).toMatchObject({ assessment_state: "current", assessment_reason: "evaluation_complete" });
+    expect(r.structuredContent.jobs[0]).toMatchObject({ label: "stronger_match", can_prepare: true });
+    expect(r.structuredContent.jobs[1]).toMatchObject({label:"needs_clarification",can_prepare:false});
   });
   it("job_detail and task_status", async () => {
     const d = await call("job_detail", { posting_id: 1 });
@@ -154,9 +155,9 @@ describe("submit safety (mock backend only)", () => {
 });
 
 describe("work tools", () => {
-  it("prepare raises an approval with the binding only in _meta; decide needs it", async () => {
-    const p = await call("prepare_application", { posting_id: 2, instructions: "short letter" });
-    expect(p.structuredContent.approval).toMatchObject({ interaction_id: "i-1", operation: "prepare_application" });
+  it("revise raises an approval with the binding only in _meta; decide needs it", async () => {
+    const p = await call("revise_application", { posting_id: 2, changes: "short letter" });
+    expect(p.structuredContent.approval).toMatchObject({ interaction_id: "i-1", operation: "revise_application" });
     expect(modelVisible(p)).not.toContain("bind-1");
     expect(p._meta.binding).toBe("bind-1");
     const bad = await call("decide", { posting_id: 2, interaction_id: "i-1", decision: "approve", binding: "nope" });
@@ -165,6 +166,18 @@ describe("work tools", () => {
     expect(ok.structuredContent).toMatchObject({ state: "complete", decision: "approve" });
     const again = await call("decide", { posting_id: 2, interaction_id: "i-1", decision: "approve", binding: "bind-1" });
     expect(again.isError).toBe(true);
+  });
+  it("prepares only an exact current eligible entry after consent; stable retries do not duplicate",async()=>{
+    expect((await call("prepare_application",{posting_id:1})).isError).toBe(true);
+    const args={posting_id:1,expected_entry_id:"entry-1",expected_run_key:"run-1",request_id:"synthetic-prepare",confirmed:true};
+    const first=await call("prepare_application",args);
+    expect(first.structuredContent).toMatchObject({state:"queued",authorises:"preparation_only"});
+    expect((await call("prepare_application",args)).structuredContent).toEqual(first.structuredContent);
+    expect((await call("prepare_application",{...args,posting_id:2,expected_entry_id:"entry-2",expected_run_key:"run-2"})).isError).toBe(true);
+    expect((await call("prepare_application",{...args,expected_run_key:"changed"})).isError).toBe(true);
+    const history=await call("applications_overview");expect(history.structuredContent.jobs).toHaveLength(4);
+    const diagnostic=await call("assessment_detail",{posting_id:4});expect(diagnostic.structuredContent.found).toBe(true);
+    expect((await call("job_detail",{posting_id:4})).structuredContent.found).toBe(false);
   });
   it("revise needs changes", async () => {
     const r = await client.callTool({ name: "revise_application", arguments: { posting_id: 1, changes: "" } }).catch(() => ({ isError: true }));

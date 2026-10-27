@@ -15,6 +15,17 @@ export function startMock(port = 0) {
     3: { posting_id: 3, found: true, employer: "Initech", title: "Reporting Analyst", location: null, ad_url: null, score: null, state: "outcome unknown", state_detail: "Outcome unknown; retries are paused.", documents_ready: true, draft_version: 1, can_submit: false },
   };
   Object.assign(jobs[1], {assessment_state:"current", assessment_reason:"evaluation_complete", assessment_summary:"Synthetic assessed role."});
+  const entry = (j, rank, eligible) => ({
+    posting_id:j.posting_id, employer:j.employer, title:j.title, score:j.score??null, state:j.state, detail:j.state_detail??"",
+    entry_id:`entry-${j.posting_id}`, shortlist_id:"shortlist-synthetic", run_key:`run-${j.posting_id}`,
+    label:eligible?"stronger_match":"needs_clarification", rank, ordering:"provisional", rank_reason:"Synthetic evidence order.",
+    objective_fit:eligible?"Supported by the synthetic approved profile.":"Availability needs clarification.", uncertainty:"Provisional evidence ordering.",
+    can_prepare:eligible, conditions:["Synthetic conditions"], unresolved:eligible?[]:["Confirm availability"], mandatory_requirements:[],transferable_skills:[],
+    evidence:[{requirement:"SQL",status:"demonstrated",citations:[{quote:"Synthetic SQL evidence",source_id:"synthetic/profile.md",content_hash:"a".repeat(64)}]}],requirements:[],
+  });
+  const shortlistJobs = [entry(jobs[1],1,true),entry(jobs[2],2,false)];
+  const shortlist = {status:"ok",shortlist_id:"shortlist-synthetic",total:2,meaning:"Evidence fit, not hiring probability or approval to apply.",counts:{needs_you:0,needs_info:0,outcome_unknown:0,submitted:0},jobs:shortlistJobs};
+  const preparationRequests = new Map();
   let queued = 0;
   let pending = null;
   let dailyTokenCeiling = 2000000;
@@ -40,13 +51,14 @@ export function startMock(port = 0) {
     const url = new URL(req.url, "http://x");
     log.push({ method: req.method, path: url.pathname, body });
     let m;
-    if (req.method === "GET" && url.pathname === "/connector/overview") {
-      const rows = Object.values(jobs).map((j) => ({ posting_id: j.posting_id, employer: j.employer, title: j.title, score: j.score ?? null, state: j.state, detail: j.state_detail,
-        assessment_state:j.assessment_state, assessment_reason:j.assessment_reason, assessment_summary:j.assessment_summary }));
-      return send(200, { view: "list", counts: { needs_you: 2, needs_info: 0, outcome_unknown: 1, submitted: 0 }, jobs: rows });
-    }
+    if ((req.method === "GET" && url.pathname === "/connector/overview") || (req.method === "POST" && url.pathname === "/connector/shortlist/refresh")) return send(200,shortlist);
+    if (req.method === "GET" && url.pathname === "/connector/applications") return send(200, {
+      counts:{needs_you:2,needs_info:0,outcome_unknown:1,submitted:0},jobs:Object.values(jobs).map(j=>({...j,detail:j.state_detail??""}))
+    });
+    if (req.method === "GET" && (m=url.pathname.match(/^\/connector\/(?:assessments|applications)\/(\d+)$/))) return send(200,{job:jobs[m[1]]??{posting_id:Number(m[1]),found:false}});
     if (req.method === "GET" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)$/))) {
-      const j = jobs[m[1]] ?? { posting_id: Number(m[1]), found: false };
+      const canonical = shortlistJobs.find(j=>j.posting_id===Number(m[1]));
+      const j = canonical ? {...jobs[m[1]],shortlist_entry:canonical,can_prepare:canonical.can_prepare,shortlist_status:"ok"} : { posting_id: Number(m[1]), found: false,shortlist_status:"ok" };
       return send(200, { job: j });
     }
     if (req.method === "GET" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/review$/))) {
@@ -67,9 +79,17 @@ export function startMock(port = 0) {
       const j = jobs[m[1]];
       return send(200, { posting_id: Number(m[1]), state: j ? j.state : "not started", ...(j?.state === "outcome unknown" ? { message: j.state_detail } : {}) });
     }
-    if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/(prepare|revise)$/))) {
+    if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/prepare$/))) {
+      const candidate=shortlistJobs.find(j=>j.posting_id===Number(m[1]));
+      if(!candidate?.can_prepare||body.confirmed!==true||body.expected_entry_id!==candidate.entry_id||body.expected_run_key!==candidate.run_key) return send(409,{error:"inputs_changed"});
+      const previous=preparationRequests.get(body.request_id);
+      if(previous&&previous.body!==JSON.stringify(body))return send(409,{error:"idempotency_conflict"});
+      const result=previous?.result??{posting_id:Number(m[1]),state:"queued",selection_id:"selection-synthetic",authorises:"preparation_only"};
+      preparationRequests.set(body.request_id,{body:JSON.stringify(body),result});return send(200,result);
+    }
+    if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/(revise)$/))) {
       pending = { interaction_id: "i-1", binding: "bind-1" };
-      return send(200, { data: { view: "work", posting_id: Number(m[1]), thread_id: "t", status: "awaiting_approval", interaction_id: "i-1", operation: "prepare_application", summary: `Jobwatch wants to prepare application for job ${m[1]}. This may use paid model calls and save drafts. It will not submit.` }, meta: { binding: "bind-1" } });
+      return send(200, { data: { view: "work", posting_id: Number(m[1]), thread_id: "t", status: "awaiting_approval", interaction_id: "i-1", operation: "revise_application", summary: `Jobwatch wants to prepare application for job ${m[1]}. This may use paid model calls and save drafts. It will not submit.` }, meta: { binding: "bind-1" } });
     }
     if (req.method === "POST" && url.pathname === "/connector/decide") {
       if (!pending || body.interaction_id !== pending.interaction_id || body.binding !== pending.binding) return send(400, { error: "approval_not_found" });

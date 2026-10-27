@@ -11,6 +11,7 @@ import {
   discoverySettingsOut,
   jobOut,
   overviewOut,
+  applicationsOut,
   reviewOut,
   submitOut,
   taskOut,
@@ -23,9 +24,9 @@ const publicHost = new URL(process.env.JOBWATCH_MCP_PUBLIC_URL ?? "").hostname;
 const server = new MCPServer({
   name: "jobwatch",
   title: "Jobwatch",
-  version: "2.0.0",
+  version: "2.1.0",
   description:
-    "Your job applications: what needs you, job details, task status, and a review step before anything is sent.",
+    "Current canonical job matches, evidence questions, application history, discovery progress and per-person settings through contextual interactive widgets.",
   allowedHosts: [publicHost],
 });
 
@@ -50,7 +51,7 @@ export const jobsOverview = server.tool(
   {
     name: "jobs_overview",
     description:
-      "List jobs with activity, current assessment results and separate application progress. Counts describe application actions. 'draft ready' is never 'submitted'.",
+      "Show the interactive Jobs widget with the current canonical shortlist in its existing rank order, including clearly labelled evidence holds. Never collected postings, excluded jobs or assessment activity. Holds cannot prepare; scores are advisory.",
     inputSchema: z.object({ limit: z.number().int().min(1).max(100).default(50) }),
     outputSchema: overviewOut,
     annotations: READ,
@@ -59,18 +60,55 @@ export const jobsOverview = server.tool(
   async ({ limit }) => {
     try {
       const d = overviewOut.parse(await call(cfg, "GET", `/connector/overview?limit=${limit}`));
-      const lines = d.jobs.slice(0, 10).map((j) => `#${j.posting_id} ${j.employer ?? "?"} - ${j.title ?? "?"}: application ${j.state}${j.assessment_state ? `; assessment ${j.assessment_state === "current" ? "assessed" : j.assessment_state}${j.assessment_reason ? ` (${j.assessment_reason})` : ""}` : ""}`);
-      return { content: text([`${countsText(d.counts)}. ${d.jobs.length} jobs with activity.`, ...lines].join("\n")), structuredContent: d };
+      const lines = d.jobs.slice(0, 10).map((j) => `#${j.posting_id} ${j.employer ?? "?"} - ${j.title ?? "?"}: ${j.label}; ${j.objective_fit}; ${j.can_prepare ? "eligible for preparation after consent" : "clarification required; cannot prepare"}`);
+      return { content: text([`Shortlist ${d.status}: ${d.jobs.length} current matches. ${d.meaning}`, ...lines].join("\n")), structuredContent: d };
     } catch (e) {
       return fail(e);
     }
   },
 );
 
+export const refreshShortlist = server.tool({
+  name: "refresh_shortlist", description: "Refresh the canonical shortlist from stored assessments only. No paid assessment, collection, preparation or submission.",
+  inputSchema: z.object({}), outputSchema: overviewOut, annotations: { ...READ, readOnlyHint: false },
+}, async () => {
+  try { const d = overviewOut.parse(await call(cfg, "POST", "/connector/shortlist/refresh", {}));
+    return { content: text(`Shortlist ${d.status}: ${d.jobs.length} matches.`), structuredContent: d }; }
+  catch (e) { return fail(e); }
+});
+
+export const applicationsOverview = server.tool({
+  name: "applications_overview", description: "Open application history, including preparation, submission and uncertain outcomes. These are historical tasks, not current recommendations.",
+  inputSchema: z.object({limit: z.number().int().min(1).max(100).default(50)}), outputSchema: applicationsOut,
+  annotations: READ, view: { name: "applications" },
+}, async ({limit}) => {
+  try { const d = applicationsOut.parse(await call(cfg, "GET", `/connector/applications?limit=${limit}`));
+    return { content: text(`${countsText(d.counts)}. ${d.jobs.length} applications.`), structuredContent: d }; }
+  catch (e) { return fail(e); }
+});
+
+export const applicationDetail = server.tool({
+  name: "application_detail", description: "Read an application history item and document readiness. Not a recommendation.",
+  inputSchema: z.object({posting_id: posting}), outputSchema: jobOut, annotations: READ, view: { name: "application-detail" },
+}, async ({posting_id}) => {
+  try { const d = jobOut.parse((await call<{job:unknown}>(cfg, "GET", `/connector/applications/${posting_id}`)).job);
+    return {content:text(`Application #${posting_id}: ${d.state ?? "not found"}.`), structuredContent:d}; }
+  catch(e) {return fail(e);}
+});
+
+export const assessmentDetail = server.tool({
+  name: "assessment_detail", description: "Explicitly requested diagnostic lookup of an assessment, including exclusions and failures. Never treat the result as a recommendation.",
+  inputSchema: z.object({posting_id: posting}), outputSchema: jobOut, annotations: READ,
+}, async ({posting_id}) => {
+  try {const d = jobOut.parse((await call<{job:unknown}>(cfg, "GET", `/connector/assessments/${posting_id}`)).job);
+    return {content:text(`Diagnostic #${posting_id}: ${d.assessment_state ?? "not assessed"} (${d.assessment_reason ?? "no result"}). Not a recommendation.`), structuredContent:d};}
+  catch(e) {return fail(e);}
+});
+
 export const jobDetail = server.tool(
   {
     name: "job_detail",
-    description: "Read a job's current assessment result, score and summary alongside separate application state, document readiness and ad link. An application not started does not mean the job was not assessed.",
+    description: "Open a current canonical shortlist entry with its evidence, conditions, unresolved questions and permitted actions. Missing/stale/excluded jobs are not recommendations; use assessment_detail only for explicitly requested diagnostics.",
     inputSchema: z.object({ posting_id: posting }),
     outputSchema: jobOut,
     annotations: READ,
@@ -181,15 +219,16 @@ export const prepareApplication = server.tool(
   {
     name: "prepare_application",
     description:
-      "Hand the heavy work of preparing an application (cover letter, CV, form fill) to Jobwatch's own agent. Returns status and any approval it needs; the person approves in the view. Never submits.",
-    inputSchema: z.object({ posting_id: posting, instructions: z.string().max(4000).default("") }),
+      "Only after the user explicitly confirms preparation, queue the exact current eligible shortlist entry using its entry/run identities and a stable request_id. Evidence holds and changed inputs are refused. Never submits.",
+    inputSchema: z.object({ posting_id: posting, expected_entry_id: z.string().min(1).max(200), expected_run_key: z.string().min(1).max(200), request_id: z.string().min(1).max(200), confirmed: z.literal(true) }),
     outputSchema: taskOut,
     annotations: WORK,
     view: { name: "task-prepare" },
   },
-  async ({ posting_id, instructions }) => {
+  async ({ posting_id, ...body }) => {
     try {
-      return workResult(posting_id, await call(cfg, "POST", `/connector/jobs/${posting_id}/prepare`, { instructions }));
+      const d = taskOut.parse(await call(cfg, "POST", `/connector/jobs/${posting_id}/prepare`, body));
+      return { content: text(`Preparation ${d.state}. Never authorizes Submit.`), structuredContent: d };
     } catch (e) {
       return fail(e);
     }
@@ -330,6 +369,7 @@ export const confirmOnboarding = server.tool({
 
 export const discoveryStatus = server.tool({
   name: "discovery_status",
+  view: { name: "discovery" },
   description: "Read collection counts, actual assessment progress, unresolved failures, Hermes handoff state and retry contexts. Failed jobs stay paused until an explicit retry request. Collected postings are not recommendations.",
   inputSchema: z.strictObject({}), outputSchema: discoveryStatusOut, annotations: READ,
 }, async () => {

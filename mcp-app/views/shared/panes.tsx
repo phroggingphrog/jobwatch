@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useCallTool } from "mcp-use/react";
+import type { z } from "zod";
+import type { shortlistEntry } from "../../src/schemas.js";
 import { Status, safeUrl, metaString } from "./ui.js";
 
 export interface Job {
   posting_id: number; found: boolean; employer?: string | null; title?: string | null; location?: string | null;
   ad_url?: string | null; score?: number | null; why_it_fits?: string | null; pros?: string[]; cons?: string[];
   state?: string; state_detail?: string; documents_ready?: boolean; draft_version?: number | null; can_submit?: boolean;
+  shortlist_entry?: z.infer<typeof shortlistEntry>; shortlist_status?: string; can_prepare?: boolean;
   assessment_state?: string | null; assessment_reason?: string | null; assessment_summary?: string | null;
 }
 export interface Review {
@@ -24,21 +27,22 @@ export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
   return (
     <div>
       {onBack && <button type="button" className="link" onClick={onBack}>Back to jobs</button>}
-      {!d.found ? <p className="empty">That job was not found.</p> : (
+      {!d.found ? <p className="empty">This job is not in the current shortlist, or the shortlist needs refreshing. It is not being recommended.</p> : (
         <>
           <div className="head"><div>
             <h1>{d.title || "(untitled)"}</h1>
             <p className="sub">{d.employer || "Unknown employer"}{d.location ? ` · ${d.location}` : ""}</p>
           </div></div>
+          {d.shortlist_entry && <ShortlistEvidence entry={d.shortlist_entry} />}
           <dl>
             <dt>Application</dt><dd><Status state={d.state ?? "not started"} /></dd>
             {d.assessment_state && <><dt>Assessment</dt><dd>{d.assessment_state === "current" ? "Assessed" : d.assessment_state.replaceAll("_", " ")}</dd></>}
             {d.assessment_reason && <><dt>Assessment result</dt><dd>{d.assessment_reason.replaceAll("_", " ")}</dd></>}
             {d.state_detail ? (<><dt>Detail</dt><dd>{d.state_detail}</dd></>) : null}
-            <dt>Score</dt><dd>{d.score != null ? <span className="score" style={{ textAlign: "left" }}>{d.score}</span> : "Not scored"}</dd>
+            <dt>Advisory score</dt><dd>{d.score != null ? <span className="score" style={{ textAlign: "left" }}>{d.score}</span> : "Not scored"}</dd>
             <dt>Documents</dt><dd>{d.documents_ready ? `Ready${d.draft_version ? ` (draft v${d.draft_version})` : ""}` : "None ready"}</dd>
           </dl>
-          {(d.assessment_summary || d.why_it_fits) && (<><h2>Assessment summary</h2><p>{d.assessment_summary || d.why_it_fits}</p></>)}
+          {!d.shortlist_entry && (d.assessment_summary || d.why_it_fits) && (<><h2>Assessment summary</h2><p>{d.assessment_summary || d.why_it_fits}</p></>)}
           {d.pros?.length ? (<><h2>In its favour</h2><ul className="list">{d.pros.map((t) => <li key={t}>{t}</li>)}</ul></>) : null}
           {d.cons?.length ? (<><h2>Against</h2><ul className="list">{d.cons.map((t) => <li key={t}>{t}</li>)}</ul></>) : null}
           {ad && <p style={{ marginTop: 10 }}><a className="link" href={ad} target="_blank" rel="noopener noreferrer">Open the job ad</a></p>}
@@ -60,6 +64,44 @@ export function JobPane({ d, onBack }: { d: Job; onBack?: () => void }) {
       )}
     </div>
   );
+}
+
+function ShortlistEvidence({entry}: {entry: z.infer<typeof shortlistEntry>}) {
+  const prepare = useCallTool("prepare_application");
+  const [confirming, setConfirming] = useState(false);
+  const [preparationState, setPreparationState] = useState<string>();
+  const requestId = useRef<string | null>(null);
+  const label = {stronger_match:"Stronger match", stretch:"Stretch", needs_clarification:"Needs clarification"}[entry.label];
+  return <section aria-label="Shortlist evidence">
+    <p className="fit-label">{label}</p><p>{entry.objective_fit}</p>
+    <details><summary>Why this rank</summary><p>{entry.rank_reason}</p><p className="sub">{entry.uncertainty}</p></details>
+    {entry.unresolved.length > 0 && <><h2>Unresolved questions</h2><ul className="list">{entry.unresolved.map(q => <li key={q}>{q}</li>)}</ul></>}
+    <details><summary>Conditions and mandatory requirements</summary><ul className="list">{[...entry.conditions, ...entry.mandatory_requirements].map((q,i) => <li key={i}>{q}</li>)}</ul></details>
+    <details><summary>Evidence and citations</summary>
+      {entry.evidence.map((row,i) => <div key={i}><h3>{String(row.requirement ?? "Requirement")}</h3><p className="sub">{String(row.status ?? "")}</p>
+        {(Array.isArray(row.citations) ? row.citations : []).map((citation: Record<string,unknown>,n) => <blockquote key={n}>
+          <p>{String(citation.quote ?? "")}</p><p className="sub">{String(citation.source_id ?? citation.path ?? citation.source ?? "Source not recorded")}{citation.line_start ? ` · line ${citation.line_start}` : ""}</p>{typeof citation.content_hash === "string" && <p className="mono">SHA-256: {citation.content_hash}</p>}
+        </blockquote>)}
+      </div>)}
+      {entry.evidence.length === 0 && <p className="sub">No supporting citations recorded in this shortlist entry.</p>}
+    </details>
+    <details><summary>Requirement judgments</summary>{entry.requirements.map((row,i) => <div key={i}><h3>{String(row.text ?? row.id ?? "Requirement")}</h3>
+      <p className="fit-label">{String(((row.match as Record<string,unknown> | undefined)?.judgment as Record<string,unknown> | undefined)?.status ?? "Judgment not recorded")}</p>
+      <p>{String(((row.match as Record<string,unknown> | undefined)?.judgment as Record<string,unknown> | undefined)?.rationale ?? "")}</p>
+      <p className="sub">{String((row.match as Record<string,unknown> | undefined)?.risk ?? "")}</p>
+      <p>{String((row.match as Record<string,unknown> | undefined)?.mitigation ?? "")}</p></div>)}</details>
+    {!entry.can_prepare ? <p className="note">This evidence hold cannot proceed to preparation. Resolve the questions in the conversation and refresh after Jobwatch reassesses it.</p> : preparationState ? <p role="status" className="note">Preparation {preparationState}. Track it in Applications. This request does not authorize submission.</p> : <>
+      {!confirming ? <div className="actions"><button className="btn primary" onClick={() => setConfirming(true)}>Prepare application</button></div> : <div className="note">
+        <p>Prepare a CV and cover letter for this exact reviewed job? This uses your configured paid models and saves drafts. It does not submit an application.</p>
+        <div className="actions"><button className="btn primary" disabled={prepare.isPending} onClick={async () => {
+          requestId.current ??= crypto.randomUUID();
+          try {const result = await prepare.callTool({posting_id:entry.posting_id, expected_entry_id:entry.entry_id, expected_run_key:entry.run_key, request_id:requestId.current, confirmed:true}); setPreparationState(result.structuredContent.state);}
+          catch { /* Keep the request identity for a retry; show the tool error below. */ }
+        }}>{prepare.isPending ? "Queueing…" : "Confirm preparation"}</button><button className="btn" disabled={prepare.isPending} onClick={() => setConfirming(false)}>Cancel</button></div>
+      </div>}
+      {prepare.error && <p className="note bad" role="alert">Could not queue preparation. If inputs changed, refresh the shortlist and review again. Otherwise retry this request.</p>}
+    </>}
+  </section>;
 }
 
 const WHY: Record<string, string> = {

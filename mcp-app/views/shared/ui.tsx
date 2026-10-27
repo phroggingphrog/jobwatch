@@ -1,5 +1,6 @@
 import "./theme.css";
 import type { ReactNode } from "react";
+import { useViewTheme } from "mcp-use/react";
 
 const TONE: Record<string, "ok" | "warn" | "bad" | "work" | ""> = {
   submitted: "ok",
@@ -27,13 +28,15 @@ export function Status({ state }: { state: string }) {
 }
 
 export function Page({ children }: { children: ReactNode }) {
-  return <main className="jw">{children}</main>;
+  const theme = useViewTheme();
+  return <main className="jw" data-theme={theme}>{children}</main>;
 }
 
 export function Loading({ label }: { label: string }) {
   return (
     <Page>
       <div role="status" aria-label={label}>
+        <p className="sub">{label}…</p>
         <div className="skel" style={{ width: "40%" }} />
         <div className="skel" style={{ width: "80%" }} />
         <div className="skel" style={{ width: "65%" }} />
