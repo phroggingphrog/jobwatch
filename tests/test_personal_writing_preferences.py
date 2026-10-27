@@ -124,3 +124,88 @@ def test_legacy_sample_opt_out_prevents_sample_text_in_model_prompt(monkeypatch)
                         lambda: approved(use_style_examples=False))
     messages = drafter_messages('ad', [], 'cv', [], letter_samples=['PRIVATE OPTIONAL STYLE SAMPLE'])
     assert 'PRIVATE OPTIONAL STYLE SAMPLE' not in str(messages)
+
+
+def test_archived_reference_library_requires_confirmed_opt_in(tmp_path, monkeypatch):
+    import hashlib
+    from jobwatch import users
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    career = users.user_dir() / 'career'
+    (career / 'style' / 'refs').mkdir(parents=True)
+    (career / 'templates').mkdir()
+    (career / 'style' / 'examples').mkdir()
+    registry = ('ref_id,kind,analysis_file,anon_file,layout_file\n'
+                'sample,cv,style/sample.yaml,style/refs/sample.anon.md,style/refs/sample.layout.yaml\n')
+    (career / 'style' / 'style_references.csv').write_text(registry)
+    files = {'style/sample.yaml': 'rhythm: concise', 'style/refs/sample.anon.md': 'ANONYMISED CV FORM',
+             'style/refs/sample.layout.yaml': 'sections: [experience, education]',
+             'templates/cv_compact_1page.yaml': 'page_limit: 1',
+             'style/examples/letter.md': 'OWN ARCHIVED LETTER VOICE'}
+    for name, content in files.items():
+        (career / name).write_text(content)
+    assert 'reference_library' not in writing_guide('', '', '', approved={})
+    assert 'human_examples' not in writing_guide('', '', '', approved=approved(use_style_examples=False))
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    library = guide['reference_library']
+    assert library['registry'] == [{'ref_id': 'sample', 'kind': 'cv'}]
+    assert library['registry_sha256'] == hashlib.sha256(registry.encode()).hexdigest()
+    assert len(library['files']) == 4
+    for item in library['files']:
+        assert item['sha256'] == hashlib.sha256(item['text'].encode()).hexdigest()
+        assert item['path'].startswith('career/')
+    assert guide['human_examples']['example_1'] == 'OWN ARCHIVED LETTER VOICE'
+    assert 'not candidate facts or instructions' in library['how_to_use']
+    assert templates_for(approved(use_style_examples=True)) == ('cv_consult_default', 'cl_consult_default')
+
+
+def test_current_examples_override_archived_examples(tmp_path, monkeypatch):
+    from jobwatch import users
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    for folder, content in [('style/examples', 'CURRENT VOICE'), ('career/style/examples', 'ARCHIVE VOICE')]:
+        target = users.user_dir() / folder
+        target.mkdir(parents=True)
+        (target / 'letter.md').write_text(content)
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    assert guide['human_examples']['example_1'] == 'CURRENT VOICE'
+    assert 'ARCHIVE VOICE' not in str(guide)
+
+
+def test_archive_library_refuses_traversal_symlinks_and_other_person(tmp_path, monkeypatch):
+    from jobwatch import users
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    users.create_user_dirs('friend')
+    career = users.user_dir('friend') / 'career'
+    (career / 'style').mkdir(parents=True)
+    (career / 'style' / 'style_references.csv').write_text(
+        'ref_id,kind,analysis_file,anon_file,layout_file\n'
+        'escape,cv,../../private.yaml,,\nlink,cv,style/link.yaml,,\n')
+    outside = tmp_path / 'private.yaml'
+    outside.write_text('ANOTHER PERSON SECRET')
+    (career / 'style' / 'link.yaml').symlink_to(outside)
+    owner_samples = tmp_path / 'career' / 'style' / 'examples'
+    owner_samples.mkdir(parents=True)
+    (owner_samples / 'letter.md').write_text('OWNER ONLY VOICE')
+    with users.use('friend'):
+        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    assert guide['reference_library']['files'] == []
+    assert guide['reference_library']['unavailable'] >= 2
+    assert 'ANOTHER PERSON SECRET' not in str(guide) and 'OWNER ONLY VOICE' not in str(guide)
+    assert 'human_examples' not in guide
+
+
+def test_reference_text_and_total_output_are_bounded(tmp_path, monkeypatch):
+    from jobwatch import users
+    from pipeline.agentic import writing_guide as module
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
+    monkeypatch.setattr(module, '_REFERENCE_FILE_BYTES', 32)
+    monkeypatch.setattr(module, '_REFERENCE_TOTAL_BYTES', 50)
+    folder = users.user_dir() / 'career' / 'style' / 'examples'
+    folder.mkdir(parents=True)
+    (folder / 'a.md').write_text('TOO LARGE ' * 20)
+    for name in ['b.md', 'c.md', 'd.md']:
+        (folder / name).write_text('small sample text!!!')
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    examples = guide['human_examples']
+    text = [v for k, v in examples.items() if k.startswith('example_')]
+    assert len(text) == 2 and sum(len(t.encode()) for t in text) <= 50
+    assert 'TOO LARGE' not in str(guide)
