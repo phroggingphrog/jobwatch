@@ -334,7 +334,6 @@ export const decideProfile = server.tool(
     outputSchema: chatOut,
     annotations: WORK,
     visibility: "app",
-    view: { name: "profile-result" },
   },
   async (input) => {
     try {

@@ -54,7 +54,7 @@ describe("tools list", () => {
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
     expect((by.decide._meta as any).ui.visibility).toEqual(["app"]);
     expect((by.decide_profile._meta as any).ui.visibility).toEqual(["app"]);
-    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application", "career_ops_start_chat", "career_ops_continue_chat", "decide_profile"]) {
+    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application", "career_ops_start_chat", "career_ops_continue_chat"]) {
       expect((by[n]._meta as any).ui.resourceUri).toMatch(/^ui:\/\//);
       expect(by[n].outputSchema).toBeTruthy();
     }
