@@ -306,3 +306,27 @@ def test_a_ready_fill_records_what_a_submit_confirmation_binds_to(site, inputs, 
     page.locator('[name=full_name]').fill('Someone Else')
     assert sc.live_digest(prepared, page, session_id=prepared['session_id'],
                           owner_revision=prepared['owner_revision']) != sc.digest(prepared)
+
+def test_the_original_cv_and_letter_file_names_are_kept_and_are_what_the_form_receives(site, inputs, planner):
+    page, base, _, _ = site
+    final_page(page, base)
+    named = {}
+    for role, name in (('cv', 'Alex_Example_CV_2026.pdf'), ('letter', 'Cover letter - Acme.pdf')):
+        target = inputs['document_paths'][role].with_name(name)
+        target.write_bytes(inputs['document_paths'][role].read_bytes())
+        named[role] = target
+    result = prepare.prepare_application(page, **dict(inputs, document_paths=named))
+    assert result.status == 'ready_for_owner', result
+    prepared = prepare.latest_preparation(inputs['data_root'], 'synthetic-app')
+    assert prepared['document_names'] == {'cv': 'Alex_Example_CV_2026.pdf', 'letter': 'Cover letter - Acme.pdf'}
+    assert page.locator('[name=cv]').evaluate('e=>e.files[0].name') == 'Alex_Example_CV_2026.pdf'
+    assert page.locator('[name=letter]').evaluate('e=>e.files[0].name') == 'Cover letter - Acme.pdf'
+
+def test_an_unsafe_original_name_falls_back_to_the_generic_one(site, inputs, planner):
+    page, base, _, _ = site
+    final_page(page, base)
+    odd = inputs['document_paths']['cv'].with_name('x\u202eevil\n.pdf')
+    odd.write_bytes(inputs['document_paths']['cv'].read_bytes())
+    result = prepare.prepare_application(page, **dict(inputs, document_paths={**inputs['document_paths'], 'cv': odd}))
+    assert result.status == 'ready_for_owner', result
+    assert prepare.latest_preparation(inputs['data_root'], 'synthetic-app')['document_names']['cv'] == 'cv.pdf'
