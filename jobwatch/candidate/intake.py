@@ -810,7 +810,7 @@ class SearchScope(_Model):
     basis: tuple[str, ...]
     locations: tuple[str, ...]
     daily_assessments: int
-    daily_token_ceiling: int
+    daily_token_ceiling: int | None
 
 
 def _reconciled(proposal: Proposal) -> tuple[list[ProfileFact], list[Question]]:
@@ -828,7 +828,10 @@ def _values(facts, *sections: str) -> list[str]:
 
 def scope_for(person: str, proposal: Proposal, config) -> SearchScope:
     """What discovery may look for: confirmed career focus, else the work history (employment first), then skills."""
-    return _scope_of(person, _reconciled(proposal)[0], config)
+    scope = _scope_of(person, _reconciled(proposal)[0], config)
+    from pipeline.agentic.discovery_settings import get_settings
+    ceiling = get_settings(person, config)["daily_token_ceiling"]
+    return scope.model_copy(update={"daily_token_ceiling": ceiling})
 
 
 def _scope_of(person: str, facts: list[ProfileFact], config) -> SearchScope:
@@ -1090,10 +1093,8 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
     return 1
 
 
-def discovery_scope(person: str) -> SearchScope | None:
-    """The scope discovery may run within: only when the CURRENT version was confirmed with its scope shown
-    (scope + matching scope_digest) and the live profile/ files still match what it recorded, because assessment reads
-    them live. No version, an adopted version, a hand edit since, or anything unreadable authorises nothing."""
+def _confirmed_scope(person: str) -> SearchScope | None:
+    """Read and validate the unchanged, originally confirmed scope and live profile files."""
     try:
         cur = current_version(person)
         if not cur or not cur.get("scope") or not cur.get("scope_digest"):
@@ -1106,3 +1107,15 @@ def discovery_scope(person: str) -> SearchScope | None:
         return scope
     except (OSError, ValueError, KeyError, TypeError):     # includes IntakeError(profile_edited_by_hand)
         return None
+
+
+def discovery_scope(person: str) -> SearchScope | None:
+    """Apply operational settings only after the confirmed scope and live profile still validate."""
+    scope = _confirmed_scope(person)
+    if scope is None:
+        return None
+    from pipeline.agentic.discovery_settings import _override
+    setting = _override(person)
+    if setting is None:
+        return scope
+    return scope.model_copy(update={"daily_token_ceiling": setting.daily_token_ceiling})
