@@ -84,7 +84,7 @@ def _message(row):
     return f"Jobwatch stopped {subject}: {row['reason']} (phase: {row['phase'] or 'unknown'}).{action} [incident:{row['incident_id']}]"
 
 
-def report(conn, *, posting_id=None, run_id=None, reason, phase=None, now=None):
+def report(conn, *, posting_id=None, run_id=None, reason, phase=None, now=None, notify_immediately=True):
     if reason not in FAILURE_REASONS:
         return None
     if posting_id is not None and (type(posting_id) is not int or posting_id < 1):
@@ -121,7 +121,8 @@ def report(conn, *, posting_id=None, run_id=None, reason, phase=None, now=None):
     except BaseException:
         conn.rollback()
         raise
-    flush_notifications(conn, now=now, incident_id=ident)
+    if notify_immediately:
+        flush_notifications(conn, now=now, incident_id=ident)
     return _get(conn, ident)
 
 
@@ -227,3 +228,37 @@ def reconcile_service_exit(conn, *, unit=None, run_id=None, reason='service_time
         result.append(report(conn, posting_id=pid, run_id=ident, reason=reason, phase=phase))
         end_run(conn, ident, 'interrupted')
     return result
+
+
+def reconcile_known_failures(conn):
+    """Pause unreported latest failures written before incident reporting existed.
+
+    A later normal outcome wins. Already observed attempts stay observed after an
+    explicit retry release; reconciliation must not restore their old pause.
+    """
+    if not _exists(conn, 'agentic_activity'):
+        return []
+    rows = conn.execute("SELECT a.posting_id,a.run_key,a.invocation_id,a.reason,a.at FROM agentic_activity a "
+                        "JOIN (SELECT posting_id,MAX(id) AS latest FROM agentic_activity WHERE event='finished' "
+                        "GROUP BY posting_id) newest ON newest.latest=a.id ORDER BY a.id").fetchall()
+    failures = [row for row in rows if row[3] in FAILURE_REASONS]
+    if not failures:
+        return []
+    ensure(conn)
+    added = []
+    for posting_id, run_key, invocation_id, reason, finished_at in failures:
+        if is_paused(conn, posting_id):
+            continue
+        historical_id = 'historical:' + str(invocation_id or run_key)
+        observed = conn.execute('SELECT 1 FROM agentic_incidents WHERE posting_id=? AND '
+                                '(run_id IN (?,?,?) OR created_at>=?) LIMIT 1',
+                                (posting_id, historical_id, str(invocation_id or ''), str(run_key or ''), finished_at)).fetchone()
+        if observed:
+            continue
+        row = report(conn, posting_id=posting_id, run_id=historical_id, reason=reason,
+                     phase=None, notify_immediately=False)
+        if row is not None and row['state'] == 'paused':
+            added.append(row)
+    if added:
+        flush_notifications(conn)
+    return added
