@@ -35,11 +35,45 @@ def test_first_failure_is_visible_paused_and_deduplicated(conn, monkeypatch):
 
 @pytest.mark.parametrize('reason', ['snapshot_changed', 'insufficient_evidence', 'posting_unavailable',
                                   'posting_closed', 'busy', 'daily_budget', 'batch_deadline', 'budget_exhausted',
-                                  'invocation_budget_exhausted'])
+                                  'invocation_budget_exhausted', 'batch_paused', 'concurrency_limit', 'job_already_active'])
 def test_normal_deferrals_and_decisions_are_not_failures(conn, reason):
     assert incidents.report(conn, posting_id=42, run_id='attempt-1', reason=reason) is None
     assert incidents.list_incidents(conn) == [] and not incidents.is_paused(conn, 42)
     assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='agentic_incidents'").fetchone()
+
+
+@pytest.mark.parametrize('reason', ['token_limit', 'turn_limit', 'failed_attempt_limit', 'missing_terminal',
+                                  'tool_failed', 'invalid_model_payload', 'model_deadline',
+                                  'model_rate_limited', 'model_transient'])
+def test_stopped_job_limits_and_actual_runtime_failures_pause_first_attempt(conn, reason):
+    row = incidents.report(conn, posting_id=42, run_id='attempt-1', reason=reason, phase='assessment')
+    assert row['reason'] == reason and row['state'] == 'paused'
+    assert incidents.is_paused(conn, 42)
+    assert len(incidents.list_incidents(conn)) == 1 and notify.unread(conn) == 1
+
+
+def test_actual_job_token_limit_is_distinct_from_remaining_daily_allowance(conn):
+    from pipeline.agentic import execution
+    from pipeline.agentic.runtime import BatchBudget, JobBudget, RuntimeErrorSafe
+    job = JobBudget('a' * 64, BatchBudget('batch', token_ceiling=1000), token_ceiling=50)
+    with execution.use(execution.Execution('attempt', token_ceiling=1000)):
+        with pytest.raises(RuntimeErrorSafe) as job_error:
+            job.reserve('evaluator', 60, 1)
+    assert job_error.value.code == 'token_limit'
+    assert incidents.report(conn, posting_id=42, run_id='job-limit', reason=job_error.value.code)['state'] == 'paused'
+    with execution.use(execution.Execution('daily-limited', token_ceiling=10)):
+        with pytest.raises(RuntimeErrorSafe) as daily_error:
+            job.reserve('evaluator', 20, 1)
+    assert daily_error.value.code == 'invocation_budget_exhausted'
+    assert incidents.report(conn, posting_id=43, run_id='daily-limit', reason=daily_error.value.code) is None
+    assert not incidents.is_paused(conn, 43) and job.batch.charged_tokens == 0
+
+
+@pytest.mark.parametrize('reason', ['invalid_configuration', 'credential_unavailable'])
+def test_run_configuration_failures_are_reported_without_pausing_unrelated_jobs(conn, reason):
+    row = incidents.report(conn, run_id='run-1', reason=reason, phase='configuration')
+    assert row['posting_id'] is None and row['reason'] == reason
+    assert not incidents.is_paused(conn, 42) and notify.unread(conn) == 1
 
 
 def test_delivery_retry_is_separate_and_does_not_duplicate_messages(conn, monkeypatch):
