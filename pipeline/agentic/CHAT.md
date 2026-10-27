@@ -190,7 +190,12 @@ optionally from their existing files via `profile_start` with `use_existing_file
 without one (`--user all` still runs everyone else) and `after_collect` returns `{"skipped":"no_confirmed_profile"}`.
 Confirming writes a new version, so an open draft proposal built on the previous version answers `proposal_changed`. A scope with an empty basis (an adopted version has no facts) is refused with `profile_incomplete` by `confirm`, and never authorises discovery; the manual `review`, `pipeline run|sort` and `python -m pipeline.agentic.cli` commands skip with the same reason. `--user all` splits a unit's time over the people who run.
 Each person-local day it evaluates at most `scope.daily_assessments` jobs and stops once the day's charged tokens reach
-`scope.daily_token_ceiling`; the rest stay queued for the next day (`{"deferred":"daily_budget"}`).
+`scope.daily_token_ceiling` when finite; the rest stay queued for the next day (`{"deferred":"daily_budget"}`).
+Per-person `config/discovery.json` can override that operational daily token limit;
+JSON null means Unlimited. Preferences and authenticated native/MCP settings operations
+read and update it without rewriting the confirmed profile or historical spending.
+Individual run token/call limits and job limits remain finite. An ordinary run limit
+defers remaining work to another invocation; it is not a new system-error incident.
 
 ## Runtime and recovery
 

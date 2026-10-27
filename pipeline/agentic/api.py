@@ -378,7 +378,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         return dict(schema_version=1, execution_mode=effective_mode(get_config(principal.person)),
                     skill_version=skill_version(), protocol='native-http',
                     human_submit=True, confirmed_submit=True, scopes=sorted(principal.scopes),
-                    discovery=dict(read_only=False, operations=['status','start','retry'], flags=discovery_api.flags(get_config(principal.person))),
+                    discovery=dict(read_only=False, operations=['status','start','retry','settings'], flags=discovery_api.flags(get_config(principal.person))),
                     shortlist=dict(labels=shortlist_api.LABELS,orderings=['provisional','personalised'],
                                    rules_version='ranking-rules-v1',refresh_paid=False),
                     profile=dict(upload_max_bytes=intake.MAX_UPLOAD_BYTES, kinds=list(intake.KINDS),
