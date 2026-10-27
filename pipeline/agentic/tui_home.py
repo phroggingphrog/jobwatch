@@ -83,15 +83,15 @@ def menu_lines(width: int, selected: int, counts: dict, compact: bool) -> list[T
     return out
 
 
-def side_lines(rows: list[dict], inbox: int, services: list[tuple[str, str]], width: int, limit: int = 4) -> list[Text]:
+def side_lines(rows: list[dict], inbox: int, services: list[tuple[str, str]], width: int, limit: int = 4, paused: int = 0) -> list[Text]:
     out = [styled('NEEDS YOU', f'bold {MUTED}')]
-    items = needs_you(rows, inbox)[:limit]
+    items = needs_you(rows, inbox, paused)[:limit]
     if not items:
         out.append(styled('Nothing is waiting on you.', MUTED))
     for item in items:
         colour = AMETHYST if item['glyph'] in '◆●' else AMBER if item['glyph'] == '?' else theme.RED if item['glyph'] == '✕' else MUTED
         head, _, rest = item['head'].partition(': ')
-        sub = item['note'] if item.get('view') else (f'{rest} · {item["who"]}' if rest else item['who'])
+        sub = item['note'] if item.get('view') or item.get('info') else (f'{rest} · {item["who"]}' if rest else item['who'])
         out += [join(styled(item['glyph'] + ' ', colour), styled(head, TEXT)), styled('  ' + fit(sub, width - 2), MUTED)]
         out.append(Text(''))
     out += [styled('SERVICES', f'bold {MUTED}')]
@@ -205,7 +205,7 @@ class HomeScreen(Screen):
         self.plain_text = menu.plain
         self.query_one('#hmenu', Static).update(menu)
         if not narrow:
-            side_text = Text('\n').join(side_lines(self.rows, self.nav_counts.get('inbox') or 0, self.services, 46, 3))
+            side_text = Text('\n').join(side_lines(self.rows, self.nav_counts.get('inbox') or 0, self.services, 46, 3, self.nav_counts.get('paused') or 0))
             self.plain_text += '\n' + side_text.plain
             side.update(side_text)
         agent = Text()
@@ -213,6 +213,7 @@ class HomeScreen(Screen):
         if self.model:
             agent.append(f' {plain(self.model)}', style=MUTED)
         self.query_one('#hagent', Static).update(agent)
+        self.query_one('#hagent', Static).display = not narrow      # on a narrow terminal it would cover the prompt hint
         left = Text()
         for n, (key, word) in enumerate([('↑ ↓', 'choose'), ('enter', 'open')]):
             left.append(key, style=f'bold {MUTED}').append(f' {word}', style=MUTED)

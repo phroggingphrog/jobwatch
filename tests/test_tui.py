@@ -371,7 +371,8 @@ def test_file_picker_chip_upload_and_size_limit(app, tmp_path, monkeypatch):
 
 
 def test_slash_boards_render(app):
-    boards = [('applications', 'Applications', ['Fill the form (f)', 'Operations Analyst', 'CLOSED']),
+    boards = [('jobs', 'Jobs', ['in the queue', 'Acme Analytics']),
+              ('applications', 'Applications', ['Fill the form (f)', 'Operations Analyst', 'CLOSED']),
               ('inbox', 'Inbox', ['Reporting Analyst', 'Approve (a)', '90% sure']),
               ('table', 'Table', ['All jobs', 'Download CSV (x)', 'Junior Data Analyst']),
               ('sources', 'Sources', ['Employers watched', 'Deloitte Australia', 'checked 2026-10-06']),
@@ -576,3 +577,11 @@ def test_home_typing_asks_the_agent_and_never_approves(app):
         asyncio.run(run())
     finally:
         t.dispatch = orig
+
+
+def test_needs_you_lists_paused_assessments_and_is_not_openable():
+    from pipeline.agentic.tui_screens import needs_you
+    items = needs_you([], 0, 23)
+    assert len(items) == 1 and items[0]['head'] == '23 assessments paused' and items[0].get('info')
+    assert needs_you([], 0, 1)[0]['head'] == '1 assessment paused'
+    assert needs_you([], 0, 0) == []
