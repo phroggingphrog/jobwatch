@@ -25,7 +25,15 @@
     return tidy(String(t || "").replace(/`?\b([a-z]+(?:_[a-z]+)+)\b`?/g, function (m, c) { return CODE_WORDS[c] || c; })
       .replace(/\s*Claude Code needs to look[^.]*\./g, "").replace(/\bdlq\b/gi, "failed-jobs queue").replace(/\bREADY\b/g, "ready").replace(/\s*\(?\bT\d+\b\)?/g, ""));
   }
+  var INCIDENT = /\[incident:[0-9a-f]+\]/;
+  function incidentWords(t) {
+    var m = /stopped (assessment for job #(\d+)|discovery run): (\w+)/.exec(String(t)), what = m && m[2] ? "Job #" + m[2] : "A discovery run";
+    if (!m) return String(t).replace(INCIDENT, "").trim();
+    var why = m[3] === "deadline_exceeded" ? "ran out of time" : m[3].replace(/_/g, " ");
+    return what + " is paused: it " + (m[3] === "deadline_exceeded" ? why : "stopped (" + why + ")") + ". It stays paused until you retry it from Discovery status.";
+  }
   function noticeWords(t) {
+    if (INCIDENT.test(String(t))) return incidentWords(t);
     var m = /stopped on "(.*)" \((\w+)\)/.exec(String(t));
     if (!m) return chatWords(String(t).replace(/^Error:\s*/, "").replace(/\s*Claude Code needs[^.]*\.?.*$/, ""));
     return "Couldn't finish reading \"" + m[1] + "\": " + (CODE_WORDS[m[2]] || m[2].replace(/_/g, " ")) + ". It will retry.";
@@ -51,7 +59,8 @@
     V.api("/api/chat?skip=" + encodeURIComponent(C.skip.join(",")) + (C.change ? "&change=" + encodeURIComponent(C.change) : "")).then(function (d) {
       if (!here()) return;
       var msgs = (d.messages || []).filter(function (m) { return String(m.text || "").trim(); });
-      var notices = msgs.filter(function (m) { return m.notice === "error"; }), talk = msgs.filter(function (m) { return m.notice !== "error"; });
+      var isNote = function (m) { return m.notice === "error" || INCIDENT.test(String(m.text || "")); };
+      var notices = msgs.filter(isNote), talk = msgs.filter(function (m) { return !isNote(m); });
       var nHtml = notices.length ? '<details class="wk-fold"><summary>' + notices.length + " background problem" + (notices.length > 1 ? "s" : "") + '</summary><div class="wk-fold-b wk-prose"><ul>' + notices.map(function (m) { return "<li>" + esc(noticeWords(m.text)) + "</li>"; }).join("") + "</ul></div></details>" : "";
       view.innerHTML = '<div class="wk-chatpage"><div class="wk-conv"><div class="wk-convtop"><h1 class="wk-h2">Ask Jobwatch</h1><span class="wk-sub">Ask about your jobs. Nothing is sent to an employer from here.</span></div>' + nHtml +
         '<ul class="wk-msgs" id="cmsgs" role="log" aria-live="polite">' + talk.map(msgHtml).join("") + "</ul>" +

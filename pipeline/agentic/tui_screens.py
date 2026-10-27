@@ -249,7 +249,7 @@ def big_buttons(specs: list[tuple[str, bool, int]], width: int) -> list[Text]:
     return rows
 
 
-def needs_you(rows: list[dict], inbox: int = 0) -> list[dict]:
+def needs_you(rows: list[dict], inbox: int = 0, paused: int = 0) -> list[dict]:
     """What waits on the owner, from the queue rows and the number of mail replies to confirm."""
     items = []
     for r in rows:
@@ -265,6 +265,9 @@ def needs_you(rows: list[dict], inbox: int = 0) -> list[dict]:
             items.append({'glyph': '?', 'head': f'Check the employer site: {title}', 'note': f'{who} · outcome unknown; nothing resends without you.', 'pid': r['posting_id'], 'who': who, 'title': title})
     if inbox:
         items.append({'glyph': '●', 'head': f'{inbox} email repl{"y" if inbox == 1 else "ies"} to confirm', 'note': 'Jobwatch read your mail and needs a yes or no.', 'view': 'inbox'})
+    if paused:
+        items.append({'glyph': '✕', 'head': f'{paused} assessment{"" if paused == 1 else "s"} paused', 'info': True,
+                      'note': 'A failed assessment waits until you retry it. See Discovery status on the web board.'})
     return items
 
 
@@ -277,7 +280,7 @@ class TodayScreen(ViewScreen):
         return {'today': self.backend.today(), 'rows': rows}
 
     def needs(self) -> list[dict]:
-        return needs_you((self.data or {}).get('rows', []), self.nav_counts.get('inbox') or 0)
+        return needs_you((self.data or {}).get('rows', []), self.nav_counts.get('inbox') or 0, self.nav_counts.get('paused') or 0)
 
     def best(self) -> list[dict]:
         return ((self.data or {}).get('today') or {}).get('rows', [])[:6]
@@ -293,7 +296,10 @@ class TodayScreen(ViewScreen):
         lines = [join(styled('Today', 'bold'), styled('  ' + datetime.now().strftime('%A %-d %B'), MUTED)), Text('')]
         inner = width - 6
         pct = (read / seen) if seen else 0
-        lines += box([styled(f'{total} job{"" if total == 1 else "s"} {"is" if total == 1 else "are"} worth applying to.', 'bold'),
+        held = (today.get('held_back') or 0)
+        headline = (f'{total} job{"" if total == 1 else "s"} {"is" if total == 1 else "are"} rated Good.' if total or not held
+                    else f'No job is rated Good yet. {held} more {"is" if held == 1 else "are"} held back: the AI could not read the whole ad.')
+        lines += box([styled(headline, 'bold'),
                       styled(f'AI has read {read} of {seen} matched ads', MUTED),
                       join(bar(pct, inner - 6), styled(f' {round(pct * 100)}%', MUTED))], width)
         lines += [Text(''), caps('Needs you')]
@@ -322,10 +328,11 @@ class TodayScreen(ViewScreen):
                 at = len(lines)
             lines.append(selected(line, width, idx == self.sel))
         if not best:
-            lines.append(styled('No matches yet. The first run will fill this in.', MUTED))
+            lines.append(styled('Nothing is rated Good yet. Jobwatch is still reading new ads.' if seen else 'No matches yet. The first run will fill this in.', MUTED))
             if not needs:
                 lines += [Text(''), styled('New here? Open /welcome in the web board and add your CV. Jobwatch builds your profile and searches from it.', MUTED)]
-        lines += [Text(''), join(styled('enter', AMETHYST), ' open   ', styled(f'Browse all {total} jobs: press ', MUTED), styled('2', AMETHYST))]
+        browse = ('Browse every job in the table: press ', '5') if (held or seen) and not total else (f'Browse all {total} jobs: press ', '2')
+        lines += [Text(''), join(styled('enter', AMETHYST), ' open   ', styled(browse[0], MUTED), styled(browse[1], AMETHYST))]
         return lines, at
 
     def footer_keys(self):
@@ -335,6 +342,8 @@ class TodayScreen(ViewScreen):
         needs = self.needs()
         if self.sel < len(needs):
             item = needs[self.sel]
+            if item.get('info'):
+                return None
             return self.tui.show_view('inbox') if item.get('view') else self.tui.show_view('detail', item['pid'])
         best = self.best()
         if self.sel - len(needs) < len(best):
@@ -355,7 +364,7 @@ class JobsScreen(ViewScreen):
         rows = (self.data or {}).get('rows', [])
         lines = heading('Jobs', f'{len(rows)} in the queue. Newest activity first.') + [Text('')]
         if not rows:
-            return lines + empty_feed(width), 0
+            return lines + empty_feed(width) + [Text(''), join(styled('Every job Jobwatch found is in the Table: press ', MUTED), styled('5', AMETHYST), '.')], 0
         cols = Cols([('Score', 5), ('State', 26), ('Employer', 24), ('Title', 36)], width - 2, shrink=(('Title', 16), ('Employer', 14)))
         lines.append(join(' ', cols.header()))
         at = 0

@@ -8,6 +8,7 @@ import functools
 import html
 import json
 import re
+import sqlite3
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -1459,10 +1460,15 @@ def nav_counts(conn) -> dict:
     inbox = conn.execute("SELECT COUNT(*) FROM outcome_proposals WHERE status='proposed'").fetchone()[0]
     apps = conn.execute(
         "SELECT COUNT(*) FROM applications WHERE status NOT IN ('skipped','rejected','withdrawn')").fetchone()[0]
-    bad = conn.execute("SELECT COUNT(*) FROM source_health WHERE consecutive_failures>=3").fetchone()[0]
-    seen = conn.execute("SELECT COUNT(*) FROM source_health").fetchone()[0]
+    rows = health_rows(conn)                     # the same rule the Sources page uses, so the badge and the page agree
+    bad = sum(1 for r in rows if r["rag"] == "bad")
+    seen = len(rows)
+    try:
+        paused = conn.execute("SELECT COUNT(*) FROM agentic_incidents WHERE state='paused'").fetchone()[0]
+    except sqlite3.Error:
+        paused = 0
     from jobwatch.notify import unread
-    return {"inbox": inbox, "applications": apps, "sources_bad": bad, "sources_seen": seen, "chat": unread(conn)}
+    return {"inbox": inbox, "applications": apps, "sources_bad": bad, "sources_seen": seen, "paused": paused, "chat": unread(conn)}
 
 
 # -- insights -------------------------------------------------------------------------------------------
