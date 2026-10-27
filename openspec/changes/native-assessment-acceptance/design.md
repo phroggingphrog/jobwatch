@@ -28,6 +28,18 @@ The canonical reader `service.after_collect` can dispatch up to 20 selected post
 
 ## Risks / Trade-offs
 
+Owner-approved refinement: the dedicated `jobwatch-assessment-deepseek` combo uses
+the existing pinned `opencode-go/deepseek-v4.1-flash` connection with no fallback
+and zero gateway retries. Its `system_message` stays unset because OmniRoute
+replaces supplied system instructions. Jobwatch appends the packaged generic
+protocol text to its existing system message instead. Per-person model profiles
+bind `assessment_combo` and `assessment_prompt_hash`; both service run identity
+and native checkpoint identity include that route. The actual prompt bytes must
+match before dispatch. Candidate understanding keeps the base model, and its
+current digest stays reusable. Native malformed JSON is preserved on the wire
+and receives a bounded tool error, never a guessed syntax repair. Feedback and
+its correction count are atomic and replayed before canonical dispatch.
+
 - Synthetic success does not predict DeepSeek choices: require the single measured provider result, not a scripted call-count claim.
 - Corrected tool feedback may add a call and still miss the target: record quality and efficiency separately and leave activation paused.
 - Evaluation code changes invalidate job results: keep digest binding independent, never transplant old paid responses across changed input/protocol identities.

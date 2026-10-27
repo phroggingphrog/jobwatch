@@ -173,6 +173,17 @@ per-job operations; all existing daily/job limits and approved profile scope,
 including saved Unlimited settings, remain unchanged. This operation evaluates
 only and does not authorize document preparation or submission.
 
+An optional per-person evaluator model profile can set `assessment_combo` and
+`assessment_prompt_hash` together. This selects a transport alias only for native
+Evaluation; candidate understanding and other role picks stay unchanged. The hash
+must equal the packaged `prompts/native-assessment-protocol.txt` bytes. The route
+and revision bind evaluation reuse independently from candidate-digest freshness.
+Configure the combo's own native-tool profile and output allowance as well.
+Keep the gateway combo's `system_message` empty: OmniRoute replaces supplied
+system instructions with that setting. Jobwatch appends the verified protocol
+text to its existing system context instead, retaining stage skills and policy.
+Changing the prompt requires publishing a matching hash before paid dispatch.
+
 ### Guided onboarding in the chat agent
 
 The chat agent guides a new person through the same draft instead of waiting for a finished parse. Answers given

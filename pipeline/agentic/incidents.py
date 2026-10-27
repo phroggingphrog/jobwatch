@@ -16,7 +16,7 @@ from jobwatch.notifier import legacy
 FAILURE_REASONS = frozenset({
     'deadline_exceeded', 'execution_failed', 'model_unavailable', 'model_auth',
     'model_invalid_response', 'model_truncated_response', 'invalid_requirements',
-    'invalid_tool_arguments', 'invalid_tool_call', 'invalid_citation', 'artifact_invalid',
+    'invalid_tool_arguments', 'invalid_tool_arguments_json', 'invalid_tool_call', 'invalid_citation', 'artifact_invalid',
     'checkpoint_invalid', 'checkpoint_unavailable', 'checkpoint_conflict',
     'invalid_checkpoint', 'unknown_batch', 'batch_conflict', 'invalid_transition', 'candidate_hash_mismatch',
     'service_timeout', 'service_terminated', 'worker_interrupted',

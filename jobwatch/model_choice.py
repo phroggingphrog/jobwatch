@@ -123,6 +123,17 @@ def set_models(picks: dict, user: str | None = None) -> None:
 #   json_mode         send response_format=json_object (default true; never sent with native_tools)
 #   min_output_tokens raise every reply's max_tokens to at least this (reasoning tokens count against it)
 PROFILE_DEFAULT = {"native_tools": False, "json_mode": True, "min_output_tokens": None}
+ASSESSMENT_ROUTE_KEYS = ("assessment_combo", "assessment_prompt_hash")
+
+
+def _assessment_route(profile, model, user=None):
+    if not any(key in profile for key in ASSESSMENT_ROUTE_KEYS):
+        return {"model": model, "prompt_hash": None}
+    combo, revision = (profile.get(key) for key in ASSESSMENT_ROUTE_KEYS)
+    if (not isinstance(combo, str) or not isinstance(revision, str)
+            or not re.fullmatch(r"[a-f0-9]{64}", revision)):
+        raise ModelRefused("Assessment combo requires a model id and published prompt hash.")
+    return {"model": check(combo, "evaluator", user), "prompt_hash": revision}
 
 
 def gateway_profile(model: str, user: str | None = None) -> dict:
@@ -146,7 +157,14 @@ def gateway_profile(model: str, user: str | None = None) -> dict:
             out["min_output_tokens"] = None
         elif type(floor) is int and floor > 0:
             out["min_output_tokens"] = floor
+        out.update({key: found[key] for key in ASSESSMENT_ROUTE_KEYS if key in found})
+    _assessment_route(out, model, user)
     return out
+
+
+def native_assessment_route(model: str, user: str | None = None) -> dict:
+    """Evaluation-only transport alias; candidate understanding keeps its own model."""
+    return _assessment_route(gateway_profile(model, user), model, user)
 
 
 def set_gateway_profile(model: str, profile: dict, user: str | None = None) -> None:
@@ -154,7 +172,8 @@ def set_gateway_profile(model: str, profile: dict, user: str | None = None) -> N
     model = check(model, None, user)
     path = _cfg_dir(user) / "model_profiles.json"
     current = _read(path)
-    clean = {k: v for k, v in profile.items() if k in PROFILE_DEFAULT}
+    clean = {k: v for k, v in profile.items() if k in (*PROFILE_DEFAULT, *ASSESSMENT_ROUTE_KEYS)}
+    _assessment_route(clean, model, user)
     if clean:
         current[model] = clean
     else:

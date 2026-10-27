@@ -50,7 +50,7 @@ def test_normal_deferrals_and_decisions_are_not_failures(conn, reason):
 
 @pytest.mark.parametrize('reason', ['token_limit', 'turn_limit', 'failed_attempt_limit', 'missing_terminal',
                                   'tool_failed', 'invalid_model_payload', 'model_deadline',
-                                  'model_rate_limited', 'model_transient'])
+                                  'model_rate_limited', 'model_transient', 'invalid_tool_arguments_json'])
 def test_stopped_job_limits_and_actual_runtime_failures_pause_first_attempt(conn, reason):
     row = incidents.report(conn, posting_id=42, run_id='attempt-1', reason=reason, phase='assessment')
     assert row['reason'] == reason and row['state'] == 'paused'

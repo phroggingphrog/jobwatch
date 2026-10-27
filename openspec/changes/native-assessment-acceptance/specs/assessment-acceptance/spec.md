@@ -102,3 +102,19 @@ Acceptance artifacts SHALL expose only counts, validation outcomes and non-sensi
 #### Scenario: Acceptance evidence is published to tracking
 - **WHEN** results are recorded on the existing work card or architecture documentation
 - **THEN** shared content contains counts, outcome codes and source references without private candidate text, credentials or raw reasoning
+
+### Requirement: Scoped combo protocol instructions
+The system SHALL support a person-bound Evaluation combo and verified protocol prompt while preserving existing runtime system instructions. The combo and prompt revision SHALL invalidate affected evaluation reuse without changing candidate understanding or unrelated model roles. Malformed known-tool arguments SHALL receive bounded correction without executing a guessed repair.
+
+#### Scenario: Dedicated Evaluation combo is configured
+- **WHEN** a person configures an approved assessment combo and matching protocol prompt hash
+- **THEN** native Evaluation uses that combo with the protocol appended to its existing system context
+- **AND** candidate understanding, other model roles and current digest reuse remain unchanged
+
+#### Scenario: Prompt revision does not match packaged instructions
+- **WHEN** the configured protocol hash differs from the actual packaged prompt bytes
+- **THEN** the run refuses dispatch before any paid model operation
+
+#### Scenario: Malformed arguments are corrected after interruption
+- **WHEN** a known tool returns malformed JSON arguments and its error feedback was persisted
+- **THEN** the malformed operation is not executed, the original tool arguments and reasoning remain preserved, and unchanged-input recovery reuses the feedback without consuming another correction allowance

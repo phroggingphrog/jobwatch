@@ -12,6 +12,11 @@ The native assessment at `dd24c7a` still has no successful real-provider accepta
 - Run one controlled evaluate-only acceptance after offline readiness. A failure or efficiency miss preserves evidence and blocks automatic activation; it does not start a paid retry loop.
 - Add an explicit invocation-only maximum of one assessed posting for the controlled reader check, through the existing authenticated discovery request; normal runs retain their current defaults and owner limits. After acceptance, finish the existing change's release tasks through the native runtime and observe that bounded reader outcome before restoring automatic assessment.
 
+Owner follow-up: "you can make a custom combo and inject a prompt for it".
+Support an Evaluation-only OmniRoute combo and a hash-bound generic protocol
+prompt, preserving the candidate digest and unrelated model roles. OmniRoute's
+system-message replacement must not erase Jobwatch's runtime instructions.
+
 ## Capabilities
 
 ### New Capabilities
@@ -24,6 +29,6 @@ None. The main spec inventory is empty. The in-flight `candidate-digest-native-a
 
 ## Impact
 
-Targets `pipeline/agentic/autonomous.py` and focused native recovery tests only when a remaining defect is reproduced, plus the invocation limit in `service.py`, `discovery_api.py` and `discovery_ops.py`. Reuses candidate digest getters, canonical evidence/matching/gate, private checkpoints, budget ledgers and existing runtime configuration. TASK-279 remains the single work-status card.
+Targets `pipeline/agentic/autonomous.py` and focused native recovery tests only when a remaining defect is reproduced, the scoped route profile in `jobwatch/model_choice.py`, packaged protocol text, and the invocation limit in `service.py`, `discovery_api.py` and `discovery_ops.py`. Reuses candidate digest getters, canonical evidence/matching/gate, private checkpoints, budget ledgers and existing runtime configuration. TASK-279 remains the single work-status card.
 
 No new dependencies, agents, services, model providers, hidden spending caps, profile changes, statistical refits, documents or submission authority. Assessment stays DeepSeek-only; unrelated model roles are preserved. This proposal creates planning artifacts only.

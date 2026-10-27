@@ -5,12 +5,14 @@
 - [x] 1.1 Verify development revision/import paths, actual server-bound person, effective DeepSeek native protocol, current read-only digest and containment/accounting state; record count-only preflight and existing source/rollback references on TASK-279 without model calls or configuration writes.
 - [x] 1.2 Reproduce the observed multi-search/candidate-filename sequence with synthetic evidence through the actual native graph; verify bounded correction reaches a canonical evaluation without arbitrary file access, source fabrication or the legacy evaluator. Reuse existing repairs; fix only assertions that expose a remaining defect, and document the result in the existing assessment-failure report.
 - [x] 1.3 Verify reasoning/tool history and exact primary payload restoration across provider interruption, successful-read checkpoint loss and completed reuse; test that exhausted correction allowances survive resume and changed bindings reject reuse. Run focused native/recovery tests with verified development imports and record exact results.
+- [x] 1.4 Reproduce the malformed native argument failure offline; return bounded native-tool feedback without guessing or dispatching malformed arguments, preserve raw wire bytes/reasoning and atomically replay saved corrections before dispatch. Verify missing-fields plus malformed-JSON recovery, mixed calls, exhausted pauses and checkpoint loss.
 
 ## 2. Bound the production reader observation
 
 - [x] 2.1 Add optional invocation-only `max_assessments` to the canonical reader; test one posting assessed with remaining candidates explicitly deferred, omitted default behavior, strict 1–20 validation and unchanged saved owner limits/profile/collection behavior.
 - [x] 2.2 Carry the optional control through the existing authenticated discovery request and queued execution; test person isolation, receipt replay, same request ID with different controls refusing conflict and invalid requests dispatching zero model calls.
 - [x] 2.3 Document the bounded request and its limitation to assessed postings in existing discovery/architecture documentation; verify authenticated synthetic endpoint execution reaches the canonical reader and accounts for preparation plus per-job work without adding a service or changing runtime configuration.
+- [x] 2.4 Create the owner-authorized dedicated assessment combo with the existing approved route, configure Evaluation-only routing and hash-bound generic protocol injection, preserve original system context and current digest reuse, and verify packaging and per-person isolation with focused checks and review.
 
 ## 3. Prepare complete acceptance evidence
 

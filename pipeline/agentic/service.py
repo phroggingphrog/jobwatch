@@ -242,9 +242,11 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
     revision_hash = fingerprint(posting_id)
     digest_binding = {}
     if cfg.get('autonomous_evaluation', False):
+        from jobwatch.model_choice import native_assessment_route
         from pipeline.agentic.autonomous import implementation
         from pipeline.agentic.candidate_digest import input_manifest
         digest_binding['native_implementation'] = implementation()
+        digest_binding['assessment_route'] = native_assessment_route(cfg['evaluator_model'])
         digest_binding['candidate_digest'] = digest(input_manifest(conn, bundle=bundle, policy=policy,
             cfg=cfg, structural=structural, approved_profile=approved))
     return RunKey(posting_id=posting_id, ad_hash=content_hash(text.encode()), evidence_hash=bundle.bundle_hash,

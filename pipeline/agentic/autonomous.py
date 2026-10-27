@@ -19,6 +19,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, convert_to_openai_messages
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.tools import StructuredTool
+from langchain.tools import ToolRuntime
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langsmith import tracing_context
 from pydantic import Field
@@ -169,6 +170,8 @@ class NativeModel(BaseChatModel):
     person: str
     scope: object = Field(exclude=True, repr=False, default=None)
     purpose: str | None = None
+    argument_feedback: bool = False
+    system_append: str | None = Field(default=None, exclude=True, repr=False)
 
     @property
     def _llm_type(self):
@@ -186,11 +189,24 @@ class NativeModel(BaseChatModel):
             transcript = convert_to_openai_messages(messages)
             if len(transcript) != len(messages):
                 raise RuntimeErrorSafe('invalid_native_response')
+            if self.system_append:
+                system = next((wire for wire in transcript if wire['role'] == 'system'), None)
+                if system is None:
+                    raise RuntimeErrorSafe('invalid_native_response')
+                if isinstance(system['content'], str):
+                    system['content'] += '\n\n' + self.system_append
+                elif isinstance(system['content'], list):
+                    system['content'] = [*system['content'], {'type': 'text', 'text': self.system_append}]
+                else:
+                    raise RuntimeErrorSafe('invalid_native_response')
             for message, wire in zip(messages, transcript):
                 if isinstance(message, AIMessage):
                     reasoning = message.additional_kwargs.get('reasoning_content')
                     if isinstance(reasoning, str):
                         wire['reasoning_content'] = reasoning
+                    raw_calls = message.additional_kwargs.get('jobwatch_raw_tool_calls')
+                    if raw_calls:
+                        wire['tool_calls'] = raw_calls
             request = 'response:' + digest({'messages': transcript, 'tools': self.schemas})
             saved = self.journal.load(request)
             if saved is None:
@@ -240,19 +256,38 @@ class NativeModel(BaseChatModel):
                 if type(data) is not dict:
                     raise ValueError
                 calls = []
+                raw_calls = []
+                argument_errors = {}
                 names = {t['function']['name'] for t in self.schemas}
                 for item in data.get('tool_calls') or []:
                     fn = item['function']
-                    args = json.loads(fn['arguments']) if isinstance(fn['arguments'], str) else fn['arguments']
-                    if fn['name'] not in names or type(args) is not dict or not item.get('id'):
+                    if (fn['name'] not in names or not isinstance(item.get('id'), str)
+                            or not item['id'] or any(c['id'] == item['id'] for c in calls)):
+                        raise ValueError
+                    try:
+                        args = json.loads(fn['arguments']) if isinstance(fn['arguments'], str) else fn['arguments']
+                    except json.JSONDecodeError as exc:
+                        if not self.argument_feedback:
+                            raise
+                        argument_errors[item['id']] = {'position': exc.pos}
+                        args = {}
+                    if type(args) is not dict:
                         raise ValueError
                     calls.append({'name': fn['name'], 'args': args, 'id': item['id'], 'type': 'tool_call'})
+                    raw_calls.append({'id': item['id'], 'type': 'function', 'function': {
+                        'name': fn['name'], 'arguments': fn['arguments'] if isinstance(fn['arguments'], str)
+                        else json.dumps(fn['arguments'])}})
                 content = data.get('content') or ''
                 if not isinstance(content, str) or (not calls and not content.strip()):
                     raise ValueError
                 reasoning = data.get('reasoning_content')
+                metadata = {'jobwatch_response_key': request}
+                if isinstance(reasoning, str):
+                    metadata['reasoning_content'] = reasoning
+                if argument_errors:
+                    metadata.update(jobwatch_argument_errors=argument_errors, jobwatch_raw_tool_calls=raw_calls)
                 message = AIMessage(content=content, tool_calls=calls,
-                    additional_kwargs={'reasoning_content': reasoning} if isinstance(reasoning, str) else {})
+                                    additional_kwargs=metadata)
             except (KeyError, TypeError, ValueError):
                 raise RuntimeErrorSafe('invalid_native_response') from None
             self.budget.ensure_live()
@@ -275,7 +310,8 @@ class Slice:
         if prior_counts:
             self.counts.update({k: v for k, v in prior_counts.items() if k in self.counts and k != 'lock'})
         self.model = NativeModel(transport=llm, selected=model, budget=budget,
-            counts=self.counts, person=self.person, scope=self.scope, journal=self, cache=False)
+            counts=self.counts, person=self.person, scope=self.scope, journal=self, cache=False,
+            argument_feedback=True)
 
     def load(self, name):
         with self.lock:
@@ -284,9 +320,12 @@ class Slice:
         return json.loads(row[0]) if row else None
 
     def save(self, name, value):
+        self.save_many({name: value})
+
+    def save_many(self, values):
         with self.lock, self.conn:
-            self.conn.execute('INSERT OR REPLACE INTO autonomous_results VALUES (?,?)',
-                              (self.thread + ':' + name, json.dumps(value, allow_nan=False)))
+            self.conn.executemany('INSERT OR REPLACE INTO autonomous_results VALUES (?,?)',
+                [(self.thread + ':' + name, json.dumps(value, allow_nan=False)) for name, value in values.items()])
 
     def save_counts(self):
         self.save('counts', {k: v for k, v in self.counts.items() if k != 'lock'})
@@ -350,14 +389,22 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         structural = AnalysisResult.model_validate(analysis.get('structural_analysis', analysis))
         analysis = structural_summary(structural)
     policy = kwargs.get('decision_policy')
+    route = model_choice.native_assessment_route(kwargs['model'])
+    protocol_prompt = None
+    if route['prompt_hash'] is not None:
+        protocol_prompt = (Path(__file__).with_name('prompts') / 'native-assessment-protocol.txt').read_text()
+        if hashlib.sha256(protocol_prompt.encode()).hexdigest() != route['prompt_hash']:
+            raise RuntimeErrorSafe('invalid_configuration')
     binding = digest({'key': key.model_dump(mode='json'), 'person': users.current(),
         'policy': policy.model_dump(mode='json') if policy else None,
         'screen': screen, 'posting': posting, 'version': version(),
         'implementation': implementation(),
         'model': kwargs.get('model'), 'commute': kwargs.get('commute_km'),
+        'assessment_route': route,
         'analysis': analysis, 'insights': kwargs.get('model_insights'), 'embedding': kwargs.get('embedding_model'),
         'candidate_digest': kwargs.get('candidate_digest')})
-    run = Slice(conn, key, budget, llm, kwargs['model'], binding)
+    run = Slice(conn, key, budget, llm, route['model'], binding)
+    run.model = run.model.model_copy(update={'system_append': protocol_prompt})
     budget.ensure_live()
     run.save('screening', screen)
     if screen.get('outcome') == 'skip':
@@ -432,7 +479,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         validate_evaluation(JobAssessment(requirements_hash=result.requirements.requirement_hash,
             **{k: getattr(result, k) for k in ('matches', 'archetype', 'global_score', 'dimensions', 'report')}),
             key=key, extraction=extraction.model_copy(update={'uncertainties': ()}), bundle=bundle,
-            search=search, model=kwargs['model'], commute_km=kwargs.get('commute_km'))
+            search=search, model=route['model'], commute_km=kwargs.get('commute_km'))
         if (result.run_key != key or result.requirements != extraction.requirements
                 or result.facts.model_dump() != extraction.facts.model_dump() or result.location_evidence != extraction.location_evidence
                 or result.location_fit != extraction.location_fit or result.legitimacy != extraction.legitimacy):
@@ -440,51 +487,71 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         return result
 
     def tool(name, schema, handler, terminal=False):
-        def feedback(code, fields):
+        def feedback(code, fields, journal_key):
+            prior = run.load(journal_key)
+            if prior is not None:
+                return prior
             boundary = 'corrections:' + name + ':' + code
             count = run.load(boundary) or 0
             if count >= 1:
                 raise RuntimeErrorSafe(code)
-            run.save(boundary, count + 1)
             if code == 'skill_path_not_allowed':
-                return {'error': code, 'fields': fields,
+                answer = {'error': code, 'fields': fields,
                     'action': 'read_file reads packaged stage skills only: ' + ', '.join(skill_files()) + '. '
                               'For candidate source records use read_candidate_evidence with IDs from '
                               'the supplied inventory, or search_candidate_evidence_batch for unresolved requirements. '
                               'Primary records already returned remain in earlier tool messages. '
                               'No candidate or host file was opened. Correct this operation once.'}
-            return {'error': code, 'fields': fields,
+            elif code == 'invalid_tool_arguments_json':
+                answer = {'error': code, 'fields': fields,
+                    'action': 'The tool arguments are malformed JSON. No part of this operation was executed. '
+                              'Resubmit the complete arguments as one valid JSON object with all required '
+                              'schema fields and no trailing data. Correct the syntax once; do not invent facts.'}
+            else:
+                answer = {'error': code, 'fields': fields,
                     'action': 'Correct only the identified fields using supplied source text and the tool schema. '
                               'Evidence IDs must come from the supplied inventory or search results. '
                               'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
                               'Report sections must each be at most 4000 characters. Retry this operation once.'}
+            run.save_many({boundary: count + 1, journal_key: answer})
+            return answer
 
-        def invoke(**args):
+        def invoke(runtime: ToolRuntime, **args):
             with users.use(run.person), execution.use(run.scope), run.lock:
                 budget.ensure_live()
                 if run.load('evaluation') is not None:
                     raise RuntimeErrorSafe('terminal_already_selected')
+                message = next(m for m in reversed(runtime.state['messages']) if isinstance(m, AIMessage))
+                journal_key = 'feedback:' + digest({'response': message.additional_kwargs['jobwatch_response_key'],
+                                                    'tool': name, 'call': runtime.tool_call_id})
+                prior_feedback = run.load(journal_key)
+                if prior_feedback is not None:
+                    return prior_feedback
+                def respond(code, fields):
+                    return feedback(code, fields, journal_key)
+                if runtime.tool_call_id in message.additional_kwargs.get('jobwatch_argument_errors', {}):
+                    return respond('invalid_tool_arguments_json', ['arguments'])
                 try:
                     if name == 'complete_requirements':
                         missing = sorted(set(schema.model_json_schema().get('required', ())) - args.keys())
                         if missing:
-                            return feedback('missing_required_fields', missing)
+                            return respond('missing_required_fields', missing)
                     if terminal and isinstance(args.get('report'), dict):
                         oversized = ['report.' + key for key in 'ABCDEFG'
                                      if isinstance(args['report'].get(key), str) and len(args['report'][key]) > 4000]
                         if oversized:
-                            return feedback('invalid_model_payload', oversized)
+                            return respond('invalid_model_payload', oversized)
                     return handler(validate_model_payload(schema, args))
                 except CompletionError as exc:
-                    return feedback(exc.code, [exc.field])
+                    return respond(exc.code, [exc.field])
                 except (AgenticError, RuntimeErrorSafe) as exc:
                     if exc.code not in {'invalid_model_payload', 'invalid_evaluation', 'invalid_citation',
                                         'invalid_candidate_citation', 'contradictory_match', 'unretrieved_evidence',
                                         'requirements_required', 'requirements_changed', 'invalid_requirements'}:
                         raise
-                    return feedback(exc.code, ['matches' if terminal else 'requirements'])
+                    return respond(exc.code, ['matches' if terminal else 'requirements'])
                 except ValueError:
-                    return feedback('invalid_evaluation', ['report' if terminal else 'requirements'])
+                    return respond('invalid_evaluation', ['report' if terminal else 'requirements'])
         return StructuredTool(name=name, description=(
                 ('Read packaged stage skills only. Candidate records require read_candidate_evidence, not file paths. '
                  if name == 'read_file' else '') + f'Canonical {name} operation. Required fields: ' +
@@ -527,7 +594,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         if extraction is None:
             raise RuntimeErrorSafe('requirements_required')
         result = validate_evaluation(value, key=key, extraction=extraction, bundle=bundle, search=search,
-                                    model=kwargs['model'], commute_km=kwargs.get('commute_km'))
+                                    model=route['model'], commute_km=kwargs.get('commute_km'))
         run.save('evaluation', result.model_dump(mode='json'))
         return 'Canonical evaluation recorded.'
 

@@ -1,5 +1,39 @@
 # Assessment failures, first filtering and candidate understanding
 
+## Native format recovery and scoped protocol combo
+
+The owner requested continued troubleshooting and authorized a custom combo with
+prompt injection. Offline reproduction confirmed that malformed arguments died
+in NativeModel before tool feedback. Evaluation now preserves the original raw
+arguments/reasoning and returns one syntax-error ToolMessage for a known tool,
+without executing a parsed prefix or silently stripping the extra brace.
+Unknown tools, missing IDs and non-object arguments still fail closed. Cached
+feedback is returned before dispatch, with the feedback and correction count
+saved atomically, so restored state cannot turn an old rejection into a new action.
+
+Focused integration passed 107 tests. Final incident/recovery checks passed 54,
+including pause on exhausted syntax correction. The offline-built wheel contains
+the exact packaged protocol prompt; the final wheel must be rebuilt for release
+after any subsequent source changes. Bounded review findings on replay and missing
+package data were resolved. These checks do not establish provider acceptance.
+
+OmniRoute trace metadata matched the failing 7,605-byte argument hash in both
+Jobwatch and the stored provider-side response. The executed route was
+`opencode-go/deepseek-v4.1-flash`; no independent wire capture distinguishes
+DeepSeek generation, OpenCode mediation or earlier gateway preprocessing.
+The original `deepseek-flash` combo currently contains two leaves and was not edited.
+
+The dedicated `jobwatch-assessment-deepseek` combo uses the observed pinned
+OpenCode Go DeepSeek connection only, without fallback and with combo retries
+disabled. Its gateway `system_message` stays empty: that gateway field replaces
+existing system instructions. Jobwatch instead appends the generic packaged
+protocol prompt to the complete Evaluation system context, once per request.
+Per-person `assessment_combo` and `assessment_prompt_hash` profile fields bind
+the actual route and exact prompt revision to service/checkpoint reuse. A hash
+mismatch refuses dispatch. Candidate understanding and other model roles keep
+their existing selections; read-only verification found the current owner digest
+still reusable after the new binding. No provider success or deployment is implied.
+
 ## Provider acceptance at 998f116: malformed native arguments
 
 The single prepared `native-assessment-acceptance` run on posting 7621 used source
