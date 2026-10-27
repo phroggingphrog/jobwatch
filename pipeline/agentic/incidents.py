@@ -10,7 +10,7 @@ import re
 import time
 import uuid
 
-from jobwatch import notify
+from jobwatch import notify, users
 
 FAILURE_REASONS = frozenset({
     'deadline_exceeded', 'execution_failed', 'model_unavailable', 'model_auth',
@@ -149,7 +149,9 @@ def flush_notifications(conn, *, force=False, now=None, incident_id=None):
     if not _exists(conn, 'agentic_incidents') or not notify.is_live(conn):
         return 0
     now = time.time() if now is None else now
-    configured = bool(notify._setting('JOBWATCH_HERMES_SSH') and notify._setting('JOBWATCH_HERMES_FILE'))
+    # The legacy install-wide route belongs to the owner, never another account.
+    configured = users.current() == users.DEFAULT_USER and bool(
+        notify._setting('JOBWATCH_HERMES_SSH') and notify._setting('JOBWATCH_HERMES_FILE'))
     params = [now]
     where = "notification_state<>'handed_off' AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
     if not force:

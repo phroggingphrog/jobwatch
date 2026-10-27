@@ -67,6 +67,18 @@ def test_missing_hermes_configuration_is_reported_without_send(conn, monkeypatch
     assert row['notification_state'] == 'failed' and row['notification_error'] == 'hermes_not_configured'
 
 
+def test_other_account_never_uses_owners_install_wide_hermes_route(conn, monkeypatch):
+    from jobwatch import users
+    monkeypatch.setattr(notify, 'is_live', lambda _: True)
+    monkeypatch.setattr(notify, '_setting', lambda _: pytest.fail('another account must not read the owner route'))
+    monkeypatch.setattr(notify, '_send', lambda _: pytest.fail('another account must not notify owner Hermes'))
+    with users.use('other-person'):
+        row = incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed')
+        assert row['notification_state'] == 'failed'
+        assert row['notification_error'] == 'hermes_not_configured'
+        assert incidents.is_paused(conn, 42) and notify.unread(conn) == 1
+
+
 def test_notification_sender_claim_prevents_concurrent_duplicate(conn, monkeypatch):
     row = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed', now=100)
     conn.execute("UPDATE agentic_incidents SET notification_state='sending',notification_lease_until=300 WHERE incident_id=?",
