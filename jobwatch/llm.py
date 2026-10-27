@@ -220,7 +220,7 @@ class LLM:
                   max_tokens: int = 8000, temperature: float | None = None,
                   timeout: float = 60, deadline: float | None = None,
                   key_index: int = 0, reasoning_effort: str = "", tools: list | None = None,
-                  send_response_format: bool = True) -> LLMResult:
+                  send_response_format: bool = True, native_response: bool = False) -> LLMResult:
         """Make exactly one paid-route transport attempt using an explicit key.
 
         This method never loads key files or falls back to another credential. An upstream
@@ -248,11 +248,15 @@ class LLM:
         transport_failed = timed_out = False
         try:
             headers = {"Authorization": f"Bearer {keys[key_index]}", "Content-Type": "application/json"}
-            status, payload = self._post(model, body, headers, timeout, deadline)
+            if native_response:
+                status, payload = self.transport(f'{self.base_url}/chat/completions', headers, body,
+                                                 min(timeout, remaining))
+            else:
+                status, payload = self._post(model, body, headers, timeout, deadline)
             # A model behind the gateway may not know an optional OpenAI parameter (DeepSeek and reasoning_effort,
             # say). A 400 that names it is not billed: send the same request once without it. The reply is still
             # parsed as JSON, so the parameter only ever made the format stricter.
-            for _ in range(2):          # at most one retry per optional field
+            for _ in range(0 if native_response else 2):  # native attempts never change protocol or route
                 rejected = _rejected_options(status, payload, body)
                 if not rejected:
                     break
@@ -288,7 +292,9 @@ class LLM:
             if isinstance(usage_raw, dict):
                 usage = {k: usage_raw.get(k) for k in ("prompt_tokens", "completion_tokens")}
             calls = message.get("tool_calls") if tools else None
-            if calls:
+            if native_response:
+                data = message
+            elif calls:
                 # Same shape the JSON-per-step path returns. Only the first call is used: the runtime runs one
                 # operation per reply, and the model asks again after seeing the result.
                 function = calls[0]["function"]

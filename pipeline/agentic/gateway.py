@@ -103,7 +103,7 @@ def messages_for_gateway(messages):
 
 
 def call(llm, model, transcript, *, role, max_tokens, timeout, deadline, reasoning_effort=None,
-         tools=None, json_mode=True):
+         tools=None, json_mode=True, native_response=False):
     """One counted model call. `tools` (OpenAI function specs) switches to native tool calling and `json_mode=False`
     drops response_format; both come from the model's gateway profile and are off by default."""
     execution.require_route(llm, model)
@@ -116,6 +116,8 @@ def call(llm, model, transcript, *, role, max_tokens, timeout, deadline, reasoni
     result = None
     try:
         extra = {}
+        if native_response:
+            extra["native_response"] = True
         if tools:
             extra['tools'] = tools
         if not json_mode:

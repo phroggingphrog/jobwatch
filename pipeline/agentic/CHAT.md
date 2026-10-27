@@ -841,3 +841,41 @@ or its remaining limitation explicitly in rollout evidence.
 This contract supersedes the earlier MCP activity-as-Jobs list and chatbot-mediated
 preparation handoff. Existing native operations and retained historical client notes
 above do not add a second recommendation policy or weaken human confirmation.
+
+## Opt-in autonomous assessment slice
+
+`pipeline.agentic.autonomous_evaluation: true` selects the native-tool
+Screening -> Evaluation coordinator for one saved posting. The default retains
+the existing evaluator and run identity. Enabling the switch changes the run
+configuration hash; stage-skill changes also invalidate autonomous checkpoints.
+The selected evaluator model and credentials remain unchanged. No services or
+models are activated by this source option.
+
+The Deep Agents coordinator delegates a database/profile-driven screening stage
+and an evaluation stage. Evaluation reuses the canonical whole-ad extraction,
+primary-evidence matcher and advisory summary, each executing native tools.
+The caller still applies `gate_current`; no application or approval tools are
+available. Two packaged autonomous skills describe the actual stage boundaries.
+
+Private `autonomous-evaluation.sqlite` checkpoints bind person, posting, complete
+run key, ad, evidence, decision policy, rules/overrides, model, inputs and skills.
+A retry resumes unfinished work and replays canonical read/search operations to
+rebuild retrieved-evidence validation. Completed evaluation retries make no model
+calls. JobBudget and invocation reservations remain authoritative across retries;
+the caller must restore its existing budget checkpoint, as the native service does.
+Native transport attempts do not retry with another protocol, route or model.
+
+`evaluation_counts` artifacts contain only mode, calls, charged tokens and elapsed
+seconds, for comparison with the existing path. No automatic paid A/B run occurs.
+The SQLite `counts` record describes the latest invocation, including failed work;
+canonical budget checkpoints retain cumulative charges and unknown-usage reserves.
+
+This is the first assessment slice, not the six-stage architecture. Candidate
+assessment remains a canonical prerequisite (and uses its existing runtime when
+not cached); documents, discovery scheduling and submission are unchanged. This
+slice adds delegation overhead and makes no quality or call-reduction claim.
+Screening skips refuse evaluation without producing a fabricated evaluation.
+Model validation failures fail closed rather than returning to JSON mode. Live
+provider acceptance, release checks and activation belong to the release owner.
+Undo by disabling the source switch or reverting this commit; retained private
+checkpoints are inert when the switch is off.

@@ -91,6 +91,9 @@ def enabled(config) -> bool:
 
 def _config(config):
     raw = agentic_settings(config)
+    autonomous = raw.get('autonomous_evaluation', False)
+    if type(autonomous) is not bool:
+        raise AgenticError('invalid_configuration')
     credential_index = raw.get('credential_index', 0)
     if type(credential_index) is not int or credential_index < 0:
         raise AgenticError('invalid_configuration')
@@ -109,6 +112,10 @@ def _config(config):
               'batch_token_ceiling': int(raw.get('batch_token_ceiling', 2_000_000)),
               'job_seconds': min(900, float(raw.get('job_seconds', 900))),
               'batch_seconds': min(1800, float(raw.get('batch_seconds', 1800)))}
+    if autonomous:
+        values['autonomous_evaluation'] = True
+        from pipeline.agentic.autonomous import version
+        values['autonomous_version'] = version()
     if values['embedding_model'] is not None:
         from pipeline.agentic.execution import embedding_model_allowed
         if not embedding_model_allowed(values['embedding_model']):
@@ -611,11 +618,26 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
             saved_evaluation = adapter.load_artifact(key.value, 'evaluation')
             if saved_package is not None and saved_evaluation is None:
                 raise AgenticError('artifact_invalid')
-            evaluation = validate_model_payload(AgenticEvaluation, saved_evaluation) if saved_evaluation is not None else evaluate_job(
+            evaluator = evaluate_job
+            evaluation_extras = {}
+            if cfg.get('autonomous_evaluation', False) and saved_evaluation is None:
+                from pipeline.agentic.autonomous import evaluate_posting
+                evaluator = evaluate_posting
+                evaluation_extras = {'source_conn': conn, 'posting': posting}
+            evaluation_started = time.monotonic()
+            evaluation_calls = sum(budget.snapshot().role_turns.values())
+            evaluation_tokens = budget.charged_tokens
+            evaluation = validate_model_payload(AgenticEvaluation, saved_evaluation) if saved_evaluation is not None else evaluator(
                 key, ad_text, budget, llm, evidence_bundle=bundle, candidate_analysis=candidate,
                 model=cfg['evaluator_model'], research=_research(posting, budget, cfg),
                 commute_km=commute_km_of(dp, posting.get('location')), model_insights=models,
-                embedding_model=cfg['embedding_model'], decision_policy=dp)
+                embedding_model=cfg['embedding_model'], decision_policy=dp, **evaluation_extras)
+            if saved_evaluation is None and adapter.load_artifact(key.value, 'evaluation_counts') is None:
+                adapter.save_artifact(claim, 'evaluation_counts', {
+                    'mode': 'autonomous_native' if cfg.get('autonomous_evaluation', False) else 'existing',
+                    'calls': sum(budget.snapshot().role_turns.values()) - evaluation_calls,
+                    'charged_tokens': budget.charged_tokens - evaluation_tokens,
+                    'seconds': time.monotonic() - evaluation_started})
             decision = gate_current(evaluation, posting=posting, ad_text=ad_text, decision_policy=dp, policy=pol,
                                     captured_complete=text_kind == 'full', expected_run_key=key,
                                     evidence_bundle=bundle)

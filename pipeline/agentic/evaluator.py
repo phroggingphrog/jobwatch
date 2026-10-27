@@ -167,12 +167,13 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
                  career_profile: str = "", model: str = DEFAULT_MODEL,
                  research: ResearchCapability | None = None, commute_km: int | None = None,
                  model_insights: dict | None = None, embedding_model: str | None = None,
-                 decision_policy=None) -> AgenticEvaluation:
+                 decision_policy=None, role_runner=None) -> AgenticEvaluation:
     """Read the complete JD without candidate context, then match verified evidence.
 
     All caller inputs are snapshotted. Model output cannot modify extracted facts,
     requirement importance, identity or source hashes. Deterministic gate owns routing.
     """
+    run = role_runner or run_role
     invalid = False
     try:
         run_key = RunKey.model_validate(run_key.model_dump())
@@ -261,7 +262,7 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             "Report unavailable research honestly; never claim research occurred without using the tools. Finish using "
             "complete_requirements; do not consider whether a candidate happens to satisfy requirements."
         ))
-    extraction = run_role(jd_spec, jd_context, budget, llm).output
+    extraction = run(jd_spec, jd_context, budget, llm).output
     if type(extraction) is not JDExtraction:
         raise AgenticError("invalid_requirements")
     extraction = JDExtraction.model_validate(extraction.model_dump())
@@ -412,7 +413,7 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             "waive prerequisites. Explicit future hiring checks remain unresolved, not confirmed deficits or "
             "assumed consent/results. Finish with complete_requirement_matches."
         ))
-    matching = run_role(matching_spec, matching_context, budget, llm).output
+    matching = run(matching_spec, matching_context, budget, llm).output
     if type(matching) is not BoundRequirementAssessments:
         raise AgenticError("invalid_evaluation")
     # The summary cannot edit evidence judgments or their compatibility values.
@@ -450,7 +451,7 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             "Report research unavailable honestly. Candidate structural reference absence must not fabricate "
             "occupation mappings or prevent primary-evidence matching. Finish with complete_job_assessment."
         ))
-    assessment = run_role(spec, context, budget, llm).output
+    assessment = run(spec, context, budget, llm).output
     if type(assessment) is not JobSummary:
         raise AgenticError("invalid_evaluation")
     if assessment.requirements_hash != original.requirement_hash:
