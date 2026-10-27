@@ -89,8 +89,10 @@ function discoveryView(d: z.infer<typeof discoveryStatusOut>) {
   return { summary: lines.join("\n"), next };
 }
 
+const limitText = (v: number | null | undefined, unit: string) => (v === undefined ? "default" : v === null ? "unlimited" : `${v} ${unit}`);
 const settingsView = (d: z.infer<typeof discoverySettingsOut>) => ({
-  summary: d.daily_token_ceiling === null ? "Daily token allowance: Unlimited." : `Daily token allowance: ${d.daily_token_ceiling}.`,
+  summary: [d.daily_token_ceiling === null ? "Daily token allowance: Unlimited." : `Daily token allowance: ${d.daily_token_ceiling}.`,
+    `Per job: tokens ${limitText(d.job_token_ceiling, "tokens")}, time ${limitText(d.job_seconds, "s")}, agent steps ${limitText(d.job_max_turns, "steps")}.`].join(" "),
   next: ["Change it only if the person asks, with set_discovery_settings."],
 });
 
@@ -358,7 +360,7 @@ export const T = {
   }),
   set_discovery_settings: defineTool({
     name: "set_discovery_settings", title: "Set discovery settings", group: "settings", access: "model",
-    summary: "Save the daily token allowance the person asked for: a positive integer, or null for Unlimited. Keeps recorded spending, profile facts and per-run limits.",
+    summary: "Save the daily token allowance the person asked for: a positive integer, or null for Unlimited. Optional per-job limits (job_token_ceiling, job_seconds, job_max_turns) take a number or null for unlimited; leave them out to keep them. Keeps recorded spending and profile facts.",
     whenToUse: "the person explicitly asks to change the allowance",
     whenNotToUse: "changing it on your own",
     next: "get_discovery_settings to confirm",

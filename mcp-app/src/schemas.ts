@@ -147,7 +147,12 @@ export const submitOut = z.object({
   status: z.string(),
 });
 
-export const discoverySettingsOut = z.strictObject({ daily_token_ceiling: z.number().int().positive().nullable() });
+const jobLimit = z.number().int().positive().nullable().optional();
+export const discoverySettingsOut = z.strictObject({
+  daily_token_ceiling: z.number().int().positive().nullable(),
+  // Per-job limits: a number is the limit, null is unlimited, omitted on save leaves the value unchanged.
+  job_token_ceiling: jobLimit, job_seconds: jobLimit, job_max_turns: jobLimit,
+});
 export const discoverySettingsResult = discoverySettingsOut.extend({ next_actions: nextActions });
 
 export const discoveryStatusOut = z.object({
