@@ -45,6 +45,10 @@ class ChatContinue(BaseModel):
     message: str = Field(max_length=16000)
 
 
+class ChatDecide(Decide):
+    model_config = ConfigDict(extra='forbid')
+
+
 class Submit(BaseModel):
     confirm_digest: str = Field(max_length=200)
     shown_hash: str = Field(max_length=200)
@@ -153,6 +157,10 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     @app.post('/connector/chat/continue')
     def chat_continue(body: ChatContinue, who: str = Depends(authed)):
         return cc.chat_turn(who, body.thread_id, body.message)
+
+    @app.post('/connector/chat/decide')
+    def chat_decide(body: ChatDecide, who: str = Depends(authed)):
+        return cc.chat_decide(who, body.interaction_id, body.decision, body.binding)
 
     if provider is not None:
         _mount_oauth(app, provider, token, person)

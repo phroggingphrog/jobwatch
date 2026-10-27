@@ -14,6 +14,7 @@ import re
 import secrets
 import sqlite3
 import time
+from contextlib import closing, contextmanager
 from urllib.parse import urlparse
 
 from fastmcp import FastMCP
@@ -174,17 +175,34 @@ _CHAT_NOTE = ('Show the question(s) to the person and wait for their answer. Do 
               'send their words with career_ops_continue_chat.')
 
 
+@contextmanager
+def _profile_reviews(person):
+    from jobwatch.apply.paths import ensure_dir
+    from pipeline.agentic.private_sqlite import connect
+    if not users.valid_name(person):
+        raise RuntimeErrorSafe('invalid_request')
+    path = ensure_dir(users.user_dir(person) / 'career-chat') / 'state.sqlite'
+    with closing(connect(path)) as conn, conn:
+        conn.execute('CREATE TABLE IF NOT EXISTS connector_profile_reviews ('
+                     'id TEXT PRIMARY KEY, payload TEXT NOT NULL, expires REAL NOT NULL)')
+        yield conn
+
+
 def chat_turn(person: str, thread_id: str | None, message: str) -> dict:
     """One chat turn for `person` (never an argument of any tool). A human question comes back as plain content
     ("needs_answer": question + options) and is answered only by the person's own next message on the same thread;
-    approvals are never answered here: they are rejected (a rejection authorises nothing) and named, so the thread stays
-    usable and the person uses the app's own buttons. Nothing is invented on the person's behalf."""
+    Profile confirmation is offered as an exact-review widget; other approvals remain outside this chat path.
+    Nothing is invented on the person's behalf."""
     if type(message) is not str or not message.strip() or len(message) > 16000:
         raise RuntimeErrorSafe('invalid_request')
     if thread_id is not None and not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', thread_id or ''):
         raise RuntimeErrorSafe('invalid_request')
     thread_id = thread_id or secrets.token_urlsafe(32)
     result = dispatch(person=person, thread_id=thread_id, message=message)
+    return _chat_outcome(person, thread_id, result)
+
+
+def _chat_outcome(person: str, thread_id: str, result: dict) -> dict:
     declined: list[str] = []
     for _ in range(4):
         if result.get('status') != 'interrupted':
@@ -192,6 +210,25 @@ def chat_turn(person: str, thread_id: str | None, message: str) -> dict:
         items = result.get('interactions') or []
         if not items or len(items) > 8:
             raise RuntimeErrorSafe('unsupported_chat_interaction')
+        if (len(items) == 1 and items[0].get('type') == 'approval'
+                and items[0].get('operation') == 'profile_confirm'):
+            item = items[0]
+            binding = item.get('binding') or {}
+            subject = binding.get('subject')
+            if not isinstance(subject, dict) or not binding.get('digest'):
+                raise RuntimeErrorSafe('profile_not_ready')
+            interaction_id = secrets.token_urlsafe(16)
+            pending = {'thread_id': thread_id, 'item': item, 'checkpoint_id': result.get('checkpoint_id')}
+            with _profile_reviews(person) as conn:
+                conn.execute('DELETE FROM connector_profile_reviews WHERE expires<=?', (time.time(),))
+                conn.execute('INSERT INTO connector_profile_reviews VALUES(?,?,?)',
+                             (interaction_id, json.dumps(pending), time.time() + PENDING_SECONDS))
+            return {'schema_version': 1, 'type': 'assistant_message', 'status': 'awaiting_approval',
+                'thread_id': thread_id, 'tools': result.get('tools', []),
+                'approval': {'interaction_id': interaction_id, 'operation': 'profile_confirm',
+                    'summary': 'Confirm this exact profile and search scope. This authorises discovery and assessment only.',
+                    'review': subject},
+                '_meta': {'binding': binding['digest']}}
         questions = [i for i in items if i.get('type') == 'question' and isinstance(i.get('question'), str)
                      and i['question'].strip() and len(i['question']) <= 4000]
         if questions:
@@ -218,6 +255,25 @@ def chat_turn(person: str, thread_id: str | None, message: str) -> dict:
         out['declined'] = sorted(set(declined))
         out['note'] = 'Jobwatch asked for approval and it was declined here: nothing was run or sent. The person approves in the Jobwatch app.'
     return out
+
+
+def chat_decide(person: str, interaction_id: str, decision: str, binding: str) -> dict:
+    """Consume a profile-review button response; the graph rechecks the exact draft and scope."""
+    if decision not in ('approve', 'reject') or type(interaction_id) is not str or type(binding) is not str:
+        raise RuntimeErrorSafe('invalid_request')
+    with _profile_reviews(person) as conn:
+        conn.execute('BEGIN IMMEDIATE')
+        row = conn.execute('SELECT payload FROM connector_profile_reviews WHERE id=? AND expires>?',
+                           (interaction_id, time.time())).fetchone()
+        pending = json.loads(row[0]) if row else None
+        if (pending is None or pending['item'].get('operation') != 'profile_confirm'
+                or not hmac.compare_digest(binding, str(pending['item']['binding'].get('digest') or ''))):
+            raise RuntimeErrorSafe('approval_not_found')
+        conn.execute('DELETE FROM connector_profile_reviews WHERE id=?', (interaction_id,))
+    result = dispatch(person=person, thread_id=pending['thread_id'], human_decision=True,
+        expected_checkpoint=pending['checkpoint_id'], approval_bindings=[pending['item']['binding']],
+        decisions=[{'type': decision}])
+    return _chat_outcome(person, pending['thread_id'], result)
 
 
 # -- stage 3: Submit, only with the digest of the reviewed fill ----------------------------------------------

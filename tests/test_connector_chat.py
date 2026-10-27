@@ -119,3 +119,96 @@ def test_chat_cannot_reach_another_persons_threads(monkeypatch, client):
     monkeypatch.setattr(chatgpt_connector, 'dispatch', lambda **k: seen.append(k) or done())
     client.post('/connector/chat/continue', headers=H, json={'thread_id': 'someone-elses-thread', 'message': 'hi'})
     assert [k['person'] for k in seen] == ['owner']
+
+
+def profile_approval():
+    item = approval('profile_confirm')
+    item['binding'] = {'operation': 'profile_confirm', 'arguments': {'proposal_id': 'draft-1'},
+        'digest': 'review-digest', 'proposal_digest': 'proposal-digest', 'scope_digest': 'scope-digest',
+        'subject': {'revision': 3, 'facts': [{'section': 'location', 'value': 'Melbourne'}],
+                    'questions': [], 'scope': {'basis': ['Accounting'], 'locations': ['Victoria']},
+                    'authorises': ['discovery', 'assessment'], 'does_not_authorise': ['submission']}}
+    return item
+
+
+def offer_profile(agent, client):
+    agent.script.append(interrupted(profile_approval()))
+    return client.post('/connector/chat/start', headers=H, json={'message': 'Confirm my profile'}).json()
+
+
+def test_profile_confirmation_is_preserved_with_the_exact_review(agent, client):
+    body = offer_profile(agent, client)
+    assert body['status'] == 'awaiting_approval'
+    assert body['approval']['review'] == profile_approval()['binding']['subject']
+    assert body['_meta'] == {'binding': 'review-digest'}
+    assert len(agent.calls) == 1 and 'declined' not in body
+
+
+def test_profile_review_button_is_bound_and_single_use(agent, client):
+    body = offer_profile(agent, client)
+    payload = {'interaction_id': body['approval']['interaction_id'], 'decision': 'approve',
+               'binding': body['_meta']['binding']}
+    agent.script.append(done('Profile confirmed.'))
+    out = client.post('/connector/chat/decide', headers=H, json=payload)
+    assert out.status_code == 200 and out.json()['answer'] == 'Profile confirmed.'
+    call = agent.calls[-1]
+    assert call['person'] == 'owner' and call['thread_id'] == body['thread_id']
+    assert call['human_decision'] is True and call['decisions'] == [{'type': 'approve'}]
+    assert call['expected_checkpoint'] == 'cp1'
+    assert call['approval_bindings'] == [profile_approval()['binding']]
+    assert client.post('/connector/chat/decide', headers=H, json=payload).status_code == 400
+
+
+def test_profile_review_reject_auth_identity_expiry_and_binding(agent, client):
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    body = offer_profile(agent, client)
+    ident = body['approval']['interaction_id']
+    payload = {'interaction_id': ident, 'decision': 'approve', 'binding': 'wrong'}
+    assert client.post('/connector/chat/decide', json=payload).status_code == 401
+    assert client.post('/connector/chat/decide', headers=H, json=payload).status_code == 400
+    with pytest.raises(RuntimeErrorSafe, match='approval_not_found'):
+        chatgpt_connector.chat_decide('someone_else', ident, 'approve', 'review-digest')
+    with chatgpt_connector._profile_reviews('owner') as conn:
+        conn.execute('UPDATE connector_profile_reviews SET expires=0 WHERE id=?', (ident,))
+    payload['binding'] = 'review-digest'
+    assert client.post('/connector/chat/decide', headers=H, json=payload).status_code == 400
+    assert len(agent.calls) == 1
+
+
+def test_profile_review_rejection_never_approves(agent, client):
+    body = offer_profile(agent, client)
+    agent.script.append(done('Not confirmed.'))
+    out = client.post('/connector/chat/decide', headers=H, json={
+        'interaction_id': body['approval']['interaction_id'], 'decision': 'reject', 'binding': 'review-digest'})
+    assert out.status_code == 200 and agent.calls[-1]['decisions'] == [{'type': 'reject'}]
+
+
+def test_profile_review_cannot_be_consumed_by_job_approval_path(agent, client):
+    body = offer_profile(agent, client)
+    out = client.post('/connector/decide', headers=H, json={
+        'interaction_id': body['approval']['interaction_id'], 'decision': 'approve', 'binding': 'review-digest'})
+    assert out.status_code == 400 and len(agent.calls) == 1
+
+
+def test_profile_review_retains_canonical_changed_input_refusal(agent, client, monkeypatch):
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    body = offer_profile(agent, client)
+    calls = []
+    def stale(**kwargs):
+        calls.append(kwargs)
+        raise RuntimeErrorSafe('approval_inputs_changed')
+    monkeypatch.setattr(chatgpt_connector, 'dispatch', stale)
+    out = client.post('/connector/chat/decide', headers=H, json={
+        'interaction_id': body['approval']['interaction_id'], 'decision': 'approve', 'binding': 'review-digest'})
+    assert out.status_code == 400 and out.json()['error'] == 'approval_inputs_changed'
+    assert calls[0]['approval_bindings'] == [profile_approval()['binding']]
+
+
+def test_profile_review_survives_a_fresh_client_and_memory_registry(agent, client, two_people):
+    body = offer_profile(agent, client)
+    chatgpt_connector._PENDING.clear()
+    agent.script.append(done('Profile confirmed after reconnect.'))
+    fresh = TestClient(connector_http.create_app(token=TOKEN, person='owner'))
+    out = fresh.post('/connector/chat/decide', headers=H, json={
+        'interaction_id': body['approval']['interaction_id'], 'decision': 'approve', 'binding': 'review-digest'})
+    assert out.status_code == 200 and out.json()['answer'] == 'Profile confirmed after reconnect.'
