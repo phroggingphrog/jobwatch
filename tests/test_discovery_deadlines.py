@@ -133,3 +133,31 @@ def test_daily_allowance_caps_resumed_checkpoint_without_new_spending(world, mon
     assert second['charged_tokens'] == first['charged_tokens']
     assert first['batch_id'] in {item['batch_id'] for item in second['batches']}
     assert incidents.list_incidents(conn) == []
+
+
+def test_cancellation_releases_job_and_preserves_invocation_posting(world):
+    from jobwatch.llm import LLM
+    from tests.test_agentic_service import SyntheticGateway
+    from pipeline.agentic import execution
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    conn, config, bundle, add = world
+    add(42); add(43)
+    gateway = SyntheticGateway(bundle)
+    cancelled = [False]
+    def transport(*args, **kwargs):
+        response = gateway(*args, **kwargs)
+        cancelled[0] = True
+        return response
+    incidents.begin_run(conn, 'cancelled-discovery')
+    scope = execution.Execution('cancelled-discovery', cancelled=lambda: cancelled[0])
+    with execution.use(scope), pytest.raises(RuntimeErrorSafe, match='cancelled'):
+        service.agentic_batch_run([42, 43], config, conn, evidence_bundle=bundle,
+            llm=LLM(transport=transport, keys=['synthetic']), run_id='cancelled-discovery', operation='evaluate')
+    row = conn.execute('SELECT phase,posting_id,state FROM agentic_invocations WHERE run_id=?',
+                       ('cancelled-discovery',)).fetchone()
+    assert tuple(row) == ('assessment', 42, 'running')
+    job = conn.execute('SELECT status,reason,lease_until FROM agentic_runs WHERE posting_id=42').fetchone()
+    assert job[0] == 'held' and job[1] == 'cancelled' and job[2] == 0
+    assert conn.execute('SELECT COUNT(*) FROM agentic_runs WHERE posting_id=43').fetchone()[0] == 0
+    assert len(gateway.calls) == 1
+    assert incidents.list_incidents(conn) == []

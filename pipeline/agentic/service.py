@@ -607,6 +607,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         reason = code if isinstance(exc, AgenticError) and type(code) is str and code.replace('_', '').isalnum() else 'execution_failed'
         if isinstance(exc, RuntimeErrorSafe) and reason == 'invocation_budget_exhausted':
             reason = 'daily_budget'
+        if isinstance(exc, RuntimeErrorSafe) and reason == 'cancelled':
+            raise  # release the claim below, then preserve the active posting for the caller
+
     finally:
         try:
             try:
