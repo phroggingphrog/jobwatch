@@ -152,6 +152,30 @@ class APIStore:
             self.conn.execute('INSERT INTO api_threads VALUES(?,?,?)',(thread,time.time(),skill_hash))
             return self._insert(thread,payload,key)
 
+    def discovery_receipt(self, payload, request_id):
+        previous = self.conn.execute('SELECT id,input_hash FROM api_runs WHERE request_key=?',
+                                     (fingerprint(['discovery', request_id]),)).fetchone()
+        if previous:
+            if previous['input_hash'] != fingerprint(payload):
+                raise Conflict('idempotency_conflict')
+            return previous['id']
+        return None
+
+    def enqueue_discovery(self, payload, request_id, skill_hash):
+        key = fingerprint(['discovery', request_id])
+        with self.transaction():
+            previous = self.discovery_receipt(payload, request_id)
+            if previous:
+                return previous
+            if self.conn.execute("SELECT 1 FROM api_runs WHERE state IN ('queued','running') "
+                    "AND json_extract(input_json,'$.discovery')=1").fetchone():
+                raise Conflict('discovery_busy')
+            if self.conn.execute("SELECT COUNT(*) FROM api_runs WHERE state='queued'").fetchone()[0] >= 20:
+                raise Conflict('queue_full')
+            thread = uuid.uuid4().hex
+            self.conn.execute('INSERT INTO api_threads VALUES(?,?,?)', (thread, time.time(), skill_hash))
+            return self._insert(thread, payload, key)
+
     def public_run(self, ident):
         row = self.raw_run(ident)
         result = {k: row[k] for k in ('id', 'thread_id', 'state', 'error', 'created', 'updated')}
