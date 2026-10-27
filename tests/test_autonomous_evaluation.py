@@ -102,6 +102,77 @@ def test_native_reasoning_is_preserved_through_tool_turns_and_checkpoint_resume(
         assert len(seen) == 3
 
 
+def test_reasoning_journal_replay_after_tool_interruption_keeps_paid_responses(tmp_path, monkeypatch):
+    from pipeline.agentic.matching import RequirementEvidenceSearch
+    from pipeline.agentic.runtime import BatchBudget, JobBudget
+
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    llm, seen = transport(native_choices(roles), reasoning=True)
+    path = tmp_path / 'checkpoints.sqlite'
+    args = dict(posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
+    original = RequirementEvidenceSearch.read
+
+    def interrupted(*args, **kwargs):
+        raise RuntimeError('synthetic failure after journal before tool checkpoint')
+
+    b = budget(key)
+    monkeypatch.setattr(RequirementEvidenceSearch, 'read', interrupted)
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        with pytest.raises(RuntimeError, match='after journal before tool checkpoint'):
+            evaluate_autonomous(key, ad, b, llm, conn=conn, **args)
+        assert len(seen) == 2
+        assert conn.execute("SELECT count(*) FROM autonomous_results WHERE identity LIKE '%:response:%'").fetchone()[0] == 2
+        conn.execute('DELETE FROM chat_writes')
+        conn.execute('DELETE FROM chat_checkpoints')
+        conn.commit()
+
+    monkeypatch.setattr(RequirementEvidenceSearch, 'read', original)
+    resumed_budget = JobBudget.restore(b.snapshot(), batch=BatchBudget('synthetic', token_ceiling=2_000_000))
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, resumed_budget, llm, conn=conn, **args)
+        assert result.matches[0].judgment.status == 'demonstrated'
+        assert len(seen) == 3
+        assistant = [m for m in seen[-1]['messages'] if m['role'] == 'assistant']
+        assert [m['reasoning_content'] for m in assistant] == ['synthetic-reasoning-1', 'synthetic-reasoning-2']
+        assert [m['tool_calls'][0]['id'] for m in assistant] == ['call-1-0', 'call-2-0']
+        counts = json.loads(conn.execute("SELECT payload FROM autonomous_results WHERE identity LIKE '%:counts'").fetchone()[0])
+        assert counts['calls'] == 3 and counts['tokens'] == 54
+        assert evaluate_autonomous(key, ad, resumed_budget, llm, conn=conn, **args) == result
+        assert len(seen) == 3
+
+
+def test_reasoning_checkpoint_restart_after_provider_interruption_preserves_wire_history(tmp_path):
+    from pipeline.agentic.runtime import BatchBudget, JobBudget
+
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    llm, seen = transport([*choices[:2], OSError('synthetic provider interruption')], reasoning=True)
+    path = tmp_path / 'checkpoints.sqlite'
+    args = dict(posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
+    b = budget(key)
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        with pytest.raises(RuntimeErrorSafe, match='model_unavailable'):
+            evaluate_autonomous(key, ad, b, llm, conn=conn, **args)
+        assert len(seen) == 3
+        assert conn.execute('SELECT count(*) FROM chat_checkpoints').fetchone()[0] > 0
+
+    resumed_budget = JobBudget.restore(b.snapshot(), batch=BatchBudget('synthetic', token_ceiling=2_000_000))
+    resumed_llm, resumed_seen = transport(choices[2:], reasoning=True)
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, resumed_budget, resumed_llm, conn=conn, **args)
+        assert result.matches[0].judgment.status == 'demonstrated'
+        assert len(resumed_seen) == 1
+        assistant = [m for m in resumed_seen[0]['messages'] if m['role'] == 'assistant']
+        assert [m['reasoning_content'] for m in assistant] == ['synthetic-reasoning-1', 'synthetic-reasoning-2']
+        assert [m['tool_calls'][0]['id'] for m in assistant] == ['call-1-0', 'call-2-0']
+        assert resumed_seen[0]['messages'] == seen[-1]['messages']
+        counts = json.loads(conn.execute("SELECT payload FROM autonomous_results WHERE identity LIKE '%:counts'").fetchone()[0])
+        assert counts['calls'] == 4 and counts['tokens'] == 54
+        assert counts['unknown_usage_calls'] == 1
+        assert evaluate_autonomous(key, ad, resumed_budget, resumed_llm, conn=conn, **args) == result
+        assert len(resumed_seen) == 1
+
+
 @pytest.mark.parametrize('change', ['ad', 'person', 'config', 'screen', 'model', 'skills', 'insights', 'commute'])
 def test_changed_inputs_cannot_reuse_result(tmp_path, monkeypatch, change):
     from jobwatch import users
@@ -216,7 +287,7 @@ def test_canonical_gate_holds_missing_evidence_despite_high_score(tmp_path):
 
 def test_configured_turn_limit_survives_resume(tmp_path):
     bundle, ad, key, llm, seen, conn, args = run_case(tmp_path, choices=[
-        {'tool': 'read_full_ad', 'arguments': {}} for _ in range(8)])
+        {'tool': 'read_file', 'arguments': {'file_path': '/skills/autonomous-evaluation/SKILL.md'}} for _ in range(8)])
     bounded = budget(key)
     bounded.role_turn_limit = 3
     for _ in range(2):
@@ -227,7 +298,7 @@ def test_configured_turn_limit_survives_resume(tmp_path):
 
 def test_unlimited_does_not_convert_six_call_target_to_a_cap(tmp_path):
     bundle, ad, key, roles = build_case(tmp_path / 'evidence')
-    choices = [{'tool':'read_full_ad','arguments':{}} for _ in range(7)] + native_choices(roles)
+    choices = [{'tool':'read_file','arguments':{'file_path': '/skills/autonomous-evaluation/SKILL.md'}} for _ in range(7)] + native_choices(roles)
     llm, seen = transport(choices)
     unlimited = budget(key)
     unlimited.role_turn_limit = None

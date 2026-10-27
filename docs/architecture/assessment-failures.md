@@ -1,5 +1,40 @@
 # Assessment failures, first filtering and candidate understanding
 
+## Recovery follow-up: warm-digest acceptance still blocked
+
+One further controlled evaluate-only run on posting 7621 reused the current digest
+with zero candidate-understanding calls. It used six native model calls, one
+embedding operation and one unknown-usage public classifier operation: eight paid
+operations, 63,184 known actual tokens, 67,327 charged tokens and 75.01 seconds.
+The persisted batch charge equals the invocation charge. It failed
+`skill_path_not_allowed`; no canonical evaluation or completed-reuse acceptance
+was produced. The six native calls do not establish the efficiency target for a
+successful assessment. The previous cold run's total includes separate digest
+work and is not a like-for-like per-job token comparison.
+
+The saved tool-name trace is: complete requirements, batch evidence search,
+read 22 evidence IDs, read two IDs, refined evidence search, then
+`read_file("master_resume.md")`. No candidate file was opened through the skill
+tool. The tool's generic description failed to explain that it exposes packaged
+skills only, and the denied path aborted rather than returning useful guidance.
+The description and bounded correction now direct candidate reads to canonical
+evidence IDs. This last repair is offline-only; no subsequent paid run was made.
+
+The same follow-up removes the redundant supplied-ad tool, suppresses repeated
+primary payloads while retaining exact source access, and gives unknown evidence
+IDs one targeted correction. Review caught an intermediate checkpoint-loss defect:
+canonical action access could suppress the only restored source payload. Emitted
+evidence is now reconstructed from actual checkpoint tool messages independently
+of access history. Synthetic tests verify exact source and reasoning transcript
+restoration, journal reuse and zero-call completed reuse. Evaluation source hashes
+invalidate job results separately from the unchanged reusable digest.
+
+Automatic assessment remains paused, the live revision remains `9111a0d`, and
+collect-only timers remain active. The development acceptance's generated profile
+rules were resynchronized through the deployed Engine; person-owned rules and
+overrides, incidents, usage and checkpoints were preserved. No deployment or
+further paid experiment is justified by these checks alone.
+
 ## 2026-10-28 execution update: provider acceptance remains blocked
 
 The revised digest/native slice was exercised once on posting 7621, using the

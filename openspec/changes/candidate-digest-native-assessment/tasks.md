@@ -23,14 +23,24 @@
 - [x] 4.1 Integrate current candidate digest into the single native DeepSeek evaluation agent, removing redundant context/tools and enforcing extraction-before-matching; verify actual native message shapes, frozen coverage and exact citations in focused tests.
 - [x] 4.2 Preserve digest/job/classifier/embedding/orchestration accounting and configured Unlimited controls; verify numeric usage, unknown charges, safe resume and purpose counts without an artificial efficiency cap.
 - [x] 4.3 Run one controlled evaluate-only real posting after offline checks; record calls/tokens/time, digest cold/reused cost, citations and gate outcome. If it fails, report the specific blocker and retain checkpoints rather than declaring acceptance.
+- [x] 4.4 Prove reasoning-bearing interrupted recovery and checkpoint-loss journal replay; remove redundant ad reads, return primary evidence once per transcript and give unknown IDs bounded targeted feedback without granting source access. Keep evaluation-code invalidation independent of reusable candidate understanding.
+- [ ] 4.5 Revalidate one controlled DeepSeek evaluation with the current digest, requiring canonical evaluation, gate result and zero-call completed reuse; report actual calls/tokens/time and the 3–6-call target separately from classifiers/embeddings. Failed acceptance continues to block deployment.
 
 ## 5. Release and observed delivery
 
-- [x] 5.1 Resolve required local failures and review findings, run the full reconciled release suite once and jobwatch check --code, and record exact results plus relevant prior shard reuse provenance.
+- [ ] 5.1 Resolve required local failures and review findings, run the full reconciled release suite once and jobwatch check --code, and record exact results plus relevant prior shard reuse provenance.
 - [ ] 5.2 Commit/reconcile reviewed work into the native release path with backups; verify exact imported revision, DeepSeek assessment-only native protocol and service health after deployment.
 - [ ] 5.3 Observe one canonical live reader outcome and unchanged-input recovery before restoring automatic assessment; verify collectors, identity, limits and accounting remain correct and record rollback/results/remaining scope on TASK-279.
 
 ## Acceptance blocker
+
+The follow-up controlled run reused the current digest with zero digest calls,
+but failed `skill_path_not_allowed`: six native model calls plus one embedding
+and one public classifier, 67,327 charged tokens, 75.01 seconds. There is still
+no canonical evaluation or real completed-reuse proof. Targeted candidate-file
+versus skill-file guidance was repaired offline afterward; no further paid run
+was made. Task 4.5 and deployment remain open. The full release suite at 5.1
+is reopened because source changed; it is deferred until provider acceptance.
 
 The controlled 2026-10-28 provider run failed `unknown_evidence` after 29 paid
 operations, 376,015 charged tokens and 198.84 seconds. Candidate digestion completed,

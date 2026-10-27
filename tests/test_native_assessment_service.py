@@ -124,6 +124,22 @@ def test_native_run_identity_binds_prescreen_without_inventory_writes(world):
     assert conn.total_changes == before
 
 
+def test_evaluation_code_change_invalidates_job_without_invalidating_candidate_digest(world, monkeypatch):
+    from pipeline.agentic import service
+    from test_candidate_digest import inputs
+    from pipeline.agentic.candidate_digest import input_manifest
+    conn, config, bundle, add = world
+    config.settings['pipeline']['agentic']['autonomous_evaluation'] = True
+    conn, digest_inputs = inputs(world)
+    add(42)
+    before = input_manifest(conn, **{k: v for k, v in digest_inputs.items() if k != 'config'})
+    first = service.snapshot_inventory(conn, config, posting_ids=[42], evidence_bundle=bundle)
+    monkeypatch.setattr('pipeline.agentic.autonomous.implementation', lambda: 'changed-native-code')
+    changed = service.snapshot_inventory(conn, config, posting_ids=[42], evidence_bundle=bundle)
+    assert first[0]['run_key'] != changed[0]['run_key']
+    assert input_manifest(conn, **{k: v for k, v in digest_inputs.items() if k != 'config'}) == before
+
+
 def test_cached_native_ready_rechecks_prescreen_after_liveness(world, monkeypatch):
     from pipeline.agentic import service
     from pipeline.agentic.evaluator import evaluate_job
