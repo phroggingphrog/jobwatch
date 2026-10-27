@@ -43,6 +43,9 @@ def test_discovery_queue_is_idempotent_person_bound_and_not_a_chat(world):
 
 def test_explicit_retry_rechecks_inputs_and_releases_only_selected_incident(world, monkeypatch):
     config, profile = world
+    monkeypatch.setattr(ops.intake, 'discovery_scope', lambda person: SimpleNamespace(
+        daily_assessments=40, daily_token_ceiling=700,
+        model_dump=lambda **kwargs: {'daily_assessments': 40, 'daily_token_ceiling': 700}))
     with users.use('fixture-a'), job_connection(config, write=True) as conn:
         service.AgenticStore(conn).ensure()
         chosen = incidents.report(conn, posting_id=42, run_id='failed-42', reason='deadline_exceeded', phase='evaluation')
@@ -54,10 +57,12 @@ def test_explicit_retry_rechecks_inputs_and_releases_only_selected_incident(worl
         expected_context=item['retry_context'])
     seen = []
     def assess(ids, cfg, conn, **kwargs):
+        from pipeline.agentic import execution
         seen.extend(ids)
         assert not incidents.is_paused(conn, 42)
         assert incidents.is_paused(conn, 43)
         assert kwargs['operation'] == 'evaluate'
+        assert execution.current().token_ceiling == 700
         return {'processed': 1}
     monkeypatch.setattr(service, 'agentic_batch_run', assess)
     with APIStore('fixture-a') as store:
@@ -65,6 +70,10 @@ def test_explicit_retry_rechecks_inputs_and_releases_only_selected_incident(worl
         payload = json.loads(store.raw_run(queued['run_id'])['input_json'])
     assert ops.execute('fixture-a', config, queued['run_id'], payload)['processed'] == 1
     assert seen == [42]
+    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+        batch = conn.execute('SELECT token_ceiling FROM agentic_batches WHERE batch_id=?',
+                             ('retry-' + queued['run_id'],)).fetchone()
+        assert batch[0] == 2_000_000
     assert [i['incident_id'] for i in ops.status('fixture-a', config)['incidents']] == [other['incident_id']]
 
 

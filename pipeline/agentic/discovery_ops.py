@@ -108,7 +108,8 @@ def execute(person, config, run_id, payload, *, seconds=600):
                     budget_context = nullcontext() if current is not None else invocation.use(
                         invocation.Execution(run_id, seconds=max(0,deadline-time.time()), token_ceiling=remaining))
                     batch_id = 'retry-' + run_id
-                    service.AgenticStore(conn).create_batch(batch_id, remaining, deadline)
+                    service.AgenticStore(conn).create_batch(batch_id,
+                        service._config(config)['batch_token_ceiling'], deadline)
                     incidents.release(conn, payload['incident_id'], posting)
                     with budget_context:
                         result = service.agentic_batch_run([posting], config, conn, operation='evaluate',

@@ -1113,10 +1113,10 @@ def test_deferred_job_is_evaluated_next_day(world, monkeypatch):
     assert selected == [1]                           # still queued, untouched, and now within the new day's cap
 
 
-def test_lowered_token_ceiling_reaches_the_real_batch_runner(world, monkeypatch):
+def test_daily_allowance_does_not_shrink_persisted_batch_ceiling(world, monkeypatch):
     import time
     from jobwatch import users
-    from pipeline.agentic import service
+    from pipeline.agentic import execution, service
     from pipeline.nodes import ingest
     conn, config, bundle, add = world
     _reset_profile(users); confirm_discovery(config)       # daily ceiling = the configured batch ceiling
@@ -1128,9 +1128,16 @@ def test_lowered_token_ceiling_reaches_the_real_batch_runner(world, monkeypatch)
     _finished(conn, 90, time.time())
     seen = []
     monkeypatch.setattr(ingest, 'run', lambda *a, **k: {})
-    monkeypatch.setattr(service, 'run_agentic_job', lambda pid, cfg, conn, **kw: seen.append(kw['batch']._state.token_ceiling) or Stage.READY)
+    def run_job(pid, cfg, conn, **kwargs):
+        scope = execution.current()
+        seen.append((kwargs['batch']._state.token_ceiling, scope.token_ceiling))
+        return Stage.READY
+    monkeypatch.setattr(service, 'run_agentic_job', run_job)
     out = service.after_collect(conn, config, max_seconds=600)      # the real agentic_batch_run
-    assert out['processed'] == 2 and seen == [700, 700], out
+    assert out['processed'] == 2 and seen == [(ceiling, 700), (ceiling, 700)], out
+    batch_id = out['batch_id']
+    assert conn.execute('SELECT token_ceiling FROM agentic_batches WHERE batch_id=?',
+                        (batch_id,)).fetchone()[0] == ceiling
 
 
 def test_no_empty_batch_row_when_nothing_is_selected(world, monkeypatch):

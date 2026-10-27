@@ -964,9 +964,10 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         if room <= 0 or left <= 0:
             return {'deferred': 'daily_budget', **details, **_refresh_shortlist(conn,config)}
         extra = {}
-        if ids[:room] and left < cfg['batch_token_ceiling']:        # this run's own ceiling is what is left of the day's
+        if ids[:room] and left < cfg['batch_token_ceiling']:
             ident = 'agentic-' + uuid.uuid4().hex
-            store.create_batch(ident, left, time.time() + min(cfg['batch_seconds'], max_seconds if max_seconds is not None else cfg['batch_seconds']))
+            store.create_batch(ident, cfg['batch_token_ceiling'],
+                               time.time() + min(cfg['batch_seconds'], max_seconds if max_seconds is not None else cfg['batch_seconds']))
             extra['batch_id'] = ident
         cut = ids[room:]
         # Collection only evaluates; documents are drafted on an explicit request, never as a side effect of a timer.
