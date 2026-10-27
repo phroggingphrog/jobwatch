@@ -196,7 +196,7 @@ def discovery_budget(conn, purpose: str, *, token_ceiling: int, seconds: float =
         seconds = min(seconds, invocation.deadline - time.monotonic())
     scope = intake.discovery_scope(users.current())
     start, daily_limit = None, None
-    if scope is not None:
+    if scope is not None and scope.daily_token_ceiling is not None:
         from pipeline.agentic.service import _local_midnight
         start, daily_limit = _local_midnight(time.time()), scope.daily_token_ceiling
         room = daily_limit - _daily_spent(conn, start)

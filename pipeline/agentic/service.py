@@ -882,7 +882,9 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         return timed_out()
     AgenticStore(conn).ensure()
     jobs, tokens = _spent_today(conn, _local_midnight(_now()))
-    room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
+    from pipeline.agentic.discovery_settings import allowance
+    room = scope.daily_assessments - jobs
+    left = allowance(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
     if room <= 0 or left <= 0:
         return {'deferred': 'daily_budget', **_refresh_shortlist(conn,config)}
     from contextlib import ExitStack
@@ -973,7 +975,8 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         max_seconds = max(0, deadline-time.time())
         store = AgenticStore(conn)
         jobs, tokens = _spent_today(conn, _local_midnight(_now()))
-        room, left = scope.daily_assessments - jobs, scope.daily_token_ceiling - tokens
+        room = scope.daily_assessments - jobs
+        left = allowance(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
         details = {}
         if rel:
             details['relevance'] = rel

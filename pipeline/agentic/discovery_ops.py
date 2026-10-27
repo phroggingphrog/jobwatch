@@ -11,6 +11,7 @@ from jobwatch.candidate import intake
 from pipeline.agentic.api_store import APIStore, Conflict
 from pipeline.agentic.chat import job_connection, skill_version
 from pipeline.agentic import incidents, service
+from pipeline.agentic import discovery_settings
 
 
 def _context(conn, config, posting_id):
@@ -19,6 +20,7 @@ def _context(conn, config, posting_id):
     if not approved or captured is None:
         raise Conflict('retry_inputs_unavailable')
     value = {'profile': approved, 'posting': captured, 'config': service._config(config),
+             'discovery_settings': discovery_settings.get_settings(users.current(), config),
              'implementation': service.IMPLEMENTATION_VERSION}
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -51,6 +53,16 @@ def status(person, config):
     return {'enabled': scope is not None, 'postings': postings, 'assessments_today': spent[0],
             'charged_tokens_today': spent[1], 'scope': scope.model_dump(mode='json') if scope else None,
             'incidents': items, 'invocations': invocations, 'latest_run': latest}
+
+
+def get_settings(person, config):
+    with users.use(person):
+        return discovery_settings.get_settings(person, config)
+
+
+def set_settings(person, config, daily_token_ceiling):
+    with users.use(person):
+        return discovery_settings.set_settings(person, config, daily_token_ceiling)
 
 
 def start(person, config, request_id, *, incident_id=None, posting_id=None, expected_context=None):
@@ -94,13 +106,15 @@ def execute(person, config, run_id, payload, *, seconds=600):
                     raise Conflict('retry_inputs_changed')
                 scope = intake.discovery_scope(person)
                 spent = service._spent_today(conn, service._local_midnight(service._now()))
-                if scope is None or spent[0] >= scope.daily_assessments or spent[1] >= scope.daily_token_ceiling:
+                per_run_cap = service._config(config)['batch_token_ceiling']
+                remaining = discovery_settings.allowance(
+                    scope.daily_token_ceiling, spent[1], per_run_cap) if scope is not None else 0
+                if scope is None or spent[0] >= scope.daily_assessments or remaining <= 0:
                     return {'deferred': 'daily_budget'}
                 from jobwatch import adtext
                 with adtext.review_lock(adtext.lock_path(config)) as acquired:
                     if not acquired:
                         return {'skipped': 'busy'}
-                    remaining = min(scope.daily_token_ceiling-spent[1], service._config(config)['batch_token_ceiling'])
                     from pipeline.agentic import execution as invocation
                     current = invocation.current()
                     if current is not None:
@@ -109,7 +123,7 @@ def execute(person, config, run_id, payload, *, seconds=600):
                         invocation.Execution(run_id, seconds=max(0,deadline-time.time()), token_ceiling=remaining))
                     batch_id = 'retry-' + run_id
                     service.AgenticStore(conn).create_batch(batch_id,
-                        service._config(config)['batch_token_ceiling'], deadline)
+                        per_run_cap, deadline)
                     incidents.release(conn, payload['incident_id'], posting)
                     with budget_context:
                         result = service.agentic_batch_run([posting], config, conn, operation='evaluate',
