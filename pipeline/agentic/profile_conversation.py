@@ -45,7 +45,8 @@ def prompt(run):
     scope = subject['scope']
     lines += ['', 'Search scope:', '- Work: ' + '; '.join(scope['basis']),
         '- Locations: ' + ('; '.join(scope['locations']) or 'Not specified'),
-        '- Daily limits: ' + str(scope['daily_assessments']) + ' assessments; ' + str(scope['daily_token_ceiling']) + ' tokens.',
+        '- Daily limits: ' + str(scope['daily_assessments']) + ' assessments; ' +
+        ('Unlimited tokens.' if scope['daily_token_ceiling'] is None else str(scope['daily_token_ceiling']) + ' tokens.'),
         '', 'Confirming saves this profile and enables discovery and assessment within this scope.',
         'It does not approve application documents, employer messages or final Submit.',
         '', 'Do you confirm this profile and search scope? Reply yes to confirm, no to decline, or tell me what to change.']
