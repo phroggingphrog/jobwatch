@@ -32,3 +32,19 @@
 ## Workflow follow-up
 
 - Archive this follow-up and the original candidate-digest change only after their required implementation and runtime evidence is complete; planning status alone is not delivery.
+
+## Apply outcome
+
+Source candidate `998f116`: tasks 1.1–3.2 verified (8/14 complete). Final focused
+group 35 passed in 68.69 seconds; native/recovery group 43 passed, integrated
+group 64 passed, final metrics group 23 passed. Code checks, strict spec validation
+and whitespace checks passed; these are not provider acceptance.
+
+Task 4.1 was attempted once and remains open: DeepSeek native arguments failed
+strict JSON parsing after the required-fields correction, with one extra closing
+brace. Measured result: two native model calls plus one classifier, 21,211 charged
+tokens, 52.89 seconds, zero digest calls, zero embeddings and no canonical
+evaluation. Ledger reconciled. Numeric call range alone does not pass acceptance.
+No further paid attempt or argument normalization was performed. Tasks 4.2–5.4
+remain blocked; the original change's acceptance/release boxes remain open.
+Live remains `9111a0d`, reader scheduling paused and collect-only timers active.

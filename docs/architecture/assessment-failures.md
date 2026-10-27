@@ -1,5 +1,38 @@
 # Assessment failures, first filtering and candidate understanding
 
+## Provider acceptance at 998f116: malformed native arguments
+
+The single prepared `native-assessment-acceptance` run on posting 7621 used source
+`998f116b68228cdfb9cb78acd18c9dba7ae68901`. The ad was active and the current digest
+was reused with zero digest calls. Only the explicitly recorded prior skill-path
+incident was released; no unrelated incident was changed.
+
+The run failed `invalid_native_response`: two native model calls and one public
+classifier, zero embeddings, 17,068 known actual tokens, 21,211 charged tokens,
+one unknown-usage operation and 52.89 seconds. The persisted batch charge equals
+the measured invocation charge. There is no canonical evaluation, gate result or
+real completed-reuse proof. Three calls fall within the numerical target range
+only because assessment stopped early; this is not a successful efficiency result.
+
+Saved response metadata establishes the boundary without publishing candidate
+content or reasoning. The first `complete_requirements` arguments were valid JSON
+but contained only `requirements`; one persisted `missing_required_fields`
+correction was returned. The second supplied all six extraction fields, but its
+7,605-byte argument string had one trailing closing brace after the complete JSON
+object. Strict decoding reported `Extra data` at character 7,604. The response
+journal preserved it before parsing; no truncation, missing credential or HTTP
+failure was established. No argument repair or another paid attempt was made.
+
+Quality acceptance is false despite the numeric range flag. OpenSpec remains
+8/14 complete, with tasks 4.1 onward open. Full release testing, main reconciliation,
+deployment and automatic activation are deferred by the approved failure gate.
+The owner digest remains current; the new invalid-response incident, all charged
+usage and checkpoints remain retained. The deployed Engine resynchronized generated
+profile rules for the still-running old runtime, preserving person-owned rules.
+Automatic reader scheduling remains paused and deterministic collectors remain active.
+The existing legacy notification channel attempted its normal failure alert but
+delivery failed; no notification test or resend was performed.
+
 ## Acceptance follow-up readiness
 
 The `native-assessment-acceptance` follow-up reproduces the recorded multi-search,
