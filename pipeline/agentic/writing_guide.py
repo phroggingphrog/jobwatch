@@ -34,12 +34,13 @@ def _reference_material() -> tuple[dict, dict]:
         reads += 1
         try:
             raw = read_regular_file(path, min(_REFERENCE_FILE_BYTES, _REFERENCE_TOTAL_BYTES - used))
+            text = raw.decode('utf-8')
         except (OSError, ValueError, UnicodeError):
             library['unavailable'] += 1
             return None
         used += len(raw)
         return {'path': path.relative_to(root).as_posix(), 'sha256': hashlib.sha256(raw).hexdigest(),
-                'text': raw.decode('utf-8')}
+                'text': text}
 
     career = root / 'career'
     registry = read(career / 'style' / 'style_references.csv')
