@@ -56,3 +56,32 @@ def test_discovery_admission_remains_atomic_for_concurrent_identical_requests(wo
     assert one == two
     with APIStore('fixture-a') as store:
         assert store.conn.execute('SELECT COUNT(*) FROM api_runs').fetchone()[0] == 1
+
+
+def test_retry_setup_failure_after_release_repauses_only_the_selected_job(world, monkeypatch):
+    config, _ = world
+    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+        service.AgenticStore(conn).ensure()
+        selected = incidents.report(conn, posting_id=42, run_id='selected-failure', reason='deadline_exceeded')
+        incidents.report(conn, posting_id=43, run_id='other-failure', reason='model_unavailable')
+    item = next(row for row in ops.status('fixture-a', config)['incidents'] if row['posting_id'] == 42)
+    reached = []
+
+    def failed_setup(ids, config, conn, **kwargs):
+        assert ids == [42] and not incidents.is_paused(conn, 42)
+        assert incidents.is_paused(conn, 43)
+        reached.append('setup_before_model')
+        raise RuntimeError('Synthetic assessment setup failed')
+
+    monkeypatch.setattr(service, 'agentic_batch_run', failed_setup)
+    monkeypatch.setattr(service, 'configured_llm', lambda *a, **kw: pytest.fail('Setup failure must not dispatch a model'))
+    payload = {'discovery': True, 'incident_id': selected['incident_id'], 'posting_id': 42,
+               'expected_context': item['retry_context']}
+    with pytest.raises(RuntimeError, match='Synthetic assessment setup failed'):
+        ops.execute('fixture-a', config, 'setup-error', payload)
+    assert reached == ['setup_before_model']
+    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+        assert incidents.is_paused(conn, 42) and incidents.is_paused(conn, 43)
+        new = next(row for row in incidents.list_incidents(conn) if row['run_id'] == 'setup-error')
+        assert new['posting_id'] == 42 and new['reason'] == 'execution_failed' and new['state'] == 'paused'
+        assert conn.execute('SELECT state FROM agentic_invocations WHERE run_id=?', ('setup-error',)).fetchone()[0] == 'failed'

@@ -120,7 +120,8 @@ def execute(person, config, run_id, payload, *, seconds=600):
         except Exception as exc:
             state = 'failed'
             reason = getattr(exc, 'code', 'execution_failed')
-            incidents.report(conn, run_id=run_id, reason=reason, phase='discovery')
+            incidents.report(conn, run_id=run_id, reason=reason, phase='discovery',
+                             posting_id=payload.get('posting_id') if 'incident_id' in payload else None)
             raise
         finally:
             incidents.end_run(conn, run_id, state=state)
