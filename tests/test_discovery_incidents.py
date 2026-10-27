@@ -1,10 +1,13 @@
 """Synthetic incidents do not contact Hermes or run a model."""
 import sqlite3
+import time
 
 import pytest
 
 from jobwatch import notify
 from pipeline.agentic import incidents
+
+WINDOW = incidents.DIGEST_SECONDS
 
 
 @pytest.fixture
@@ -79,12 +82,15 @@ def test_run_configuration_failures_are_reported_without_pausing_unrelated_jobs(
 def test_delivery_retry_is_separate_and_does_not_duplicate_messages(conn, monkeypatch):
     sent = []
     live_transport(monkeypatch, lambda lines: sent.extend(lines) or False)
-    one = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='model_unavailable', now=100)
+    incidents.report(conn, posting_id=42, run_id='attempt-1', reason='model_unavailable', now=100)
+    assert incidents.flush_notifications(conn, now=100 + WINDOW - 1) == 0 and sent == []
+    assert incidents.flush_notifications(conn, now=100 + WINDOW) == 0
+    one = incidents.list_incidents(conn)[0]
     assert one['notification_state'] == 'failed' and one['notification_attempts'] == 1
     assert one['notification_error'] == 'hermes_handoff_failed'
-    assert incidents.flush_notifications(conn, now=120) == 0 and len(sent) == 1
+    assert incidents.flush_notifications(conn, now=100 + WINDOW + 20) == 0 and len(sent) == 1
     monkeypatch.setattr(notify, '_send', lambda lines: sent.extend(lines) or True)
-    assert incidents.flush_notifications(conn, now=160) == 1
+    assert incidents.flush_notifications(conn, now=100 + WINDOW + 60) == 1
     after = incidents.list_incidents(conn)[0]
     assert after['notification_state'] == 'handed_off' and after['notification_attempts'] == 2
     assert after['state'] == 'paused' and incidents.is_paused(conn, 42)
@@ -97,7 +103,9 @@ def test_missing_hermes_configuration_is_reported_without_send(conn, monkeypatch
     monkeypatch.setattr(notify, 'is_live', lambda _: True)
     monkeypatch.setattr(notify, '_setting', lambda _: '')
     monkeypatch.setattr(notify, '_send', lambda _: pytest.fail('not configured'))
-    row = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed')
+    incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed', now=100)
+    incidents.flush_notifications(conn, now=100 + WINDOW)
+    row = incidents.list_incidents(conn)[0]
     assert row['notification_state'] == 'failed' and row['notification_error'] == 'hermes_not_configured'
 
 
@@ -107,7 +115,9 @@ def test_other_account_never_uses_owners_install_wide_hermes_route(conn, monkeyp
     monkeypatch.setattr(notify, '_setting', lambda _: pytest.fail('another account must not read the owner route'))
     monkeypatch.setattr(notify, '_send', lambda _: pytest.fail('another account must not notify owner Hermes'))
     with users.use('other-person'):
-        row = incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed')
+        incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed', now=100)
+        incidents.flush_notifications(conn, now=100 + WINDOW)
+        row = incidents.list_incidents(conn)[0]
         assert row['notification_state'] == 'failed'
         assert row['notification_error'] == 'hermes_not_configured'
         assert incidents.is_paused(conn, 42) and notify.unread(conn) == 1
@@ -180,17 +190,54 @@ def test_read_only_status_does_not_create_schema(tmp_path):
         assert not incidents.is_paused(read, 42)
 
 
-def test_notification_flush_is_bounded_and_new_failure_has_priority(conn, monkeypatch):
-    old = [incidents.report(conn, posting_id=pid, run_id='old-' + str(pid), reason='execution_failed', now=100)
-           for pid in (1, 2, 3)]
+def test_twenty_one_incidents_in_one_window_send_one_digest_then_next_window_one_more(conn, monkeypatch):
     sent = []
     live_transport(monkeypatch, lambda lines: sent.extend(lines) or True)
-    fresh = incidents.report(conn, posting_id=4, run_id='fresh', reason='deadline_exceeded', now=200)
-    assert len(sent) == 1 and fresh['incident_id'] in sent[0]
-    assert all(item['notification_state'] == 'pending' for item in incidents.list_incidents(conn) if item['posting_id'] != 4)
-    assert incidents.flush_notifications(conn, now=201) == 1
-    assert len(sent) == 2 and old[0]['incident_id'] in sent[1]
-    assert sum(item['notification_state'] == 'pending' for item in incidents.list_incidents(conn)) == 2
+    for pid in range(1, 22):
+        incidents.report(conn, posting_id=pid, run_id=f'a-{pid}', reason='deadline_exceeded' if pid <= 12 else 'turn_limit',
+                         now=100 + pid)
+    incidents.report(conn, posting_id=1, run_id='a-1-again', reason='deadline_exceeded', now=200)
+    assert sent == [] and incidents.flush_notifications(conn, now=100 + WINDOW) == 0
+    assert incidents.flush_notifications(conn, now=101 + WINDOW) == 1
+    assert len(sent) == 1 and sent[0].count('\n') == 0
+    assert 'deadline_exceeded x12' in sent[0] and 'turn_limit x9' in sent[0]
+    assert '#1, #2, #3, #4, #5, #6, #7, #8, #9, #10 +2 more' in sent[0] and '#11' not in sent[0].split(';')[0]
+    assert sent[0].count('Explicit retry') == 1 and '21 stopped' in sent[0]
+    assert incidents.flush_notifications(conn, now=102 + WINDOW) == 0 and len(sent) == 1
+    incidents.report(conn, posting_id=30, run_id='b-30', reason='token_limit', now=100 + WINDOW + 10)
+    incidents.report(conn, posting_id=31, run_id='b-31', reason='token_limit', now=100 + WINDOW + 20)
+    assert incidents.flush_notifications(conn, now=100 + 2 * WINDOW + 9) == 0
+    assert incidents.flush_notifications(conn, now=100 + 2 * WINDOW + 10) == 1
+    assert len(sent) == 2 and 'token_limit x2 (jobs #30, #31)' in sent[1] and 'deadline_exceeded' not in sent[1]
+    assert incidents.flush_notifications(conn, now=100 + 4 * WINDOW) == 0 and len(sent) == 2
+    assert all(i['notification_state'] == 'handed_off' for i in incidents.list_incidents(conn))
+
+
+def test_same_reason_for_same_job_is_listed_once_in_a_digest(conn, monkeypatch):
+    sent = []
+    live_transport(monkeypatch, lambda lines: sent.extend(lines) or True)
+    for run in ('x', 'y'):
+        incidents.report(conn, posting_id=7, run_id=run, reason='turn_limit', now=100)
+        incidents.release(conn, incidents.list_incidents(conn)[0]['incident_id'], 7)
+    incidents.report(conn, run_id='run-1', reason='invalid_configuration', now=100)
+    assert incidents.flush_notifications(conn, now=100 + WINDOW) == 1
+    assert 'turn_limit x1 (jobs #7)' in sent[0] and 'invalid_configuration x1 (1 discovery run)' in sent[0]
+    assert 'Check discovery status' in sent[0]
+
+
+def test_failed_digest_handoff_keeps_everything_pending_and_delivers_once(conn, monkeypatch):
+    sent = []
+    live_transport(monkeypatch, lambda lines: False)
+    for pid in (1, 2, 3):
+        incidents.report(conn, posting_id=pid, run_id=f'a-{pid}', reason='execution_failed', now=100)
+    assert incidents.flush_notifications(conn, now=100 + WINDOW) == 0
+    assert all(i['notification_state'] == 'failed' and i['handed_off_at'] is None for i in incidents.list_incidents(conn))
+    live_transport(monkeypatch, lambda lines: sent.extend(lines) or True)
+    assert incidents.flush_notifications(conn, now=100 + WINDOW + 30) == 0 and sent == []
+    incidents.report(conn, posting_id=4, run_id='late', reason='execution_failed', now=100 + WINDOW + 40)
+    assert incidents.flush_notifications(conn, now=100 + WINDOW + 61) == 1
+    assert len(sent) == 1 and 'execution_failed x4 (jobs #1, #2, #3, #4)' in sent[0]
+    assert incidents.flush_notifications(conn, now=100 + 3 * WINDOW) == 0 and len(sent) == 1
 
 
 def test_last_successful_phase_is_not_inferred_from_starting_work(conn):
@@ -256,6 +303,7 @@ def test_reconcile_without_activity_is_read_only_and_handoffs_are_bounded(conn, 
     sent = []
     live_transport(monkeypatch, lambda lines: sent.extend(lines) or True)
     rows = incidents.reconcile_known_failures(conn)
-    assert len(rows) == 3 and len(sent) == 1
+    assert len(rows) == 3 and sent == []
+    assert incidents.flush_notifications(conn, now=time.time() + WINDOW) == 1 and len(sent) == 1
     assert len(incidents.list_incidents(conn)) == 3
-    assert sum(i['notification_state'] == 'pending' for i in incidents.list_incidents(conn)) == 2
+    assert all(i['notification_state'] == 'handed_off' for i in incidents.list_incidents(conn))

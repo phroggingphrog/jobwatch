@@ -28,6 +28,8 @@ FAILURE_REASONS = frozenset({
 })
 _CODE = re.compile(r'^[a-z][a-z0-9_]{0,79}$')
 _RETRY_SECONDS = (60, 300, 900, 3600)
+DIGEST_SECONDS = 6 * 3600
+_DIGEST_IDS = 10
 
 
 def _exists(conn, table):
@@ -127,7 +129,7 @@ def report(conn, *, posting_id=None, run_id=None, reason, phase=None, now=None, 
         conn.rollback()
         raise
     if notify_immediately:
-        flush_notifications(conn, now=now, incident_id=ident)
+        flush_notifications(conn, now=now)
     return _get(conn, ident)
 
 
@@ -149,46 +151,69 @@ def release(conn, incident_id, posting_id, *, expected_run_id=None):
     return _get(conn, incident_id)
 
 
-def flush_notifications(conn, *, force=False, now=None, incident_id=None):
-    """Attempt at most one bounded delivery. SSH append acknowledges handoff only."""
+def _digest(rows):
+    """One line for the whole window: counts per reason, each job once per reason, retry hint once."""
+    groups = {}
+    for row in rows:
+        key = row['posting_id'] if row['posting_id'] is not None else row['incident_id']
+        groups.setdefault(row['reason'], {}).setdefault(key, row['posting_id'])
+    parts = []
+    for reason, found in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0])):
+        jobs = [f'#{pid}' for pid in found.values() if pid is not None]
+        shown = ', '.join(jobs[:_DIGEST_IDS]) + (f' +{len(jobs) - _DIGEST_IDS} more' if len(jobs) > _DIGEST_IDS else '')
+        runs = len(found) - len(jobs)
+        detail = '; '.join(x for x in (f'jobs {shown}' if jobs else '', f'{runs} discovery run' + 's' * (runs > 1) if runs else '') if x)
+        parts.append(f'{reason} x{len(found)} ({detail})')
+    hints = (' Explicit retry is required for each listed job.' if any(r['posting_id'] is not None for r in rows) else '') + \
+            (' Check discovery status before retrying.' if any(r['posting_id'] is None for r in rows) else '')
+    return f"Jobwatch failure digest: {sum(len(g) for g in groups.values())} stopped. {'; '.join(parts)}.{hints} [digest:{rows[0]['incident_id']}]"
+
+
+def flush_notifications(conn, *, force=False, now=None):
+    """Attempt at most one digest of all pending incidents. SSH append acknowledges handoff only.
+
+    A digest is due once the oldest pending incident is DIGEST_SECONDS old and the last one went out at least
+    that long ago; a failed handoff keeps every incident pending and retries after the usual backoff."""
     if not _exists(conn, 'agentic_incidents') or not notify.is_live(conn):
         return 0
     now = time.time() if now is None else now
     # The legacy install-wide route belongs to the owner, never another account.
     configured = users.current() == users.DEFAULT_USER and bool(
         notify._setting('JOBWATCH_HERMES_SSH') and notify._setting('JOBWATCH_HERMES_FILE'))
-    params = [now]
-    where = "notification_state<>'handed_off' AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
+    cur = conn.execute("SELECT incident_id,created_at,next_notification_at FROM agentic_incidents "
+                       "WHERE notification_state<>'handed_off' AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
+                       'ORDER BY created_at,incident_id', (now,))
+    pending = cur.fetchall()
+    if not pending:
+        return 0
     if not force:
-        where += 'AND next_notification_at<=? '
-        params.append(now)
-    if incident_id is not None:
-        where += 'AND incident_id=? '
-        params.append(incident_id)
-    cur = conn.execute('SELECT incident_id FROM agentic_incidents WHERE ' + where + 'ORDER BY created_at LIMIT 1', params)
-    ids = [r[0] for r in cur.fetchall()]
-    handed_off = 0
-    for ident in ids:
-        with conn:
-            claimed = conn.execute("UPDATE agentic_incidents SET notification_state='sending',notification_lease_until=?, "
-                "notification_attempts=notification_attempts+1 WHERE incident_id=? AND notification_state<>'handed_off' "
-                'AND (notification_lease_until IS NULL OR notification_lease_until<=?) AND (? OR next_notification_at<=?)',
-                (now + 60, ident, now, bool(force), now)).rowcount
-        if not claimed:
-            continue
-        row = _get(conn, ident)
-        try:
-            sent = configured and notify._send([_message(row)])
-        except Exception:
-            sent = False
-        delay = _RETRY_SECONDS[min(row['notification_attempts'] - 1, len(_RETRY_SECONDS) - 1)]
-        with conn:
-            conn.execute('UPDATE agentic_incidents SET notification_state=?,notification_lease_until=NULL,'
+        last = conn.execute('SELECT MAX(handed_off_at) FROM agentic_incidents').fetchone()[0]
+        if pending[0][1] + DIGEST_SECONDS > now or (last is not None and last + DIGEST_SECONDS > now) \
+                or max(r[2] for r in pending) > now:
+            return 0
+    claimed = []
+    with conn:
+        for ident, _, _ in pending:
+            if conn.execute("UPDATE agentic_incidents SET notification_state='sending',notification_lease_until=?, "
+                            "notification_attempts=notification_attempts+1 WHERE incident_id=? AND notification_state<>'handed_off' "
+                            'AND (notification_lease_until IS NULL OR notification_lease_until<=?)',
+                            (now + 60, ident, now)).rowcount:
+                claimed.append(ident)
+    if not claimed:
+        return 0
+    rows = [_get(conn, ident) for ident in claimed]
+    try:
+        sent = configured and notify._send([_digest(rows)])
+    except Exception:
+        sent = False
+    delay = _RETRY_SECONDS[min(max(r['notification_attempts'] for r in rows) - 1, len(_RETRY_SECONDS) - 1)]
+    with conn:
+        conn.executemany('UPDATE agentic_incidents SET notification_state=?,notification_lease_until=NULL,'
                          'next_notification_at=?,handed_off_at=?,notification_error=? WHERE incident_id=?',
-                         ('handed_off' if sent else 'failed', now + delay, now if sent else None,
-                          None if sent else 'hermes_handoff_failed' if configured else 'hermes_not_configured', ident))
-        handed_off += bool(sent)
-    return handed_off
+                         [('handed_off' if sent else 'failed', now + delay, now if sent else None,
+                           None if sent else 'hermes_handoff_failed' if configured else 'hermes_not_configured', ident)
+                          for ident in claimed])
+    return int(bool(sent))
 
 
 def begin_run(conn, run_id, unit=None):
