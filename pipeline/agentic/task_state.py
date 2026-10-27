@@ -1,8 +1,7 @@
 """Plain task state and Stop for one posting (owner 2026-10-25: Hermes-style chat).
 
 Maps the preparation selection and the chat-approved Submit request to one label so chat never calls a
-draft "submitted" and never hides an unknown outcome. Assessment activity also makes a posting visible,
-without changing its application state. Stop only removes authority; it needs no approval.
+draft "submitted" and never hides an unknown outcome. Stop only removes authority; it needs no approval.
 """
 from __future__ import annotations
 
@@ -65,7 +64,7 @@ def _has(conn: sqlite3.Connection, table: str) -> bool:
 
 
 def jobs_overview(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
-    """One row per posting with application, preparation, submit or assessment activity, newest first. Read-only."""
+    """One row per posting with application, preparation or submit activity, newest first. Read-only."""
     seen: dict[int, float] = {}
 
     def touch(posting_id, at):
@@ -79,10 +78,6 @@ def jobs_overview(conn: sqlite3.Connection, limit: int = 50) -> list[dict]:
                 touch(pid, at)
     if _has(conn, 'submit_requests'):
         for pid, at in conn.execute('SELECT posting_id, updated_at FROM submit_requests'):
-            touch(pid, at)
-    if _has(conn, 'agentic_activity'):
-        for pid, at in conn.execute('SELECT posting_id, MAX(at) FROM agentic_activity '
-                                    'WHERE posting_id IS NOT NULL GROUP BY posting_id'):
             touch(pid, at)
     rows = []
     for pid in sorted(seen, key=lambda p: (seen[p], p), reverse=True)[:max(limit, 0)]:

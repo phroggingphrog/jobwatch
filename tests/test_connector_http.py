@@ -40,7 +40,8 @@ def test_refuses_to_start_without_a_long_token():
 
 
 def test_reads_are_for_the_configured_person_only(client):
-    jobs = client.get('/connector/overview', headers=H).json()['jobs']
+    assert client.get('/connector/overview', headers=H).json()['jobs'] == []
+    jobs = client.get('/connector/applications', headers=H).json()['jobs']
     assert [j['employer'] for j in jobs] == ['Acme Pty']
     assert client.get('/connector/jobs/1/status', headers=H).json()['state'] == 'draft ready'
 
@@ -250,3 +251,16 @@ def test_live_read_and_rebind_run_as_the_configured_person_not_the_default(live,
     ok = guest.post('/connector/jobs/1/submit', headers=H,
                     json={'confirm_digest': fresh['submit_digest'], 'shown_hash': fresh['review']['shown_hash']})
     assert ok.status_code == 200 and live.rebound == [fresh['submit_digest']]
+
+
+def test_preparation_requires_literal_consent_and_exact_typed_inputs(client, monkeypatch):
+    calls = []
+    monkeypatch.setattr(connector_http.cc, 'prepare_selected', lambda person, posting_id, **kw:
+                        calls.append((person, posting_id, kw)) or {'posting_id': posting_id, 'state': 'queued'})
+    args = {'expected_entry_id': 'entry', 'expected_run_key': 'run', 'request_id': 'request', 'confirmed': True}
+    for bad in (False, 1, 'true', None):
+        assert client.post('/connector/jobs/1/prepare', headers=H, json=dict(args, confirmed=bad)).status_code == 422
+    assert not calls
+    assert client.post('/connector/jobs/1/prepare', headers=H, json=args).status_code == 200
+    assert calls == [('owner', 1, args)]
+    assert client.post('/connector/jobs/1/prepare', headers=H, json=dict(args, person='guest')).status_code == 422

@@ -28,7 +28,18 @@ from pipeline.agentic.api_store import Conflict
 
 
 class Prepare(BaseModel):
-    instructions: str = Field('', max_length=4000)
+    model_config = ConfigDict(extra='forbid', strict=True)
+    expected_entry_id: str = Field(min_length=1, max_length=200)
+    expected_run_key: str = Field(min_length=1, max_length=200)
+    request_id: str = Field(min_length=1, max_length=200)
+    confirmed: Literal[True]
+
+    @field_validator('confirmed', mode='before')
+    @classmethod
+    def explicit_confirmation(cls, value):
+        if value is not True:
+            raise ValueError('confirmed must be true')
+        return value
 
 
 class Revise(BaseModel):
@@ -178,13 +189,34 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     async def _candidate_failed(_, exc):
         return JSONResponse({'error': 'profile_invalid'}, status_code=409)
 
+    from pipeline.agentic.selection import SelectionError
+    from jobwatch.preferences import PreferenceError
+
+    @app.exception_handler(SelectionError)
+    @app.exception_handler(PreferenceError)
+    async def _shortlist_failed(_, exc):
+        return JSONResponse({'error': str(exc)}, status_code=409)
+
     @app.get('/connector/overview')
     def overview(limit: int = 50, who: str = Depends(authed)):
         return cc.overview(who, limit)
 
+    @app.get('/connector/applications')
+    def applications(limit: int = 50, who: str = Depends(authed)):
+        return cc.application_overview(who, limit)
+
+    @app.post('/connector/shortlist/refresh')
+    def refresh_shortlist(who: str = Depends(authed)):
+        return cc.overview(who, 100, refresh=True)
+
+    @app.get('/connector/assessments/{posting_id}')
+    @app.get('/connector/applications/{posting_id}')
+    def history_detail(posting_id: int, who: str = Depends(authed)):
+        return {'job': cc.detail(who, posting_id)}
+
     @app.get('/connector/jobs/{posting_id}')
     def job(posting_id: int, who: str = Depends(authed)):
-        return {'job': cc.detail(who, posting_id)}
+        return {'job': cc.recommended_detail(who, posting_id)}
 
     @app.get('/connector/jobs/{posting_id}/review')
     def review(posting_id: int, who: str = Depends(authed)):
@@ -198,10 +230,7 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
 
     @app.post('/connector/jobs/{posting_id}/prepare')
     def prepare(posting_id: int, body: Prepare, who: str = Depends(authed)):
-        message = f'Prepare the application for posting {posting_id}.' + (
-            f' Instructions: {body.instructions}' if body.instructions else '')
-        data, meta = cc._hand_off(who, posting_id, message)
-        return {'data': data, 'meta': meta}
+        return cc.prepare_selected(who, posting_id, **body.model_dump())
 
     @app.post('/connector/jobs/{posting_id}/revise')
     def revise(posting_id: int, body: Revise, who: str = Depends(authed)):
