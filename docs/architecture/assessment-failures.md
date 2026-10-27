@@ -1,5 +1,44 @@
 # Assessment failures, first filtering and candidate understanding
 
+## Native career-ops comparison and first-filter repair
+
+The owner explicitly requested installing career-ops with their profile and then
+running its full native pipeline. The verified reference is
+`career-ops-hq/career-ops` at `b5e4c26f21efee31559296495d794c9a9564a714`.
+Its standalone `openai-eval.mjs` baseline generated a report in one model call
+(55,368 reported tokens, 67.29 seconds). That script accepts nonempty free-form
+output; report creation is not canonical assessment acceptance.
+
+The separate native OpenCode comparison ended at the stock dealbreaker gate,
+before A-G evaluation or document generation. A workspace inherited from the
+native API environment initially bound the CLI session to the wrong checkout,
+causing repeated external-directory denials. The parent stopped it, corrected
+PWD/session location and allowed only the reference code/private data boundaries,
+disabled parent config inheritance, then resumed the existing session. Successful
+native reads confirmed the repair. Initial failures and paid history are retained.
+
+Across initial and resumed execution the gateway recorded 69 requests: 67 HTTP
+200 and two cancelled, 2,965,124 input tokens and 20,254 output tokens, with
+2,890,752 cached input tokens reported. These include setup overhead and are not
+an evaluated-job efficiency benchmark. Usage for cancellation may be unknown.
+The resumed run took 260.03 seconds; overall elapsed time was 599.67 seconds.
+The model-written receipt's one-paid-operation claim and stage totals are wrong:
+the gateway/session totals reconcile, while enumerated stages are four completed,
+seven skipped and two blocked. Model receipts are not accounting authorities.
+The stock workflow needs explicit `evaluate anyway` to bypass the person's real
+location rule; no override was manufactured and no PDF/application was produced.
+
+A zero-model, read-only examination of the same location boundary exposed an
+independent prescreen defect: an allowed country breadcrumb masked a disallowed
+specific state in the same field. A synthetic regression reproduced it. Generated
+rules now describe parent-country fallback terms by region tag; the generic
+engine ignores that fallback when a specific state is present. Country-only,
+explicit nationwide, allowed-state alternatives and remote exceptions remain
+admitted. Engine and projection versions invalidate stale screening bindings.
+Focused checks passed 158 tests. The original read-only posting check now returns
+`skip/location_outside` with zero model calls and zero Jobwatch data writes.
+This repair is development source only, not a native deployment.
+
 ## Canonical completion contract repair at 81fd5d2
 
 The subsequent custom-combo run at `4a6e4fb` failed `invalid_model_payload`:
