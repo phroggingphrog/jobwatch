@@ -612,6 +612,39 @@ def test_exhausted_turns_and_tokens_never_make_an_extra_transport():
     assert not tiny_seen
 
 
+def test_invocation_budget_deferrals_do_not_accumulate_failed_attempts():
+    from pipeline.agentic.execution import Execution, use
+
+    llm, seen = transport_llm([choice()])
+    b = budget()
+    scope = Execution("synthetic-quota", token_ceiling=0)
+
+    with use(scope):
+        for _ in range(2):
+            assert_safe_failure("invocation_budget_exhausted", lambda: run_role(role(), {}, b, llm))
+
+    assert not seen
+    assert scope.calls == scope.charged_tokens == 0
+    assert b.snapshot().reservations == ()
+    assert b.charged_tokens == b.batch.charged_tokens == b.failed_attempts == 0
+
+
+def test_cancelled_invocation_does_not_accumulate_failed_attempts():
+    from pipeline.agentic.execution import Execution, use
+
+    llm, seen = transport_llm([choice()])
+    b = budget()
+    scope = Execution("synthetic-cancel", cancelled=lambda: True)
+
+    with use(scope):
+        assert_safe_failure("cancelled", lambda: run_role(role(), {}, b, llm))
+
+    assert not seen
+    assert scope.calls == scope.charged_tokens == 0
+    assert b.snapshot().reservations == ()
+    assert b.charged_tokens == b.batch.charged_tokens == b.failed_attempts == 0
+
+
 def test_environment_tracing_and_inherited_callbacks_are_isolated(monkeypatch):
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
