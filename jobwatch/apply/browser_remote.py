@@ -29,6 +29,28 @@ def call(operation, *, posting_id=None, application_id=None, arguments=None):
     return response.json()['value']
 
 
+def application_review(posting_id: int, *, expected: str | None = None) -> dict:
+    """The live form's review from the native browser owner (GET), or with `expected` the person's confirmation of the
+    corrected form (POST); the same endpoints the website's review and Submit use. Needs the person's approve key."""
+    from pipeline.agentic.api import credentials_from_env
+    from pipeline.agentic.identity import credentials
+    base = os.environ['JOBWATCH_NATIVE_BROWSER_URL'].rstrip('/')
+    if urlparse(base).scheme != 'http' or urlparse(base).hostname not in ('127.0.0.1', 'localhost', '::1'):
+        raise HTTPException(503, 'browser_configuration_unavailable')
+    keys = [key for key, p in {**credentials_from_env(), **credentials()}.items()
+            if p.person == users.current() and 'approve' in p.scopes]
+    if len(keys) != 1:
+        raise HTTPException(503, 'browser_identity_unavailable')
+    url = f'{base}/api/agent/applications/{int(posting_id)}/review'
+    with requests.Session() as session:
+        session.trust_env = False
+        response = (session.post(url, json={'digest': expected}, timeout=60, allow_redirects=False,
+                                 headers={'Authorization': 'Bearer ' + keys[0]}) if expected is not None else
+                    session.get(url, timeout=60, allow_redirects=False, headers={'Authorization': 'Bearer ' + keys[0]}))
+    if not response.ok:
+        raise HTTPException(503, 'browser_operation_unavailable')
+    return response.json()
+
 class RemoteBrowserService:
     def __getattr__(self, name):
         if name in ('auto_fill_ready', 'process_submit_requests', 'settle_open_sessions'):

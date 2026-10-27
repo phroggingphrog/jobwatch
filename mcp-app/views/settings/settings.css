@@ -1,0 +1,27 @@
+.discovery-settings { max-width: 720px; }
+.settings-back { min-height: 36px; margin-bottom: 10px; }
+.settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.settings-tools { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.settings-section { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 16px; }
+.settings-copy { color: var(--text-muted); max-width: 62ch; margin: 5px 0 10px !important; }
+.allowance-options { border: 0; padding: 0; margin: 10px 0; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.choice { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border: 1px solid var(--control-line); border-radius: 6px; background: transparent; color: var(--text-sub); font: inherit; cursor: pointer; }
+.choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.choice:disabled { opacity: 0.55; cursor: default; }
+.limit-field { display: grid; gap: 4px; max-width: 280px; margin: 8px 0; }
+.limit-field label { color: var(--text); font-weight: 600; }
+.limit-field input { min-height: 44px; width: 100%; border: 1px solid var(--control-line); border-radius: 6px; background: var(--field); color: var(--text); font: inherit; padding: 8px 10px; }
+.progress-grid { grid-template-columns: minmax(130px, max-content) minmax(0, 1fr); }
+.incident-list { margin-top: 14px; }
+.incident-list h3 { color: var(--text-muted); font-size: 14px; font-weight: 600; margin: 0 0 5px; }
+.incident-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 10px 6px; }
+.incident-reason { color: var(--text); font-weight: 600; }
+.status-group { display: grid; justify-items: end; }
+.discovery-settings .btn, .discovery-settings .link { min-height: 44px; }
+@media (max-width: 520px) {
+  .settings-head { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .settings-tools { justify-content: flex-start; }
+  .progress-grid { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+  .progress-grid dd { margin-bottom: 8px; }
+  .incident-row { align-items: flex-start; flex-direction: column; gap: 4px; }
+}

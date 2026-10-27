@@ -68,6 +68,8 @@ def digest(prepared: dict | None) -> str | None:
     if not prepared or prepared.get('status') != 'ready_for_owner' or any(prepared.get(k) in (None, '') for k in _BOUND):
         return None
     bound = {k: prepared[k] for k in _BOUND}
+    if prepared.get('document_names'):      # newer preparations: the file names the form received are confirmed too
+        bound['document_names'] = prepared['document_names']
     return hashlib.sha256(json.dumps(bound, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()).hexdigest()
 
 

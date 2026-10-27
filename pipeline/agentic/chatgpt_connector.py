@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import sqlite3
 import time
@@ -340,18 +341,31 @@ def submit_digest(person: str, posting_id: int) -> str | None:
         return _application_and_digest(conn, posting_id)[1]
 
 
-def submit_reviewed(person: str, posting_id: int, confirm_digest: str) -> dict:
+def submit_reviewed(person: str, posting_id: int, confirm_digest: str, shown_hash: str | None = None) -> dict:
     """Queue the one press for the exact reviewed form. The web process re-checks the live form before pressing."""
     from jobwatch.apply import submit_confirm
     if type(posting_id) is not int or posting_id < 1 or type(confirm_digest) is not str:
         raise RuntimeErrorSafe('invalid_request')
+    if shown_hash is not None:      # the JSON front passes it: refuse unless the person saw exactly what is now ready
+        current_review, review_digest, needs_rebind = _review(person, posting_id)
+        if not current_review.get('ready') or not hmac.compare_digest(str(shown_hash), current_review['shown_hash']):
+            raise RuntimeErrorSafe('review_changed')
+        if needs_rebind:
+            # The form was edited after the fill and the person has now seen and confirmed exactly this edited form.
+            if not hmac.compare_digest(confirm_digest, review_digest):
+                raise RuntimeErrorSafe('submit_digest_mismatch')
+            with users.use(person), job_connection(load_config()) as conn:
+                blocked = task_state.retry_blocked(conn, posting_id)       # a refused Submit must not confirm the edit
+            if blocked:
+                raise RuntimeErrorSafe(blocked)
+            with users.use(person):
+                _live_form().rebind(person, posting_id, review_digest)
     with users.use(person), job_connection(load_config(), write=True) as conn:
         application_id, current = _application_and_digest(conn, posting_id)
         if current is None:
             raise RuntimeErrorSafe('submit_not_ready')
         if not hmac.compare_digest(confirm_digest, current):
             raise RuntimeErrorSafe('submit_digest_mismatch')
-        from pipeline.agentic import task_state
         blocked = task_state.retry_blocked(conn, posting_id)
         if blocked:
             raise RuntimeErrorSafe(blocked)
@@ -360,6 +374,141 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str) -> dict:
                                       confirm_digest=current, approval=approval)
     return {'view': 'submit', 'posting_id': posting_id, **queued}
 
+
+def status(person: str, posting_id: int) -> dict:
+    """Plain state card for one posting (same logic as the task_status tool)."""
+    if type(posting_id) is not int or posting_id < 1:
+        raise RuntimeErrorSafe('invalid_request')
+    with users.use(person), job_connection(load_config()) as conn:
+        return task_state.task_card(conn, posting_id)
+
+
+_DOC_LABEL = {'cv': ('CV', 'cv.pdf'), 'letter': ('Cover letter', 'letter.pdf')}
+
+
+def _answer_text(value) -> str:
+    if isinstance(value, bool):
+        return 'Yes' if value else 'No'
+    if isinstance(value, list):
+        return ', '.join(str(v) for v in value)
+    return '' if value is None else str(value)
+
+
+_LIVE_REFUSALS = frozenset({'application_changed', 'final_control_changed', 'unsupported_form_review', 'form_review_unavailable',
+                            'form_review_changed', 'application_not_ready', 'browser_unavailable'})
+
+
+class _NativeLiveForm:
+    """The live application form, read through the native browser API: the same review the web app's review and
+    Submit use (BrowserService.review). `read` returns its dict; `rebind` records a corrected form against the digest
+    the person saw (owner-review overlay, exactly what the web 'confirm this form' step does)."""
+
+    def read(self, person: str, posting_id: int) -> dict:
+        from jobwatch.apply import browser_remote
+        try:
+            return browser_remote.application_review(posting_id)
+        except Exception:                      # noqa: BLE001 - only a fixed code ever leaves this module
+            return {'status': 'blocked', 'reason': 'browser_unavailable'}
+
+    def rebind(self, person: str, posting_id: int, digest: str) -> None:
+        from jobwatch.apply import browser_remote
+        try:
+            browser_remote.application_review(posting_id, expected=digest)
+        except Exception:                      # noqa: BLE001
+            raise RuntimeErrorSafe('review_changed') from None
+
+
+def _live_form():
+    """The live-form reader, or None when this deployment has no native browser to ask (tests; board-only setups)."""
+    return _NativeLiveForm() if os.environ.get('JOBWATCH_NATIVE_BROWSER_URL') else None
+
+
+def _doc_rows(prepared: dict) -> list[dict]:
+    names = prepared.get('document_names') if isinstance(prepared.get('document_names'), dict) else {}
+    out = []
+    for role, h in sorted((prepared.get('attached_documents') or {}).items()):
+        label, generic = _DOC_LABEL.get(role, (role, role + '.pdf'))
+        out.append({'role': role, 'label': label, 'file': str(names.get(role) or generic)[:200], 'sha256': str(h)[:12]})
+    return out
+
+
+def _live_answers(live: dict, prepared: dict) -> list[dict]:
+    """The current form as question -> answer rows. File inputs are the documents (shown separately), passwords are
+    never shown, and empty text rows and unselected radio options are noise. `source` is the fill-time source where
+    the question was filled by Jobwatch, else 'form' (typed or changed by the person)."""
+    sources = {str(r.get('question')): str(r.get('source') or '') for r in prepared.get('review_answers') or []
+               if isinstance(r, dict)}
+    rows = []
+    for f in live.get('fields') or []:
+        kind, value = str(f.get('type') or ''), str(f.get('value') or '')
+        if kind in ('file', 'password') or not value or (kind == 'radio' and value == 'Not selected'):
+            continue
+        question = str(f.get('label') or '')[:500]
+        rows.append({'question': question, 'answer': value[:2000], 'source': sources.get(question) or 'form'})
+    return rows[:200]
+
+
+def review(person: str, posting_id: int) -> tuple[dict, str | None]:
+    """What the owner is approving. With a native browser the answers are read from the CURRENT form (so an edit made
+    after the fill is what the person sees, hashes and confirms); otherwise they are the fill-time answers of the
+    preparation. Attached documents carry the original file names. `shown_hash` covers exactly the shown content plus
+    the digest, so Submit can refuse when anything the person saw has changed. The digest is never in the public
+    review."""
+    public, digest, _ = _review(person, posting_id)
+    return public, digest
+
+
+def _review(person: str, posting_id: int) -> tuple[dict, str | None, bool]:
+    """(public review, digest, form_needs_rebind). The last is True when the live form differs from the recorded one,
+    so Submit must record the person's confirmation of it first."""
+    from jobwatch.apply import prepare, submit_confirm
+    from jobwatch.apply.paths import data_dir
+    if type(posting_id) is not int or posting_id < 1:
+        raise RuntimeErrorSafe('invalid_request')
+    base = {'posting_id': posting_id, 'found': False, 'ready': False, 'answers': [], 'documents': []}
+    with users.use(person), job_connection(load_config()) as conn:
+        conn.row_factory = sqlite3.Row
+        post = conn.execute('SELECT title, company, url FROM postings WHERE id=?', (posting_id,)).fetchone()
+        if post is None:
+            return base, None, False
+        base |= {'found': True, 'employer': post['company'], 'title': post['title'], 'ad_url': _http_url(post['url'])}
+        card = task_state.task_card(conn, posting_id)
+        base['state'] = card['state']
+        row = conn.execute('SELECT id FROM applications WHERE posting_id=?', (posting_id,)).fetchone()
+        if row is None:
+            return base | {'reason': 'not_prepared'}, None, False
+        try:
+            prepared = prepare.latest_preparation(data_dir(), str(row['id']))
+        except prepare.PreparationRefused:
+            return base | {'reason': 'not_prepared'}, None, False
+    recorded = submit_confirm.digest(prepared)
+    if prepared is None or recorded is None:
+        return base | {'reason': 'not_prepared'}, None, False
+    out = base | {'documents': _doc_rows(prepared)}
+    live_reader = _live_form()
+    if live_reader is None:
+        out['answers'] = [{'question': str(r.get('question') or r.get('key'))[:500], 'answer': _answer_text(r.get('value'))[:2000],
+                           'source': str(r.get('source') or '')}
+                          for r in prepared.get('review_answers') or [] if isinstance(r, dict) and r.get('value') is not None]
+        digest, needs_rebind = recorded, False
+    if card['state'] not in ('draft ready', 'awaiting browser press'):
+        return out | {'reason': 'not_ready'}, None, False
+    if live_reader is None:
+        if (data_dir() / 'browser' / hashlib.sha256(str(row['id']).encode()).hexdigest() / prepared['run_id'] / 'owner-review.json').exists():
+            # No browser to read: these are the fill-time answers and the owner changed the form since. Not offered.
+            return out | {'reason': 'edited_in_browser'}, None, False
+    else:
+        with users.use(person):
+            live = live_reader.read(person, posting_id)
+        if not isinstance(live, dict) or live.get('status') == 'blocked' or not live.get('review_digest'):
+            reason = str((live or {}).get('reason') or '')
+            return out | {'reason': reason if reason in _LIVE_REFUSALS else 'browser_unavailable'}, None, False
+        out['answers'] = _live_answers(live, prepared)
+        digest = str(live['review_digest'])
+        needs_rebind = live.get('confirmed_digest') != digest
+    out['ready'] = True
+    out['shown_hash'] = hashlib.sha256(json.dumps([out, digest], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return out, digest, needs_rebind
 
 def _overview_text(data: dict) -> str:
     lines = [f"Shortlist {data['status']}: {len(data['jobs'])} current matches. Labels describe evidence fit, not approval to apply."]

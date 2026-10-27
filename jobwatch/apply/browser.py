@@ -47,6 +47,31 @@ def package_is_current(conn, config, posting_id, package):
 
 
 
+def read_live_fields(page, before: str) -> list[dict]:
+    """Every visible input, select and textarea of the live application page as label/type/value rows. Raises the
+    fixed refusal codes of the review step; `before` is the form_state taken just before, and the page must not have
+    changed while it was read."""
+    fields = []
+    for frame in page.frames:
+        try:
+            if frame.locator('[contenteditable="true"], [role="combobox"]:not(input):not(select)').count():
+                raise HTTPException(409, 'unsupported_form_review')
+            rows = frame.evaluate('''() => Array.from(document.querySelectorAll('input,select,textarea'))
+              .filter(e=>e.type!=='hidden'&&!/^(g-recaptcha|h-captcha|cf-turnstile)-response$/.test(e.name||e.id||''))
+              .map(e=>({label:(e.labels?.[0]?.innerText||e.getAttribute('aria-label')||e.name||e.id||e.tagName).slice(0,500),
+                type:e.type||e.tagName,value:e.type==='password'?'[private]':
+                (e.type==='checkbox'||e.type==='radio')?(e.checked?'Selected':'Not selected'):
+                e.type==='file'?Array.from(e.files||[]).map(f=>f.name).join(', '):
+                e.tagName==='SELECT'?Array.from(e.selectedOptions).map(o=>o.textContent).join(', '):e.value||''}))''')
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(409, 'form_review_unavailable') from None
+        fields.extend(rows)
+    if len(fields) > 500 or sum(len(str(v['value'])) for v in fields) > 100000 or before != submit_confirm.form_state(page):
+        raise HTTPException(409, 'form_review_changed')
+    return fields
+
 class BrowserService:
 
     def __init__(self, config, conn_factory, sessions):
@@ -281,25 +306,7 @@ class BrowserService:
             if control != prepared['final_control']:
                 raise HTTPException(409, 'final_control_changed')
             before = form_state(page)
-            fields = []
-            for frame in page.frames:
-                try:
-                    if frame.locator('[contenteditable="true"], [role="combobox"]:not(input):not(select)').count():
-                        raise HTTPException(409, 'unsupported_form_review')
-                    rows = frame.evaluate('''() => Array.from(document.querySelectorAll('input,select,textarea'))
-                      .filter(e=>e.type!=='hidden'&&!/^(g-recaptcha|h-captcha|cf-turnstile)-response$/.test(e.name||e.id||''))
-                      .map(e=>({label:(e.labels?.[0]?.innerText||e.getAttribute('aria-label')||e.name||e.id||e.tagName).slice(0,500),
-                        type:e.type||e.tagName,value:e.type==='password'?'[private]':
-                        (e.type==='checkbox'||e.type==='radio')?(e.checked?'Selected':'Not selected'):
-                        e.type==='file'?Array.from(e.files||[]).map(f=>f.name).join(', '):
-                        e.tagName==='SELECT'?Array.from(e.selectedOptions).map(o=>o.textContent).join(', '):e.value||''}))''')
-                except HTTPException:
-                    raise
-                except Exception:
-                    raise HTTPException(409, 'form_review_unavailable') from None
-                fields.extend(rows)
-            if len(fields) > 500 or sum(len(str(v['value'])) for v in fields) > 100000 or before != form_state(page):
-                raise HTTPException(409, 'form_review_changed')
+            fields = read_live_fields(page, before)
             current = dict(prepared, owner_revision=status['owner_revision'], form_state=before)
             digest = submit_confirm.digest(current)
             if not digest:
