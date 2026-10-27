@@ -15,7 +15,7 @@ from pydantic import Field
 from jobwatch.candidate.assessment import evidence_records
 from pipeline.agentic.contracts import AgenticError, StrictFrozen
 
-MATCHING_VERSION = "requirement-evidence-v3"
+MATCHING_VERSION = "requirement-evidence-v4"
 BASELINE_COMMIT = "ce160598d49a0464e30380a057dd0a677980de3c"
 _STOP = frozenset("a an and are as at be by for from in is it of on or that the this to with you your".split())
 
@@ -29,6 +29,10 @@ class EvidenceSearch(StrictFrozen):
     related_terms: tuple[str, ...] = Field(default=(), max_length=8,
         description="Optional task/skill paraphrases for retrieval only; never candidate facts.")
     limit: int = Field(default=6, ge=1, le=12)
+
+
+class EvidenceSearchBatch(StrictFrozen):
+    queries: tuple[EvidenceSearch, ...] = Field(min_length=1, max_length=16)
 
 
 class RequirementEvidenceSearch:
@@ -122,6 +126,30 @@ class RequirementEvidenceSearch:
             "related_terms": list(args.related_terms), "limit": args.limit, "hits": hits})
         return {"method": self.method, "hits": hits,
             "items": self.read(identifiers)["items"],
+            "boundary": "Bounded relevance shortlist, not exhaustive proof. No hit means unknown, not inability. Read other inventory records when useful."}
+
+    def search_many(self, args):
+        queries = args.queries
+        identifiers = [query.requirement_id for query in queries]
+        if len(identifiers) != len(set(identifiers)):
+            raise AgenticError("invalid_search")
+        if any(identifier not in self.requirements for identifier in identifiers):
+            raise AgenticError("unknown_requirement")
+        if any(any(len(term) > 160 for term in query.related_terms) for query in queries):
+            raise AgenticError("invalid_search")
+        searches = []
+        evidence_ids = []
+        for query in queries:
+            hits = self._rank(query.requirement_id, query.related_terms, query.limit)
+            searches.append({"requirement_id": query.requirement_id,
+                "related_terms": list(query.related_terms), "limit": query.limit, "hits": hits})
+            evidence_ids.extend(hit["evidence_id"] for hit in hits)
+        self.searches.extend(searches)
+        # Resolve a shared primary record once while retaining each query's own ranked hits.
+        items = self.read(tuple(dict.fromkeys(evidence_ids)))["items"]
+        return {"method": self.method,
+            "hits_by_requirement": {search["requirement_id"]: search["hits"] for search in searches},
+            "searches": searches, "items": items,
             "boundary": "Bounded relevance shortlist, not exhaustive proof. No hit means unknown, not inability. Read other inventory records when useful."}
 
     def diagnostics(self, model):

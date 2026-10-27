@@ -11,6 +11,10 @@ from pipeline.agentic.evaluation import blind_matching_packet, compare_matching_
 from pipeline.agentic.execution import QWEN_EMBEDDING_MODEL, require_route
 from pipeline.agentic.gateway import PaidGatewayEmbeddings
 from pipeline.agentic.runtime import BatchBudget, JobBudget
+from pipeline.agentic.matching import EvidenceSearch, EvidenceSearchBatch, RequirementEvidenceSearch
+from pipeline.agentic.contracts import Requirement, RequirementSet
+from pipeline.agentic.contracts import SourceCitation
+from jobwatch.candidate.evidence import snapshot_evidence
 from test_agentic_gate import evaluation  # shared synthetic fixture
 
 
@@ -114,6 +118,45 @@ def test_chat_combo_exception_does_not_authorise_embeddings():
     llm = LLM(keys=['synthetic'], base_url=model_choice.SERVER_URL)
     with pytest.raises(AgenticError, match='model_not_allowed'):
         require_route(llm, 'deepseek-flash', embedding=True)
+
+
+def test_batch_search_matches_individual_searches_and_reads_shared_records_once(tmp_path):
+    (tmp_path / "cv.md").write_text("# Synthetic\n- Reconciled ledgers and reconciled reports\n")
+    bundle = snapshot_evidence(tmp_path)
+    requirements = RequirementSet(ad_hash="a" * 64, requirements=(
+        Requirement(id="r1", text="Reconciled ledgers", tier="stated", importance="high",
+                    jd_signal=SourceCitation(source_id="ad", content_hash="a"*64, quote="Reconciled ledgers")),
+        Requirement(id="r2", text="Reconciled reports", tier="stated", importance="high",
+                    jd_signal=SourceCitation(source_id="ad", content_hash="a"*64, quote="Reconciled reports")),
+    ))
+    queries = (EvidenceSearch(requirement_id="r1"), EvidenceSearch(requirement_id="r2"))
+    batch = RequirementEvidenceSearch(bundle, requirements)
+    result = batch.search_many(EvidenceSearchBatch(queries=queries))
+    individual = RequirementEvidenceSearch(bundle, requirements)
+    singles = [individual.search(query) for query in queries]
+    assert [search["hits"] for search in result["searches"]] == [single["hits"] for single in singles]
+    assert result["hits_by_requirement"] == {search["requirement_id"]: search["hits"] for search in result["searches"]}
+    expected = {item["id"]: item for single in singles for item in single["items"]}
+    assert {item["id"]: item for item in result["items"]} == expected
+    assert len(result["items"]) == len({item["id"] for item in result["items"]})
+    assert batch.accessed == individual.accessed
+    assert batch.searches == individual.searches
+
+
+@pytest.mark.parametrize("queries,error", [
+    ((EvidenceSearch(requirement_id="r1"), EvidenceSearch(requirement_id="r1")), "invalid_search"),
+    ((EvidenceSearch(requirement_id="missing"), EvidenceSearch(requirement_id="r1")), "unknown_requirement"),
+])
+def test_invalid_batch_search_is_rejected_before_any_evidence_access(tmp_path, queries, error):
+    (tmp_path / "cv.md").write_text("# Synthetic\n- Reconciled ledgers\n")
+    bundle = snapshot_evidence(tmp_path)
+    requirements = RequirementSet(ad_hash="a" * 64, requirements=(
+        Requirement(id="r1", text="Reconciled ledgers", tier="stated", importance="high",
+                    jd_signal=SourceCitation(source_id="ad", content_hash="a"*64, quote="Reconciled ledgers")),))
+    retrieval = RequirementEvidenceSearch(bundle, requirements)
+    with pytest.raises(AgenticError, match=error):
+        retrieval.search_many(EvidenceSearchBatch(queries=queries))
+    assert retrieval.accessed == set() and retrieval.searches == []
 
 
 def test_model_catalog_labels_paid_bare_combo_without_losing_other_options(monkeypatch):

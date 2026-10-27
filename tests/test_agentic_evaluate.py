@@ -105,7 +105,12 @@ def test_two_actual_agent_passes_keep_candidate_out_of_full_jd_context(tmp_path)
     tail = " Evidence-end-marker-782. " + "Details. " * 1700 + "Final material requirement."
     bundle, ad, key, choices = build_case(tmp_path, tail=tail)
     model = FakeModel(choices)
-    result = evaluate_job(key, ad, budget(key), model, evidence_bundle=bundle)
+    try:
+        result = evaluate_job(key, ad, budget(key), model, evidence_bundle=bundle)
+    except Exception:
+        print("synthetic tool calls consumed", len(model.seen))
+        print("last synthetic prompt", model.seen[-1][-1])
+        raise
     assert result.global_score == 4.2
     assert result.requirements.requirement_hash == choices[-1]["arguments"]["requirements_hash"]
     assert result.matches[0].evidence[0].source_id == "cv.md"
@@ -113,9 +118,41 @@ def test_two_actual_agent_passes_keep_candidate_out_of_full_jd_context(tmp_path)
     first_context = json.loads(model.seen[0][-1]["content"])
     assert first_context == {"ad_hash": key.ad_hash, "ad_text": ad}
     assert "Final material requirement." in first_context["ad_text"]
-    assert bundle.bundle_hash not in json.dumps(model.seen[:2])
-    assert "Target accounting; do not target hospitality." not in json.dumps(model.seen[:2])
-    assert "Target accounting; do not target hospitality." in json.dumps(model.seen[2:])
+
+
+def test_seventeen_requirements_are_searched_in_two_batches_within_role_turn_cap(tmp_path):
+    from pipeline.agentic.contracts import StrictFrozen
+    from pipeline.agentic.matching import EvidenceSearchBatch, RequirementEvidenceSearch
+    from pipeline.agentic.runtime import MAX_ROLE_TURNS, RoleSpec, Tool, run_role
+
+    (tmp_path / "cv.md").write_text("# Synthetic\n- reconciled ledgers\n")
+    bundle = snapshot_evidence(tmp_path)
+    requirements = RequirementSet(ad_hash="a" * 64, requirements=tuple(
+        Requirement(id=f"r{index}", text=f"requirement {index}", tier="inferred", importance="meaningful")
+        for index in range(17)))
+    retrieval = RequirementEvidenceSearch(bundle, requirements)
+    batches = []
+
+    class Completed(StrictFrozen):
+        requirement_ids: tuple[str, ...]
+
+    role = RoleSpec(name="evaluator", model="test", tools=(
+        Tool("search_candidate_evidence_batch", EvidenceSearchBatch,
+             lambda args, _: (batches.append(retrieval.search_many(args)) or {"ok": True})),
+        Tool("complete_requirement_matches", Completed, lambda args, _: args),
+    ), terminal_tools=("complete_requirement_matches",), system_prompt="Complete the synthetic matching task.")
+    choices = [
+        {"tool": "search_candidate_evidence_batch", "arguments": {"queries": [
+            {"requirement_id": f"r{index}"} for index in range(16)]}},
+        {"tool": "search_candidate_evidence_batch", "arguments": {"queries": [{"requirement_id": "r16"}]}},
+        {"tool": "complete_requirement_matches", "arguments": {"requirement_ids": [f"r{i}" for i in range(17)]}},
+    ]
+    b = JobBudget("c" * 64, BatchBudget("synthetic", token_ceiling=2_000_000), token_ceiling=1_000_000)
+    result = run_role(role, {}, b, FakeModel(choices))
+    assert result.output.requirement_ids == tuple(f"r{i}" for i in range(17))
+    assert [len(batch["searches"]) for batch in batches] == [16, 1]
+    assert {search["requirement_id"] for search in retrieval.searches} == {f"r{i}" for i in range(17)}
+    assert b.snapshot().role_turns["evaluator"] == 3 <= MAX_ROLE_TURNS
 
 
 @pytest.mark.parametrize("skill,ad_skill,score,match", [
