@@ -34,7 +34,8 @@ def test_first_failure_is_visible_paused_and_deduplicated(conn, monkeypatch):
 
 
 @pytest.mark.parametrize('reason', ['snapshot_changed', 'insufficient_evidence', 'posting_unavailable',
-                                  'posting_closed', 'busy', 'daily_budget', 'batch_deadline', 'budget_exhausted'])
+                                  'posting_closed', 'busy', 'daily_budget', 'batch_deadline', 'budget_exhausted',
+                                  'invocation_budget_exhausted'])
 def test_normal_deferrals_and_decisions_are_not_failures(conn, reason):
     assert incidents.report(conn, posting_id=42, run_id='attempt-1', reason=reason) is None
     assert incidents.list_incidents(conn) == [] and not incidents.is_paused(conn, 42)
@@ -104,11 +105,13 @@ def test_incident_persists_across_restart_and_person_databases_are_isolated(tmp_
 
 def test_service_timeout_reconciles_last_phase_once_and_only_matching_unit(conn):
     incidents.begin_run(conn, 'run-1', unit='reader')
+    incidents.mark_phase(conn, 'run-1', 'liveness', posting_id=42, completed=True)
     incidents.mark_phase(conn, 'run-1', 'evaluation', posting_id=42)
     incidents.begin_run(conn, 'run-2', unit='collector')
     timed_out = incidents.reconcile_service_exit(conn, unit='reader', reason='service_timeout')
     assert len(timed_out) == 1
     assert timed_out[0]['posting_id'] == 42 and timed_out[0]['phase'] == 'evaluation'
+    assert timed_out[0]['last_successful_phase'] == 'liveness'
     assert incidents.is_paused(conn, 42)
     assert incidents.reconcile_service_exit(conn, unit='reader') == []
     assert conn.execute("SELECT state FROM agentic_invocations WHERE run_id='run-2'").fetchone()[0] == 'running'
@@ -129,3 +132,40 @@ def test_read_only_status_does_not_create_schema(tmp_path):
     with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as read:
         assert incidents.list_incidents(read) == []
         assert not incidents.is_paused(read, 42)
+
+
+def test_notification_flush_is_bounded_and_new_failure_has_priority(conn, monkeypatch):
+    old = [incidents.report(conn, posting_id=pid, run_id='old-' + str(pid), reason='execution_failed', now=100)
+           for pid in (1, 2, 3)]
+    sent = []
+    live_transport(monkeypatch, lambda lines: sent.extend(lines) or True)
+    fresh = incidents.report(conn, posting_id=4, run_id='fresh', reason='deadline_exceeded', now=200)
+    assert len(sent) == 1 and fresh['incident_id'] in sent[0]
+    assert all(item['notification_state'] == 'pending' for item in incidents.list_incidents(conn) if item['posting_id'] != 4)
+    assert incidents.flush_notifications(conn, now=201) == 1
+    assert len(sent) == 2 and old[0]['incident_id'] in sent[1]
+    assert sum(item['notification_state'] == 'pending' for item in incidents.list_incidents(conn)) == 2
+
+
+def test_last_successful_phase_is_not_inferred_from_starting_work(conn):
+    incidents.begin_run(conn, 'new', unit='reader')
+    incidents.mark_phase(conn, 'new', 'assessment', posting_id=42)
+    row = incidents.report(conn, posting_id=42, run_id='new', reason='deadline_exceeded', phase='assessment')
+    assert row['last_successful_phase'] is None
+
+
+def test_successful_phase_does_not_leak_from_previous_job_in_the_run(conn):
+    incidents.begin_run(conn, 'batch', unit='reader')
+    incidents.mark_phase(conn, 'batch', 'evaluation', posting_id=41, completed=True)
+    incidents.mark_phase(conn, 'batch', 'liveness', posting_id=42)
+    row = incidents.report(conn, posting_id=42, run_id='batch', reason='deadline_exceeded', phase='liveness')
+    assert row['last_successful_phase'] is None
+
+
+def test_additive_migration_preserves_old_rows(conn):
+    row = incidents.report(conn, posting_id=42, run_id='old', reason='execution_failed')
+    conn.execute('ALTER TABLE agentic_incidents DROP COLUMN last_successful_phase')
+    conn.execute('ALTER TABLE agentic_invocations DROP COLUMN last_successful_phase')
+    incidents.ensure(conn)
+    saved = incidents.list_incidents(conn)[0]
+    assert saved['incident_id'] == row['incident_id'] and saved['last_successful_phase'] is None
