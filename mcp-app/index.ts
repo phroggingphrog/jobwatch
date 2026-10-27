@@ -368,6 +368,7 @@ export const getDiscoverySettings = server.tool({
   name: "get_discovery_settings",
   description: "Read the person's effective daily token allowance. A null daily_token_ceiling means Unlimited. Individual job and run limits still apply.",
   inputSchema: z.strictObject({}), outputSchema: discoverySettingsOut, annotations: READ,
+  view: { name: "settings" },
 }, async () => {
   try {
     const d = discoverySettingsOut.parse(await call(cfg, "GET", "/connector/discovery/settings"));

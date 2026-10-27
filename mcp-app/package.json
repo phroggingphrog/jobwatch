@@ -19,7 +19,7 @@
     "manufact"
   ],
   "scripts": {
-    "build": "mcp-use build",
+    "build": "mcp-use build --inline",
     "dev": "mcp-use dev",
     "start": "mcp-use start",
     "deploy": "mcp-use deploy",

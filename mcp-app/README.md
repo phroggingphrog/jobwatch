@@ -16,6 +16,8 @@ per-person binding and "already queued" refusal all stay in Python.
 | `onboarding_status` | yes | - | saved facts, all open questions and current confirmed version |
 | `discovery_status` | yes | - | actual assessment progress, paused incidents and independent notification states |
 | `start_discovery` | yes | - | one bounded assessment request through the durable native worker; never retries paused jobs |
+| `get_discovery_settings` | yes | settings | opens the in-chat allowance and discovery progress panel; also reachable from `jobs_overview` |
+| `set_discovery_settings` | yes | - | saves Unlimited or a positive daily token allowance for the authenticated person |
 | `retry_assessment` | yes | - | explicit user-requested retry for one current incident/context, within unchanged daily limits |
 | `start_onboarding` | yes | - | starts canonical document parsing from uploaded document IDs |
 | `update_onboarding`, `answer_onboarding_question` | yes | - | saves the person's supplied answers in an unconfirmed draft, with revision checks |
@@ -42,7 +44,8 @@ per-person binding and "already queued" refusal all stay in Python.
     . test/env.sh                      # fake tokens
     node test/mock-backend.mjs &       # port 18941
     npx mcp-use dev --port 18942       # inspector at /mcp/inspector; add header Authorization: Bearer <token>
-    npm test                           # needs `npx mcp-use build` first; spawns its own server on 18943
+    npm run build                      # embeds JS/CSS in the MCP View resource for protected deployments
+    npm test                           # spawns its own server on 18943
 
 ## Real backend
     JOBWATCH_CONNECTOR_TOKEN=... python -m pipeline.agentic.connector_http --port 18940   # JOBWATCH_MCP_PERSON picks the person
@@ -52,8 +55,10 @@ per-person binding and "already queued" refusal all stay in Python.
 
 Daily token allowance is per person: `get_discovery_settings` reads it and
 `set_discovery_settings` saves a positive limit or `daily_token_ceiling: null` for
-Unlimited after the person's explicit request. The same setting appears in Job
-preferences. Individual job/run limits, failure pauses and historical spending remain.
+Unlimited. The in-chat panel also reads current collection and assessment progress,
+paused reasons and Hermes handoff state; it can refresh or start discovery when a
+confirmed scope is enabled. Individual job/run limits, failure pauses and historical
+spending remain.
 
 ## Real-application check (temp dir only)
     python -m tests.realapp serve --root /tmp/opencode/realapp --connector-port 18952 --native-port 18951   # real fill + browser; prints the token

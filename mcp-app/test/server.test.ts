@@ -53,11 +53,28 @@ describe("tools list", () => {
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
     expect((by.decide._meta as any).ui.visibility).toEqual(["app"]);
-    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application"]) {
+    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application", "get_discovery_settings"]) {
       expect((by[n]._meta as any).ui.resourceUri).toMatch(/^ui:\/\//);
       expect(by[n].outputSchema).toBeTruthy();
     }
     expect(JSON.stringify(by.submit_reviewed.inputSchema)).toContain("confirm_digest");
+  });
+  it("publishes the settings app as an MCP resource for the existing client", async () => {
+    const { tools } = await client.listTools();
+    const settings = tools.find((tool) => tool.name === "get_discovery_settings")!;
+    const uri = (settings._meta as any).ui.resourceUri as string;
+    const result = await client.readResource({ uri });
+    expect(result.contents[0].mimeType).toContain("profile=mcp-app");
+    const html = result.contents[0].text ?? "";
+    expect(html).toContain('<div id="root"');
+    expect(html).toContain('<script type="module">');
+    expect(html).toContain("Daily token allowance");
+    expect(html).toContain("next discovery pass");
+    expect(html).toContain("Assessment attempts today");
+    expect(html).toContain("Retry this assessment");
+    expect(html).toContain("Last successful phase:");
+    expect(html).toContain("Job #");
+    expect(html).not.toMatch(/<script\b[^>]*\bsrc\s*=|<link\b[^>]*\bhref\s*=/i);
   });
 });
 
@@ -68,10 +85,13 @@ describe("read tools", () => {
     expect(r.structuredContent.jobs).toHaveLength(4);
     expect(r.structuredContent.counts.needs_you).toBe(2);
     expect(r.content[0].text).toContain("Acme Pty Ltd");
+    expect(r.structuredContent.jobs[0]).toMatchObject({ assessment_state: "current", assessment_reason: "evaluation_complete" });
   });
   it("job_detail and task_status", async () => {
     const d = await call("job_detail", { posting_id: 1 });
-    expect(d.structuredContent).toMatchObject({ found: true, can_submit: true, state: "draft ready" });
+    expect(d.structuredContent).toMatchObject({ found: true, can_submit: true, state: "draft ready", assessment_state: "current" });
+    expect(d.structuredContent).toMatchObject({assessment_state:"current", assessment_reason:"evaluation_complete", assessment_summary:"Synthetic assessed role."});
+    expect(modelVisible(d)).toContain("Assessment: assessed");
     const missing = await call("job_detail", { posting_id: 99 });
     expect(missing.structuredContent.found).toBe(false);
     const s = await call("task_status", { posting_id: 3 });
