@@ -9,6 +9,15 @@ Never print raw HTML from the database: descriptions are already plain text (`jo
 Dates: always `{{ x|... }}` through the globals `ago(ts)` ("3h ago") and `absolute(ts)`.
 
 ## Globals available in every template
+
+`/discovery-status` uses `discovery_status.html` in the shared shell. Its
+`discovery_status` context is the current authenticated person's typed discovery
+status: posting/usage counts, unresolved paused incidents with safe reason and
+phase codes, Hermes handoff state, recent invocations and latest queued API run.
+`/api/discovery/status` returns the same object. Both reads retain normal web
+authentication. Retrying assessments is a separate authenticated typed operation;
+refreshing this page never releases a paused job.
+
 `ago, absolute, short_location, salary_display(row), arm_label, src_label, flag_label, STATE_LABEL (dict),
 WORK_TYPES (dict), WITHIN [(days,label)], TABS, STATUS_RAIL [(key,label)], SORTS [(key,label)], WARN (dict),
 APP_STATES (tuple), TABLE_COLS [(key,label)], SOURCE_LABEL`, and for the AI reading: `AI_VIEWS [(key,label)]` (show Good, review
