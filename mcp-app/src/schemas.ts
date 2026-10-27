@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+// Plain sentences naming the exact next tool or question; every tool result carries them.
+export const nextActions = z.array(z.string()).optional();
+
 export const jobRow = z.object({
   posting_id: z.number().int(),
   employer: z.string().nullable(),
@@ -23,6 +26,7 @@ export const shortlistEntry = jobRow.extend({
 }).passthrough();
 
 export const applicationsOut = z.object({
+  next_actions: nextActions,
   counts: z.object({needs_you: z.number().int(), needs_info: z.number().int(), outcome_unknown: z.number().int(), submitted: z.number().int()}),
   jobs: z.array(jobRow),
 });
@@ -33,6 +37,7 @@ export const overviewOut = applicationsOut.extend({
 });
 
 export const jobOut = z.object({
+  next_actions: nextActions,
   posting_id: z.number().int(),
   found: z.boolean(),
   employer: z.string().nullable().optional(),
@@ -58,6 +63,7 @@ export const jobOut = z.object({
 
 // task_status, prepare_application and revise_application share this shape so one view renders all three.
 export const taskOut = z.object({
+  next_actions: nextActions,
   posting_id: z.number().int(),
   state: z.string(),
   selection_id: z.string().optional(),
@@ -66,7 +72,7 @@ export const taskOut = z.object({
   reason: z.string().optional(),
   // set only when Jobwatch's own agent is waiting for the person to press Approve or Reject
   approval: z
-    .object({ interaction_id: z.string(), operation: z.string(), summary: z.string() })
+    .object({ interaction_id: z.string(), operation: z.string(), summary: z.string(), confirm_digest: z.string().optional() })
     .optional(),
   answer: z.string().optional(),
   declined: z.array(z.string()).optional(),
@@ -74,6 +80,7 @@ export const taskOut = z.object({
 });
 
 export const reviewOut = z.object({
+  next_actions: nextActions,
   posting_id: z.number().int(),
   found: z.boolean(),
   ready: z.boolean(),
@@ -108,18 +115,21 @@ export const onboardingScope = z.object({
 });
 
 export const onboardingStatusOut = z.object({
+  next_actions: nextActions,
   status: z.enum(["draft", "parsing", "confirmed", "not_started"]),
   proposal: onboardingProposal.nullable(),
   current_version: z.record(z.string(), z.unknown()).nullable(),
 });
 
 export const onboardingReviewOut = z.object({
+  next_actions: nextActions,
   status: z.literal("ready"), proposal: onboardingProposal, scope: onboardingScope,
   proposal_digest: z.string(), scope_digest: z.string(),
   authorises: z.array(z.string()), does_not_authorise: z.array(z.string()),
 });
 
 export const onboardingConfirmOut = z.object({
+  next_actions: nextActions,
   status: z.literal("confirmed"), version: z.number().int(),
   discovery: onboardingScope.nullable(), discovery_enabled: z.boolean(),
   authorises: z.array(z.string()), does_not_authorise: z.array(z.string()),
@@ -132,13 +142,16 @@ export const onboardingEdit = z.discriminatedUnion("op", [
 ]);
 
 export const submitOut = z.object({
+  next_actions: nextActions,
   posting_id: z.number().int(),
   status: z.string(),
 });
 
 export const discoverySettingsOut = z.strictObject({ daily_token_ceiling: z.number().int().positive().nullable() });
+export const discoverySettingsResult = discoverySettingsOut.extend({ next_actions: nextActions });
 
 export const discoveryStatusOut = z.object({
+  next_actions: nextActions,
   enabled: z.boolean(), postings: z.number().int(), assessments_today: z.number().int(),
   charged_tokens_today: z.number().int(), scope: onboardingScope.nullable(),
   incidents: z.array(z.object({
@@ -151,6 +164,23 @@ export const discoveryStatusOut = z.object({
   invocations: z.array(z.record(z.string(), z.unknown())),
 });
 
-export const discoveryQueuedOut = z.object({ run_id: z.string(), state: z.string() });
+export const discoveryQueuedOut = z.object({ next_actions: nextActions, run_id: z.string(), state: z.string() });
 
 export type TaskOut = z.infer<typeof taskOut>;
+
+export const guideOut = z.object({
+  topic: z.string(),
+  sources: z.array(z.object({ name: z.string(), from: z.enum(["repo", "bundled"]) })),
+  next_actions: nextActions,
+});
+
+// open_dashboard: the data of the opened tab (also what the view renders) next to the text summary.
+export const dashboardOut = z.object({
+  next_actions: nextActions,
+  tab: z.enum(["jobs", "applications", "discovery", "settings"]),
+  // whether the host declared MCP-Apps view support on this request; text is always sufficient
+  host_views: z.enum(["declared", "not_declared"]),
+  jobs: overviewOut.optional(),
+  applications: applicationsOut.optional(),
+  settings: discoverySettingsOut.optional(),
+});

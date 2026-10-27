@@ -1,0 +1,8 @@
+- Tool list smaller than {{tool_count}}, or a tool is "not found": your tool catalog is stale. Tell the person to start a new thread or reconnect.
+- "Jobwatch is not reachable": the backend is down. Say so, do not retry in a loop.
+- Shortlist not_built or stale: call {{tool:refresh_shortlist}}. no_confirmed_profile: call {{tool:onboarding_status}}.
+- inputs_changed / idempotency_conflict on {{tool:prepare_application}}: the shortlist entry changed or the request_id was reused for different inputs. Read the job again and use a fresh request_id.
+- approval_not_found: the approval expired, was already answered, or belongs to another person; run {{tool:revise_application}} again only if the person still wants it.
+- approval_digest_mismatch: the digest was not the one shown. Re-show the pending approval and use its exact confirm_digest.
+- review_changed / submit_digest_mismatch: the form changed after review; call {{tool:review_submission}} again and have the person look at it.
+- No view appeared: that is fine. Everything is in the text summary; answer from it. A view opens only on request.

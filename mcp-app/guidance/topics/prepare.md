@@ -1,0 +1,4 @@
+Ask the person first. After an explicit yes call {{tool:prepare_application}} with posting_id, expected_entry_id and expected_run_key from {{tool:job_detail}}'s shortlist entry, a stable request_id and confirmed=true. If inputs changed it is refused: read the job again. It authorises preparation only and never submits.
+Then call {{tool:task_status}} until the state is "draft ready" (do not re-queue while it is drafting).
+For changes use {{tool:revise_application}}. It returns an approval: show the person the summary and confirm_digest, ask approve or reject, then call {{tool:approve_application}} (posting_id, interaction_id, decision, confirm_digest, user_quote). user_quote is the person's own words, verbatim. A wrong digest or empty quote is refused and the approval stays pending.
+Then {{tool:review_submission}}.

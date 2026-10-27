@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -28,6 +29,7 @@ from pipeline.agentic.persistence import latest_result
 from pipeline.agentic.runtime import RuntimeErrorSafe, validate_model_payload
 from pipeline.agentic import service
 
+_LOG = logging.getLogger(__name__)
 MIME = 'text/html;profile=mcp-app'
 LIST_URI = 'ui://jobwatch/chatgpt-jobs-v1.html'
 DETAIL_URI = 'ui://jobwatch/chatgpt-job-v1.html'
@@ -318,6 +320,47 @@ def decide(person: str, interaction_id: str, decision: str, binding: str) -> dic
     data, meta = _outcome(person, {'view': 'work', 'posting_id': item.get('posting_id'),
                                    'thread_id': pending['thread_id']}, result)
     return data | {'decision': decision}, meta
+
+
+def _chat_digest(person: str, interaction_id: str, item: dict) -> str:
+    """The digest a chat host shows the person. Derived from the pending approval, so it is not the binding itself."""
+    material = '\n'.join(['chat-approval-v1', person, interaction_id, str(item.get('operation')),
+                          str(item.get('posting_id')), str(item['binding'].get('digest') or '')])
+    return hashlib.sha256(material.encode()).hexdigest()
+
+
+def with_confirm_digest(person: str, data: dict) -> dict:
+    """Add the chat-shown digest to an awaiting_approval card (JSON front only; the binding stays out of the model)."""
+    pending = _PENDING.get(str(data.get('interaction_id'))) if data.get('status') == 'awaiting_approval' else None
+    if pending is None or pending['person'] != person:
+        return data
+    return data | {'confirm_digest': _chat_digest(person, data['interaction_id'], pending['item'])}
+
+
+def approve_in_chat(person: str, posting_id: int, interaction_id: str, decision: str, confirm_digest: str,
+                    user_quote: str) -> tuple[dict, dict]:
+    """Answer ONE pending prepare/revise approval from the chat, through the same binding as the widget button.
+
+    Needs the exact digest the person was shown and their own words. Anything else is refused before the pending
+    approval is touched, so a wrong try neither consumes nor answers it. Submit approvals are never in _PENDING."""
+    _forget_expired()
+    if (type(posting_id) is not int or posting_id < 1 or decision not in ('approve', 'reject')
+            or type(interaction_id) is not str or type(confirm_digest) is not str or type(user_quote) is not str):
+        raise RuntimeErrorSafe('invalid_request')
+    quote = user_quote.strip()
+    if len(quote) < 2 or len(quote) > 1000:
+        raise RuntimeErrorSafe('invalid_request')
+    pending = _PENDING.get(interaction_id)
+    item = pending['item'] if pending else None
+    if (pending is None or pending['person'] != person or item['operation'] == 'submit_application'
+            or str(item.get('posting_id')) != str(posting_id)):
+        raise RuntimeErrorSafe('approval_not_found')
+    if not hmac.compare_digest(confirm_digest, _chat_digest(person, interaction_id, item)):
+        raise RuntimeErrorSafe('approval_digest_mismatch')
+    _LOG.info('chat approval %s %s op=%s posting=%s quote_sha256=%s', interaction_id[:6], decision, item['operation'],
+              posting_id, hashlib.sha256(quote.encode()).hexdigest()[:16])
+    data, meta = decide(person, interaction_id, decision, str(item['binding'].get('digest') or ''))
+    return data | {'approved_via': 'chat', 'user_quote': quote[:500]}, meta
 
 
 # -- stage 3: Submit, only with the digest of the reviewed fill ----------------------------------------------

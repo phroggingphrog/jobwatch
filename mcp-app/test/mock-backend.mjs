@@ -4,6 +4,7 @@ import http from "node:http";
 export const BACKEND_TOKEN = "b".repeat(40);
 export const DIGEST = "d".repeat(64);
 export const SHOWN = "e".repeat(64);
+export const APPROVE_DIGEST = "9".repeat(64);
 export const OAUTH_TOKEN = "oauth-access-token-from-python";
 
 export function startMock(port = 0) {
@@ -88,13 +89,20 @@ export function startMock(port = 0) {
       preparationRequests.set(body.request_id,{body:JSON.stringify(body),result});return send(200,result);
     }
     if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/(revise)$/))) {
-      pending = { interaction_id: "i-1", binding: "bind-1" };
-      return send(200, { data: { view: "work", posting_id: Number(m[1]), thread_id: "t", status: "awaiting_approval", interaction_id: "i-1", operation: "revise_application", summary: `Jobwatch wants to prepare application for job ${m[1]}. This may use paid model calls and save drafts. It will not submit.` }, meta: { binding: "bind-1" } });
+      pending = { interaction_id: "i-1", binding: "bind-1", posting_id: Number(m[1]) };
+      return send(200, { data: { view: "work", posting_id: Number(m[1]), thread_id: "t", status: "awaiting_approval", interaction_id: "i-1", confirm_digest: APPROVE_DIGEST, operation: "revise_application", summary: `Jobwatch wants to prepare application for job ${m[1]}. This may use paid model calls and save drafts. It will not submit.` }, meta: { binding: "bind-1" } });
     }
     if (req.method === "POST" && url.pathname === "/connector/decide") {
       if (!pending || body.interaction_id !== pending.interaction_id || body.binding !== pending.binding) return send(400, { error: "approval_not_found" });
       pending = null;
       return send(200, { data: { view: "work", status: "complete", answer: body.decision === "approve" ? "Prepared. The draft is ready for your review." : "", decision: body.decision }, meta: {} });
+    }
+    if (req.method === "POST" && url.pathname === "/connector/approve") {
+      if (!pending || body.interaction_id !== pending.interaction_id || String(body.posting_id) !== String(pending.posting_id)) return send(400, { error: "approval_not_found" });
+      if (body.confirm_digest !== APPROVE_DIGEST) return send(400, { error: "approval_digest_mismatch" });
+      if (typeof body.user_quote !== "string" || body.user_quote.trim().length < 2) return send(400, { error: "invalid_request" });
+      pending = null;
+      return send(200, { data: { view: "work", status: "complete", answer: body.decision === "approve" ? "Prepared. The draft is ready for your review." : "", decision: body.decision, user_quote: body.user_quote }, meta: {} });
     }
     if(url.pathname==="/connector/discovery/settings") {
       if(req.method==="POST") dailyTokenCeiling=body.daily_token_ceiling;

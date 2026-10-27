@@ -1,8 +1,12 @@
 // Thin HTTP client for the Python connector front (pipeline/agentic/connector_http.py).
 // All safety logic (digest check, single-use approvals, per-person data) lives in Python; this only forwards.
 export class BackendError extends Error {
-  constructor(public code: string, public status: number) {
+  code: string;
+  status: number;
+  constructor(code: string, status: number) {
     super(code);
+    this.code = code;
+    this.status = status;
   }
 }
 

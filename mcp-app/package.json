@@ -24,7 +24,9 @@
     "start": "mcp-use start",
     "deploy": "mcp-use deploy",
     "typecheck": "mcp-use typecheck",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docs": "node scripts/docs.mjs",
+    "docs:check": "node scripts/docs.mjs --check"
   },
   "dependencies": {
     "mcp-use": "2.11.2",

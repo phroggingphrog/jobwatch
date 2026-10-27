@@ -31,9 +31,12 @@ def post(app, path, body):
 
 
 def test_overview_and_detail_show_the_application(app):
-    overview = get(app, '/connector/overview').json()
-    assert [(j['posting_id'], j['employer'], j['state']) for j in overview['jobs']] == [(1, 'Acme Pty Ltd', 'draft ready')]
-    detail = get(app, '/connector/jobs/1').json()['job']
+    # /connector/overview is the canonical shortlist now (empty here: no assessed, ranked matches); the application is
+    # application history, which is a separate, non-recommending read.
+    assert get(app, '/connector/overview').json()['jobs'] == []
+    history = get(app, '/connector/applications').json()
+    assert [(j['posting_id'], j['employer'], j['state']) for j in history['jobs']] == [(1, 'Acme Pty Ltd', 'draft ready')]
+    detail = get(app, '/connector/applications/1').json()['job']
     assert detail['employer'] == 'Acme Pty Ltd' and detail['can_submit'] is True and 'submit_digest' not in str(detail)
 
 
