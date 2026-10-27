@@ -109,6 +109,8 @@ def execute(person, config, run_id, payload, *, seconds=600):
                 per_run_cap = service._config(config)['batch_token_ceiling']
                 remaining = discovery_settings.allowance(
                     scope.daily_token_ceiling, spent[1], per_run_cap) if scope is not None else 0
+                allowance_reason = discovery_settings.allowance_reason(
+                    scope.daily_token_ceiling, spent[1], per_run_cap) if scope is not None else 'daily_budget'
                 if scope is None or spent[0] >= scope.daily_assessments or remaining <= 0:
                     return {'deferred': 'daily_budget'}
                 from jobwatch import adtext
@@ -128,7 +130,8 @@ def execute(person, config, run_id, payload, *, seconds=600):
                     with budget_context:
                         result = service.agentic_batch_run([posting], config, conn, operation='evaluate',
                             max_seconds=max(0, deadline-time.time()), deadline=deadline, run_id=run_id,
-                            batch_id=batch_id, token_allowance=remaining)
+                            batch_id=batch_id, token_allowance=remaining,
+                            token_allowance_reason=allowance_reason)
             else:
                 result = service.after_collect(conn, config, max_seconds=seconds, deadline=deadline, run_id=run_id)
             return result

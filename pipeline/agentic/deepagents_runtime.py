@@ -341,7 +341,7 @@ def run_deepagents_role(role, context, budget, llm, *, max_turns=MAX_ROLE_TURNS,
             _log_failure(execution, error, None, last_exc)
         # Raise outside handlers so raw framework/validation errors and private
         # exception payloads are absent even from exception.__context__.
-        if error not in {"token_limit", "invocation_budget_exhausted", "cancelled",
+        if error not in {"token_limit", "invocation_budget_exhausted", "invocation_call_limit", "cancelled",
                          "turn_limit", "deadline_exceeded", "batch_paused",
                          "checkpoint_unavailable", "failed_attempt_limit", "invalid_request",
                          "tracing_not_allowed", "model_not_allowed", "gateway_not_allowed"}:

@@ -47,7 +47,28 @@ RUBRIC_VERSION = 'career-ops-v1'
 MODEL_PASS_SECONDS = 120   # the judging pass of a job (evaluator, 3-10 model turns) is not started with less than this left;
 #   102 of 104 model holds were a job started with 30-180 s left, cut off by the clock. It goes first in the next run instead.
 MIN_READ_SECONDS = 20   # less than this left in the batch: do not start another job (a Seek page read needs 7-15 s)
-IMPLEMENTATION_VERSION = 'confirmed-profile-eligibility-v2-20261022'
+IMPLEMENTATION_VERSION = 'batched-requirement-evidence-v3-20261027'
+NORMAL_BUDGET_DEFERRALS = {'daily_budget', 'run_budget', 'run_call_limit'}
+
+
+def _runtime_stop_reason(error, scope):
+    if not isinstance(error, RuntimeErrorSafe):
+        return None
+    if error.code == 'invocation_budget_exhausted':
+        return scope.token_limit_reason if scope else 'run_budget'
+    if error.code == 'invocation_call_limit':
+        return 'run_call_limit'
+    return None
+
+
+def _defer_budget_tail(summary, todo, index, reason):
+    if reason not in NORMAL_BUDGET_DEFERRALS:
+        return False
+    pending = todo[index:]
+    summary['skipped'] += len(pending)
+    summary['deferred'].extend({'posting_id': posting_id, 'reason': reason, 'next_eligible_at': None}
+                               for posting_id in pending)
+    return True
 
 
 def settings(config) -> dict:
@@ -275,7 +296,7 @@ def _budget(store, claim, cfg, batch, batch_registry=None, invocation_deadline=N
             and not any(prior.role_turns.values()):
         previous = store.conn.execute("SELECT reason FROM agentic_activity WHERE run_key=? AND event='finished' "
                                       'ORDER BY id DESC LIMIT 1', (claim.run_key,)).fetchone()
-        if previous and previous[0] == 'daily_budget':
+        if previous and previous[0] in NORMAL_BUDGET_DEFERRALS:
             # No model work ran; the old batch's allocation must not cap a new invocation.
             # Its charge ledger and completed artifacts remain intact.
             store.discard_checkpoint(claim)
@@ -632,8 +653,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         # codes owned by this codebase; never repr/str an arbitrary exception.
         code = getattr(exc, 'code', None)
         reason = code if isinstance(exc, AgenticError) and type(code) is str and code.replace('_', '').isalnum() else 'execution_failed'
-        if isinstance(exc, RuntimeErrorSafe) and reason == 'invocation_budget_exhausted':
-            reason = 'daily_budget'
+        reason = _runtime_stop_reason(exc, scope) or reason
         if isinstance(exc, RuntimeErrorSafe) and reason == 'cancelled':
             raise  # release the claim below, then preserve the active posting for the caller
 
@@ -658,7 +678,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
 
 
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
-                      run_id=None, token_allowance=None, expected_run_keys=None, **kwargs):
+                      run_id=None, token_allowance=None, token_allowance_reason='daily_budget',
+                      expected_run_keys=None, **kwargs):
     summary = {'processed': 0, 'ready': 0, 'archived': 0, 'held': 0, 'skipped': 0,
                'deferred': [], 'skipped_reasons': {}}
     if not enabled(config):
@@ -666,14 +687,20 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
     if token_allowance is not None:
         from pipeline.agentic import execution
         scope = execution.current()
+        if token_allowance_reason not in {'daily_budget', 'run_budget'}:
+            raise AgenticError('invalid_token_allowance_reason')
         if scope is None:
             scope = execution.Execution(run_id or ('assessment-' + uuid.uuid4().hex),
                 seconds=max_seconds if max_seconds is not None else _config(config)['batch_seconds'],
-                token_ceiling=max(0, int(token_allowance)), max_calls=1_000_000)
+                token_ceiling=max(0, int(token_allowance)), max_calls=1_000_000,
+                token_limit_reason=token_allowance_reason)
         else:
             # A resumed checkpoint retains its historical batch, but cannot
-            # consume more than this invocation's remaining daily allowance.
-            scope.token_ceiling = min(scope.token_ceiling, scope.charged_tokens + max(0, int(token_allowance)))
+            # consume more than this invocation's remaining daily or per-run allowance.
+            proposed_ceiling = scope.charged_tokens + max(0, int(token_allowance))
+            if proposed_ceiling <= scope.token_ceiling:
+                scope.token_ceiling = proposed_ceiling
+                scope.token_limit_reason = token_allowance_reason
         with execution.use(scope):
             return agentic_batch_run(snapshot_ids, config, conn, batch_id=batch_id,
                 max_seconds=max_seconds, deadline=deadline, run_id=run_id,
@@ -726,11 +753,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
                                     _invocation_deadline=invocation_deadline, _discovery_run_id=run_id, **kwargs)
             last = conn.execute("SELECT reason FROM agentic_runs WHERE posting_id=? ORDER BY rowid DESC LIMIT 1",
                                 (pid,)).fetchone()
-        if stage is not None and last is not None and last[0] == 'daily_budget':
-            remaining = todo[n:]
-            summary['skipped'] += len(remaining)
-            summary['deferred'].extend({'posting_id': p, 'reason': 'daily_budget', 'next_eligible_at': None}
-                                       for p in remaining)
+        if stage is not None and last is not None and _defer_budget_tail(summary, todo, n, last[0]):
             if run_id is not None:
                 incidents.mark_phase(conn, run_id, 'assessment')
             break
@@ -793,10 +816,10 @@ def _spent_today(conn, scope_day_start):
     """(jobs evaluated, tokens charged) since the person's local midnight, from the existing activity and batch records
     (no second ledger). Approximations: a batch with any activity today is charged to today in full (so one straddling
     midnight also counts for yesterday), spend with no activity row yet is not seen, and owner-requested drafts count
-    as evaluated jobs. Daily allowance deferrals and advertisement refreshes do not count as assessments.
+    as evaluated jobs. Budget deferrals and advertisement refreshes do not count as assessments.
     All errs toward stopping early except the unseen in-flight spend."""
     jobs = conn.execute("SELECT COUNT(DISTINCT posting_id) FROM agentic_activity WHERE event='finished' AND at>=? "
-                        "AND COALESCE(reason,'') NOT IN ('daily_budget','snapshot_changed')",
+                        "AND COALESCE(reason,'') NOT IN ('daily_budget','run_budget','run_call_limit','snapshot_changed')",
                         (scope_day_start,)).fetchone()[0]
     tokens = conn.execute("SELECT COALESCE(SUM(charged),0) FROM agentic_batches WHERE batch_id IN "
                           "(SELECT DISTINCT batch_id FROM agentic_activity WHERE at>=?)", (scope_day_start,)).fetchone()[0]
@@ -891,9 +914,10 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         return timed_out()
     AgenticStore(conn).ensure()
     jobs, tokens = _spent_today(conn, _local_midnight(_now()))
-    from pipeline.agentic.discovery_settings import allowance
+    from pipeline.agentic.discovery_settings import allowance, allowance_reason
     room = scope.daily_assessments - jobs
     left = allowance(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
+    budget_reason = allowance_reason(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
     if room <= 0 or left <= 0:
         return {'deferred': 'daily_budget', **_refresh_shortlist(conn,config)}
     from contextlib import ExitStack
@@ -986,6 +1010,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         jobs, tokens = _spent_today(conn, _local_midnight(_now()))
         room = scope.daily_assessments - jobs
         left = allowance(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
+        budget_reason = allowance_reason(scope.daily_token_ceiling, tokens, cfg['batch_token_ceiling'])
         details = {}
         if rel:
             details['relevance'] = rel
@@ -1003,7 +1028,8 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         # Collection only evaluates; documents are drafted on an explicit request, never as a side effect of a timer.
         phase('assessment', completed_previous=True)
         out = agentic_batch_run(ids[:room], config, conn, max_seconds=max_seconds, deadline=deadline,
-                                run_id=run_id, token_allowance=left, collector_run_id=collector_run_id, operation='evaluate', **extra)
+                                run_id=run_id, token_allowance=left, token_allowance_reason=budget_reason,
+                                collector_run_id=collector_run_id, operation='evaluate', **extra)
         phase('shortlist')
         out.update(details)
         out.update(_refresh_shortlist(conn,config))

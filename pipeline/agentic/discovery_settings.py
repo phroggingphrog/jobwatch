@@ -70,3 +70,11 @@ def allowance(daily_token_ceiling: int | None, spent: int, per_run_cap: int) -> 
     if daily_token_ceiling is None:
         return per_run_cap
     return max(0, min(per_run_cap, daily_token_ceiling - spent))
+
+
+def allowance_reason(daily_token_ceiling: int | None, spent: int, per_run_cap: int) -> str:
+    """Classify which cap sets the effective allowance when a model call is refused."""
+    allowance(daily_token_ceiling, spent, per_run_cap)  # validates all three inputs
+    if daily_token_ceiling is not None and daily_token_ceiling - spent <= per_run_cap:
+        return 'daily_budget'
+    return 'run_budget'

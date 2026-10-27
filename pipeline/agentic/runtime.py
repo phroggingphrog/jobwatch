@@ -227,7 +227,9 @@ class JobBudget:
             scope = current()
             if scope is not None:
                 scope.check()
-                if scope.calls >= scope.max_calls or scope.charged_tokens + charge > scope.token_ceiling:
+                if scope.calls >= scope.max_calls:
+                    raise RuntimeErrorSafe("invocation_call_limit")
+                if scope.charged_tokens + charge > scope.token_ceiling:
                     raise RuntimeErrorSafe("invocation_budget_exhausted")
             if self._job_charged + charge > self._job_ceiling or state.charged_tokens + charge > state.token_ceiling:
                 raise RuntimeErrorSafe("token_limit")
