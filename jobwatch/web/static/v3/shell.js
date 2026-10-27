@@ -30,6 +30,7 @@
     var items = [];
     if (NAV.inbox) { items.push(["/#inbox", "accent", NAV.inbox + " mail repl" + (NAV.inbox === 1 ? "y" : "ies") + " to confirm", "Jobwatch needs a yes or no."]); }
     if (NAV.sources_bad) { items.push(["/#sources", "warn", NAV.sources_bad + " job source" + (NAV.sources_bad === 1 ? " is" : "s are") + " failing", "New jobs from it may be missing."]); }
+    if (NAV.paused) { items.push(["/discovery-status", "warn", NAV.paused + " job" + (NAV.paused === 1 ? " is" : "s are") + " paused", "A failed assessment waits until you retry it."]); }
     if (NAV.chat) { items.push(["/#chat", "accent", NAV.chat + " new message" + (NAV.chat === 1 ? "" : "s") + " from Jobwatch", "Open the chat to read it."]); }
     ITEMS = items;
     var n = items.length, badge = document.getElementById("notifN");
@@ -44,6 +45,8 @@
     }
   }
   function refresh() {
+    /* Sign-in and sign-up pages carry no shell to fill, and a signed-out /api/nav only logs a 401 in the console. */
+    if (!document.getElementById("notifN") && !document.getElementById("health")) { return Promise.resolve(); }
     return fetch("/api/nav", { headers: { accept: "application/json" } }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (n) { NAV = n || {}; counts(); }).catch(function () { });
   }
 

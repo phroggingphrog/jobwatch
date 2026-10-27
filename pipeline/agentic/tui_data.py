@@ -120,7 +120,9 @@ class WebBackend(Backend):
 
     def today(self) -> dict:
         table = self._get('/api/table')
-        return {'rows': table.get('rows', []), 'progress': table.get('progress') or {}, 'total': table.get('total', 0)}
+        ai = (table.get('counts') or {}).get('ai') or {}
+        return {'rows': table.get('rows', []), 'progress': table.get('progress') or {}, 'total': table.get('total', 0),
+                'held_back': ai.get('review', 0)}
 
     def job(self, posting_id: int) -> dict:
         return self._get(f'/api/job/{int(posting_id)}')

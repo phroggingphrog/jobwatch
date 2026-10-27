@@ -2,7 +2,7 @@
    The shell (top bar, rail, theme) is base.html + shell.js; this file only draws into <main id="view">. */
 (function () {
   "use strict";
-  var view = document.getElementById("view"), META = {}, F = { ai: "show", q: "", page: 1, st: "", arr: "", minscore: "", sal: "", entry: "" }, rows = [], SEL = null, GEN = 0, PAGES = {};
+  var view = document.getElementById("view"), META = {}, F = { ai: "show", q: "", page: 1, st: "", arr: "", minscore: "", sal: "", entry: "" }, rows = [], SEL = null, GEN = 0, PAGES = {}, PREV = "", KEEP = null, RESTORE = null;
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
   function friendly(c) { return c === 404 ? "Not found. It may have been removed." : c === 401 || c === 403 ? "You are signed out. Reload the page and sign in." : c >= 500 ? "Jobwatch hit a problem. Nothing was changed. Try again." : "That did not work (" + c + "). Nothing changed."; }
   function api(path, body) {
@@ -51,6 +51,7 @@
       var ready = null, pend = [];
       (apps.cols || []).forEach(function (c) { if (c[0] === "drafted") c[2].forEach(function (a) { if (String(a.draft || "").indexOf("ready") === 0 && !ready) ready = a; }); });
       if (NAV.inbox) pend.push(row("#inbox", co("I"), NAV.inbox + " mail repl" + (NAV.inbox === 1 ? "y" : "ies") + " to confirm", "Jobwatch read your mail and needs a yes or no.", st("Awaiting approval", "warn")));
+      if (NAV.paused) pend.push(row("/discovery-status", co("P"), NAV.paused + " job" + (NAV.paused === 1 ? " is" : "s are") + " paused", "A failed assessment waits until you retry it.", st("See why", "bad")));
       if (NAV.sources_bad) pend.push(row("#sources", co("S"), NAV.sources_bad + " job source" + (NAV.sources_bad === 1 ? " is" : "s are") + " failing", "New jobs from it may be missing.", st("Check sources", "bad")));
       var sub = (good.total ? good.total + " job" + (good.total === 1 ? " is" : "s are") + " worth applying to." : "No job is rated Good yet.") + (held ? " " + held + " more are held back because the AI could not read the whole ad." : "");
       var cb = ins && ins.callbacks && ins.callbacks._all ? ins.callbacks._all : { n: 0, successes: 0 }, t7 = ins && ins.totals ? ins.totals.matches_7d : null;
@@ -73,6 +74,12 @@
   /* ---- Jobs: Seek layout. Search and filter chips on top, list on the left, selected job on the right with a sticky action header. ---- */
   var VIEWS = [["show", "Good"], ["review", "Held back"], ["hide", "Hidden by AI"], ["pending", "Waiting"]];
   var TOGGLES = [["st", "new", "New"], ["sal", "1", "Pay shown"], ["entry", "1", "Entry level"], ["arr", "remote", "Remote"], ["minscore", "4.0", "Fit 4.0+"]];
+  /* Back from a job (or after Save/Not for me) must land on the same list position: reload pages 1..N, then scroll back. */
+  function restoreList(d) {
+    if (!RESTORE) return;
+    if (F.page < RESTORE.page && d.page < d.pages) { F.page++; jobs(true); return; }
+    var y = RESTORE.y; RESTORE = null; window.scrollTo(0, y);
+  }
   function jobs(append) {
     var g = GEN, p = new URLSearchParams({ ai: F.ai, page: F.page, sort: "fit" });
     ["q", "st", "arr", "minscore", "sal", "entry"].forEach(function (k) { if (F[k]) p.set(k, F[k]); });
@@ -85,7 +92,7 @@
       var list = rows.map(function (r) { return jobRow(r, wide() ? SEL : null); }).join("");
       var more = d.page < d.pages ? '<div style="padding:12px;display:flex;justify-content:center"><button class="btn" type="button" data-more>Show more (' + (d.total - rows.length) + " left)</button></div>" : "";
       var empty = '<div class="wk-empty"><b>No jobs here' + (F.q ? " for “" + esc(F.q) + "”" : "") + '</b><span>' + (F.q || F.st || F.sal || F.entry || F.arr || F.minscore ? "Try removing a filter." : "Nothing is in this view yet.") + "</span>" + (F.q || F.st || F.sal || F.entry || F.arr || F.minscore ? '<button class="btn" type="button" data-clear>Clear filters</button>' : "") + "</div>";
-      if (append) { document.getElementById("list").innerHTML = list; document.getElementById("moreWrap").innerHTML = more; return; }
+      if (append) { document.getElementById("list").innerHTML = list; document.getElementById("moreWrap").innerHTML = more; restoreList(d); return; }
       draw('<div class="wk-seek"><div class="wk-sbar"><label class="wk-sfield"><svg class="wk-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input class="wk-sin" id="q" type="search" placeholder="Job title, company or skill" value="' + esc(F.q) + '" aria-label="Search jobs"></label></div>' +
         '<div class="wk-row" style="justify-content:space-between"><div class="wk-chips" role="group" aria-label="Filters">' + TOGGLES.map(function (x) { return '<button class="chip" type="button" data-tog="' + x[0] + '" data-val="' + x[1] + '" aria-pressed="' + (F[x[0]] === x[1]) + '">' + x[2] + "</button>"; }).join("") + "</div>" +
         '<div class="wk-seg" role="group" aria-label="View">' + VIEWS.map(function (x) { return '<button type="button" data-pill="' + x[0] + '"' + (F.ai === x[0] ? ' class="on" aria-pressed="true"' : ' aria-pressed="false"') + ">" + x[1] + " " + (c[x[0]] || 0) + "</button>"; }).join("") + "</div></div>" +
@@ -93,7 +100,8 @@
         '<div class="wk-sgrid"><div class="wk-list"><div id="list">' + (list || empty) + '</div><div id="moreWrap">' + more + '</div></div><aside class="wk-sdetail" id="pane" aria-label="Job details"></aside></div></div>');
       var q = document.getElementById("q"); if (F.q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
       if (wide() && SEL) pick(SEL); else { var pn = document.getElementById("pane"); if (pn && !SEL) pn.innerHTML = ""; }
-    }).catch(function (e) { failPage("Jobs", e); });
+      restoreList(d);
+    }).catch(function (e) { RESTORE = null; failPage("Jobs", e); });
   }
   function pick(id) {
     SEL = id;
@@ -192,13 +200,18 @@
   var KEY = { job: "jobs", followup: "applications" };
   function route() {
     GEN++;
-    var h = location.hash.replace(/^#/, "") || "today", p = h.split("/"), n = p[0];
+    var h = location.hash.replace(/^#/, "") || "today", p = h.split("/"), n = p[0], prev = PREV;
+    PREV = n;
+    if (prev === "jobs" && n === "job") KEEP = { page: F.page, y: window.scrollY };
+    RESTORE = prev === "job" && n === "jobs" && KEEP ? KEEP : null;
+    if (n !== "job" && n !== "jobs") KEEP = null;
     if (["today", "jobs", "job", "applications"].indexOf(n) < 0 && !PAGES[n]) { location.replace("#today"); return; }
     window.JW.page(KEY[n] || n, n === "job" ? '<a href="#jobs">Jobs</a><span aria-hidden="true">›</span><span class="here">Job</span>' : '<span class="here">' + (CRUMB[n] || "") + "</span>");
     document.title = (CRUMB[n] ? CRUMB[n].replace(/<[^>]*>/g, "").replace("›", " ") : "Jobwatch") + " · Jobwatch";
     view.innerHTML = '<div class="wk-page"><p class="wk-sub">Loading…</p></div>';
     if (PAGES[n]) { PAGES[n](p[1], p[2]); } else { ({ today: today, jobs: function () { F.page = 1; jobs(false); }, job: function () { job(p[1]); }, applications: applications })[n](); }
-    window.scrollTo(0, 0); view.focus({ preventScroll: true });
+    if (!RESTORE) window.scrollTo(0, 0);
+    view.focus({ preventScroll: true });
   }
   document.addEventListener("click", function (e) {
     if (e.target.closest("a.skip")) { e.preventDefault(); view.focus(); return; }
@@ -209,7 +222,7 @@
     t = e.target.closest("[data-more]"); if (t) { F.page++; jobs(true); return; }
     t = e.target.closest("[data-retry]"); if (t) { route(); return; }
     t = e.target.closest("[data-act]");
-    if (t) { t.disabled = true; api("/api/job/" + t.dataset.id + "/" + t.dataset.act, {}).then(function (d) { toast(d.toast || "Done"); window.JW.refreshNav().finally(function () { if (document.getElementById("pane")) jobs(false); else route(); }); }).catch(function (err) { t.disabled = false; fail(err); }); }
+    if (t) { t.disabled = true; api("/api/job/" + t.dataset.id + "/" + t.dataset.act, {}).then(function (d) { toast(d.toast || "Done"); window.JW.refreshNav().finally(function () { if (document.getElementById("pane")) { RESTORE = { page: F.page, y: window.scrollY }; F.page = 1; jobs(false); } else route(); }); }).catch(function (err) { t.disabled = false; fail(err); }); }
   });
   var qt; document.addEventListener("input", function (e) { if (e.target.id === "q") { clearTimeout(qt); qt = setTimeout(function () { F.q = e.target.value.trim(); F.page = 1; jobs(false); }, 400); } });
   window.addEventListener("hashchange", route);

@@ -538,7 +538,7 @@ class JobwatchTUI(App):
         if text in ('/quit', '/exit'):
             self.exit()
             return
-        if text.startswith('/job'):
+        if text == '/job' or text.startswith('/job '):
             arg = text[4:].strip()
             self.posting_id = int(arg) if arg.isdigit() else None
             self._refresh_task_state()

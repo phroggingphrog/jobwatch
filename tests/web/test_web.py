@@ -249,3 +249,23 @@ def test_api_404_is_json_even_without_json_accept(client):
         r = client.get(path, headers={"accept": "*/*"})
         assert r.status_code == 404, path
         assert r.headers["content-type"].startswith("application/json"), path
+
+
+def test_nav_counts_use_the_sources_page_rule(tmp_path):
+    """The top-bar badge must say what the Sources page says: never-ok and stale sources count as failing, not only 3 failures in a row."""
+    from datetime import UTC, datetime
+
+    from jobwatch import db as dbm
+    from jobwatch.web import queries as q
+    conn = dbm.connect(tmp_path / "nav.db")
+    try:
+        conn.execute("INSERT INTO source_health(collector,last_ok_at,last_status,consecutive_failures) VALUES('never_ok',NULL,'error',1)")
+        conn.execute("INSERT INTO source_health(collector,last_ok_at,last_status,consecutive_failures) VALUES('fine',?,'ok',0)",
+                     (dbm.ts(datetime.now(UTC)),))
+        conn.commit()
+        counts = q.nav_counts(conn)
+        assert counts["sources_bad"] == sum(1 for r in q.health_rows(conn) if r["rag"] == "bad") == 1
+        assert counts["sources_seen"] == 2
+        assert counts["paused"] == 0
+    finally:
+        conn.close()
