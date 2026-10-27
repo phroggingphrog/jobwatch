@@ -48,12 +48,13 @@ per-person binding and "already queued" refusal all stay in Python.
     JOBWATCH_CONNECTOR_TOKEN=... python -m pipeline.agentic.connector_http --port 18940   # JOBWATCH_MCP_PERSON picks the person
     JOBWATCH_MCP_TOKEN=... JOBWATCH_CONNECTOR_TOKEN=... JOBWATCH_BACKEND_URL=http://127.0.0.1:18940 npx mcp-use start --port <port>
 
-## Real-application check (temp dir only)
+## Discovery configuration
 
 Daily token allowance is per person: `get_discovery_settings` reads it and
 `set_discovery_settings` saves a positive limit or `daily_token_ceiling: null` for
 Unlimited after the person's explicit request. The same setting appears in Job
 preferences. Individual job/run limits, failure pauses and historical spending remain.
 
+## Real-application check (temp dir only)
     python -m tests.realapp serve --root /tmp/opencode/realapp --connector-port 18952 --native-port 18951   # real fill + browser; prints the token
     JOBWATCH_REAL_APP_TEST=1 JOBWATCH_PYTHON=<venv python> npx vitest run test/realapp.test.ts
