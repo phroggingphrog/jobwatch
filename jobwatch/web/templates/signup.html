@@ -6,7 +6,8 @@
 <link rel="stylesheet" href="/static/v3/web.css"><script src="/static/v3/shell.js"></script></head>
 <body class="wk-root"><main class="wk-auth" id="main">
   <h1 class="wk-h1">Create your account</h1>
-  {% if not open %}<p class="wk-sub">Sign-up is closed right now. Ask for an invite.</p>
+  {% if not open %}<p class="wk-sub">Sign-up is closed right now.</p>
+  <p class="wk-sub">To create an account you need an invite code from the person who runs this Jobwatch. If that is you, make one on the server with <code>jobwatch user invite</code>, restart the web service, then come back here.</p>
   {% else %}
   <p class="wk-sub">You need an invite code.</p>
   {% if error %}<div class="wk-note bad" role="alert">{{ error }}</div>{% endif %}
