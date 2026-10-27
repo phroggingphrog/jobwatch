@@ -1,9 +1,10 @@
 ---
 name: autonomous-screening
-description: Screen one bound posting with canonical profile-derived database rules.
+description: Deterministic screening of one bound posting before any paid assessment.
 ---
 
-Delegate to screening before evaluation. Its result is computed by the canonical
-prescreen engine for this person's current rules and overrides. Skip means do not
-spend evaluation calls. Flag means preserve the uncertainty and continue. Screening
-cannot establish qualification evidence, approve a profile or authorise submission.
+Screening has already run using the canonical prescreen engine and this person's
+current profile-derived database rules and overrides. It makes zero model calls.
+Skip blocks Evaluation; admit or flag permits it. Preserve flagged uncertainty.
+Screening is not qualification evidence or approval. Evaluation cannot override the
+saved screening decision or change profile policy, documents or submission state.
