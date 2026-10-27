@@ -23,6 +23,7 @@ from pipeline.agentic import chatgpt_connector as cc
 from pipeline.agentic import connector_onboarding as onboarding
 from pipeline.agentic.profile_api import STATUS as INTAKE_STATUS
 from pipeline.agentic.runtime import RuntimeErrorSafe
+from pipeline.agentic.api_store import Conflict
 
 
 class Prepare(BaseModel):
@@ -94,6 +95,16 @@ class OnboardingConfirm(OnboardingProposal):
         return value
 
 
+class DiscoveryStart(OnboardingBody):
+    request_id: str = Field(min_length=1, max_length=100)
+
+
+class DiscoveryRetry(DiscoveryStart):
+    incident_id: str = Field(min_length=1, max_length=100)
+    posting_id: int = Field(gt=0)
+    expected_context: str = Field(pattern=r'^[a-f0-9]{64}$')
+
+
 class Submit(BaseModel):
     confirm_digest: str = Field(max_length=200)
     shown_hash: str = Field(max_length=200)
@@ -154,6 +165,10 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     async def _safe(_, exc: RuntimeErrorSafe):
         return JSONResponse({'error': str(exc)}, status_code=400)
 
+    @app.exception_handler(Conflict)
+    async def _conflict(_, exc):
+        return JSONResponse({'error': exc.code}, status_code=409)
+
     @app.exception_handler(intake.IntakeError)
     async def _intake_failed(_, exc):
         return JSONResponse({'error': exc.code}, status_code=INTAKE_STATUS.get(exc.code, 400))
@@ -206,6 +221,27 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     @app.get('/connector/onboarding/status')
     def onboarding_status(who: str = Depends(authed)):
         return onboarding.status(who)
+
+    @app.get('/connector/discovery/status')
+    def discovery_status(who: str = Depends(authed)):
+        from pipeline.agentic import discovery_ops
+        from jobwatch.config import load_config
+        with users.use(who):
+            return discovery_ops.status(who, load_config())
+
+    @app.post('/connector/discovery/start', status_code=202)
+    def discovery_start(body: DiscoveryStart, who: str = Depends(authed)):
+        from pipeline.agentic import discovery_ops
+        from jobwatch.config import load_config
+        with users.use(who):
+            return discovery_ops.start(who, load_config(), body.request_id)
+
+    @app.post('/connector/discovery/retry', status_code=202)
+    def discovery_retry(body: DiscoveryRetry, who: str = Depends(authed)):
+        from pipeline.agentic import discovery_ops
+        from jobwatch.config import load_config
+        with users.use(who):
+            return discovery_ops.start(who, load_config(), **body.model_dump())
 
     @app.post('/connector/onboarding/start')
     def onboarding_start(body: OnboardingStart, who: str = Depends(authed)):

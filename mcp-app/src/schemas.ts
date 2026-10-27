@@ -115,4 +115,19 @@ export const submitOut = z.object({
   status: z.string(),
 });
 
+export const discoveryStatusOut = z.object({
+  enabled: z.boolean(), postings: z.number().int(), assessments_today: z.number().int(),
+  charged_tokens_today: z.number().int(), scope: onboardingScope.nullable(),
+  incidents: z.array(z.object({
+    incident_id: z.string(), posting_id: z.number().int().nullable(), run_id: z.string(),
+    reason: z.string(), phase: z.string().nullable(), last_successful_phase: z.string().nullable(),
+    state: z.string(), notification_state: z.string(), notification_error: z.string().nullable(),
+    retry_context: z.string().nullable().optional(),
+  }).passthrough()),
+  latest_run: z.record(z.string(), z.unknown()).nullable(),
+  invocations: z.array(z.record(z.string(), z.unknown())),
+});
+
+export const discoveryQueuedOut = z.object({ run_id: z.string(), state: z.string() });
+
 export type TaskOut = z.infer<typeof taskOut>;

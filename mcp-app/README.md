@@ -14,6 +14,9 @@ per-person binding and "already queued" refusal all stay in Python.
 | `review_submission` | yes | review | read-only; shows every filled answer, attached files, employer and role; digest and shown_hash only in result `_meta` |
 | `prepare_application`, `revise_application` | yes | task-prepare / task-revise | hand work to Jobwatch's agent; never submit; approval binding only in `_meta` |
 | `onboarding_status` | yes | - | saved facts, all open questions and current confirmed version |
+| `discovery_status` | yes | - | actual assessment progress, paused incidents and independent notification states |
+| `start_discovery` | yes | - | one bounded assessment request through the durable native worker; never retries paused jobs |
+| `retry_assessment` | yes | - | explicit user-requested retry for one current incident/context, within unchanged daily limits |
 | `start_onboarding` | yes | - | starts canonical document parsing from uploaded document IDs |
 | `update_onboarding`, `answer_onboarding_question` | yes | - | saves the person's supplied answers in an unconfirmed draft, with revision checks |
 | `review_onboarding` | yes | - | exact profile, search scope, limits and review digests |

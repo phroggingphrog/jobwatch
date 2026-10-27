@@ -73,6 +73,13 @@ export function startMock(port = 0) {
       pending = null;
       return send(200, { data: { view: "work", status: "complete", answer: body.decision === "approve" ? "Prepared. The draft is ready for your review." : "", decision: body.decision }, meta: {} });
     }
+    if(url.pathname==="/connector/discovery/status") return send(200,{enabled:true,postings:4,assessments_today:1,charged_tokens_today:50,scope:null,
+      incidents:[{incident_id:"incident-one",posting_id:42,run_id:"failed-one",reason:"deadline_exceeded",phase:"evaluation",last_successful_phase:"capture",state:"paused",notification_state:"failed",notification_error:"hermes_handoff_failed",retry_context:"f".repeat(64)}],latest_run:null,invocations:[]});
+    if(url.pathname==="/connector/discovery/start") return send(202,{run_id:"discovery-one",state:"queued"});
+    if(url.pathname==="/connector/discovery/retry") {
+      if(body.expected_context!=="f".repeat(64)) return send(409,{error:"retry_inputs_changed"});
+      return send(202,{run_id:"retry-one",state:"queued"});
+    }
     if (url.pathname.startsWith("/connector/onboarding/")) {
       const scope={basis:["Accounting"],locations:["Victoria"],daily_assessments:40,daily_token_ceiling:2000000};
       const proposal={id:"1111111111111111",revision:2,status:"draft",parse_error:"",facts:[{id:"f1",section:"career_focus",value:"Accounting",basis:"evidence"}],questions:[{id:"q1",section:"location",text:"Where?",why:"Search coverage"},{id:"q2",section:"availability",text:"When?",why:"Availability"}]};

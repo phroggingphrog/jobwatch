@@ -6,6 +6,8 @@ import {
   onboardingReviewOut,
   onboardingConfirmOut,
   onboardingEdit,
+  discoveryStatusOut,
+  discoveryQueuedOut,
   jobOut,
   overviewOut,
   reviewOut,
@@ -322,6 +324,42 @@ export const confirmOnboarding = server.tool({
   try {
     const d = onboardingConfirmOut.parse(await call(cfg, "POST", "/connector/onboarding/confirm", input));
     return { content: text(`Profile confirmed as version ${d.version}. Discovery eligibility: ${d.discovery_enabled ? "enabled" : "disabled"}. No application submission is authorised.`), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
+
+export const discoveryStatus = server.tool({
+  name: "discovery_status",
+  description: "Read collection counts, actual assessment progress, unresolved failures, Hermes handoff state and retry contexts. Failed jobs stay paused until an explicit retry request. Collected postings are not recommendations.",
+  inputSchema: z.strictObject({}), outputSchema: discoveryStatusOut, annotations: READ,
+}, async () => {
+  try {
+    const d = discoveryStatusOut.parse(await call(cfg, "GET", "/connector/discovery/status"));
+    return { content: text(`${d.postings} postings collected; ${d.assessments_today} assessed today; ${d.incidents.length} unresolved incidents. Inspect structured reasons and notification states.`), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
+
+export const startDiscovery = server.tool({
+  name: "start_discovery",
+  description: "Queue one bounded assessment pass using the person's confirmed scope and existing daily spending limits. Does not retry paused failures, draft documents or submit applications. Reuse request_id after a lost response; discovery_status reports actual progress.",
+  inputSchema: z.strictObject({ request_id: z.string().min(1).max(100) }),
+  outputSchema: discoveryQueuedOut, annotations: WORK,
+}, async (input) => {
+  try {
+    const d = discoveryQueuedOut.parse(await call(cfg, "POST", "/connector/discovery/start", input));
+    return { content: text(`Discovery request ${d.state}. Read discovery_status for its outcome.`), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
+
+export const retryAssessment = server.tool({
+  name: "retry_assessment",
+  description: "Only after the person explicitly requests it, retry the selected paused assessment using the current retry_context from discovery_status. Refuses changed profile, posting or configuration. Does not retry other failures or increase spending limits. Reuse request_id after a lost response.",
+  inputSchema: z.strictObject({ request_id: z.string().min(1).max(100), incident_id: z.string().min(1).max(100),
+    posting_id: posting, expected_context: digest }),
+  outputSchema: discoveryQueuedOut, annotations: WORK,
+}, async (input) => {
+  try {
+    const d = discoveryQueuedOut.parse(await call(cfg, "POST", "/connector/discovery/retry", input));
+    return { content: text(`Requested assessment retry ${d.state}. Other paused jobs are unchanged.`), structuredContent: d };
   } catch (e) { return fail(e); }
 });
 

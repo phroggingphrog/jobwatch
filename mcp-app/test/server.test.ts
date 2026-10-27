@@ -48,7 +48,7 @@ describe("tools list", () => {
   it("has the expected tools, hints, views and visibility", async () => {
     const { tools } = await client.listTools();
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "confirm_onboarding", "decide", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "review_onboarding", "review_submission", "revise_application", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
+    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "confirm_onboarding", "decide", "discovery_status", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
     for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
@@ -194,6 +194,20 @@ describe("direct onboarding", () => {
     expect(stale.isError).toBe(true);
     expect(stale.content[0].text).toContain("proposal_changed");
     expect((mock.log as any[]).some(x=>x.path.startsWith("/connector/chat"))).toBe(false);
+  });
+});
+
+describe("discovery operations", () => {
+  it("shows paused failures and queues start or explicit retry without a chat", async () => {
+    const status=await call("discovery_status");
+    expect(status.isError).toBeFalsy();
+    expect(status.structuredContent.incidents[0]).toMatchObject({reason:"deadline_exceeded",state:"paused",notification_state:"failed"});
+    expect((await call("start_discovery",{request_id:"start-one"})).structuredContent).toEqual({run_id:"discovery-one",state:"queued"});
+    expect((await call("retry_assessment",{request_id:"retry-one",incident_id:"incident-one",posting_id:42,expected_context:"f".repeat(64)})).isError).toBeFalsy();
+    const refused=await call("retry_assessment",{request_id:"retry-stale",incident_id:"incident-one",posting_id:42,expected_context:"0".repeat(64)});
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0].text).toContain("retry_inputs_changed");
+    expect((await call("start_discovery",{request_id:"x",person:"other"})).isError).toBe(true);
   });
 });
 
