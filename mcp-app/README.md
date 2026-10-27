@@ -83,7 +83,7 @@ App-only buttons (hidden from the model; only a rendered view may call them):
 Daily token allowance is per person: `get_discovery_settings` reads it and
 `set_discovery_settings` saves a positive limit or `daily_token_ceiling: null` for
 Unlimited. The separate Discovery panel reads collection and assessment progress,
-paused reasons and Hermes handoff state; it can refresh or start discovery when a
+paused reasons and notification delivery state (delivered, pending, failed, no channel); it can refresh or start discovery when a
 confirmed scope is enabled. Status polling does not replace unsaved allowance edits. Individual job/run limits, failure pauses and historical
 spending remain.
 

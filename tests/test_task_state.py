@@ -1,4 +1,4 @@
-"""Hermes-style chat: plain task state, honest unknown outcome, Stop (owner 2026-10-25)."""
+"""Plain-chat task state, honest unknown outcome, Stop (owner 2026-10-25)."""
 import json
 import time
 

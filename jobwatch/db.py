@@ -12,6 +12,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from .models import now_utc
+from .notifier.schema import DDL as NOTIFY_DDL
 
 log = logging.getLogger(__name__)
 
@@ -441,6 +442,7 @@ MIGRATIONS: list[str] = [
         WHEN OLD.result_json IS NOT NULL AND NEW.result_json IS NOT OLD.result_json
         BEGIN SELECT RAISE(ABORT,'immutable'); END;
     """,
+    NOTIFY_DDL,   # notification channels, outbox and receipts (idempotent: IF NOT EXISTS)
 ]
 
 

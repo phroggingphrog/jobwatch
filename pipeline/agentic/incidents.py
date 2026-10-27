@@ -10,7 +10,8 @@ import re
 import time
 import uuid
 
-from jobwatch import notify, users
+from jobwatch import notify, notifier
+from jobwatch.notifier import legacy
 
 FAILURE_REASONS = frozenset({
     'deadline_exceeded', 'execution_failed', 'model_unavailable', 'model_auth',
@@ -62,7 +63,15 @@ def ensure(conn):
 
 
 def _dict(cursor, row):
-    return dict(zip((c[0] for c in cursor.description), row)) if row is not None else None
+    """A row as a dict; delivery state is read in the generic words (delivered / pending / failed / no_channel),
+    whatever an older version stored."""
+    if row is None:
+        return None
+    out = dict(zip((c[0] for c in cursor.description), row))
+    if 'notification_state' in out:
+        out['notification_state'], out['notification_error'] = legacy.present_state(
+            out['notification_state'], out.get('notification_error'))
+    return out
 
 
 def _get(conn, incident_id):
@@ -170,32 +179,33 @@ def _digest(rows):
 
 
 def flush_notifications(conn, *, force=False, now=None):
-    """Attempt at most one digest of all pending incidents. SSH append acknowledges handoff only.
+    """Attempt at most one digest of all pending incidents through the person's notification channels.
 
-    A digest is due once the oldest pending incident is DIGEST_SECONDS old and the last one went out at least
-    that long ago; a failed handoff keeps every incident pending and retries after the usual backoff."""
+    A digest is due once the oldest pending incident is as old as the channels' digest window (default
+    DIGEST_SECONDS) and the last one went out at least that long ago; a failed delivery keeps every incident pending
+    and retries after the usual backoff. Delivery is acknowledged by the channel's receipt only."""
     if not _exists(conn, 'agentic_incidents') or not notify.is_live(conn):
         return 0
     now = time.time() if now is None else now
-    # The legacy install-wide route belongs to the owner, never another account.
-    configured = users.current() == users.DEFAULT_USER and bool(
-        notify._setting('JOBWATCH_HERMES_SSH') and notify._setting('JOBWATCH_HERMES_FILE'))
+    window = notifier.digest_window(conn, 'incident')
     cur = conn.execute("SELECT incident_id,created_at,next_notification_at FROM agentic_incidents "
-                       "WHERE notification_state<>'handed_off' AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
+                       "WHERE notification_state NOT IN ('handed_off','delivered') "
+                       "AND (notification_lease_until IS NULL OR notification_lease_until<=?) "
                        'ORDER BY created_at,incident_id', (now,))
     pending = cur.fetchall()
     if not pending:
         return 0
     if not force:
         last = conn.execute('SELECT MAX(handed_off_at) FROM agentic_incidents').fetchone()[0]
-        if pending[0][1] + DIGEST_SECONDS > now or (last is not None and last + DIGEST_SECONDS > now) \
+        if pending[0][1] + window > now or (last is not None and last + window > now) \
                 or max(r[2] for r in pending) > now:
             return 0
     claimed = []
     with conn:
         for ident, _, _ in pending:
             if conn.execute("UPDATE agentic_incidents SET notification_state='sending',notification_lease_until=?, "
-                            "notification_attempts=notification_attempts+1 WHERE incident_id=? AND notification_state<>'handed_off' "
+                            "notification_attempts=notification_attempts+1 WHERE incident_id=? "
+                            "AND notification_state NOT IN ('handed_off','delivered') "
                             'AND (notification_lease_until IS NULL OR notification_lease_until<=?)',
                             (now + 60, ident, now)).rowcount:
                 claimed.append(ident)
@@ -203,15 +213,18 @@ def flush_notifications(conn, *, force=False, now=None):
         return 0
     rows = [_get(conn, ident) for ident in claimed]
     try:
-        sent = configured and notify._send([_digest(rows)])
+        event = notifier.Event(notifier.FAILURE, _digest(rows), f"incident-digest:{claimed[0]}:{len(claimed)}",
+                               notifier.FailurePayload(reason='digest', count=len(claimed)),
+                               group='incident', dedupe_window=0)
+        result = notifier.deliver(conn, event, now=now)
     except Exception:
-        sent = False
+        result = notifier.DeliveryResult('failed')
+    sent = result.delivered
     delay = _RETRY_SECONDS[min(max(r['notification_attempts'] for r in rows) - 1, len(_RETRY_SECONDS) - 1)]
     with conn:
         conn.executemany('UPDATE agentic_incidents SET notification_state=?,notification_lease_until=NULL,'
                          'next_notification_at=?,handed_off_at=?,notification_error=? WHERE incident_id=?',
-                         [('handed_off' if sent else 'failed', now + delay, now if sent else None,
-                           None if sent else 'hermes_handoff_failed' if configured else 'hermes_not_configured', ident)
+                         [('delivered' if sent else 'failed', now + delay, now if sent else None, result.error, ident)
                           for ident in claimed])
     return int(bool(sent))
 

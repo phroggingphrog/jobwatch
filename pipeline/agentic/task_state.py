@@ -1,4 +1,4 @@
-"""Plain task state and Stop for one posting (owner 2026-10-25: Hermes-style chat).
+"""Plain task state and Stop for one posting (owner 2026-10-25: a personal-assistant style of chat).
 
 Maps the preparation selection and the chat-approved Submit request to one label so chat never calls a
 draft "submitted" and never hides an unknown outcome. Stop only removes authority; it needs no approval.

@@ -1,11 +1,15 @@
-"""Synthetic incidents do not contact Hermes or run a model."""
+"""Synthetic incidents do not contact a notification channel or run a model."""
 import sqlite3
 import time
 
 import pytest
 
+import subprocess
+
 from jobwatch import notify
+from jobwatch.notifier import legacy
 from pipeline.agentic import incidents
+from tests.notify_support import FakeChannel, use_fake_channel
 
 WINDOW = incidents.DIGEST_SECONDS
 
@@ -18,12 +22,11 @@ def conn():
 
 def live_transport(monkeypatch, sender):
     monkeypatch.setattr(notify, 'is_live', lambda _: True)
-    monkeypatch.setattr(notify, '_setting', lambda _: 'synthetic-config')
-    monkeypatch.setattr(notify, '_send', sender)
+    use_fake_channel(monkeypatch, sender)
 
 
 def test_first_failure_is_visible_paused_and_deduplicated(conn, monkeypatch):
-    monkeypatch.setattr(notify, '_send', lambda _: pytest.fail('test database must not send'))
+    use_fake_channel(monkeypatch, lambda _: pytest.fail('test database must not send'))
     one = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='deadline_exceeded', phase='evaluation')
     two = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='service_timeout', phase='shutdown')
     assert one['incident_id'] == two['incident_id']
@@ -87,40 +90,54 @@ def test_delivery_retry_is_separate_and_does_not_duplicate_messages(conn, monkey
     assert incidents.flush_notifications(conn, now=100 + WINDOW) == 0
     one = incidents.list_incidents(conn)[0]
     assert one['notification_state'] == 'failed' and one['notification_attempts'] == 1
-    assert one['notification_error'] == 'hermes_handoff_failed'
+    assert one['notification_error'] == 'delivery_failed'
     assert incidents.flush_notifications(conn, now=100 + WINDOW + 20) == 0 and len(sent) == 1
-    monkeypatch.setattr(notify, '_send', lambda lines: sent.extend(lines) or True)
+    FakeChannel.sender = staticmethod(lambda lines: sent.extend(lines) or True)
     assert incidents.flush_notifications(conn, now=100 + WINDOW + 60) == 1
     after = incidents.list_incidents(conn)[0]
-    assert after['notification_state'] == 'handed_off' and after['notification_attempts'] == 2
+    assert after['notification_state'] == 'delivered' and after['notification_attempts'] == 2
     assert after['state'] == 'paused' and incidents.is_paused(conn, 42)
     assert incidents.flush_notifications(conn, force=True, now=1000) == 0
     assert len(sent) == 2 and sent[0] == sent[1]
     assert conn.execute('SELECT COUNT(*) FROM chat_messages').fetchone()[0] == 1
 
 
-def test_missing_hermes_configuration_is_reported_without_send(conn, monkeypatch):
+def test_no_channel_is_reported_without_send(conn, monkeypatch):
     monkeypatch.setattr(notify, 'is_live', lambda _: True)
-    monkeypatch.setattr(notify, '_setting', lambda _: '')
-    monkeypatch.setattr(notify, '_send', lambda _: pytest.fail('not configured'))
+    monkeypatch.delenv(legacy.SSH_ENV, raising=False)
+    monkeypatch.delenv(legacy.FILE_ENV, raising=False)
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('no channel: nothing to run'))
     incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed', now=100)
     incidents.flush_notifications(conn, now=100 + WINDOW)
     row = incidents.list_incidents(conn)[0]
-    assert row['notification_state'] == 'failed' and row['notification_error'] == 'hermes_not_configured'
+    assert row['notification_state'] == 'no_channel' and row['notification_error'] is None
 
 
-def test_other_account_never_uses_owners_install_wide_hermes_route(conn, monkeypatch):
+def test_other_account_never_uses_owners_install_wide_route(conn, monkeypatch):
     from jobwatch import users
     monkeypatch.setattr(notify, 'is_live', lambda _: True)
-    monkeypatch.setattr(notify, '_setting', lambda _: pytest.fail('another account must not read the owner route'))
-    monkeypatch.setattr(notify, '_send', lambda _: pytest.fail('another account must not notify owner Hermes'))
+    monkeypatch.setenv(legacy.SSH_ENV, 'someone@example.invalid')
+    monkeypatch.setenv(legacy.FILE_ENV, '/tmp/x')
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('another account must not use the owner route'))
     with users.use('other-person'):
         incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed', now=100)
         incidents.flush_notifications(conn, now=100 + WINDOW)
         row = incidents.list_incidents(conn)[0]
-        assert row['notification_state'] == 'failed'
-        assert row['notification_error'] == 'hermes_not_configured'
+        assert row['notification_state'] == 'no_channel'
         assert incidents.is_paused(conn, 42) and notify.unread(conn) == 1
+
+
+def test_rows_stored_before_generic_wording_read_as_generic(conn):
+    row = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed', now=100)
+    ident = row['incident_id']
+    for stored, error, expect in [('handed_off', None, ('delivered', None)),
+                                  ('failed', 'hermes_not_configured', ('no_channel', None)),
+                                  ('failed', 'hermes_handoff_failed', ('failed', 'delivery_failed')),
+                                  ('sending', None, ('pending', None))]:
+        conn.execute('UPDATE agentic_incidents SET notification_state=?,notification_error=? WHERE incident_id=?',
+                     (stored, error, ident))
+        got = incidents.list_incidents(conn)[0]
+        assert (got['notification_state'], got['notification_error']) == expect
 
 
 def test_notification_sender_claim_prevents_concurrent_duplicate(conn, monkeypatch):
@@ -210,7 +227,7 @@ def test_twenty_one_incidents_in_one_window_send_one_digest_then_next_window_one
     assert incidents.flush_notifications(conn, now=100 + 2 * WINDOW + 10) == 1
     assert len(sent) == 2 and 'token_limit x2 (jobs #30, #31)' in sent[1] and 'deadline_exceeded' not in sent[1]
     assert incidents.flush_notifications(conn, now=100 + 4 * WINDOW) == 0 and len(sent) == 2
-    assert all(i['notification_state'] == 'handed_off' for i in incidents.list_incidents(conn))
+    assert all(i['notification_state'] == 'delivered' for i in incidents.list_incidents(conn))
 
 
 def test_same_reason_for_same_job_is_listed_once_in_a_digest(conn, monkeypatch):
@@ -306,4 +323,4 @@ def test_reconcile_without_activity_is_read_only_and_handoffs_are_bounded(conn, 
     assert len(rows) == 3 and sent == []
     assert incidents.flush_notifications(conn, now=time.time() + WINDOW) == 1 and len(sent) == 1
     assert len(incidents.list_incidents(conn)) == 3
-    assert all(i['notification_state'] == 'handed_off' for i in incidents.list_incidents(conn))
+    assert all(i['notification_state'] == 'delivered' for i in incidents.list_incidents(conn))

@@ -1,23 +1,22 @@
-"""Owner messages: the Chat page's history and pushes to Hermes (owner 2026-10-12: "I want a chatgpt-like chat box page
-in jobwatch so it can be reachable" and "it should notify hermes as hermes is my personal agent").
+"""Owner messages: the Chat page's history and the push of urgent ones to the person's notification channels
+(owner 2026-10-12: "I want a chatgpt-like chat box page in jobwatch so it can be reachable" and that jobwatch should
+tell their personal assistant when something is wrong).
 
-`notify()` saves a message from jobwatch in `chat_messages` and hands it to Hermes: the line is appended over SSH to
-~/.hermes/cron/jobwatch-notify.txt on the Hermes VM, where the "Jobwatch updates" job sends it to iMessage within
-15 minutes. A failed hand-off stays unpushed and is retried by the next notify() or `python -m jobwatch.notify --flush`.
+`notify()` saves a message from jobwatch in `chat_messages`. `alert()` saves an error and queues it for the person's
+channels (jobwatch.notifier: ssh_append, command, webhook...), at most once a day per key. A failed delivery stays
+in the outbox and is retried by the next alert() or `python -m jobwatch.notify --flush`.
 """
 from __future__ import annotations
 
 import logging
 import os
-import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 from .settings import get as _setting
-# Optional push to a personal assistant over ssh: JOBWATCH_HERMES_SSH=user@host, JOBWATCH_HERMES_FILE=remote file to append to.
-# Unset = no push (messages stay in the Chat page).
+# No channel configured = no push (messages stay in the Chat page).
 BOARD = _setting("JOBWATCH_BOARD_URL", "http://127.0.0.1:8960")
 
 SCHEMA = """
@@ -27,7 +26,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     text TEXT NOT NULL,
     created_at TEXT NOT NULL,
     read_at TEXT,
-    push INTEGER NOT NULL DEFAULT 0,      -- 1 = send to Hermes
+    push INTEGER NOT NULL DEFAULT 0,      -- 1 = send to the person's notification channels
     pushed_at TEXT
 );
 """
@@ -79,7 +78,7 @@ ERROR_REASONS = {"execution_failed", "artifact_invalid", "invalid_citation", "in
 
 
 def alert(conn, text: str, key: str) -> int | None:
-    """Something is broken: texted through Hermes, at most once a day per `key`."""
+    """Something is broken: pushed to the person's notification channels, at most once a day per `key`."""
     ensure(conn)
     since = datetime.now(UTC).timestamp() - 86400
     for (at,) in conn.execute("SELECT created_at FROM chat_messages WHERE role='jobwatch' AND push=1 AND text LIKE ?",
@@ -93,30 +92,24 @@ def alert(conn, text: str, key: str) -> int | None:
     return mid
 
 
-def _send(lines: list[str]) -> bool:
-    host, remote_file = _setting("JOBWATCH_HERMES_SSH"), _setting("JOBWATCH_HERMES_FILE")
-    if not host or not remote_file:
-        return False
-    try:
-        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", host, f"cat >> {remote_file}"],
-                           input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=20)
-        return r.returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
 def flush(conn) -> int:
+    """Hand every unsent pushed message to the channels and retry what failed earlier. Returns messages delivered."""
+    from jobwatch.notifier import FAILURE, Event, FailurePayload, dispatch, enqueue, ensure as ensure_channels
     ensure(conn)
-    rows = conn.execute("SELECT id,text FROM chat_messages WHERE push=1 AND pushed_at IS NULL ORDER BY id").fetchall()
-    if not rows:
-        return 0
-    lines = [f"Jobwatch: {' '.join(t.split())}" for _, t in rows]
-    if not _send(lines):
-        log.warning("notify: Hermes hand-off failed for %d message(s); retried next time", len(rows))
-        return 0
-    conn.executemany("UPDATE chat_messages SET pushed_at=? WHERE id=?", [(_now(), i) for i, _ in rows])
-    conn.commit()
-    return len(rows)
+    ensure_channels(conn)
+    for mid, text in conn.execute("SELECT id,text FROM chat_messages WHERE push=1 AND pushed_at IS NULL AND id NOT IN "
+                                  "(SELECT message_id FROM notify_outbox WHERE message_id IS NOT NULL) ORDER BY id").fetchall():
+        key = _alert_key(text) or f"message:{mid}"
+        enqueue(conn, Event(FAILURE, f"Jobwatch: {' '.join(text.split())}", key, FailurePayload(reason=key)), message_id=mid)
+    return dispatch(conn)
+
+
+def _alert_key(text: str) -> str | None:
+    """The `[key]` an alert() message ends with."""
+    tail = text.rstrip()
+    if tail.endswith("]") and "[" in tail:
+        return "alert:" + tail[tail.rindex("[") + 1:-1]
+    return None
 
 
 def unread(conn) -> int:

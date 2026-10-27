@@ -58,7 +58,7 @@ order with a check at each one, before any unit is enabled at boot.
 | `JOBWATCH_LLM_MODEL` | Default model id for every role (each person can pick their own on the Models page) | `gpt-4o` |
 | `JOBWATCH_PUBLIC_HOST`, `JOBWATCH_BOARD_URL` | Address you open the board at | localhost:8960 |
 | `JOBWATCH_NOTIFY_CMD` | Command run to notify you | none |
-| `JOBWATCH_HERMES_SSH`, `JOBWATCH_HERMES_FILE` | `user@host` and remote file to append urgent messages to; unset = no push | none |
+| notification channels | Where urgent messages go (ssh append, local command, webhook): `jobwatch notify channels add ...`, see [docs/notifications.md](docs/notifications.md) | none (messages stay in the Chat page) |
 | `JOBWATCH_SESSION_SECRET`, `JOBWATCH_INVITE_CODE`, `JOBWATCH_OWNER_PASSWORD` | Sign-in | sign-in off |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Your own Google OAuth client | Google off |
 

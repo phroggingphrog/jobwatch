@@ -797,7 +797,7 @@ def _tell_owner_ready(conn, pid):
 
 
 def _alert_if_error(conn, pid):
-    """A job stopped by a jobwatch failure (not a normal decision) texts the owner via Hermes, once a day per kind."""
+    """A job stopped by a jobwatch failure (not a normal decision) is pushed to the owner's notification channels, once a day per kind."""
     try:
         from jobwatch.notify import ERROR_REASONS, alert
         row = conn.execute("SELECT r.reason, p.title FROM agentic_runs r JOIN postings p ON p.id=r.posting_id "

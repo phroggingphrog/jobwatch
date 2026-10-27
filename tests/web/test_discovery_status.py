@@ -14,7 +14,7 @@ def test_discovery_failure_is_visible_and_page_uses_safe_codes(client):
     response = client.get('/discovery-status')
     assert response.status_code == 200
     assert 'deadline exceeded' in response.text and 'Paused.' in response.text
-    assert 'Refresh status' in response.text and 'Hermes notification' in response.text
+    assert 'Refresh status' in response.text and 'Notification channel' in response.text
     assert 'Last successful phase' in response.text
     status = client.get('/api/discovery/status')
     assert status.status_code == 200

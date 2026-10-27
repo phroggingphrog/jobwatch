@@ -1,4 +1,4 @@
-"""Chat page: one thread on the board. jobwatch posts its news here (and to Hermes, see jobwatch.notify); the person asks
+"""Chat page: one thread on the board. jobwatch posts its news here (and to the person's notification channels, see jobwatch.notify); the person asks
 questions or gives rulings, and the model they chose for the "chat" role (jobwatch.model_choice) answers from a live
 snapshot of the board. The assistant reads only; it never changes rules, submits or messages anyone. Rulings stay in the
 thread for the maintainer to act on.

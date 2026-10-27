@@ -12,6 +12,8 @@ from pathlib import Path
 
 import yaml
 
+from jobwatch.notifier import legacy as _notifier_legacy
+
 # Keys Jobwatch reads. None = any value; a type or tuple of types = the value must be that kind.
 PROFILE = {
     "version": None, "updated_at": None, "source_documents": list, "candidate": dict, "skills": dict,
@@ -41,8 +43,7 @@ SETTINGS = {
     "JOBWATCH_PUBLIC_HOST", "JOBWATCH_BOARD_URL", "JOBWATCH_NOTIFY_CMD", "JOBWATCH_DATA_DIR", "JOBWATCH_DB",
     "JOBWATCH_PROFILE_DIR", "JOBWATCH_CAREER_DIR", "JOBWATCH_CONFIG_DIR", "JOBWATCH_DEFAULT_USER",
     "JOBWATCH_EMPLOYERS", "JOBWATCH_LLM_BASE_URL", "JOBWATCH_LLM_MODEL", "JOBWATCH_LLM_API_KEY",
-    "JOBWATCH_LLM_KEYS_FILE", "JOBWATCH_LLM_KEY_NAMES", "JOBWATCH_LLM_PI_MODELS", "JOBWATCH_HERMES_SSH",
-    "JOBWATCH_HERMES_FILE",
+    "JOBWATCH_LLM_KEYS_FILE", "JOBWATCH_LLM_KEY_NAMES", "JOBWATCH_LLM_PI_MODELS", *_notifier_legacy.ENV_NAMES,
     # sign-in and Google (multi-person); GOOGLE_* may also sit in google.env
     "JOBWATCH_SESSION_SECRET", "JOBWATCH_INVITE_CODE", "JOBWATCH_OWNER_PASSWORD", "JOBWATCH_GOOGLE_ENV",
     "JOBWATCH_SETTINGS", "JOBWATCH_AGENT_TOKEN", "JOBWATCH_AGENT_APPROVAL_TOKEN", "JOBWATCH_AGENT_PERSON",

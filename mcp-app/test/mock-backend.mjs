@@ -109,7 +109,7 @@ export function startMock(port = 0) {
       return send(200,{daily_token_ceiling:dailyTokenCeiling});
     }
     if(url.pathname==="/connector/discovery/status") return send(200,{enabled:true,postings:4,assessments_today:1,charged_tokens_today:50,scope:{basis:["Retail"],locations:["Victoria"],daily_assessments:40,daily_token_ceiling:dailyTokenCeiling},
-      incidents:[{incident_id:"incident-one",posting_id:42,run_id:"failed-one",reason:"deadline_exceeded",phase:"evaluation",last_successful_phase:"capture",state:"paused",notification_state:"failed",notification_error:"hermes_handoff_failed",retry_context:"f".repeat(64)}],latest_run:null,invocations:[]});
+      incidents:[{incident_id:"incident-one",posting_id:42,run_id:"failed-one",reason:"deadline_exceeded",phase:"evaluation",last_successful_phase:"capture",state:"paused",notification_state:"failed",notification_error:"delivery_failed",retry_context:"f".repeat(64)}],latest_run:null,invocations:[]});
     if(url.pathname==="/connector/discovery/start") return send(202,{run_id:"discovery-one",state:"queued"});
     if(url.pathname==="/connector/discovery/retry") {
       if(body.expected_context!=="f".repeat(64)) return send(409,{error:"retry_inputs_changed"});

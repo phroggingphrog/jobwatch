@@ -14,7 +14,7 @@
       <h3 class="wk-h3">{% if incident.posting_id %}Job #{{ incident.posting_id }}{% else %}Discovery run{% endif %}: {{ incident.reason|replace('_', ' ') }}</h3>
       <p>Paused. Last recorded phase: {{ incident.phase or 'unknown' }}.</p>
       <p>Last successful phase: {{ incident.last_successful_phase or 'not recorded' }}.</p>
-      <p>Hermes notification: {{ incident.notification_state|replace('_', ' ') }}{% if incident.notification_error %} ({{ incident.notification_error|replace('_', ' ') }}){% endif %}.</p>
+      <p>Notification channel: {{ incident.notification_state|replace('_', ' ') }}{% if incident.notification_error %} ({{ incident.notification_error|replace('_', ' ') }}){% endif %}.</p>
       <p>Ask your coordinating assistant to review this incident and retry only this job when ready.</p>
     </section>
     {% else %}<div class="wk-panel"><div class="wk-empty"><b>No unresolved failures</b><span>New failures will appear here and in discovery status through MCP.</span></div></div>{% endfor %}

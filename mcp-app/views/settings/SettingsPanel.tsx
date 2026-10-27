@@ -216,7 +216,7 @@ export function SettingsPanel({ initial, onBack, mode: panelMode = "all" }: { in
                 <span className="incident-reason">{incident.reason.replaceAll("_", " ")}</span>
                 {incident.phase && <span className="sub">at {incident.phase.replaceAll("_", " ")}</span>}
                 <span className="sub">Last successful phase: {incident.last_successful_phase?.replaceAll("_", " ") || "Not recorded"}</span>
-                <span className="sub">Hermes handoff: {incident.notification_state.replaceAll("_", " ")}{incident.notification_error ? ` (${incident.notification_error.replaceAll("_", " ")})` : ""}</span>
+                <span className="sub">Notification channel: {incident.notification_state.replaceAll("_", " ")}{incident.notification_error ? ` (${incident.notification_error.replaceAll("_", " ")})` : ""}</span>
                 {retryErrors[incident.incident_id] && <p className="note bad" role="alert">{retryErrors[incident.incident_id]}</p>}
                 {incident.posting_id !== null && incident.retry_context && <button type="button" className="btn quiet"
                   disabled={discoveryBusy || retry.isPending || retryingIncident !== ""}
