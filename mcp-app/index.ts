@@ -8,6 +8,7 @@ import {
   onboardingEdit,
   discoveryStatusOut,
   discoveryQueuedOut,
+  discoverySettingsOut,
   jobOut,
   overviewOut,
   reviewOut,
@@ -360,6 +361,28 @@ export const retryAssessment = server.tool({
   try {
     const d = discoveryQueuedOut.parse(await call(cfg, "POST", "/connector/discovery/retry", input));
     return { content: text(`Requested assessment retry ${d.state}. Other paused jobs are unchanged.`), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
+
+export const getDiscoverySettings = server.tool({
+  name: "get_discovery_settings",
+  description: "Read the person's effective daily token allowance. A null daily_token_ceiling means Unlimited. Individual job and run limits still apply.",
+  inputSchema: z.strictObject({}), outputSchema: discoverySettingsOut, annotations: READ,
+}, async () => {
+  try {
+    const d = discoverySettingsOut.parse(await call(cfg, "GET", "/connector/discovery/settings"));
+    return { content: text(d.daily_token_ceiling === null ? "Daily token allowance: Unlimited." : `Daily token allowance: ${d.daily_token_ceiling}.`), structuredContent: d };
+  } catch (e) { return fail(e); }
+});
+
+export const setDiscoverySettings = server.tool({
+  name: "set_discovery_settings",
+  description: "Save the person's explicitly requested daily token allowance in their own configuration. Set daily_token_ceiling to null for Unlimited, or a positive integer for a limit. Keeps recorded spending, profile facts, first-failure pauses and individual run limits.",
+  inputSchema: discoverySettingsOut, outputSchema: discoverySettingsOut, annotations: WORK,
+}, async (input) => {
+  try {
+    const d = discoverySettingsOut.parse(await call(cfg, "POST", "/connector/discovery/settings", input));
+    return { content: text(d.daily_token_ceiling === null ? "Saved daily token allowance: Unlimited." : `Saved daily token allowance: ${d.daily_token_ceiling}.`), structuredContent: d };
   } catch (e) { return fail(e); }
 });
 

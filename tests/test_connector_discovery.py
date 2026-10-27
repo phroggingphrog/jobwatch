@@ -16,6 +16,26 @@ H = {'Authorization': 'Bearer ' + TOKEN}
 P = '/connector/discovery'
 
 
+def test_settings_are_typed_and_bound_to_authenticated_person(transport):
+    a, b, calls, module = transport
+    saved = {}
+    def get_settings(person, configured):
+        assert person == users.current() == configured['configured_person']
+        return {'daily_token_ceiling': saved.get(person, 2_000_000)}
+    def set_settings(person, configured, daily_token_ceiling):
+        assert person == users.current() == configured['configured_person']
+        saved[person] = daily_token_ceiling
+        return get_settings(person, configured)
+    module.get_settings, module.set_settings = get_settings, set_settings
+    assert a.get(P+'/settings').status_code == 401
+    assert a.post(P+'/settings', headers=H, json={'daily_token_ceiling': None}).json() == {'daily_token_ceiling': None}
+    assert a.get(P+'/settings', headers=H).json() == {'daily_token_ceiling': None}
+    assert b.get(P+'/settings', headers=H).json() == {'daily_token_ceiling': 2_000_000}
+    for body in ({'daily_token_ceiling': 0}, {'daily_token_ceiling': True},
+                 {'daily_token_ceiling': None, 'person': 'fixture-b'}):
+        assert a.post(P+'/settings', headers=H, json=body).status_code == 422
+
+
 @pytest.fixture
 def transport(monkeypatch):
     calls, issued = [], {}

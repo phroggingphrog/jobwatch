@@ -48,7 +48,7 @@ describe("tools list", () => {
   it("has the expected tools, hints, views and visibility", async () => {
     const { tools } = await client.listTools();
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "confirm_onboarding", "decide", "discovery_status", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
+    expect(Object.keys(by).sort()).toEqual(["answer_onboarding_question", "confirm_onboarding", "decide", "discovery_status", "get_discovery_settings", "job_detail", "jobs_overview", "onboarding_status", "prepare_application", "retry_assessment", "review_onboarding", "review_submission", "revise_application", "set_discovery_settings", "start_discovery", "start_onboarding", "submit_reviewed", "task_status", "update_onboarding"]);
     for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
@@ -198,6 +198,14 @@ describe("direct onboarding", () => {
 });
 
 describe("discovery operations", () => {
+  it("persists a typed unlimited daily allowance and rejects identity or invalid limits", async () => {
+    expect((await call("get_discovery_settings")).structuredContent).toEqual({daily_token_ceiling:2000000});
+    expect((await call("set_discovery_settings",{daily_token_ceiling:null})).structuredContent).toEqual({daily_token_ceiling:null});
+    expect((await call("get_discovery_settings")).structuredContent).toEqual({daily_token_ceiling:null});
+    expect((await call("discovery_status")).structuredContent.scope.daily_token_ceiling).toBeNull();
+    expect((await call("set_discovery_settings",{daily_token_ceiling:0})).isError).toBe(true);
+    expect((await call("set_discovery_settings",{daily_token_ceiling:null,person:"other"})).isError).toBe(true);
+  });
   it("shows paused failures and queues start or explicit retry without a chat", async () => {
     const status=await call("discovery_status");
     expect(status.isError).toBeFalsy();

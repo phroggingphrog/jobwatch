@@ -16,6 +16,7 @@ export function startMock(port = 0) {
   };
   let queued = 0;
   let pending = null;
+  let dailyTokenCeiling = 2000000;
   const server = http.createServer(async (req, res) => {
     const send = (code, body) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
     // public OAuth paths: Python serves these without any bearer (the TypeScript server must not forward its own)
@@ -73,7 +74,11 @@ export function startMock(port = 0) {
       pending = null;
       return send(200, { data: { view: "work", status: "complete", answer: body.decision === "approve" ? "Prepared. The draft is ready for your review." : "", decision: body.decision }, meta: {} });
     }
-    if(url.pathname==="/connector/discovery/status") return send(200,{enabled:true,postings:4,assessments_today:1,charged_tokens_today:50,scope:null,
+    if(url.pathname==="/connector/discovery/settings") {
+      if(req.method==="POST") dailyTokenCeiling=body.daily_token_ceiling;
+      return send(200,{daily_token_ceiling:dailyTokenCeiling});
+    }
+    if(url.pathname==="/connector/discovery/status") return send(200,{enabled:true,postings:4,assessments_today:1,charged_tokens_today:50,scope:{basis:["Retail"],locations:["Victoria"],daily_assessments:40,daily_token_ceiling:dailyTokenCeiling},
       incidents:[{incident_id:"incident-one",posting_id:42,run_id:"failed-one",reason:"deadline_exceeded",phase:"evaluation",last_successful_phase:"capture",state:"paused",notification_state:"failed",notification_error:"hermes_handoff_failed",retry_context:"f".repeat(64)}],latest_run:null,invocations:[]});
     if(url.pathname==="/connector/discovery/start") return send(202,{run_id:"discovery-one",state:"queued"});
     if(url.pathname==="/connector/discovery/retry") {

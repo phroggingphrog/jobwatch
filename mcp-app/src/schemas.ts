@@ -83,7 +83,7 @@ export const onboardingProposal = z.object({
 
 export const onboardingScope = z.object({
   basis: z.array(z.string()), locations: z.array(z.string()),
-  daily_assessments: z.number().int(), daily_token_ceiling: z.number().int(),
+  daily_assessments: z.number().int(), daily_token_ceiling: z.number().int().nullable(),
 });
 
 export const onboardingStatusOut = z.object({
@@ -114,6 +114,8 @@ export const submitOut = z.object({
   posting_id: z.number().int(),
   status: z.string(),
 });
+
+export const discoverySettingsOut = z.strictObject({ daily_token_ceiling: z.number().int().positive().nullable() });
 
 export const discoveryStatusOut = z.object({
   enabled: z.boolean(), postings: z.number().int(), assessments_today: z.number().int(),

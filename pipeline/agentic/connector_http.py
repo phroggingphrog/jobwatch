@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from jobwatch import users
+from pipeline.agentic.discovery_settings import DailySettings
 from jobwatch.candidate import intake
 from jobwatch.candidate.contracts import CandidateError
 from pipeline.agentic import chatgpt_connector as cc
@@ -228,6 +229,20 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
         from jobwatch.config import load_config
         with users.use(who):
             return discovery_ops.status(who, load_config())
+
+    @app.get('/connector/discovery/settings')
+    def discovery_settings(who: str = Depends(authed)):
+        from pipeline.agentic import discovery_ops
+        from jobwatch.config import load_config
+        with users.use(who):
+            return discovery_ops.get_settings(who, load_config())
+
+    @app.post('/connector/discovery/settings')
+    def save_discovery_settings(body: DailySettings, who: str = Depends(authed)):
+        from pipeline.agentic import discovery_ops
+        from jobwatch.config import load_config
+        with users.use(who):
+            return discovery_ops.set_settings(who, load_config(), body.daily_token_ceiling)
 
     @app.post('/connector/discovery/start', status_code=202)
     def discovery_start(body: DiscoveryStart, who: str = Depends(authed)):
