@@ -265,6 +265,17 @@ def create_app(config: Config | None = None) -> FastAPI:
     register_onboarding(app, config, conn_, render)
     from .google_routes import register as register_google
     register_google(app, config, conn_, render)
+
+    @app.get('/discovery-status', response_class=HTMLResponse)
+    def discovery_status_page(request: Request):
+        from pipeline.agentic import discovery_ops
+        result = discovery_ops.status(users.current(), config)
+        return render(request, 'discovery_status.html', None, discovery_status=result)
+
+    @app.get('/api/discovery/status')
+    def discovery_status_json():
+        from pipeline.agentic import discovery_ops
+        return as_json(discovery_ops.status(users.current(), config))
     APP_SHELL = Path(__file__).resolve().parent / "static" / "app" / "index.html"
 
     @app.get("/app", response_class=HTMLResponse)

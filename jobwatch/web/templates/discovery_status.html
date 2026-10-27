@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% set active = 'discovery' %}
+{% block title %}Discovery status{% endblock %}
+{% block crumb %}<a href="/#today">Today</a><span aria-hidden="true">›</span><span class="here">Discovery status</span>{% endblock %}
+{% block content %}
+<div class="wk-page">
+  <div class="wk-head"><div><h1 class="wk-h1">Discovery status</h1>
+    <p class="wk-sub">{{ discovery_status.postings }} collected postings. {{ discovery_status.assessments_today }} assessed today. Collected postings are not recommendations.</p>
+  </div><a class="btn" href="/discovery-status">Refresh status</a></div>
+  <div class="wk-sec"><h2 class="wk-h2">Assessment failures</h2>
+    <p class="wk-sub">A failed assessment stays paused until you request a retry. Other jobs can continue.</p>
+    {% for incident in discovery_status.incidents %}
+    <section class="wk-panel wk-pad wk-prose" role="status">
+      <h3 class="wk-h3">{% if incident.posting_id %}Job #{{ incident.posting_id }}{% else %}Discovery run{% endif %}: {{ incident.reason|replace('_', ' ') }}</h3>
+      <p>Paused. Last recorded phase: {{ incident.phase or 'unknown' }}.</p>
+      <p>Last successful phase: {{ incident.last_successful_phase or 'not recorded' }}.</p>
+      <p>Hermes notification: {{ incident.notification_state|replace('_', ' ') }}{% if incident.notification_error %} ({{ incident.notification_error|replace('_', ' ') }}){% endif %}.</p>
+      <p>Ask your coordinating assistant to review this incident and retry only this job when ready.</p>
+    </section>
+    {% else %}<div class="wk-panel"><div class="wk-empty"><b>No unresolved failures</b><span>New failures will appear here and in discovery status through MCP.</span></div></div>{% endfor %}
+  </div>
+  <div class="wk-sec"><h2 class="wk-h2">Recent discovery activity</h2>
+    {% for invocation in discovery_status.invocations %}<div class="wk-panel wk-pad"><p>{{ invocation.state|replace('_', ' ') }}: {{ invocation.phase|replace('_', ' ') }}{% if invocation.posting_id %}, job #{{ invocation.posting_id }}{% endif %}.</p></div>
+    {% else %}<p class="wk-sub">No discovery invocation has been recorded yet.</p>{% endfor %}
+  </div>
+  {% if discovery_status.latest_run %}<div class="wk-sec"><h2 class="wk-h2">Latest requested run</h2>
+    <div class="wk-panel wk-pad"><p>{{ discovery_status.latest_run.state|replace('_', ' ') }}{% if discovery_status.latest_run.error %}: {{ discovery_status.latest_run.error|replace('_', ' ') }}{% endif %}.</p></div>
+  </div>{% endif %}
+</div>
+{% endblock %}

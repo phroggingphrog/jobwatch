@@ -59,4 +59,5 @@ def test_plan_and_relevance_are_per_person(api):
 
 def test_capabilities_advertise_discovery(api):
     out = api.get('/api/agent/capabilities',headers=h())
-    assert out.status_code == 200 and out.json()['discovery']['read_only'] is True
+    assert out.status_code == 200 and out.json()['discovery']['read_only'] is False
+    assert out.json()['discovery']['operations'] == ['status', 'start', 'retry']
