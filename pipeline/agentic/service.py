@@ -697,6 +697,16 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             stage = run_agentic_job(pid, config, conn, batch=batch, evidence_bundle=bundle,
                                     candidate_cache=cache, _batch_registry=batches,
                                     _invocation_deadline=invocation_deadline, _discovery_run_id=run_id, **kwargs)
+            last = conn.execute("SELECT reason FROM agentic_runs WHERE posting_id=? ORDER BY rowid DESC LIMIT 1",
+                                (pid,)).fetchone()
+        if stage is not None and last is not None and last[0] == 'daily_budget':
+            remaining = todo[n:]
+            summary['skipped'] += len(remaining)
+            summary['deferred'].extend({'posting_id': p, 'reason': 'daily_budget', 'next_eligible_at': None}
+                                       for p in remaining)
+            if run_id is not None:
+                incidents.mark_phase(conn, run_id, 'assessment')
+            break
         if stage is None:
             summary['skipped'] += 1
             summary['deferred'].extend(skips or [{'posting_id': pid, 'reason': 'not_admitted', 'next_eligible_at': None}])
@@ -707,12 +717,6 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             _tell_owner_ready(conn, pid)
         if run_id is not None:
             incidents.mark_phase(conn, run_id, 'assessment')
-        if last is not None and last[0] == 'daily_budget':
-            remaining = todo[n+1:]
-            summary['skipped'] += len(remaining)
-            summary['deferred'].extend({'posting_id': p, 'reason': 'daily_budget', 'next_eligible_at': None}
-                                       for p in remaining)
-            break
     summary['batch_id'] = batch.batch_id
     # Resumed jobs retain their original conservative batch ceilings, deadlines
     # and circuit state. Expose every participating identity instead of hiding
@@ -762,8 +766,10 @@ def _spent_today(conn, scope_day_start):
     """(jobs evaluated, tokens charged) since the person's local midnight, from the existing activity and batch records
     (no second ledger). Approximations: a batch with any activity today is charged to today in full (so one straddling
     midnight also counts for yesterday), spend with no activity row yet is not seen, and owner-requested drafts count
-    as evaluated jobs. All errs toward stopping early except the unseen in-flight spend."""
-    jobs = conn.execute("SELECT COUNT(DISTINCT posting_id) FROM agentic_activity WHERE event='finished' AND at>=?",
+    as evaluated jobs. Daily allowance deferrals and advertisement refreshes do not count as assessments.
+    All errs toward stopping early except the unseen in-flight spend."""
+    jobs = conn.execute("SELECT COUNT(DISTINCT posting_id) FROM agentic_activity WHERE event='finished' AND at>=? "
+                        "AND COALESCE(reason,'') NOT IN ('daily_budget','snapshot_changed')",
                         (scope_day_start,)).fetchone()[0]
     tokens = conn.execute("SELECT COALESCE(SUM(charged),0) FROM agentic_batches WHERE batch_id IN "
                           "(SELECT DISTINCT batch_id FROM agentic_activity WHERE at>=?)", (scope_day_start,)).fetchone()[0]
