@@ -23,7 +23,7 @@ _OPTIONAL = re.compile(r"\b(?:preferred|desirable|optional|ideally|advantage|nic
 _NEGATED = re.compile(r"\b(?:not (?:strictly )?(?:required|essential|necessary|mandatory)|no (?:prior )?experience (?:is )?(?:required|necessary)|do not (?:need|require)|don't (?:need|require))\b", re.I)
 _PROGRAM = re.compile(r"\b(?:graduate|internship|cadet|trainee|apprentice|vacation|summer)\b", re.I)
 _HOURS = re.compile(r"(?<![\d.])(?P<n>\d{1,3}(?:\.\d+)?)\s*(?:[-–]\s*\d+(?:\.\d+)?)?\s*(?:hours?|hrs?)\s*(?:per|a|each|/)\s*(?P<period>week|fortnight)\b", re.I)
-ENGINE_VERSION = 2
+ENGINE_VERSION = 3
 
 
 def remote_available(p: PostingFields) -> bool:
@@ -371,7 +371,10 @@ class Engine:
             mine = [h for h in mine if h.tag not in skip_tags]
         by_loc = [h for h in mine if h.applies_to == "location"]
         pool = by_loc or [h for h in mine if h.applies_to == "title"]
-        if not pool or any(h.value in regions for h in pool) or any(h.value in regions for h in mine if h.applies_to == "location"):
+        parent_terms = {text.casefold() for h in pool
+                        for text in params.get("parent_region_terms_by_tag", {}).get(h.tag, ())}
+        pool = [h for h in pool if h.text.casefold() not in parent_terms]
+        if not pool or any(h.value in regions for h in pool):
             return None
         strong = next((h for h in pool if h.strength == "obvious"), None)
         return (True, strong, {}) if strong else (False, pool[0], {})

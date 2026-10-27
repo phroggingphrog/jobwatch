@@ -10,7 +10,7 @@ import json
 from . import store
 
 LADDER = ("entry", "junior", "mid", "senior", "executive")
-PROJECTION_VERSION = 2
+PROJECTION_VERSION = 3
 SYNC_KEY = "prescreen_profile_sync"
 _WORK_TYPES = {"casual": "casual", "part_time": "part_time", "full_time": "full_time"}
 
@@ -32,6 +32,7 @@ def _rules_for(policy) -> list[tuple[str, dict, str]]:
         out.append(("region_outside", {
             "regions": [*policy.regions, "AU"],      # "AU": a country-level mention ("Australia-wide") is inside every Australian region
             "region_labels": ", ".join(policy.regions), "remote_ok": policy.remote_ok, "remote_exempt_tags": ["au_state"], "legacy_reason": "location",
+            "parent_region_terms_by_tag": {"au_state": ["Australia"]},
             "reason": "Location \"{matched}\" is outside your regions ({region_labels})."}, "skip"))
     if policy.home and policy.max_commute_km is not None:
         out.append(("term_hit", {"measurement": "distance", "category": "location_outside",

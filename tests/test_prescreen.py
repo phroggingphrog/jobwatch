@@ -489,3 +489,20 @@ def test_cli_words_rules_test_and_override(conn, capsys):
     assert 'citizen' in capsys.readouterr().out
     cli._run(conn, ns(prescreen_cmd='rules', action='list'))
     assert 'term_hit' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('location,remote,skip', [
+    ('Australia|NSW – Sydney Metro Area', False, True),
+    ('Australia|NSW – Sydney Metro Area', True, False),
+    ('Australia|VIC – Melbourne', False, False),
+    ('Australia|VIC – Melbourne; NSW – Sydney', False, False),
+    ('Australia', False, False),
+    ('Australia & New Zealand', False, False),
+    ('Australia-wide|NSW – Sydney Metro Area', False, False),
+])
+def test_specific_state_is_not_masked_by_country_metadata(conn, location, remote, skip):
+    eng = engine(conn, policy_of(fact('location', 'Melbourne VIC')))
+    out = run(eng, 'Analyst', location, remote=remote)
+    assert out.skip is skip
+    if skip:
+        assert out.category == 'location_outside'
