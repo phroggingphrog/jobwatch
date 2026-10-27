@@ -76,7 +76,22 @@ export const reviewOut = z.object({
 // A chat turn: either the assistant's answer, or one or more questions only the person can answer.
 export const chatOut = z.object({
   thread_id: z.string(),
-  status: z.enum(["complete", "needs_answer"]),
+  status: z.enum(["complete", "needs_answer", "awaiting_approval"]),
+  approval: z.object({
+    interaction_id: z.string(),
+    operation: z.literal("profile_confirm"),
+    summary: z.string(),
+    review: z.object({
+      revision: z.number().int(),
+      facts: z.array(z.object({ section: z.string(), value: z.unknown(), basis: z.string() })),
+      questions: z.array(z.object({ text: z.string() })),
+      scope: z.object({
+        basis: z.array(z.string()), locations: z.array(z.string()),
+        daily_assessments: z.number(), daily_token_ceiling: z.number(),
+      }),
+      authorises: z.unknown(), does_not_authorise: z.unknown(),
+    }),
+  }).optional(),
   answer: z.string().optional(),
   questions: z.array(z.object({ question: z.string(), options: z.array(z.string()).optional() })).optional(),
   note: z.string().optional(),

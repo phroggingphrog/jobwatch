@@ -74,6 +74,12 @@ export function startMock(port = 0) {
       return send(200, { data: { view: "work", status: "complete", answer: body.decision === "approve" ? "Prepared. The draft is ready for your review." : "", decision: body.decision }, meta: {} });
     }
     if (req.method === "POST" && url.pathname === "/connector/chat/start") {
+      if (/confirm profile/i.test(body.message)) return send(200, { status: "awaiting_approval", thread_id: "profile-thread", approval: {
+        interaction_id: "profile-review", operation: "profile_confirm", summary: "Confirm the exact profile and scope.",
+        review: { revision: 2, facts: [{ section: "location", value: "Melbourne", basis: "person" }], questions: [],
+          scope: { basis: ["Accounting"], locations: ["Victoria"], daily_assessments: 40, daily_token_ceiling: 2000000 },
+          authorises: ["discovery", "assessment"], does_not_authorise: ["submission"] },
+      }, _meta: { binding: "profile-binding-private" } });
       if (/which city/i.test(body.message)) return send(200, { type: "assistant_message", status: "needs_answer", thread_id: "thread-1", questions: [{ question: "Which city do you want to work in?", options: ["Melbourne", "Sydney"] }], note: "Show the question(s) to the person and wait for their answer.", tools: [] });
       if (/submit/i.test(body.message)) return send(200, { type: "assistant_message", status: "complete", thread_id: "thread-2", answer: "Understood.", declined: ["submit_application"], todos: [], tools: [] });
       return send(200, { type: "assistant_message", status: "complete", thread_id: "thread-3", answer: "Two jobs need you.", todos: [], tools: ["jobs_overview"] });
@@ -81,6 +87,10 @@ export function startMock(port = 0) {
     if (req.method === "POST" && url.pathname === "/connector/chat/continue") {
       if (body.thread_id === "thread-1") return send(200, { type: "assistant_message", status: "complete", thread_id: "thread-1", answer: `Letter tailored for ${body.message}.`, todos: [], tools: [] });
       return send(400, { error: "invalid_request" });
+    }
+    if (req.method === "POST" && url.pathname === "/connector/chat/decide") {
+      if (body.interaction_id !== "profile-review" || body.binding !== "profile-binding-private") return send(400, { error: "approval_not_found" });
+      return send(200, { status: "complete", thread_id: "profile-thread", answer: body.decision === "approve" ? "Profile confirmed." : "Profile remains a draft." });
     }
     if (req.method === "POST" && (m = url.pathname.match(/^\/connector\/jobs\/(\d+)\/submit$/))) {
       if (body.confirm_digest !== DIGEST) return send(400, { error: "submit_digest_mismatch" });

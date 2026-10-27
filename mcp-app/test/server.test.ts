@@ -48,12 +48,13 @@ describe("tools list", () => {
   it("has the expected tools, hints, views and visibility", async () => {
     const { tools } = await client.listTools();
     const by = Object.fromEntries(tools.map((t) => [t.name, t]));
-    expect(Object.keys(by).sort()).toEqual(["career_ops_continue_chat", "career_ops_start_chat", "decide", "job_detail", "jobs_overview", "prepare_application", "review_submission", "revise_application", "submit_reviewed", "task_status"]);
+    expect(Object.keys(by).sort()).toEqual(["career_ops_continue_chat", "career_ops_start_chat", "decide", "decide_profile", "job_detail", "jobs_overview", "prepare_application", "review_submission", "revise_application", "submit_reviewed", "task_status"]);
     for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission"]) expect(by[n].annotations?.readOnlyHint).toBe(true);
     expect(by.submit_reviewed.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true, readOnlyHint: false });
     expect((by.submit_reviewed._meta as any).ui.visibility).toEqual(["app"]);
     expect((by.decide._meta as any).ui.visibility).toEqual(["app"]);
-    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application"]) {
+    expect((by.decide_profile._meta as any).ui.visibility).toEqual(["app"]);
+    for (const n of ["jobs_overview", "job_detail", "task_status", "review_submission", "prepare_application", "revise_application", "career_ops_start_chat", "career_ops_continue_chat", "decide_profile"]) {
       expect((by[n]._meta as any).ui.resourceUri).toMatch(/^ui:\/\//);
       expect(by[n].outputSchema).toBeTruthy();
     }
@@ -62,6 +63,17 @@ describe("tools list", () => {
 });
 
 describe("read tools", () => {
+  it("offers an exact profile review with a private binding and app-only decision path", async () => {
+    const review = await call("career_ops_start_chat", { message: "confirm profile" });
+    expect(review.isError).toBeFalsy();
+    expect(review.structuredContent.status).toBe("awaiting_approval");
+    expect(review.structuredContent.approval.review.scope.locations).toEqual(["Victoria"]);
+    expect(modelVisible(review)).not.toContain("profile-binding-private");
+    expect(review._meta.binding).toBe("profile-binding-private");
+    const decided = await call("decide_profile", { interaction_id: "profile-review", decision: "reject", binding: review._meta.binding });
+    expect(decided.isError).toBeFalsy();
+    expect(decided.structuredContent.answer).toBe("Profile remains a draft.");
+  });
   it("jobs_overview returns matching structured content", async () => {
     const r = await call("jobs_overview", {});
     expect(r.isError).toBeFalsy();

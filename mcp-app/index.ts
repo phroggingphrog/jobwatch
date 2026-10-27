@@ -257,9 +257,18 @@ export const submitReviewed = server.tool(
 
 // ---- chat: pass-through to the same Career Ops agent as the Python MCP server --------------------------------
 // A question only the person can answer comes back as plain content ("needs your answer"), never answered here;
-// the answer goes back with career_ops_continue_chat on the same opaque thread_id. Approvals are not handled here.
+// the answer goes back with career_ops_continue_chat on the same opaque thread_id.
 function chatResult(raw: unknown) {
   const d = chatOut.parse(raw);
+  const meta = raw && typeof raw === "object" ? (raw as Record<string, unknown>)._meta : undefined;
+  const binding = meta && typeof meta === "object" ? (meta as Record<string, unknown>).binding : undefined;
+  if (d.status === "awaiting_approval") {
+    return {
+      content: text("Review the exact profile and search scope in the view, then press Confirm profile or Keep as draft. Nothing has been confirmed yet."),
+      structuredContent: d,
+      ...(typeof binding === "string" ? { _meta: { binding } } : {}),
+    };
+  }
   const asks = d.status === "needs_answer";
   const t = asks
     ? [
@@ -284,6 +293,7 @@ export const startChat = server.tool(
     inputSchema: z.object({ message: z.string().min(1).max(16000) }),
     outputSchema: chatOut,
     annotations: WORK,
+    view: { name: "chat-review" },
   },
   async ({ message }) => {
     try {
@@ -305,10 +315,30 @@ export const continueChat = server.tool(
     }),
     outputSchema: chatOut,
     annotations: WORK,
+    view: { name: "chat-continue" },
   },
   async ({ thread_id, message }) => {
     try {
       return chatResult(await call(cfg, "POST", "/connector/chat/continue", { thread_id, message }));
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+export const decideProfile = server.tool(
+  {
+    name: "decide_profile",
+    description: "View button only. Confirm or reject the exact displayed profile and search scope. Never submits an application.",
+    inputSchema: z.object({ interaction_id: z.string().max(100), decision: z.enum(["approve", "reject"]), binding: z.string().min(1).max(200) }),
+    outputSchema: chatOut,
+    annotations: WORK,
+    visibility: "app",
+    view: { name: "profile-result" },
+  },
+  async (input) => {
+    try {
+      return chatResult(await call(cfg, "POST", "/connector/chat/decide", input));
     } catch (e) {
       return fail(e);
     }
