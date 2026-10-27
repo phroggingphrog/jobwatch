@@ -3,6 +3,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from jobwatch import users
+from pipeline.agentic.discovery_settings import DailySettings
 from jobwatch.occupations.hypotheses import cached_hypotheses
 from jobwatch.occupations.plan import load_plan
 from pipeline.agentic import discovery
@@ -36,6 +37,16 @@ def mount(app, require, get_config):
     def status(principal=Depends(read)):
         from pipeline.agentic import discovery_ops
         return discovery_ops.status(principal.person, get_config(principal.person))
+
+    @app.get(PREFIX + '/settings')
+    def settings(principal=Depends(read)):
+        from pipeline.agentic import discovery_ops
+        return discovery_ops.get_settings(principal.person, get_config(principal.person))
+
+    @app.post(PREFIX + '/settings')
+    def save_settings(body: DailySettings, principal=Depends(write)):
+        from pipeline.agentic import discovery_ops
+        return discovery_ops.set_settings(principal.person, get_config(principal.person), body.daily_token_ceiling)
 
     @app.post(PREFIX + '/start', status_code=202)
     def start(body: DiscoveryRequest, principal=Depends(write)):
