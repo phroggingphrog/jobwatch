@@ -202,6 +202,7 @@ def test_reference_text_and_total_output_are_bounded(tmp_path, monkeypatch):
     folder = users.user_dir() / 'career' / 'style' / 'examples'
     folder.mkdir(parents=True)
     (folder / 'a.md').write_text('TOO LARGE ' * 20)
+    (folder / 'invalid.md').write_bytes(b'\xff\xfe')
     for name in ['b.md', 'c.md', 'd.md']:
         (folder / name).write_text('small sample text!!!')
     guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
