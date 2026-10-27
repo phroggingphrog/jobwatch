@@ -9,16 +9,35 @@ Every failure returns None so the pipeline runs as before.
 from __future__ import annotations
 
 import hashlib
+import contextlib
+import contextvars
 import logging
 import math
 import re
 import sqlite3
 import struct
+import time
 from pathlib import Path
 
 import requests
 
 log = logging.getLogger(__name__)
+_DEADLINE = contextvars.ContextVar('jobwatch_public_extras_deadline', default=None)
+
+
+@contextlib.contextmanager
+def deadline_scope(deadline):
+    prior = _DEADLINE.get()
+    token = _DEADLINE.set(min(prior, deadline) if prior is not None else deadline)
+    try:
+        yield
+    finally:
+        _DEADLINE.reset(token)
+
+
+def _timeout(seconds):
+    deadline = _DEADLINE.get()
+    return seconds if deadline is None else max(0, min(seconds, deadline-time.time()))
 
 BASE = "https://openrouter.ai/api/v1"
 DEFAULTS = {"enabled": True, "key_file": "~/.config/jobwatch/openrouter-jev.key",
@@ -53,8 +72,11 @@ def _post(cfg: dict, path: str, body: dict) -> dict | None:
     key = _key(cfg)
     if not cfg.get("enabled") or not key:
         return None
+    timeout = _timeout(cfg['timeout'])
+    if timeout <= 0:
+        return None
     try:
-        r = requests.post(f"{BASE}/{path}", json=body, timeout=cfg["timeout"],
+        r = requests.post(f"{BASE}/{path}", json=body, timeout=timeout,
                           headers={"authorization": f"Bearer {key}", "content-type": "application/json"})
         if r.status_code != 200:
             log.warning("openrouter %s returned %s", path, r.status_code)
@@ -127,13 +149,16 @@ def embed(texts: list[str], config=None) -> list[list[float]] | None:
     cfg = extras_settings(config)
     if not cfg.get("enabled"):
         return None
+    timeout = _timeout(cfg['timeout'] * 2)
+    if timeout <= 0:
+        return None
     from jobwatch import model_choice
     from jobwatch.llm import load_keys
     keys = load_keys()
     if not keys:
         return None
     try:   # gateway_url() and load_keys() both follow the person's own gateway, so the key and the URL always match
-        r = requests.post(f"{model_choice.gateway_url().rstrip('/')}/embeddings", timeout=cfg["timeout"] * 2,
+        r = requests.post(f"{model_choice.gateway_url().rstrip('/')}/embeddings", timeout=timeout,
                           json={"model": cfg["embed_model"], "input": [t[:MAX_AD_CHARS] for t in texts]},
                           headers={"authorization": f"Bearer {keys[min(cfg['credential_index'], len(keys) - 1)]}"})
         if r.status_code != 200:

@@ -38,6 +38,7 @@ final URL, or the ad/page shares a significant word with the posting title). Cha
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import ipaddress
 import json
 import logging
@@ -54,6 +55,7 @@ from . import db as dbm
 from .models import fold, html_to_text, now_utc
 
 log = logging.getLogger(__name__)
+_FETCH_DEADLINE = contextvars.ContextVar('jobwatch_ad_fetch_deadline', default=None)
 
 MIN_FULL = 700                 # a description at least this long is treated as the real ad body...
 COLLECTOR_CAP = 1990           # ...unless it is this long: the collectors cut at 2000, so that is not the whole ad
@@ -283,8 +285,13 @@ def _do_get(url: str, browser: bool, timeout: float) -> _Resp:
     Seek and Jora; plain requests gets 403 on several career sites); False is plain requests for public JSON APIs.
     The body is streamed: at most MAX_BODY bytes after decompression and TOTAL_DEADLINE seconds in all, headers
     included (a gzip bomb or a slow drip raises FetchError); only a 200 body is read."""
-    deadline = time.monotonic() + TOTAL_DEADLINE
-    timeout = min(timeout, TOTAL_DEADLINE)
+    seconds = TOTAL_DEADLINE
+    if _FETCH_DEADLINE.get() is not None:
+        seconds = min(seconds, _FETCH_DEADLINE.get()-time.time())
+    if seconds <= 0:
+        raise FetchError('deadline_exceeded')
+    deadline = time.monotonic() + seconds
+    timeout = min(timeout, seconds)
     if browser:
         from curl_cffi import requests as cr
         r = cr.get(url, impersonate="chrome", timeout=timeout, allow_redirects=False, stream=True)
@@ -294,7 +301,7 @@ def _do_get(url: str, browser: bool, timeout: float) -> _Resp:
         finally:
             r.close()
     cancel = threading.Event()
-    return _within(TOTAL_DEADLINE + 2, lambda: _requests_get(url, timeout, deadline, cancel), cancel)
+    return _within(seconds, lambda: _requests_get(url, timeout, deadline, cancel), cancel)
 
 
 # --- URL safety -----------------------------------------------------------------------------------------------
@@ -920,13 +927,15 @@ def is_host_failure(status: str | None) -> bool:
 
 
 def ensure_text(conn, posting, fetcher=None, *, allow_fetch: bool = True, now: datetime | None = None,
-                force: bool = False) -> tuple[str, str]:
+                force: bool = False, deadline: float | None = None) -> tuple[str, str]:
     """(text, kind) for one posting row, kind = 'full' | 'partial' | 'teaser'. May fetch (one request) when allow_fetch,
     the source has a fetcher that would not refuse the posting and the fetch log allows it (force skips the log's
     wait and try cap); every attempt is logged (see last_status).
 
     `fetcher`, when given, is a test double `fetcher(source_id) -> text` that replaces the network call."""
     text, kind = local_text(conn, posting)
+    if deadline is not None and deadline <= time.time():
+        return text, kind
     spec = _FETCHERS.get(posting["source"]) if allow_fetch and kind != "full" else None
     if not spec or not (force or fetch_due(conn, posting["id"], now)):
         return text, kind
@@ -934,6 +943,7 @@ def ensure_text(conn, posting, fetcher=None, *, allow_fetch: bool = True, now: d
     if not fetcher and spec.real and not would_request(spec.real, ref):
         return text, kind                                   # nothing to ask: no request, no logged try
     _NOTE.status, _NOTE.page = None, None
+    token = _FETCH_DEADLINE.set(deadline)
     try:
         got = (fetcher(posting["source_id"]) if fetcher else spec.run(ref)) or ""
     except Blocked as exc:
@@ -944,6 +954,8 @@ def ensure_text(conn, posting, fetcher=None, *, allow_fetch: bool = True, now: d
         _note(f"error: {type(exc).__name__}")
         _record_fetch(conn, posting["id"], f"error: {type(exc).__name__}: {str(exc)[:60]}")
         raise
+    finally:
+        _FETCH_DEADLINE.reset(token)
     got = got[:MAX_TEXT]
     # a page text replaces a teaser when longer, and a cut text when it is about as long or longer
     if got and len(got) >= (len(text) * 0.9 if kind == "partial" else len(text) + 1):

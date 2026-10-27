@@ -223,6 +223,12 @@ class JobBudget:
         with state.lock:
             self.ensure_live()
             charge = input_tokens + output_tokens
+            from pipeline.agentic.execution import current
+            scope = current()
+            if scope is not None:
+                scope.check()
+                if scope.calls >= scope.max_calls or scope.charged_tokens + charge > scope.token_ceiling:
+                    raise RuntimeErrorSafe("invocation_budget_exhausted")
             if self._job_charged + charge > self._job_ceiling or state.charged_tokens + charge > state.token_ceiling:
                 raise RuntimeErrorSafe("token_limit")
             rid = uuid.uuid4().hex

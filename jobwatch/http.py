@@ -36,7 +36,7 @@ class Blocked(HttpError):
 class Fetcher:
     def __init__(self, user_agent: str = BROWSER_UA, timeout: float = 20.0,
                  min_delay: float = 1.5, sleep: Callable[[float], None] = time.sleep,
-                 clock: Callable[[], float] = time.monotonic):
+                 clock: Callable[[], float] = time.monotonic, deadline: float | None = None):
         self.session = requests.Session()
         self.session.trust_env = False          # never pick up proxy env vars
         self.session.headers.update({
@@ -50,6 +50,13 @@ class Fetcher:
         self._robots: dict[str, RobotFileParser | None] = {}
         self.blocked: dict[str, str] = {}
         self.requests_made = 0
+        self.deadline = deadline
+
+    def _remaining_timeout(self, url: str) -> float:
+        left = self.timeout if self.deadline is None else min(self.timeout, self.deadline-time.time())
+        if left <= 0:
+            raise Blocked(url, 0, 'collection_deadline')
+        return left
 
     # -- pacing -----------------------------------------------------------
     def _pace(self, url: str, delay: float | None = None) -> None:
@@ -58,7 +65,8 @@ class Fetcher:
             raise Blocked(url, 0, f"{host} backed off this run ({self.blocked[host]})")
         wait = (delay or self.min_delay) - (self.clock() - self._last.get(host, -1e9))
         if wait > 0:
-            self.sleep(wait)
+            self.sleep(min(wait, self._remaining_timeout(url)))
+        self._remaining_timeout(url)
         self._last[host] = self.clock()
 
     def _check(self, url: str, response: requests.Response) -> requests.Response:
@@ -76,7 +84,7 @@ class Fetcher:
         self._pace(url, delay)
         self.requests_made += 1
         try:
-            response = self.session.request(method, url, timeout=self.timeout,
+            response = self.session.request(method, url, timeout=self._remaining_timeout(url),
                                             headers=headers, **kwargs)
         except requests.RequestException as exc:
             raise HttpError(url, 0, f"{type(exc).__name__} for {urlsplit(url).hostname}") from exc
@@ -118,7 +126,7 @@ class Fetcher:
             try:
                 self._pace(origin + "/robots.txt")
                 self.requests_made += 1
-                r = self.session.get(origin + "/robots.txt", timeout=self.timeout)
+                r = self.session.get(origin + "/robots.txt", timeout=self._remaining_timeout(url))
                 if r.status_code in (401, 403) or r.status_code >= 500:
                     parser.disallow_all = True              # denial = full disallow
                 elif r.status_code >= 400:
