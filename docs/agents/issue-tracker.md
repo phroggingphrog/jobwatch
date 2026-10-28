@@ -4,6 +4,10 @@ Track repository work in [GitHub Issues](https://github.com/phroggingphrog/jobwa
 through `gh`. Direct owner instructions authorize work; the agent records or links
 the issue so the owner does not need to file it again.
 
+## Server workflow ownership
+
+This private GitHub repository keeps GitHub Issues for repository issues. Backlog owns overall server work status; link the existing issue instead of requiring a duplicate ticket. OpenSpec owns substantial change specifications and its implementation checklist. The owner’s direct request and existing authorization still control execution; an issue or artifact does not grant deployment authority.
+
 ## Workflow
 
 1. Look for an existing issue with `gh issue list` and `gh issue view` in this repository.

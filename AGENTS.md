@@ -1,3 +1,7 @@
+<!-- phrog-development:start -->
+Dev work: see ~/.agents/AGENTS.md. OpenSpec only for substantial changes (openspec skill, on demand).
+<!-- phrog-development:end -->
+
 # Working on Jobwatch
 
 Read [INTENT.md](INTENT.md) before changing behavior. The owner's latest explicit
