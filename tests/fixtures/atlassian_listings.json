@@ -1,0 +1,47 @@
+[
+ {
+  "portalJobPost": {
+   "portalId": 242,
+   "portalUrl": "https://careers-apac-atlassian.icims.com/jobs/26986/enterprise-security-engineer/job",
+   "id": 26986,
+   "updatedDate": "2026-09-25 06:04 AM"
+  },
+  "id": 26986,
+  "portalId": 242,
+  "title": "Enterprise Security Engineer",
+  "type": "Full-Time",
+  "locations": [
+   "Sydney - Australia -   Sydney,  2000 Australia",
+   "Remote - Remote",
+   "Melbourne - Australia -   Melbourne,  3000 Australia",
+   "Brisbane - Australia -   Brisbane,   Australia"
+  ],
+  "category": "Security",
+  "overview": "<p>The Enterprise Security Engineer is a hands-on engineer who implements, operates, and improves security controls across corporate architecture, SaaS platforms, cloud services, endpoints, identity, data, and workforce technologies. This role translates enterprise security strategy into practical, ",
+  "responsibilities": "<h3>Enterprise Security Engineering</h3><ul><li><p>Design, implement, operate, and maintain security controls across identity, endpoints, network, cloud (AWS/GCP), SaaS, and data-protection domains.</p></li><li><p>Remediate identified gaps in access controls, device posture, SaaS configurations, and",
+  "qualifications": "<h2><strong>Key Skills and Experience</strong></h2><ul><li><p>3\u20135+ years of experience in cybersecurity, security engineering, cloud security, systems engineering, or enterprise technology.</p></li></ul><ul><li><p>Experience implementing, operating, and maintaining security controls across identity,",
+  "applyUrl": "https://careers-apac-atlassian.icims.com/jobs/26986/enterprise-security-engineer/job?mode=apply"
+ },
+ {
+  "portalJobPost": {
+   "portalId": 17,
+   "portalUrl": "https://globalcareers-atlassian.icims.com/jobs/25480/account-executive%2c-mid-market/job",
+   "id": 25480,
+   "updatedDate": "2026-09-24 03:33 PM"
+  },
+  "id": 25480,
+  "portalId": 17,
+  "title": "Account Executive, Mid Market",
+  "type": "Full-Time",
+  "locations": [
+   "Bengaluru - India -   Bengaluru,  560071 India",
+   "Remote - India - Remote",
+   "Remote - Remote"
+  ],
+  "category": "Sales",
+  "overview": "<p><strong>Working at Atlassian</strong></p><p>Atlassians can choose where they work \u2013 whether in an office, from home, or a combination of the two. That way, Atlassians have more control over supporting their family, personal goals, and other priorities. We can hire people in any country where we h",
+  "responsibilities": "<ul><li><p>Develop and implement named Account or Territory (India) plans geared at both maximising expansion opportunities across a wide portfolio of products and ensuring high bar of customer success.</p></li><li><p>Developing and execute strategies to drive growth and engagement within the mid-ma",
+  "qualifications": "<ul><li><p>8+ years of Enterprise Software Sales Experience</p></li><li><p>Experience growing mid-market accounts with India-based customers</p></li><li><p>Experience creating alignment and orchestrating internal account teams</p></li><li><p>Experience managing key customer relationships.</p></li><l",
+  "applyUrl": "https://globalcareers-atlassian.icims.com/jobs/25480/account-executive%2c-mid-market/job?mode=apply"
+ }
+]

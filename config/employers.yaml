@@ -1,0 +1,2821 @@
+# jobwatch employer registry: Melbourne/VIC employers likely to hire entry-level staff in the target arms.
+# Built 2026-10-06 (Paperclip BUI-73, wave 1 agent B). Method, counts and gaps: employers.NOTES.md.
+#
+# Every enabled entry was checked live with one polite GET/POST (>=1.6 s apart, normal browser UA,
+# no proxy) and returned job data on the verified_at date. Disabled entries say why in `notes`.
+#
+# Fields
+#   name, sector, arms        sector and arms use the BUI-73 brief vocabulary (see NOTES for the
+#                             mapping to the rules.yaml arm ids)
+#   state                     HQ state; "VIC" marks a VIC employer for rules.yaml unknown-location matching
+#   au_scope                  melbourne | victoria | national | global (where the employer hires)
+#   provider + params         greenhouse/lever/ashby/workable/smartrecruiters: tenant
+#                             workday: host, tenant, site (POST {api_url} {"limit":20,"offset":0,"searchText":"","appliedFacets":{}})
+#                             pageup: tenant (client number), feed_url (RSS)
+#                             successfactors: feed_url (Career Site Builder googlefeed.xml, RSS 2.0)
+#                             oracle-hcm: host, site, api_url (public recruitingCEJobRequisitions REST)
+#                             scouttalent: tenant; jsonld: careers_url (+ follow_links)
+#                             other: platform + careers_url/api_url (no jobwatch collector yet)
+#   poll_tier: slow           large feeds; poll on the 2 h tier, not every 20 min
+#   verified_counts           {total, au, vic} postings seen at verification. AU/VIC come from structured
+#                             location fields where present (Workday facets, PageUp job:location, SF title
+#                             suffix); notes say when counts are from a first page only or set by rule.
+#   verified_at               ISO time, Australia/Melbourne
+employers:
+- name: Deloitte Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: successfactors
+  host: jobs.deloitte.com.au
+  feed_url: https://jobs.deloitte.com.au/googlefeed.xml
+  careers_url: https://jobs.deloitte.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:15+11:00'
+  verified_counts: {total: 245, au: 245, vic: 51}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Graduate/vacationer roles appear here too.
+- name: KPMG Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: smartrecruiters
+  tenant: KPMGAustralia1
+  api_url: https://api.smartrecruiters.com/v1/companies/KPMGAustralia1/postings
+  enabled: true
+  verified_at: '2026-10-06T02:48:04+11:00'
+  verified_counts: {total: 114, au: 100, vic: 31}
+  notes: Graduate and vacationer programs are posted on this board. AU and VIC counts are from the first 100 postings.
+- name: BDO Australia (experienced)
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: QLD
+  au_scope: national
+  provider: workday
+  tenant: bdoau
+  host: bdoau.wd105.myworkdayjobs.com
+  site: BDOCareers
+  api_url: https://bdoau.wd105.myworkdayjobs.com/wday/cxs/bdoau/BDOCareers/jobs
+  enabled: true
+  verified_at: '2026-10-06T03:11:34+11:00'
+  verified_counts: {total: 107, au: 107, vic: 26}
+  notes: ''
+- name: BDO Australia (early careers)
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: QLD
+  au_scope: national
+  provider: workday
+  tenant: bdoau
+  host: bdoau.wd105.myworkdayjobs.com
+  site: BDOEarlyCareers
+  api_url: https://bdoau.wd105.myworkdayjobs.com/wday/cxs/bdoau/BDOEarlyCareers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:47:57+11:00'
+  verified_counts: {total: 8, au: 12, vic: 2}
+  notes: Graduate programs, one posting per city; AU count from location facets, which can double count multi-location
+    jobs.
+- name: RSM Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: rsmaus
+  host: rsmaus.wd105.myworkdayjobs.com
+  site: RSMCareers
+  api_url: https://rsmaus.wd105.myworkdayjobs.com/wday/cxs/rsmaus/RSMCareers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:47:59+11:00'
+  verified_counts: {total: 80, au: 64, vic: 21}
+  notes: Bookkeeper and audit/tax junior roles seen.
+- name: Grant Thornton Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: grantthorntonaus
+  host: grantthorntonaus.wd105.myworkdayjobs.com
+  site: GTA
+  api_url: https://grantthorntonaus.wd105.myworkdayjobs.com/wday/cxs/grantthorntonaus/GTA/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:48:00+11:00'
+  verified_counts: {total: 40, au: 40, vic: 16}
+  notes: ''
+- name: Commonwealth Bank
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: cba
+  host: cba.wd3.myworkdayjobs.com
+  site: CommBank_Careers
+  api_url: https://cba.wd3.myworkdayjobs.com/wday/cxs/cba/CommBank_Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:47:53+11:00'
+  verified_counts: {total: 154, au: 96, vic: 26}
+  notes: Customer Banking Specialist (part-time) roles in Melbourne seen. Bankwest_Careers and x15_Careers sites
+    also exist (not added).
+- name: ANZ (incl. Suncorp Bank)
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: careers.anz.com
+  feed_url: https://careers.anz.com/googlefeed.xml
+  careers_url: https://careers.anz.com/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:04+11:00'
+  verified_counts: {total: 220, au: 145, vic: 53}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Melbourne HQ (Docklands). Feed also includes NZ jobs, so filter by location. The lighter /services/rss/job/?locale=en_GB&keywords=()
+    variant returned an error.
+- name: Westpac Group
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: oracle-hcm
+  host: ebuu.fa.ap1.oraclecloud.com
+  site: CX
+  careers_url: https://ebuu.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/jobs
+  api_url: https://ebuu.fa.ap1.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T02:58:11+11:00'
+  verified_counts: {total: 113, au: 24, vic: 1}
+  notes: Oracle Recruiting Cloud public REST (no auth). AU/VIC counts are from the first 25 requisitions only. jobwatch
+    has no oracle-hcm collector yet.
+- name: Bendigo and Adelaide Bank
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: careers.bendigobank.com.au
+  feed_url: https://careers.bendigobank.com.au/googlefeed.xml
+  careers_url: https://careers.bendigobank.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:13+11:00'
+  verified_counts: {total: 80, au: 80, vic: 40}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Bendigo HQ; many regional VIC Customer Advisor roles.
+- name: Medibank
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: jobs.medibank.com.au
+  feed_url: https://jobs.medibank.com.au/googlefeed.xml
+  careers_url: https://jobs.medibank.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:16+11:00'
+  verified_counts: {total: 78, au: 78, vic: 29}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Docklands HQ.
+- name: HCF
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: hcf
+  host: hcf.wd105.myworkdayjobs.com
+  site: HCF_External_Career_Site
+  api_url: https://hcf.wd105.myworkdayjobs.com/wday/cxs/hcf/HCF_External_Career_Site/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:41+11:00'
+  verified_counts: {total: 35, au: 35, vic: 1}
+  notes: AU-only insurer; AU count set to total (Workday location facets are partial).
+- name: TAL
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: smartrecruiters
+  tenant: TAL
+  api_url: https://api.smartrecruiters.com/v1/companies/TAL/postings
+  enabled: true
+  verified_at: '2026-10-06T03:04:33+11:00'
+  verified_counts: {total: 60, au: 60, vic: 15}
+  notes: Claims/customer roles; Melbourne office.
+- name: RACV
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: successfactors
+  host: careers.racv.com.au
+  feed_url: https://careers.racv.com.au/googlefeed.xml
+  careers_url: https://careers.racv.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:05+11:00'
+  verified_counts: {total: 79, au: 28, vic: 27}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Many titles name a venue (e.g. 'RACV City Club') not a state, so the AU/VIC counts undercount; RACV is mostly
+    VIC with some interstate resorts.
+- name: Suncorp Group
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: QLD
+  au_scope: national
+  provider: oracle-hcm
+  host: fa-evew-saasfaprod1.fa.ocs.oraclecloud.com
+  site: CX_1
+  careers_url: https://fa-evew-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs
+  api_url: https://fa-evew-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T03:04:30+11:00'
+  verified_counts: {total: 47, au: 21, vic: 1}
+  notes: Old PageUp instance 346 is gone (404). AU/VIC counts are from the first 25 requisitions only.
+- name: AustralianSuper
+  sector: super
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: oracle-hcm
+  host: ejjl.fa.ap1.oraclecloud.com
+  site: CX_1
+  careers_url: https://ejjl.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs
+  api_url: https://ejjl.fa.ap1.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T02:58:13+11:00'
+  verified_counts: {total: 27, au: 21, vic: 17}
+  notes: Melbourne HQ. AU/VIC counts are from the first 25 requisitions only.
+- name: Telstra
+  sector: telco
+  arms: [customer_service, retail, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: telstra
+  host: telstra.wd3.myworkdayjobs.com
+  site: Telstra_Careers
+  api_url: https://telstra.wd3.myworkdayjobs.com/wday/cxs/telstra/Telstra_Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:47:55+11:00'
+  verified_counts: {total: 210, au: 197, vic: 94}
+  notes: Melbourne HQ; includes some India roles.
+- name: TPG Telecom (corporate)
+  sector: telco
+  arms: [customer_service, retail, admin, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: oracle-hcm
+  host: fa-ewlx-saasfaprod1.fa.ocs.oraclecloud.com
+  site: CX_1
+  careers_url: https://fa-ewlx-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs
+  api_url: https://fa-ewlx-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T02:58:14+11:00'
+  verified_counts: {total: 15, au: 15, vic: 0}
+  notes: (au/vic counted on first 15)
+- name: TPG Telecom (retail stores / Vodafone)
+  sector: telco
+  arms: [customer_service, retail, admin, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: oracle-hcm
+  host: fa-ewlx-saasfaprod1.fa.ocs.oraclecloud.com
+  site: CX_2
+  careers_url: https://fa-ewlx-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2/jobs
+  api_url: https://fa-ewlx-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_2,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T02:58:16+11:00'
+  verified_counts: {total: 8, au: 8, vic: 0}
+  notes: Part-time Customer Solutions Advisor roles in stores. (au/vic counted on first 8)
+- name: AGL Energy
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: agl
+  host: agl.wd3.myworkdayjobs.com
+  site: AGL_Recruitment
+  api_url: https://agl.wd3.myworkdayjobs.com/wday/cxs/agl/AGL_Recruitment/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:44+11:00'
+  verified_counts: {total: 13, au: 13, vic: 8}
+  notes: Customer Solutions Representative roles seen.
+- name: Origin Energy
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: successfactors
+  host: careers.originenergy.com.au
+  feed_url: https://careers.originenergy.com.au/googlefeed.xml
+  careers_url: https://careers.originenergy.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:19+11:00'
+  verified_counts: {total: 33, au: 33, vic: 18}
+  notes: 'SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing ''(City, STATE, AU, postcode)'' in each title. '
+- name: Red Energy (Snowy Hydro)
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: workable
+  tenant: red-energy
+  api_url: https://apply.workable.com/api/v1/widget/accounts/red-energy
+  enabled: true
+  verified_at: '2026-10-06T03:11:19+11:00'
+  verified_counts: {total: 9, au: 9, vic: 6}
+  notes: Melbourne-based retailer; customer service and payment-assist roles.
+- name: Momentum Energy / Hydro Tasmania
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: TAS
+  au_scope: national
+  provider: pageup
+  tenant: '901'
+  feed_url: https://careers.pageuppeople.com/901/ht/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:14:02+11:00'
+  verified_counts: {total: 18, au: 16, vic: 6}
+  notes: PageUp instance 901 is the Hydro Tasmania group, which includes Momentum Energy (Melbourne). Payroll Trainee
+    seen.
+- name: South East Water
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: successfactors
+  host: jobs.southeastwater.com.au
+  feed_url: https://jobs.southeastwater.com.au/googlefeed.xml
+  careers_url: https://jobs.southeastwater.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:18+11:00'
+  verified_counts: {total: 4, au: 4, vic: 4}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Frankston HQ.
+- name: University of Melbourne
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: workday
+  tenant: unimelb
+  host: unimelb.wd105.myworkdayjobs.com
+  site: UoM_External_Career
+  api_url: https://unimelb.wd105.myworkdayjobs.com/wday/cxs/unimelb/UoM_External_Career/jobs
+  enabled: true
+  verified_at: '2026-10-06T03:08:30+11:00'
+  verified_counts: {total: 42, au: 39, vic: 39}
+  notes: Moved from PageUp (instance 422 now 404) to Workday. UoM_Direct_Appointment_Confidential_Careers is invite-only;
+    do not poll it.
+- name: Monash University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: pageup
+  tenant: '513'
+  feed_url: https://careers.pageuppeople.com/513/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:37+11:00'
+  verified_counts: {total: 63, au: 58, vic: 58}
+  notes: Includes Malaysia campus roles; filter by location. Instance 1071 (Monash international) not added.
+- name: RMIT University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: workday
+  tenant: rmit
+  host: rmit.wd3.myworkdayjobs.com
+  site: RMIT_Careers
+  api_url: https://rmit.wd3.myworkdayjobs.com/wday/cxs/rmit/RMIT_Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:46+11:00'
+  verified_counts: {total: 49, au: 16, vic: 16}
+  notes: Includes RMIT Vietnam roles. VIC count comes from location facets and undercounts campus-named locations.
+- name: Deakin University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: pageup
+  tenant: '949'
+  feed_url: https://careers.pageuppeople.com/949/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:35+11:00'
+  verified_counts: {total: 19, au: 19, vic: 16}
+  notes: The ci pointer (internal plus external) also exists; cw is external.
+- name: La Trobe University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: pageup
+  tenant: '533'
+  feed_url: https://careers.pageuppeople.com/533/caw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:34+11:00'
+  verified_counts: {total: 15, au: 15, vic: 13}
+  notes: ''
+- name: Victoria University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: oracle-hcm
+  host: fa-ercy-saasfaprod1.fa.ocs.oraclecloud.com
+  site: CX_2001
+  careers_url: https://fa-ercy-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_2001/jobs
+  api_url: https://fa-ercy-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_2001,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T02:58:17+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: vu.edu.au/jobs redirects to this Oracle site. 0 open requisitions at verification (endpoint live). (au/vic
+    counted on first 0)
+- name: Victorian TAFEs (Jobs at TAFE portal)
+  sector: tafe
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: victoria
+  provider: jsonld
+  careers_url: https://jobs.tafe.vic.gov.au/jobs-in-any-industry/last-30/radius-500/sorted-by-date/page-number-1/page-size-50?state=VIC
+  follow_links: false
+  url_pattern: 'https://jobs\.tafe\.vic\.gov\.au/[a-z0-9/-]*?/job/\d+/[a-z0-9-]+'
+  enabled: true
+  verified_at: '2026-10-06T03:09:09+11:00'
+  verified_counts: {total: 35, au: 35, vic: 35}
+  notes: 'Official Victorian TAFE network portal. The listing page itself carries schema.org JobPosting JSON-LD
+    for each job (Chisholm, Gordon, TAFE Gippsland, South West TAFE seen), so follow_links is false. Quirk: the
+    title is in a capitalised ''Title'' key, not ''title'' (wave 2: the collector reads it). The JobPosting objects
+    have url: null, so wave 2 pairs each with its share link (url_pattern, matched on the title slug). URL variants
+    without radius-500 return 404.'
+- name: City of Yarra
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '817'
+  feed_url: https://careers.pageuppeople.com/817/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:38+11:00'
+  verified_counts: {total: 11, au: 11, vic: 11}
+  notes: VIC-only employer; PageUp job:location holds site names, so AU/VIC counts are set to the total.
+- name: Knox City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '1000'
+  feed_url: https://careers.pageuppeople.com/1000/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:39+11:00'
+  verified_counts: {total: 5, au: 5, vic: 5}
+  notes: VIC-only employer; PageUp job:location holds site names, so AU/VIC counts are set to the total.
+- name: City of Casey
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '896'
+  feed_url: https://careers.pageuppeople.com/896/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:49+11:00'
+  verified_counts: {total: 14, au: 14, vic: 14}
+  notes: VIC-only employer; PageUp job:location holds site names, so AU/VIC counts are set to the total.
+- name: Bayside City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '1139'
+  feed_url: https://careers.pageuppeople.com/1139/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:47+11:00'
+  verified_counts: {total: 4, au: 4, vic: 4}
+  notes: VIC-only employer; PageUp job:location holds site names, so AU/VIC counts are set to the total. Customer
+    Contact Centre roles seen.
+- name: City of Monash
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '904'
+  feed_url: https://careers.pageuppeople.com/904/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:50+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: VIC-only employer; PageUp job:location holds site names, so AU/VIC counts are set to the total. 0 open
+    jobs at verification (feed live); 'ci' pointer also returned 0.
+- name: Macedon Ranges Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: scouttalent
+  tenant: macedon-ranges-ext-shire-portal
+  careers_url: https://macedon-ranges-ext-shire-portal.applynow.net.au/
+  enabled: true
+  verified_at: '2026-10-06T03:08:10+11:00'
+  verified_counts: {total: 3, au: 3, vic: 3}
+  notes: Scout Talent board; regional (Kyneton/Gisborne).
+- name: Eastern Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: successfactors
+  host: careers.easternhealth.org.au
+  feed_url: https://careers.easternhealth.org.au/googlefeed.xml
+  careers_url: https://careers.easternhealth.org.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:07+11:00'
+  verified_counts: {total: 94, au: 94, vic: 94}
+  notes: 'SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing ''(City, STATE, AU, postcode)'' in each title.
+    A light latest-20 RSS also works: https://careers.easternhealth.org.au/services/rss/job/?locale=en_GB'
+- name: Austin Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: successfactors
+  host: careers.austin.org.au
+  feed_url: https://careers.austin.org.au/googlefeed.xml
+  careers_url: https://careers.austin.org.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:08+11:00'
+  verified_counts: {total: 56, au: 56, vic: 56}
+  notes: 'SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing ''(City, STATE, AU, postcode)'' in each title. '
+- name: Monash Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: successfactors
+  host: careers.monashhealth.org
+  feed_url: https://careers.monashhealth.org/googlefeed.xml
+  careers_url: https://careers.monashhealth.org/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:10+11:00'
+  verified_counts: {total: 123, au: 123, vic: 123}
+  notes: 'SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing ''(City, STATE, AU, postcode)'' in each title. '
+- name: Royal Melbourne Hospital (Melbourne Health)
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: successfactors
+  host: careers.thermh.org.au
+  feed_url: https://careers.thermh.org.au/googlefeed.xml
+  careers_url: https://careers.thermh.org.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:11+11:00'
+  verified_counts: {total: 79, au: 79, vic: 79}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Administration Officer/Reception roles seen.
+- name: Western Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: successfactors
+  host: careers.wh.org.au
+  feed_url: https://careers.wh.org.au/googlefeed.xml
+  careers_url: https://careers.wh.org.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:39+11:00'
+  verified_counts: {total: 38, au: 38, vic: 38}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Some titles carry only '(AU)', so VIC is set to the total (VIC-only service).
+- name: St Vincent's Health Australia
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: svha
+  host: svha.wd3.myworkdayjobs.com
+  site: SVHA_SVHA
+  api_url: https://svha.wd3.myworkdayjobs.com/wday/cxs/svha/SVHA_SVHA/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:48+11:00'
+  verified_counts: {total: 223, au: 223, vic: 122}
+  notes: Includes St Vincent's Melbourne (Fitzroy). Collections Officer and Accountant roles seen.
+- name: Cabrini Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: workday
+  tenant: cabrini
+  host: cabrini.wd3.myworkdayjobs.com
+  site: Cabrini
+  api_url: https://cabrini.wd3.myworkdayjobs.com/wday/cxs/cabrini/Cabrini/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:50+11:00'
+  verified_counts: {total: 25, au: 25, vic: 25}
+  notes: VIC-only (Malvern/Brighton); counts set to the total because facets use campus names.
+- name: Epworth HealthCare
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: smartrecruiters
+  tenant: Epworth
+  api_url: https://api.smartrecruiters.com/v1/companies/Epworth/postings
+  enabled: true
+  verified_at: '2026-10-06T03:08:08+11:00'
+  verified_counts: {total: 56, au: 56, vic: 56}
+  notes: Business Officer (casual/part-time, Box Hill) roles seen.
+- name: Ramsay Health Care
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: NSW
+  au_scope: national
+  provider: smartrecruiters
+  tenant: RamsayHealthCare1
+  api_url: https://api.smartrecruiters.com/v1/companies/RamsayHealthCare1/postings
+  enabled: true
+  verified_at: '2026-10-06T03:08:05+11:00'
+  verified_counts: {total: 293, au: 100, vic: 22}
+  notes: Large board (about 290); AU and VIC counts are from the first 100 postings. Admin Officer roles at VIC
+    private hospitals.
+- name: St John of God Health Care
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: WA
+  au_scope: national
+  provider: workday
+  tenant: sjog
+  host: sjog.wd105.myworkdayjobs.com
+  site: SJGHC_Professional_and_Support_Services
+  api_url: https://sjog.wd105.myworkdayjobs.com/wday/cxs/sjog/SJGHC_Professional_and_Support_Services/jobs
+  enabled: true
+  verified_at: '2026-10-06T03:08:14+11:00'
+  verified_counts: {total: 36, au: 36, vic: 12}
+  notes: Professional and support services site (payroll and admin); other clinical sites exist.
+- name: Calvary Health Care
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: ACT
+  au_scope: national
+  provider: pageup
+  tenant: '1106'
+  feed_url: https://careers.pageuppeople.com/1106/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:46+11:00'
+  verified_counts: {total: 148, au: 148, vic: 42}
+  notes: ''
+- name: Wellways Australia
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: wellways
+  host: wellways.wd105.myworkdayjobs.com
+  site: WellwaysCareers
+  api_url: https://wellways.wd105.myworkdayjobs.com/wday/cxs/wellways/WellwaysCareers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:50+11:00'
+  verified_counts: {total: 55, au: 55, vic: 16}
+  notes: Mental health and disability NFP, Melbourne HQ.
+- name: Bunnings
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: bunnings
+  host: bunnings.wd3.myworkdayjobs.com
+  site: Careers
+  api_url: https://bunnings.wd3.myworkdayjobs.com/wday/cxs/bunnings/Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:59:03+11:00'
+  verified_counts: {total: 229, au: 88, vic: 66}
+  notes: Hawthorn East HQ; includes NZ.
+- name: Kmart Group (Kmart, Target corporate)
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: jobs.kmart.com.au
+  feed_url: https://jobs.kmart.com.au/googlefeed.xml
+  careers_url: https://jobs.kmart.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:24+11:00'
+  verified_counts: {total: 124, au: 83, vic: 22}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Mulgrave HQ. Includes NZ and sourcing-office (CN/IN) jobs.
+- name: Target Australia
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: jobs.target.com.au
+  feed_url: https://jobs.target.com.au/googlefeed.xml
+  careers_url: https://jobs.target.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:21+11:00'
+  verified_counts: {total: 4, au: 4, vic: 1}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Small feed (4 jobs); store roles are mostly via the Kmart Group feed.
+- name: Wesfarmers Health (Priceline, API)
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: careers.wesfarmershealth.com.au
+  feed_url: https://careers.wesfarmershealth.com.au/googlefeed.xml
+  careers_url: https://careers.wesfarmershealth.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:37+11:00'
+  verified_counts: {total: 37, au: 37, vic: 24}
+  notes: 'SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing ''(City, STATE, AU, postcode)'' in each title. '
+- name: Chemist Warehouse (Sigma Healthcare)
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: successfactors
+  host: careers.chemistwarehouse.com
+  feed_url: https://careers.chemistwarehouse.com/googlefeed.xml
+  careers_url: https://careers.chemistwarehouse.com/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T03:14:23+11:00'
+  verified_counts: {total: 259, au: 219, vic: 85}
+  notes: SuccessFactors Career Site Builder. feed_url is the full Google-jobs XML feed (all live jobs; large, ~20
+    KB per job) so poll on the slow tier. Location is the trailing '(City, STATE, AU, postcode)' in each title.
+    Includes NZ stores.
+- name: Myer (incl. Just Jeans, Dotti, Portmans, Jay Jays)
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: pageup
+  tenant: '438'
+  feed_url: https://careers.pageuppeople.com/438/fb/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:53+11:00'
+  verified_counts: {total: 352, au: 258, vic: 59}
+  notes: PageUp job:location gives 'State|Region'. Includes NZ stores. Part-time Sales Assistant roles.
+- name: JB Hi-Fi / The Good Guys
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: smartrecruiters
+  tenant: JBHi-FiTheGoodGuys1
+  api_url: https://api.smartrecruiters.com/v1/companies/JBHi-FiTheGoodGuys1/postings
+  enabled: true
+  verified_at: '2026-10-06T03:03:48+11:00'
+  verified_counts: {total: 220, au: 90, vic: 22}
+  notes: Company code from the jbhifi.com.au jobs widget. AU and VIC counts are from the first 100 postings.
+- name: ALDI Australia
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: NSW
+  au_scope: national
+  provider: smartrecruiters
+  tenant: ALDIStores
+  api_url: https://api.smartrecruiters.com/v1/companies/ALDIStores/postings
+  enabled: true
+  verified_at: '2026-10-06T02:59:04+11:00'
+  verified_counts: {total: 224, au: 100, vic: 30}
+  notes: Retail Assistant roles; AU and VIC counts are from the first 100 postings.
+- name: Harvey Norman
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: NSW
+  au_scope: national
+  provider: pageup
+  tenant: '739'
+  feed_url: https://careers.pageuppeople.com/739/hiw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:14:30+11:00'
+  verified_counts: {total: 134, au: 134, vic: 24}
+  notes: ''
+- name: bp Australia (service stations)
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: pageup
+  tenant: '454'
+  feed_url: https://careers.pageuppeople.com/454/caw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:14:28+11:00'
+  verified_counts: {total: 70, au: 70, vic: 13}
+  notes: Casual Customer Service Representative roles at VIC sites.
+- name: Hungry Jack's
+  sector: hospitality
+  arms: [hospitality, customer_service, reception, retail]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: hungryjacks
+  host: hungryjacks.wd105.myworkdayjobs.com
+  site: HungryJacksCareers
+  api_url: https://hungryjacks.wd105.myworkdayjobs.com/wday/cxs/hungryjacks/HungryJacksCareers/jobs
+  enabled: true
+  verified_at: '2026-10-06T03:03:37+11:00'
+  verified_counts: {total: 993, au: 993, vic: 238}
+  notes: 'Large casual crew board (about 990). Wave 2 (2026-10-06): CXS returns newest first by default (page 1 ran
+    Posted Today -> Posted 6 Days Ago), so the default 3 pages (60 newest) catch every new job; no deeper paging needed.'
+- name: Guzman y Gomez
+  sector: hospitality
+  arms: [hospitality, customer_service, reception]
+  state: NSW
+  au_scope: national
+  provider: smartrecruiters
+  tenant: GuzmanYGomez
+  api_url: https://api.smartrecruiters.com/v1/companies/GuzmanYGomez/postings
+  enabled: true
+  verified_at: '2026-10-06T03:03:31+11:00'
+  verified_counts: {total: 842, au: 100, vic: 25}
+  notes: About 840 postings including overseas; AU and VIC counts are from the first 100.
+- name: Crown Resorts (Crown Melbourne)
+  sector: hospitality
+  arms: [hospitality, customer_service, reception]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: crownresorts
+  host: crownresorts.wd3.myworkdayjobs.com
+  site: crown_careers
+  api_url: https://crownresorts.wd3.myworkdayjobs.com/wday/cxs/crownresorts/crown_careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T03:03:36+11:00'
+  verified_counts: {total: 84, au: 84, vic: 28}
+  notes: ''
+- name: Compass Group Australia
+  sector: hospitality
+  arms: [hospitality, customer_service, reception]
+  state: NSW
+  au_scope: national
+  provider: pageup
+  tenant: '541'
+  feed_url: https://careers.pageuppeople.com/541/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:14:36+11:00'
+  verified_counts: {total: 638, au: 638, vic: 104}
+  notes: Catering assistant casuals (hospitals, stadiums).
+- name: REA Group
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: reagroup
+  host: reagroup.wd3.myworkdayjobs.com
+  site: reacareers
+  api_url: https://reagroup.wd3.myworkdayjobs.com/wday/cxs/reagroup/reacareers/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:47:56+11:00'
+  verified_counts: {total: 29, au: 29, vic: 21}
+  notes: Richmond HQ; mostly senior tech.
+- name: Canva
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: smartrecruiters
+  tenant: Canva
+  api_url: https://api.smartrecruiters.com/v1/companies/Canva/postings
+  enabled: true
+  verified_at: '2026-10-06T02:48:05+11:00'
+  verified_counts: {total: 132, au: 36, vic: 6}
+  notes: Mostly experienced roles; has a Melbourne office. (au/vic counted on first 100 of 132)
+- name: Culture Amp
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: greenhouse
+  tenant: cultureamp
+  api_url: https://boards-api.greenhouse.io/v1/boards/cultureamp/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:48:09+11:00'
+  verified_counts: {total: 32, au: 14, vic: 10}
+  notes: ''
+- name: Block (Afterpay, Square)
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: greenhouse
+  tenant: block
+  api_url: https://boards-api.greenhouse.io/v1/boards/block/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:48:10+11:00'
+  verified_counts: {total: 225, au: 43, vic: 17}
+  notes: Global board; Afterpay is Melbourne-based. Filter by location.
+- name: Quantium
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: greenhouse
+  tenant: quantium
+  api_url: https://boards-api.greenhouse.io/v1/boards/quantium/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:48:20+11:00'
+  verified_counts: {total: 27, au: 20, vic: 5}
+  notes: Accounts Receivable Officer and analyst roles seen. Hosted on the ANZ Greenhouse region, but boards-api.greenhouse.io
+    answers.
+- name: DoorDash Australia
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: greenhouse
+  tenant: doordashaustralia
+  api_url: https://boards-api.greenhouse.io/v1/boards/doordashaustralia/jobs
+  enabled: true
+  verified_at: '2026-10-06T03:00:35+11:00'
+  verified_counts: {total: 35, au: 33, vic: 29}
+  notes: Melbourne office; sales and ops roles.
+- name: Xero
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: ashby
+  tenant: xero
+  api_url: https://api.ashbyhq.com/posting-api/job-board/xero
+  enabled: true
+  verified_at: '2026-10-06T03:01:00+11:00'
+  verified_counts: {total: 115, au: 48, vic: 36}
+  notes: Melbourne is Xero's global HQ; customer-support and 'accounting professional' sales roles.
+- name: Airwallex
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: ashby
+  tenant: airwallex
+  api_url: https://api.ashbyhq.com/posting-api/job-board/airwallex
+  enabled: true
+  verified_at: '2026-10-06T02:48:14+11:00'
+  verified_counts: {total: 550, au: 42, vic: 29}
+  notes: Global board (about 550); Melbourne HQ.
+- name: Eucalyptus
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: greenhouse
+  tenant: eucalyptus
+  api_url: https://boards-api.greenhouse.io/v1/boards/eucalyptus/jobs
+  enabled: true
+  verified_at: '2026-10-06T20:20:00+11:00'
+  verified_counts: {total: 112, au: 29, vic: 3}
+  notes: Melbourne-founded telehealth company; found in the jobsync board list (2026-10-06). Filter by location.
+- name: Sitemate
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: ashby
+  tenant: sitemate
+  api_url: https://api.ashbyhq.com/posting-api/job-board/sitemate
+  enabled: true
+  verified_at: '2026-10-06T20:20:00+11:00'
+  verified_counts: {total: 21, au: 16, vic: 5}
+  notes: Melbourne-based construction software; found in the jobsync board list (2026-10-06).
+- name: Auror
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: ashby
+  tenant: auror
+  api_url: https://api.ashbyhq.com/posting-api/job-board/auror
+  enabled: true
+  verified_at: '2026-10-06T20:20:00+11:00'
+  verified_counts: {total: 13, au: 2, vic: 2}
+  notes: Retail crime intelligence software, Melbourne office; found in the jobsync board list (2026-10-06).
+- name: Deputy
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: lever
+  tenant: deputy
+  api_url: https://api.lever.co/v0/postings/deputy?mode=json
+  enabled: true
+  verified_at: '2026-10-06T02:48:13+11:00'
+  verified_counts: {total: 7, au: 5, vic: 2}
+  notes: ''
+- name: PEXA
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: lever
+  tenant: pexa
+  api_url: https://api.lever.co/v0/postings/pexa?mode=json
+  enabled: true
+  verified_at: '2026-10-06T03:01:04+11:00'
+  verified_counts: {total: 5, au: 3, vic: 3}
+  notes: Melbourne HQ; conveyancing ops roles.
+- name: Envato
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: lever
+  tenant: envato-2
+  api_url: https://api.lever.co/v0/postings/envato-2?mode=json
+  enabled: true
+  verified_at: '2026-10-06T03:03:32+11:00'
+  verified_counts: {total: 1, au: 0, vic: 0}
+  notes: envato.com/careers redirects to jobs.lever.co/envato-2. Low volume.
+- name: CoinJar
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: smartrecruiters
+  tenant: CoinJar
+  api_url: https://api.smartrecruiters.com/v1/companies/CoinJar/postings
+  enabled: true
+  verified_at: '2026-10-06T03:08:09+11:00'
+  verified_counts: {total: 2, au: 2, vic: 2}
+  notes: Melbourne fintech; low volume.
+- name: WEX Australia
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: workday
+  tenant: wexinc
+  host: wexinc.wd5.myworkdayjobs.com
+  site: WEXInc
+  api_url: https://wexinc.wd5.myworkdayjobs.com/wday/cxs/wexinc/WEXInc/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:52+11:00'
+  verified_counts: {total: 94, au: 3, vic: 3}
+  notes: Global board; Melbourne contact-centre Customer Service Advisor roles appear at times.
+- name: Aristocrat
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: workday
+  tenant: aristocrat
+  host: aristocrat.wd3.myworkdayjobs.com
+  site: AristocratExternalCareersSite
+  api_url: https://aristocrat.wd3.myworkdayjobs.com/wday/cxs/aristocrat/AristocratExternalCareersSite/jobs
+  enabled: true
+  verified_at: '2026-10-06T02:57:55+11:00'
+  verified_counts: {total: 210, au: 24, vic: 1}
+  notes: Mostly Sydney; occasional Customer Service Agent roles.
+- name: Cleanaway
+  sector: other
+  arms: [admin, clerical_accounting, customer_service, data_entry]
+  state: VIC
+  au_scope: national
+  provider: pageup
+  tenant: '621'
+  feed_url: https://careers.pageuppeople.com/621/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:45+11:00'
+  verified_counts: {total: 149, au: 149, vic: 48}
+  notes: Melbourne HQ; Sales Support and admin roles among driver jobs.
+- name: Asahi Beverages
+  sector: other
+  arms: [admin, clerical_accounting, customer_service, data_entry]
+  state: VIC
+  au_scope: national
+  provider: pageup
+  tenant: '527'
+  feed_url: https://careers.pageuppeople.com/527/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:55+11:00'
+  verified_counts: {total: 36, au: 28, vic: 18}
+  notes: Southbank HQ.
+- name: ISS Facility Services
+  sector: other
+  arms: [admin, clerical_accounting, customer_service, data_entry, hospitality]
+  state: NSW
+  au_scope: national
+  provider: pageup
+  tenant: '744'
+  feed_url: https://careers.pageuppeople.com/744/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:58+11:00'
+  verified_counts: {total: 196, au: 196, vic: 38}
+  notes: ''
+- name: CPB Contractors
+  sector: other
+  arms: [admin, clerical_accounting, customer_service, data_entry]
+  state: NSW
+  au_scope: national
+  provider: pageup
+  tenant: '434'
+  feed_url: https://careers.pageuppeople.com/434/caw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:59+11:00'
+  verified_counts: {total: 94, au: 94, vic: 40}
+  notes: Document Control and Reporting Trainee roles seen.
+- name: Boral
+  sector: other
+  arms: [admin, clerical_accounting, customer_service, data_entry]
+  state: NSW
+  au_scope: national
+  provider: pageup
+  tenant: '569'
+  feed_url: https://careers.pageuppeople.com/569/ai/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:54+11:00'
+  verified_counts: {total: 94, au: 94, vic: 7}
+  notes: Customer Service Agent (Port Melbourne) seen.
+- name: National Gallery of Victoria
+  sector: vicgov
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst, business_analyst, graduate_accounting]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '1190'
+  feed_url: https://careers.pageuppeople.com/1190/ah/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:13:42+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: 0 open jobs at verification (feed live). Visitor services and admin roles appear at times.
+- name: Bendigo Community Bank network
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: pageup
+  tenant: '350'
+  feed_url: https://careers.pageuppeople.com/350/ci/en/rss
+  enabled: true
+  verified_at: '2026-10-06T03:14:28+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: Found through a 'Customer Service Officer - Community Bank Wantirna VIC' posting; 0 open jobs at verification
+    (feed live). Check the ownership label in wave 2.
+- name: Victorian Government (Careers.Vic)
+  sector: vicgov
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst, business_analyst, graduate_accounting]
+  state: VIC
+  au_scope: victoria
+  provider: careers_vic
+  careers_url: https://www.careers.vic.gov.au/jobs?keywords=&page=0
+  platform: drupal-html
+  enabled: true
+  verified_at: '2026-10-06T03:07:06+11:00'
+  verified_counts: {total: 1584, au: 1584, vic: 1584}
+  notes: 'HIGHEST-VALUE GAP. About 1,584 live VPS jobs (all VIC). There is no RSS or JSON-LD: /rss.xml is empty
+    and job pages have no ld+json. The /jobs listing is server-rendered HTML, newest first by default, 15 per page,
+    with links /job/<slug>-<id>. robots.txt allows /jobs and /job/ (it disallows /search/). Needs a small HTML collector:
+    GET /jobs?keywords=&page=N and parse the /job/ anchors. ~1-2 pages per run is enough for new-job alerts. Wave 2:
+    careers_vic collector (fast: pages 1-2, slow: up to 10, stops at seen ids); robots.txt re-checked 2026-10-06.'
+- name: Atlassian
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: atlassian
+  api_url: https://www.atlassian.com/endpoint/careers/listings
+  platform: atlassian-json
+  enabled: true
+  verified_at: '2026-10-06T03:12:46+11:00'
+  verified_counts: {total: 350, au: 11, vic: 4}
+  notes: 'Its SmartRecruiters board ''Atlassian'' returns 0. Its own JSON endpoint (a list of {title, locations[],
+    applyUrl}) is public and allowed by robots.txt: 350 jobs, about 11 AU. Wave 2: ats_atlassian collector (slow tier).
+    AU jobs seen were all senior engineering roles, so expect few or no matches.'
+- name: Coles Group
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: phenom
+  careers_url: https://colescareers.com.au/au/en/search-results
+  platform: phenom
+  enabled: true
+  verified_at: '2026-10-06T02:59:00+11:00'
+  verified_counts: {total: 625, au: null, vic: null}
+  notes: 'Phenom People site; the search-results HTML embeds a JSON state (totalHits=625 on 2026-10-06). robots.txt
+    allows it. No RSS. High value (Hawthorn East HQ, many VIC store casuals). Wave 2 (2026-10-06): ats_phenom
+    collector; re-verified live (totalHits 618, robots allows the page and /widgets).'
+- name: IAG
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: phenom
+  careers_url: https://careers.iag.com.au/global/en/search-results
+  platform: phenom
+  enabled: true
+  verified_at: '2026-10-06T02:59:00+11:00'
+  verified_counts: {total: 21, au: null, vic: null}
+  notes: Phenom People site; embedded totalHits=21. Wave 2 (2026-10-06) ats_phenom collector; re-verified live
+    (totalHits 21, robots allows).
+- name: PwC Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: phenom
+  careers_url: https://jobs-au.pwc.com/experiencedhires/au/en/search-results
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: {total: 116, au: 116, vic: null}
+  notes: Phenom People site. The real job listings are under /experiencedhires/au/en (the /au/en root site holds 0 jobs;
+    that was the earlier dead end). Embedded totalHits=116 and the sitemap lists 116 /job/ pages, all AU. robots.txt
+    allows the page and /widgets. PARTIAL READ - the ats_phenom /widgets paging returns 0 rows for this site variant
+    (checked with siteType external and experiencedhires), so jobwatch reads only the first 10 of the 116 (4 of those
+    10 in VIC). Paging works as HTML via search-results?from=N&s=1 (needs a collector change). Graduate and vacationer
+    programs are not on this path (open seasonally). The global Workday tenant pwc.wd3 (Global_Experienced_Careers,
+    3,892 jobs) has no AU locations.
+- name: Woolworths Group
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: NSW
+  au_scope: national
+  provider: rss
+  feed_url: https://careers.woolworthsgroup.com.au/en_GB/apply/search-jobs/feed/?jobRecordsPerPage=100
+  platform: avature
+  enabled: false
+  verified_at: '2026-10-06T02:59:33+11:00'
+  verified_counts: {total: 20, au: 1, vic: 0}
+  notes: Avature RSS works but always returns 20 items with title only, not newest first (items from 2025 at the
+    top). New jobs may never show, so it is disabled. Needs an Avature HTML or JSON collector.
+- name: NAB
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  careers_url: https://nab.eightfold.ai/careers
+  platform: eightfold
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: AU jobs are on Eightfold (nab.eightfold.ai). Its /api/apply/v2/jobs is disallowed by robots.txt and returned
+    403. The Workday site nab.wd3/nab/nab_careers lists only India, Vietnam and Singapore (228 jobs, 0 AU). Reach
+    NAB through Seek or LinkedIn.
+- name: EY Oceania
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: other
+  platform: successfactors-html
+  host: careers.ey.com
+  careers_url: https://careers.ey.com/ey/search/?q=&locationsearch=Melbourne&optionsFacetsDD_country=AU
+  enabled: false
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: {total: 129, au: 129, vic: 129}
+  notes: 'No usable collector: the global googlefeed.xml has about 8k jobs and ignores location filters; /services/rss
+    is disallowed by robots.txt. The HTML search page above lists 129 Melbourne jobs (25 per page, a.jobTitle-link
+    anchors, /ey/job/... URLs) but has no JSON-LD on listing or detail pages, so it needs a small HTML collector.'
+- name: Bupa Australia
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: national
+  provider: other
+  careers_url: https://bupaanz.avature.net/australia
+  platform: avature
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Melbourne HQ. Avature site; the SearchJobs/feed path returned an empty body. bupa.wd3/EXT_CAREER is Bupa
+    UK (641 jobs, all UK), so it does not cover AU.
+- name: Pitcher Partners
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: prosper
+  host: prosper.wd105.myworkdayjobs.com
+  site: Pitcher-Partners-Melbourne
+  api_url: https://prosper.wd105.myworkdayjobs.com/wday/cxs/prosper/Pitcher-Partners-Melbourne/jobs
+  enabled: true
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: {total: 7, au: 7, vic: 7}
+  notes: Pitcher is on Workday under the shared tenant 'prosper' (site Pitcher-Partners-Melbourne). pitcher.com.au itself
+    is still 403 to non-browser clients. Includes bookkeeper and tax expressions of interest. robots.txt allows the site.
+- name: William Buck
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: cornerstone
+  careers_url: https://williambuck.csod.com/ux/ats/careersite/4/home?c=williambuck
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No collector: VIC jobs are on Cornerstone careersite/4 (NZ is /5). The page is a JS shell that embeds an anonymous
+    token for uk.api.csod.com, so it needs a Cornerstone collector. NSW, QLD and SA use ELMO boards (williambucknsw,
+    williambuckqld, williambucksa .elmotalent.com.au), which have no VIC board.'
+- name: Findex (Crowe Australasia)
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: oracle-hcm
+  host: egvc.fa.ap1.oraclecloud.com
+  site: CX
+  careers_url: https://egvc.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/jobs
+  api_url: https://egvc.fa.ap1.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: {total: 62, au: 47, vic: 15}
+  notes: Oracle Recruiting Cloud behind careers.findex.com.au (the vanity domain blocks the REST API with 403, so the
+    oraclecloud host is used). Sites CX and CX_1 return the same 62 jobs (Findex and Crowe brands). AU and VIC counts are from
+    all 62 read (3 pages of 25); 15 of the 62 are NZ.
+- name: H&R Block Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: careers.hrblock.com.au uses an unidentified JS platform; /jobs.rss and JSON-LD absent.
+    Seasonal tax-consultant and reception roles: use Seek/Indeed.'
+- name: Bentleys
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: null
+  notes: 'No VIC feed: the Victorian page (McLean Delmo Bentleys) has no ATS. Only Bentleys QLD has a Greenhouse board
+    (bentleysqldptyltd, 9 jobs, all QLD), which is not useful for Melbourne.'
+- name: Nexia Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: jobadder
+  careers_url: https://clientapps.jobadder.com/66341/nexia-australia
+  enabled: false
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: {total: 8, au: null, vic: null}
+  notes: 'No collector: the JobAdder public board is HTML only (8 jobs, no locations in the listing, no JSON-LD on listing
+    or detail pages). Needs a JobAdder collector; no JSON/RSS feed found.'
+- name: ME Bank (BOQ Group)
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Careers page links only to Seek (BOQ-group-jobs).'
+- name: Judo Bank
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: judo.bank/careers returns 403 (bot protection).'
+- name: Tyro
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Careers page empty to plain clients; Greenhouse/Lever ''tyro'' not found.'
+- name: Up (Ferocia / Bendigo)
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Links a Greenhouse job under ''ferocia'' but the board API returns 404 (board likely
+    private).'
+- name: Aware Super
+  sector: super
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Careers URL 404; no ATS found.'
+- name: UniSuper
+  sector: super
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Careers page is JS-rendered; no ATS host found.'
+- name: Hostplus
+  sector: super
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: LiveHire (livehire.com/careers/hostplus); LiveHire returns Cloudflare 403 to non-browser
+    clients (PHR-93 recheck).'
+- name: Cbus Super
+  sector: super
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: No ATS link on cbussuper.com.au careers page.'
+- name: Allianz Australia
+  sector: insurance
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: allianz.com.au returns 403; global Phenom site careers.allianz.com not checked for
+    AU filter.'
+- name: Optus
+  sector: telco
+  arms: [customer_service, retail, admin, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: careers.optus.com.au is JS-rendered; no ATS host or feed found.'
+- name: EnergyAustralia
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: PageUp client 611 (apply form) but RSS for aw/cw/ci pointers is 404. Melbourne HQ:
+    worth finding the listing pointer later.'
+- name: Yarra Valley Water
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_analyst, business_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Cornerstone (yvw.csod.com) career site; no public feed.'
+- name: Swinburne University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Nga.Net (swinjobs.nga.net.au); JS app, no RSS found.'
+- name: Australian Catholic University
+  sector: university
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: acu.edu.au returns 403; ATS not identified.'
+- name: Melbourne Polytechnic
+  sector: tafe
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: jobs.mp.edu.au: robots.txt disallows crawling. Not covered by the TAFE portal sample.'
+- name: Holmesglen / Box Hill / Kangan / Bendigo TAFE
+  sector: tafe
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: No own feed found; partially covered by the ''Victorian TAFEs'' JSON-LD portal entry
+    (tafe_vic).'
+- name: Northern Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Legacy SuccessFactors only (career10 company=northernhe); no Career Site Builder
+    feed.'
+- name: Alfred Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: careers.alfredhealth.org.au runs on LiveHire (Cloudflare 403 to non-browser clients).'
+- name: Peter MacCallum Cancer Centre
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: petermac.org returns 403; ATS not identified.'
+- name: Ambulance Victoria
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: victoria
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Springboard ''jobtools'' (careers.ambulance.vic.gov.au, organid 18723); no verified
+    feed.'
+- name: Barwon Health
+  sector: health
+  arms: [admin, reception, clerical_accounting, data_entry, customer_service]
+  state: VIC
+  au_scope: victoria
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: peopleplus.swarh.vic.gov.au/BH; platform not checked.'
+- name: McDonald's Australia
+  sector: hospitality
+  arms: [hospitality, customer_service, reception]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint. Wave 2 re-check (2026-10-06): careers.mcdonalds.com.au is not Phenom any more
+    (/au/en/search-results is 404); /restaurant-jobs is a McHire (Paradox) site with no job JSON or JSON-LD in the
+    page. Left disabled; covered by Seek/Indeed.'
+- name: Officeworks
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Careers URL 404; ATS not identified.'
+- name: David Jones
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Careers page is JS-rendered; no ATS host found.'
+- name: Grill'd
+  sector: hospitality
+  arms: [hospitality, customer_service, reception]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: careers.grilld.com.au is JS-rendered; no ATS host found.'
+- name: SEEK (corporate)
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Corporate roles are on SEEK''s own site; covered by the Seek collector.'
+- name: carsales
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: careers.carsales.com.au is WordPress; feed is blog only.'
+- name: MYOB
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: careers.myob.com is JS-rendered; Greenhouse/Lever ''myob'' not found.'
+- name: Linktree
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Ashby/Greenhouse/Lever ''linktree'' not found; linktr.ee careers path disallowed
+    by robots.txt.'
+- name: Employment Hero (as employer)
+  sector: tech
+  arms: [customer_service, admin, clerical_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Workable account ''employmenthero'' returns 0 jobs; careers page lists no ATS.'
+- name: Hays Australia
+  sector: recruiter
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Agency job search is JS-rendered; no public feed. Covered by Seek/Indeed.'
+- name: Robert Half Australia
+  sector: recruiter
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: No public feed found. Covered by Seek/Indeed.'
+- name: Randstad Australia
+  sector: recruiter
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: No public feed found. Covered by Seek/Indeed.'
+- name: Adecco Australia
+  sector: recruiter
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Redirects to adecco.com/en-au; no feed found.'
+- name: Hudson Australia
+  sector: recruiter
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: WordPress feed is blog only.'
+- name: Talent International
+  sector: recruiter
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry]
+  state: NSW
+  au_scope: national
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'No pollable endpoint: Connection reset on fetch; not verified.'
+- name: UNIQLO Australia
+  sector: retail
+  arms: [retail, retail_management_trainee]
+  state: VIC
+  au_scope: national
+  provider: workday
+  tenant: fastretailing
+  host: fastretailing.wd3.myworkdayjobs.com
+  site: graduates_au_Uniqlo
+  api_url: https://fastretailing.wd3.myworkdayjobs.com/wday/cxs/fastretailing/graduates_au_Uniqlo/jobs
+  enabled: true
+  verified_at: '2026-10-06T04:45:00+11:00'
+  verified_counts: {total: 2, au: 2, vic: 2}
+  notes: Graduate/management-trainee site only (Management Trainee Internship 2026 in Melbourne; UMC Graduate Program 2027,
+    8 locations). Three other likely Fast Retailing site names (uniqlo_au_careers, UNIQLO_AU, Uniqlo_AU_Retail) returned
+    nothing, so there is no separate store/retail site on this tenant.
+- name: McGrathNicol
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: successfactors
+  host: careers.mcgrathnicol.com
+  feed_url: https://careers.mcgrathnicol.com/googlefeed.xml
+  careers_url: https://careers.mcgrathnicol.com/search
+  enabled: true
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 24, au: 24, vic: 4}
+  notes: 'SuccessFactors Career Site Builder, small feed (157 KB, 24 items) so default poll tier. Location is the trailing (City, STATE, AU, postcode) in each title. robots.txt disallows /services/ etc. but not /googlefeed.xml. 2027 graduate programs (Cyber, Data Analytics, Restructuring, Deals) are listed; two national programs show ''(National, Other, AU, 0000)'' so they are not in the vic count.'
+- name: KordaMentha
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: smartrecruiters
+  tenant: KordaMentha
+  api_url: https://api.smartrecruiters.com/v1/companies/KordaMentha/postings
+  enabled: true
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 28, au: 27, vic: 10}
+  notes: 'Public SmartRecruiters board (careers.smartrecruiters.com/KordaMentha). Melbourne roles include AML/CTF analyst, Forensic Data Analytics associate, Executive Assistant, Marketing Associate. One Singapore posting.'
+- name: Cutcher & Neale
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: rippling
+  careers_url: https://ats.rippling.com/cutcher/jobs
+  api_url: https://api.rippling.com/platform/api/ats/v1/board/cutcher/jobs
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 10, au: 10, vic: 4}
+  notes: 'Rippling ATS has a clean public JSON list (api_url, HTTP 200, one row per location so 21 rows = 10 unique postings by uuid); no jobwatch rippling collector yet. South Melbourne roles: Client Advisor, Administrator - Reception & Team Support, Product Support Consultant, Risk Insurance Paraplanner. Newcastle HQ; offices Sydney, Brisbane, Melbourne.'
+- name: Forvis Mazars Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: jobadder
+  careers_url: https://clientapps.jobadder.com/55681/forvis-mazars
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 6, au: 6, vic: null}
+  notes: 'JobAdder HTML board only, no JSON-LD on listing or detail pages and no jobwatch jobadder collector. robots.txt only blocks Googlebot/Bingbot. 6 live postings (audit, business advisory, tax, transaction services). forvismazars.com/au/en/careers returns 404.'
+- name: Kelly Partners Group
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: livehire
+  careers_url: https://www.livehire.com/widgets/job-listings/kellypartners
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: null
+  notes: 'LiveHire widget (iframe from www.livehire.com); Cloudflare 403 challenge to non-browser clients, no public JSON found. No jobwatch livehire collector.'
+- name: SW Accountants & Advisors
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: dayforce
+  careers_url: https://jobs.dayforcehcm.com/en-AU/swaa/CANDIDATEPORTAL
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: null
+  notes: 'Dayforce candidate portal (client swaa, also CANDIDATEPORTALSTUDENTANDGRAD). Page is JS-rendered; the POST /api/geo/swaa/jobposting/search that the page uses returned 403 without a session. No jobwatch dayforce collector. Melbourne HQ; SEEK shows several live roles.'
+- name: HLB Mann Judd
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: wordpress
+  careers_url: https://hlb.com.au/careers/positions-available/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 11, au: 11, vic: null}
+  notes: 'WordPress custom post type, listing is JS-filtered (Cloudflare Turnstile on the site) and detail pages have no JSON-LD; no RSS (/positions-available/feed/ is 404). positions-available-sitemap.xml lists 11 postings (public, can be used by a future sitemap collector). Applications also go to recruitment@hlbvic.com.au.'
+- name: Moore Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: WA
+  au_scope: national
+  provider: other
+  platform: wordpress
+  careers_url: https://www.moore-australia.com.au/vacancies/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 5, au: 5, vic: null}
+  notes: 'WordPress /careers/<slug>/ pages, no JSON-LD and no RSS (/careers/feed/ is 404). 5 vacancies seen (Rockhampton, Brisbane, Perth types); apply links go to moorewa.elmotalent.com.au (Elmo). No Melbourne role seen.'
+- name: PKF Australia
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: wordpress
+  careers_url: https://www.pkf.com.au/careers/opportunities/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 26, au: 26, vic: null}
+  notes: 'WordPress /careers/jobs/<slug>/ pages (26 links on the listing), no JSON-LD and no RSS (/careers/jobs/feed/ is 404). Includes Audit Administration Assistant and assistant manager roles. Candidate for a small HTML collector.'
+- name: Saward Dawson
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  platform: wordpress
+  careers_url: https://sawarddawson.com.au/careers-at-saward-dawson/current-vacancies/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 2, au: 2, vic: null}
+  notes: 'WordPress /vacancy/<slug>/ pages, no JSON-LD and no RSS (/vacancy/feed/ is 404). 2 vacancies seen (Auditor Sydney, Marketing Manager).'
+- name: Hall Chadwick
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: wordpress
+  careers_url: https://hallchadwick.com.au/available-positions/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 5, au: 5, vic: null}
+  notes: 'WordPress /job/<slug>/ pages, one non-JobPosting JSON-LD block only. 5 postings (Melbourne: Senior Administrator, Senior Auditor, Payroll Services Co-ordinator; plus Accounting Cadetship and Senior Accountant). No RSS.'
+- name: UHY Haines Norton (Melbourne, Cohen Fasciani)
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: jsonld
+  careers_url: https://cohenfasciani.uhyanz.com.au/about/life-at-uhy
+  follow_links: false
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: 'Melbourne office site says ''we do not have any employment opportunities available'' (0 postings). The same CMS emits schema.org JobPosting JSON-LD on the Sydney office page (hainesnortonsydney.uhyanz.com.au/about/life-at-uhy, 5 postings), so this entry should work as jsonld once Melbourne posts a role; enable then. A SEEK ad for a South Yarra Business Services Supervisor exists.'
+- name: Accru Melbourne
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  platform: wordpress
+  careers_url: https://accrumelb.com.au/careers/available-positions/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: 'WordPress RSS feed (https://accrumelb.com.au/careers/available-positions/feed/) is live but empty: ''No Available Positions''. robots.txt has Crawl-delay: 10. Not a collector-supported provider. Recruitment@accrumelb.com.au takes general enquiries.'
+- name: BG Private (formerly Banks Group)
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  platform: wordpress
+  careers_url: https://bgprivate.com.au/careers/current-opportunities/
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 6, au: 6, vic: null}
+  notes: 'Banks Group is now bgprivate.com.au. WordPress /careers/current-opportunities/<slug>-job-ad/ pages (6 seen: associate partner, manager, senior accountant, intermediate accountant, auditor, graduate program) with no JSON-LD and no RSS.'
+- name: Hayes Knight
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: hubspot
+  careers_url: https://www.hayesknight.com.au/careers
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: 'HubSpot site page says ''No open positions'' and takes resumes by contact form. No ATS.'
+- name: Lowe Lippmann
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  careers_url: https://www.lowelippmann.com.au/about/careers
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: null
+  notes: 'No ATS: careers page says send cover letter and resume to careers@lowelippmann.com.au. (/careers is a 404, the working path is /about/careers.)'
+- name: Prosperity Advisers
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: datakiosk
+  careers_url: https://www.prosperityadvisers.com.au/about-us/prosperity-traineeships
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: null
+  notes: 'Jobs link to datakiosk.com.au careers_job.aspx pages (no JSON feed). Melbourne roles (Eltham, Ivanhoe East) are mostly financial-planning support. See Focus Partners Australia for the Greenhouse board.'
+- name: FTI Consulting (Australia)
+  sector: accounting
+  arms: [clerical_accounting, admin, reception, data_entry, graduate_accounting, graduate_audit, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: selectminds
+  careers_url: https://fticonsult.referrals.selectminds.com/fticareers/location/australia-opportunities-at-fti-consulting-inc-59
+  enabled: false
+  verified_at: '2026-10-06T04:50:00+11:00'
+  verified_counts: null
+  notes: 'SelectMinds portal (applications on fticonsult.taleo.net), JS-rendered, no JSON-LD. About 8 AU roles per SEEK/search, 2 in Melbourne. No jobwatch selectminds/taleo collector.'
+- name: Computershare
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, reception, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: oracle-hcm
+  host: fa-evdq-saasfaprod1.fa.ocs.oraclecloud.com
+  site: computersharecareers
+  careers_url: https://fa-evdq-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/computersharecareers/jobs
+  api_url: https://fa-evdq-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=computersharecareers,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 91, au: 14, vic: 11}
+  notes: 'Oracle Recruiting Cloud public REST (no auth; host has no robots.txt, 404). Global board (UK, US, HK, CA,
+    PL, AU). All 4 pages read: 91 requisitions, 14 AU (11 Melbourne, 3 Sydney). Plans Associate, Customer Service
+    Representative, Mailroom Operator seen.'
+- name: CSL
+  sector: health
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: workday
+  tenant: csl
+  host: csl.wd1.myworkdayjobs.com
+  site: CSL_External
+  api_url: https://csl.wd1.myworkdayjobs.com/wday/cxs/csl/CSL_External/jobs
+  detail_cap: 25
+  applied_facets: {'locationCountry': ['d903bb3fedad45039383f6de334ad4db']}
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 179, au: 20, vic: 20}
+  notes: 'Global tenant (179 jobs, 20 in Australia: Parkville/Broadmeadows etc.). applied_facets locationCountry=Australia
+    keeps the poll to AU rows only. Listing locationsText for AU rows reads like "APAC, AU, Broadmeadows, CSL Behring",
+    which is_australian() does not recognise, so detail_cap is raised to 25. VIC count is the Victoria region facet.'
+- name: Amcor
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: workday
+  tenant: amcor
+  host: amcor.wd5.myworkdayjobs.com
+  site: Amcor_External_Career_Site
+  api_url: https://amcor.wd5.myworkdayjobs.com/wday/cxs/amcor/Amcor_External_Career_Site/jobs
+  poll_tier: slow
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 736, au: 0, vic: 0}
+  notes: Workday board returns 736 jobs but its location facet has no Australian site (only North America plus Auckland
+    NZ); searchText "Australia" returns 0. Melbourne HQ roles are not on this board. Revisit if an AU/APAC site appears.
+- name: Ansell
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: other
+  platform: unknown
+  careers_url: https://www.ansell.com/us/en/our-people/grow-with-ansell
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: ansell.com careers page is behind an Incapsula bot wall (empty noindex page to a normal GET); ATS not identified.
+    Guessed Workday hosts ansell.wd1/wd3 returned 422. Reach Ansell via Seek or LinkedIn.
+- name: APA Group
+  sector: utility
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: apa
+  host: apa.wd105.myworkdayjobs.com
+  site: APA-Careers
+  api_url: https://apa.wd105.myworkdayjobs.com/wday/cxs/apa/APA-Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 12, au: 12, vic: 7}
+  notes: Site name is APA-Careers (the APA-PrivateCareersPage... path in search results 404s). VIC count is the Melbourne
+    location facet and may double count multi-location jobs. Small board.
+- name: Australia Post
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst, reception]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: avature
+  careers_url: https://jobs.auspost.com.au/en_GB/careers
+  feed_url: https://jobs.auspost.com.au/en_GB/careers/SearchJobs/feed/?jobRecordsPerPage=100
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: null, au: null, vic: null}
+  notes: Avature portal. robots.txt allows /careers. SearchJobs/feed RSS works but returns only 20 items (jobRecordsPerPage
+    ignored) with title, link, pubDate and a location in description ("Australia Western Australia KUNUNURRA - id"),
+    seen mostly retail/driver roles. Needs an Avature HTML or paged-feed collector (same as Woolworths/Bupa).
+- name: BHP
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: successfactors
+  host: careers.bhp.com
+  feed_url: https://careers.bhp.com/googlefeed.xml
+  careers_url: https://careers.bhp.com/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 78, au: 51, vic: null}
+  notes: SuccessFactors Career Site Builder googlefeed.xml (1.1 MB). robots.txt disallows only /services/ and others,
+    googlefeed is allowed. Titles end "(Australia)" or "(Canada)" and g:location is the country only, so VIC cannot
+    be counted (no title names Melbourne). parse_successfactors accepts the 51 AU rows via g:location but leaves "(Australia)"
+    in the title. Mostly FIFO mining and operator roles; Adelaide/Perth/Brisbane office admin roles appear.
+- name: BlueScope
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: smartrecruiters
+  tenant: BlueScope
+  api_url: https://api.smartrecruiters.com/v1/companies/BlueScope/postings
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 26, au: 26, vic: 1}
+  notes: SmartRecruiters board (careers.smartrecruiters.com/bluescope). All 26 postings are AU (NSW 11, QLD 7, SA
+    6, VIC 1). Customer service and procurement roles seen.
+- name: Brambles
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: workday
+  tenant: brambles
+  host: brambles.wd5.myworkdayjobs.com
+  site: Brambles_Careers
+  api_url: https://brambles.wd5.myworkdayjobs.com/wday/cxs/brambles/Brambles_Careers/jobs
+  applied_facets: {'Country': ['d903bb3fedad45039383f6de334ad4db']}
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 163, au: 8, vic: 3}
+  notes: Global tenant (163 jobs, 8 in Australia). applied_facets Country=Australia keeps the poll to AU rows. VIC
+    count is the State_Region_Province Victoria facet. A second site CHEP_Plant_Careers exists (plant roles, not probed).
+- name: Ampol
+  sector: other
+  arms: [retail, customer_service, admin, clerical_accounting, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: jsonld
+  careers_url: https://www.careers.ampol.com/jobs
+  follow_links: true
+  link_pattern: /job/[a-z0-9-]+-jid-\d+
+  detail_cap: 12
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 162, au: 0, vic: 0}
+  notes: 'DISABLED - collector gap: jobwatch dropped all 12 reachable postings in a live check because the JSON-LD addressLocality is
+    like "Alexandria, AU" (no addressCountry) and models.is_australian() does not accept a bare ", AU" suffix. Re-enable once
+    that is fixed. Attrax careers site (ampol, Foodary, Hungry Jack''s sites). 162 results; the listing page /jobs is newest-first,
+    shows 12 per page and has no JSON-LD. robots.txt disallows /jobs?* so paging is not allowed: only the first 12
+    are reachable, which is enough for new-job alerts. Each /job/<slug>-jid-<n> detail page carries a schema.org JobPosting
+    (checked: datePosted, addressLocality). AU/VIC counts unknown: none of the 12 first-page links is VIC. Many store-crew
+    roles.'
+- name: Challenger
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, reception, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: workday
+  tenant: challenger
+  host: challenger.wd3.myworkdayjobs.com
+  site: Challenger_Careers
+  api_url: https://challenger.wd3.myworkdayjobs.com/wday/cxs/challenger/Challenger_Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 8, au: 8, vic: 0}
+  notes: Small board (Brisbane, Sydney roles seen); no Melbourne jobs at verification.
+- name: Country Road Group
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: pinpoint-like
+  careers_url: https://careers.countryroadgroup.com.au/jobs/search
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: Own Rails ATS at careers.countryroadgroup.com.au/jobs/search (server-rendered, pages ?page=N). No JSON-LD
+    on the list, /postings.json 404, robots.txt sets Crawl-delay 5 and disallows /api/. The old PageUp board (433)
+    now returns an empty feed. Needs an HTML list collector with a 5 s delay.
+- name: Coca-Cola Europacific Partners
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst, reception]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: radancy
+  careers_url: https://www.ccep.jobs/en/search-jobs
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: 'Radancy/TalentBrew site (ccep.jobs); robots.txt Disallow: /search-jobs/, the only list view. Not probed
+    further. Australian (CCEP Pacific) roles not confirmed on this site.'
+- name: Eagers Automotive
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting, reception, data_entry]
+  state: QLD
+  au_scope: national
+  provider: successfactors
+  host: careers.eagersautomotive.com.au
+  feed_url: https://careers.eagersautomotive.com.au/googlefeed.xml
+  careers_url: https://careers.eagersautomotive.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 102, au: 97, vic: 1}
+  notes: 'SuccessFactors Career Site Builder googlefeed.xml (554 KB). 102 items: 97 AU (NSW 45, QLD 20, WA 15, SA
+    6, TAS 6, ACT 3, NT 1, VIC 1) and 5 NZ (filtered by parse_successfactors). Sales, technician and receptionist
+    roles. Few VIC jobs (Eagers is mostly QLD/NSW/WA/SA).'
+- name: Bell Financial Group
+  sector: finance
+  arms: [customer_service, clerical_accounting, admin, reception, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: none
+  careers_url: https://bellpotter.com.au/who-we-are/careers/
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: 'No ATS: the careers page says to email careers@bellfg.com.au and links only to the company LinkedIn jobs
+    page. No endpoint to poll. Recruitment scam warning on the page.'
+- name: ARB Corporation
+  sector: other
+  arms: [retail, customer_service, admin, clerical_accounting, data_entry]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: connx
+  careers_url: https://arb.connxcareers.com/
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: Connx Careers SPA (arb.connxcareers.com, 600-byte shell, jobs loaded by JS from an undocumented API). Not
+    probed further; ARB site has no other jobs page.
+- name: Data#3
+  sector: tech
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: QLD
+  au_scope: national
+  provider: other
+  platform: salesforce-sites
+  careers_url: https://www.data3.com/advertised-roles/
+  api_url: https://data3.my.salesforce-sites.com/D3jobpage?department=HR
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 9, au: 9, vic: 3}
+  notes: 'data3.com/advertised-roles embeds an iframe to a Salesforce Sites Visualforce page (D3jobpage), server-rendered
+    HTML, no JSON-LD. 9 jobs seen on one fetch with department=HR in the URL (may be a filtered view): Melbourne 3,
+    Toowong 2, Perth 2, Canberra 1, North Sydney 1. No collector for it.'
+- name: Cash Converters
+  sector: retail
+  arms: [retail, customer_service, admin, clerical_accounting, data_entry]
+  state: WA
+  au_scope: national
+  provider: other
+  platform: chris21
+  careers_url: https://www.cashconverters.com.au/about/join-us-now
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: Careers page links to a Frontier Chris21 recruitment portal (csz.chris21.com/CSZ_MER21p), a JS portal not
+    probed. Most roles are franchise stores recruited via Seek.
+- name: Coates
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: successfactors
+  host: careers.coates.com.au
+  feed_url: https://careers.coates.com.au/googlefeed.xml
+  careers_url: https://careers.coates.com.au/
+  poll_tier: slow
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 48, au: 48, vic: 3}
+  notes: 'SuccessFactors Career Site Builder googlefeed.xml (356 KB), all 48 AU: QLD 16, NSW 11, WA 9, SA 6, VIC 3,
+    ACT 2, TAS 1. Customer Service Coordinator and Account Manager roles seen. robots.txt disallows /services/ only.'
+- name: Brickworks
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: connx
+  careers_url: https://brickworks.connxcareers.com/
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: Connx Careers SPA (brickworks.connxcareers.com, a 671-byte shell, jobs loaded by JS; no JSON-LD). No endpoint
+    found.
+- name: CSR (Saint-Gobain)
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: springboard-jobtools
+  careers_url: https://www.csr.com.au/company/careers/browse-all-jobs
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: CSR careers pages (Next.js) link to csr.springboard.com.au/jobtools (Springboard/Jobtools portal, JnCustomLogin.Login?in_organid=20457).
+    Listing page has no JSON-LD. No collector; not probed further.
+- name: Programmed (Chandler Macleod)
+  sector: recruiter
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst, reception]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: applyflow
+  careers_url: https://www.jobs.programmed.com.au/jobs/
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: 'Applyflow WordPress job site (jobs.programmed.com.au/jobs/); the listing has no JSON-LD and the /af-api
+    WP REST route was not found to expose jobs. robots.txt disallows /apply and /af-page. Staffing agency: roles are
+    mostly trades and labour hire.'
+- name: A2B (ComfortDelGro Australia)
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst, reception]
+  state: VIC
+  au_scope: national
+  provider: other
+  platform: jobadder
+  careers_url: https://clientapps.jobadder.com/37531/a2b
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 11, au: 11, vic: 5}
+  notes: JobAdder client board (clientapps.jobadder.com/37531/a2b), server-rendered HTML with no JSON-LD; robots.txt
+    blocks only Googlebot/Bingbot. 11 jobs seen (Melbourne 5 of the 8 with a parsed location; also Brisbane, Adelaide).
+    Contact-centre, admin and receptionist roles seen. Needs a JobAdder HTML collector.
+- name: Tetra Tech Coffey
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: taleo/selectminds
+  careers_url: https://tetratech.referrals.selectminds.com/location/australia-opportunities-at-tetra-tech-511
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: null
+  notes: Tetra Tech global Taleo/SelectMinds (Radancy) portal; the Australia location page is JS-rendered. Graduate
+    and early-career engineering/environment roles, but no pollable endpoint found.
+- name: Cochlear
+  sector: health
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: global
+  provider: workday
+  tenant: cochlear
+  host: cochlear.wd3.myworkdayjobs.com
+  site: Cochlear_Careers
+  api_url: https://cochlear.wd3.myworkdayjobs.com/wday/cxs/cochlear/Cochlear_Careers/jobs
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 92, au: 17, vic: 0}
+  notes: Global tenant (92 jobs) with no country facet; AU count is the location facet (Sydney 15, Brisbane 2), none
+    in Melbourne. Rows show a bare "Sydney"/"Brisbane" location, which is_australian() accepts. Customer Service and
+    Contact Centre category has 5 jobs.
+- name: Treasury Wine Estates
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: VIC
+  au_scope: global
+  provider: oracle-hcm
+  host: ebpm.fa.us2.oraclecloud.com
+  site: CX_1
+  careers_url: https://ebpm.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/jobs
+  api_url: https://ebpm.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 68, au: 22, vic: 6}
+  notes: 'Oracle Recruiting Cloud public REST (no auth; host has no robots.txt, 404). Global board (US, AU, GB, CN,
+    SG). All 3 pages read: 68 requisitions, 22 AU (Melbourne 6, Barossa/Coonawarra SA, North Sydney). tweglobal.com/careers
+    links here. A second site "Ascent" exists (not probed).'
+- name: BAT Australia
+  sector: other
+  arms: [customer_service, clerical_accounting, admin, data_entry, graduate_accounting, data_analyst, business_analyst]
+  state: NSW
+  au_scope: national
+  provider: other
+  platform: radancy
+  careers_url: https://careers.bat.com/en/location/australia-jobs/1045/2077456/2
+  enabled: false
+  verified_at: '2026-10-06T04:53:18+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: Radancy/TalentBrew (careers.bat.com). The Australia location page reported data-total-results=0; robots.txt
+    disallows /search-jobs/. Profile pages mention Sydney roles, so check again later or use the Seek/LinkedIn route.
+
+# ---- councils (merged 2026-10-06 from employers.councils.pending.yaml) ----
+- name: Banyule City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pulse
+  tenant: banyule
+  careers_url: https://banyule.pulsesoftware.com/Pulse/jobs
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 9, au: 9, vic: 9}
+  notes: Pulse Software public JSON (WebServices/RCM/Jobs/Jobs); all open external jobs in one call. VIC-only employer.
+- name: Brimbank City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pulse
+  tenant: brimbank
+  careers_url: https://brimbank.pulsesoftware.com/Pulse/jobs
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 4, au: 4, vic: 4}
+  notes: Pulse Software public JSON (WebServices/RCM/Jobs/Jobs); all open external jobs in one call. VIC-only employer.
+- name: Manningham City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pulse
+  tenant: manningham
+  careers_url: https://manningham.pulsesoftware.com/Pulse/jobs
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 2, au: 2, vic: 2}
+  notes: Pulse Software public JSON (WebServices/RCM/Jobs/Jobs); all open external jobs in one call. VIC-only employer.
+- name: Maribyrnong City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: recruitmenthub
+  tenant: maribyrnong
+  careers_url: https://maribyrnong.recruitmenthub.com.au/Vacancies/
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 7, au: 7, vic: 7}
+  notes: 'RecruitmentHub server-rendered list (robots.txt allows). No posted date: observed-dated. VIC-only employer.'
+- name: Nillumbik Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: recruitmenthub
+  tenant: nillumbikshirecouncil
+  careers_url: https://nillumbikshirecouncil.recruitmenthub.com.au/Current-vacancies/
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 5, au: 5, vic: 5}
+  notes: 'RecruitmentHub server-rendered list (robots.txt allows). No posted date: observed-dated. VIC-only employer.'
+- name: Moorabool Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: recruitmenthub
+  tenant: moorabool
+  careers_url: https://moorabool.recruitmenthub.com.au/Vacancies/
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: RecruitmentHub tenant moorabool.recruitmenthub.com.au answered 'Sorry, the site is not available at the moment' on
+    2026-10-06 (HTTP 200, 47 bytes). Same platform and path style as Maribyrnong; flip enabled to true once /Vacancies/ lists
+    jobs.
+- name: City of Kingston
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: jobs-search
+  careers_url: https://careers.kingston.vic.gov.au/jobs/search
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 13, au: 13, vic: 13}
+  notes: 'careers.kingston.vic.gov.au/jobs/search card list (server-rendered; robots allows). No posted date: observed-dated.
+    VIC-only employer.'
+- name: Mitchell Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: jobs-search
+  careers_url: https://careers.mitchellshire.vic.gov.au/jobs/search
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 8, au: 8, vic: 8}
+  notes: 'careers.mitchellshire.vic.gov.au/jobs/search card list (server-rendered; robots allows). No posted date: observed-dated.
+    VIC-only employer.'
+- name: Glen Eira City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: jobs-search
+  careers_url: https://careers.gleneira.vic.gov.au/jobs/search
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 11, au: 11, vic: 11}
+  notes: careers.gleneira.vic.gov.au/jobs/search card list (server-rendered; robots allows). Replaces the old 'unidentified
+    Rails platform' disabled entry. VIC-only employer.
+- name: City of Stonnington
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: elmo
+  careers_url: https://cos.elmotalent.com.au/careers/cosjobs/jobs
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 6, au: 6, vic: 6}
+  notes: ELMO Talent list (cos.elmotalent.com.au/careers/cosjobs/jobs). robots.txt allows /careers/*/jobs but Python's stdlib
+    parser cannot read the wildcard, so ats_elmo applies the rule itself. Dates shown are closing dates; postings are observed-dated.
+    VIC-only employer.
+- name: Surf Coast Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: elmo
+  careers_url: https://surfcoast.elmotalent.com.au/careers/surfcoast/jobs
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 2, au: 2, vic: 2}
+  notes: ELMO Talent list (surfcoast.elmotalent.com.au/careers/surfcoast/jobs). robots.txt allows /careers/*/jobs (wildcard,
+    handled in ats_elmo). Dates shown are closing dates; postings are observed-dated. VIC-only employer.
+- name: Greater Bendigo City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: techone
+  careers_url: https://www.bendigo.vic.gov.au/about-us/working-city
+  api_url: https://mingle-ionapi.se2.inforcloudsuite.com/E8HGN5FHDMAECWRM_PRD/CustomerApi/TechOne/Recruitment/Api/RaaS/v1/Recruitment_Advertisement_List?q=Advertisement%20Type%20-%20Code%20Is%20equal%20to%20EJB&pageSize=100&page=1
+  location: Bendigo, VIC
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 4, au: 4, vic: 4}
+  notes: The council's own careers page fills its list from an anonymous TechnologyOne RaaS JSON call (api_url below); the
+    t1cloud portal itself is not read (robots disallows). The old applynow tenant city-of-bendigo shows 'no vacancies' and
+    is stale. VIC-only employer.
+- name: Baw Baw Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: scouttalent
+  tenant: bbsc-external
+  ref_prefix: BAW
+  careers_url: https://bbsc-external.applynow.net.au/
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 7, au: 7, vic: 7}
+  notes: Scout Talent tenant bbsc-external; its jobs link to applynow.net.au/jobs/BAW... (shared host), so ref_prefix BAW
+    is set and ats_scouttalent keeps only rows whose reference starts with it. VIC-only employer.
+- name: Melton City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: scouttalent
+  tenant: testmelton123
+  careers_url: https://testmelton123.applynow.net.au/
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 0, au: 0, vic: 0}
+  notes: Melton's own Job Opportunities page iframes the Scout Talent tenant testmelton123.applynow.net.au (sic). It listed
+    0 jobs at probe time (blank list, no jobblock rows), so confirm the first non-zero run. VIC-only employer.
+- name: City of Frankston
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: pageup
+  tenant: '1065'
+  feed_url: https://careers.pageuppeople.com/1065/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 12, au: 12, vic: 12}
+  notes: PageUp client 1065 (careers.frankston.vic.gov.au is a PageUp front). VIC-only employer.
+- name: City of Greater Geelong
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: pageup
+  tenant: '887'
+  feed_url: https://careers.pageuppeople.com/887/cw/en/rss
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 10, au: 10, vic: 10}
+  notes: PageUp client 887. VIC-only employer.
+- name: Hume City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: smartrecruiters
+  tenant: HumeCityCouncil
+  api_url: https://api.smartrecruiters.com/v1/companies/HumeCityCouncil/postings
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 33, au: 33, vic: 33}
+  notes: SmartRecruiters company HumeCityCouncil (jobs widget on hume.vic.gov.au/careers). VIC-only employer.
+- name: Whitehorse City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: oracle-hcm
+  host: fa-evei-saasfaprod1.fa.ocs.oraclecloud.com
+  site: CX_1001
+  careers_url: https://fa-evei-saasfaprod1.fa.ocs.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1001/jobs
+  api_url: https://fa-evei-saasfaprod1.fa.ocs.oraclecloud.com/hcmRestApi/resources/latest/recruitingCEJobRequisitions?onlyData=true&expand=requisitionList.secondaryLocations&finder=findReqs;siteNumber=CX_1001,limit=25,sortBy=POSTING_DATES_DESC
+  enabled: true
+  verified_at: '2026-10-06T05:03:45+11:00'
+  verified_counts: {total: 9, au: 9, vic: 9}
+  notes: Oracle Recruiting Cloud site CX_1001 (Whitehorse Careers). VIC-only employer.
+- name: Cardinia Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'Adlogic job board with a public RSS feed that already works: https://careers.cardinia.vic.gov.au/adlogic-jobs/rss
+    (6 items with pubDate at probe). Single-council platform, so no collector; enable by adding a feeds.yaml entry (see employers.councils.NOTES.md)
+    or use provider: other + rss. robots.txt allows /our-jobs/ and the feed.'
+- name: City of Boroondara
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Council page https://www.boroondara.vic.gov.au/your-council/jobs-and-careers/view-current-job-vacancies lists 14
+    jobs as cards linking to legacy SuccessFactors career10 (company cityofboroP). No feed or JSON-LD; needs a bespoke page
+    parser (single council).
+- name: Merri-bek City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Council page https://www.merri-bek.vic.gov.au/my-council/careers-at-merri-bek/current-vacancies/ lists jobs in div.jobListing
+    blocks linking to applynow.net.au/jobs/MER...; the Scout tenant has no index and the job pages carry no JSON-LD. Needs
+    a bespoke page parser (single council); could reuse ats_scouttalent ref_prefix MER if a tenant index appears.
+- name: Greater Dandenong City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Custom Drupal site jobs.greaterdandenong.vic.gov.au/jobs (robots allows). The list uses infinite scroll (3 of 8 jobs
+    in the first HTML); no feed or JSON-LD. Needs a bespoke parser plus the scroll endpoint (single council).
+- name: Darebin City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'Nga.Net (darebinjobs.nga.net.au). robots.txt: ''User-agent: * Disallow: /''. Not polled.'
+- name: Maroondah City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'Nga.Net (maroondahjobs.nga.net.au). robots.txt: ''User-agent: * Disallow: /''. Not polled.'
+- name: City of Whittlesea
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'BigRedSky (whittlesea.bigredsky.com). robots.txt: ''User-agent: * Disallow: /''. Not polled.'
+- name: Hobsons Bay City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: 'BigRedSky (hobsonsbay.bigredsky.com). robots.txt: ''User-agent: * Disallow: /''. Not polled.'
+- name: City of Melbourne
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Mercury eRecruit (melbourne.mercury.com.au). Connections to the Mercury hosts (175.45.119.84) time out from this
+    server, including robots.txt. Not polled.
+- name: Latrobe City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Mercury eRecruit (latrobecity.mercury.com.au). Connections to the Mercury hosts (175.45.119.84) time out from this
+    server, including robots.txt. Not polled.
+- name: Wyndham City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: TechnologyOne CiAnywhere (wyndham.t1cloud.com). robots.txt disallows everything except LogOn. Not polled.
+- name: Yarra Ranges Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: TechnologyOne CiAnywhere (yrc.t1cloud.com). robots.txt disallows everything except LogOn. Not polled.
+- name: Mornington Peninsula Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: TechnologyOne CiAnywhere (mornpen.t1cloud.com). robots.txt disallows everything except LogOn. Not polled.
+- name: City of Port Phillip
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: portphillip.vic.gov.au/about-the-council/careers returned HTTP 429 on the first request (2026-10-06); stopped as
+    instructed. Platform not identified ('online Recruitment Portal').
+- name: Golden Plains Shire Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Uses Aurion Recruitment. goldenplains.vic.gov.au/council/careers/vacancies returned HTTP 403 to the first request;
+    stopped. Portal host not identified.
+- name: City of Ballarat
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: victoria
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: Vacancies at careers.ballarat.vic.gov.au (ColdFusion job_search_result.cfm). robots.txt disallows the listing path.
+    Not polled.
+- name: Moonee Valley City Council
+  sector: council
+  arms: [admin, reception, customer_service, clerical_accounting, data_entry, data_analyst]
+  state: VIC
+  au_scope: melbourne
+  provider: other
+  enabled: false
+  verified_at: null
+  verified_counts: null
+  notes: mvcc.vic.gov.au/work/my-career/work-with-us/ answers with an Incapsula bot challenge (HTTP 200, 212-byte script page),
+    not job data. Not polled; no bypass attempted.

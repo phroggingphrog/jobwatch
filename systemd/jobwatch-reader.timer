@@ -1,0 +1,10 @@
+[Unit]
+Description=jobwatch AI reader every 15 min (2026-10-19 owner: read more ads per run)
+
+[Timer]
+OnCalendar=*:07/15
+RandomizedDelaySec=30
+Persistent=false
+
+[Install]
+WantedBy=timers.target

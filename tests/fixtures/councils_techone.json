@@ -1,0 +1,33 @@
+{
+ "DataSet": [
+  {
+   "JOBID": "JR0036",
+   "TITLE": "Senior Local Laws Officer",
+   "ORGANISATIONUNIT": "Safe Environments",
+   "EMPLOYEETYPECODECODE": "Permanent",
+   "EMPLOYEECLASS": "Part Time",
+   "ADVERTISEMENTSTATUS": "Applications closing soon",
+   "MINIMUMGRADECODE": "5",
+   "ADVERTISEMENTTYPECODE": "EJB",
+   "PUBLISHDATE": "2026-09-28T04:07:19Z",
+   "EXPIRYDATE": "2026-10-12T11:59:59Z",
+   "RESOLVEDAPPLYURL": "https://bendigo.t1cloud.com/T1Default/CiAnywhere/Web/BENDIGO/Public/Function/%24ORG.REC.EXAPN.WIZ/RECRUIT_EXT?suite=CES&token=06fe3cb5-7a41-488a-a420-69934b9302b7"
+  },
+  {
+   "JOBID": "JR0035",
+   "TITLE": "Service Strategy and Insights Analyst",
+   "ORGANISATIONUNIT": "Strategic Transformation",
+   "EMPLOYEETYPECODECODE": "Permanent",
+   "EMPLOYEECLASS": "Full Time",
+   "ADVERTISEMENTSTATUS": "Applications closing soon",
+   "MINIMUMGRADECODE": "7",
+   "ADVERTISEMENTTYPECODE": "EJB",
+   "PUBLISHDATE": "2026-09-28T00:34:50Z",
+   "EXPIRYDATE": "2026-10-12T11:59:00Z",
+   "RESOLVEDAPPLYURL": "https://bendigo.t1cloud.com/T1Default/CiAnywhere/Web/BENDIGO/Public/Function/%24ORG.REC.EXAPN.WIZ/RECRUIT_EXT?suite=CES&token=3cbdcdef-2db1-428b-aa1a-0885eb7c2a83"
+  }
+ ],
+ "TotalRecordCount": 4,
+ "Key": "fixture",
+ "Messages": []
+}

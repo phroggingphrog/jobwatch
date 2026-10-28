@@ -1,0 +1,60 @@
+# Example employer registry (3 entries). The real registry is config/employers.yaml
+# (written separately); jobwatch falls back to this file only when employers.yaml is absent.
+#
+# Schema (one mapping per employer under `employers:`):
+#   name         str   required. Display name; also used for "VIC employer" matching.
+#   sector       str   free text (bank, university, council, retail, health, ...)
+#   arms         list  target arm ids from rules.yaml this employer is likely to hire for
+#   state        str   AU state of the employer's main site; "VIC" lets unknown-location
+#                      postings from it match (rules.yaml location.allow_unknown_from_vic_employer)
+#   provider     str   one of: greenhouse | lever | ashby | workable | smartrecruiters |
+#                      workday | pageup | employmenthero | scouttalent | jsonld
+#   tenant       str   board slug (greenhouse/lever/ashby/workable/smartrecruiters/employmenthero/
+#                      scouttalent subdomain/pageup client number/workday tenant)
+#   site         str   workday only: the career site id (…/wday/cxs/{tenant}/{site}/jobs)
+#   host         str   workday only: e.g. nab.wd3.myworkdayjobs.com
+#   search_text  str|list  workday only, optional: searchText values (default "" = all jobs)
+#   applied_facets dict    workday only, optional: CXS facet filter, e.g. {locationCountry: [id]}
+#   feed_url     str   pageup: RSS URL (default https://careers.pageuppeople.com/{tenant}/cw/en/rss)
+#   careers_url  str|list  jsonld: careers page(s) to read JobPosting JSON-LD from
+#   link_pattern str   jsonld, optional: regex for job-detail links (default: /job/, /careers/, ...)
+#   allowed_hosts list jsonld, optional: extra hosts detail links may live on
+#   detail_cap   int   optional: max detail fetches per run (workday/smartrecruiters 10, jsonld 30)
+#   region       str   lever only: "eu" to use api.eu.lever.co
+#   enabled      bool  default true
+#   notes        str   free text (how it was verified, caveats)
+#   verified_at  date  when the endpoint was last confirmed to return jobs
+employers:
+  - name: Culture Amp
+    sector: technology
+    arms: [data_analyst, ict_business_analyst, information_officer]
+    state: VIC
+    provider: greenhouse
+    tenant: cultureamp
+    enabled: true
+    notes: Melbourne HQ; board API returned 32 jobs (10 Melbourne) on 2026-10-06.
+    verified_at: 2026-10-06
+  - name: Telstra
+    sector: telecommunications
+    arms: [information_officer, call_centre, retail_sales, data_analyst, ict_business_analyst]
+    state: VIC
+    provider: workday
+    host: telstra.wd3.myworkdayjobs.com
+    tenant: telstra
+    site: Telstra_Careers
+    search_text: ""
+    max_pages: 3
+    enabled: true
+    notes: Melbourne HQ; CXS POST returned 210 jobs (AU stores, Australia (Flexible), some India) on
+      2026-10-06. NAB's Workday site (nab/nab_careers) was checked and only lists India/Singapore/Vietnam.
+    verified_at: 2026-10-06
+  - name: Asahi Beverages
+    sector: food and beverage manufacturing
+    arms: [accounting_clerk, general_clerk, information_officer, data_analyst]
+    state: VIC
+    provider: pageup
+    tenant: "527"
+    feed_url: https://careers.pageuppeople.com/527/cw/en/rss
+    enabled: true
+    notes: Melbourne (Southbank) HQ; PageUp RSS returned 36 items on 2026-10-06.
+    verified_at: 2026-10-06

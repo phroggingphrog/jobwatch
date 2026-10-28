@@ -1,0 +1,47 @@
+[project]
+name = "jobwatch"
+version = "0.1.0"
+description = "Small job watcher: collect, filter, dedupe, alert (Melbourne target arms)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "python-jobspy>=1.1.80",
+    "requests>=2.31",
+    "feedparser>=6.0",
+    "pyyaml>=6.0",
+    "weasyprint>=60",
+    "markdown>=3.5",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "pydantic>=2.6",
+    "deepagents==0.7.23",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+browser = ["playwright>=1.50,<2"]
+
+[project.scripts]
+jobwatch = "jobwatch.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["jobwatch*", "pipeline*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["real_cv_printer: run the real Chromium CV printer instead of the in-process stand-in"]
+
+[tool.setuptools.package-data]
+"jobwatch.web" = ["templates/*.html", "static/*"]
+"jobwatch.apply" = ["careerops_templates/*.html", "careerops_templates/sections/*.html", "careerops_templates/NOTICE", "careerops_templates/LICENSE-career-ops"]
+
+"jobwatch.candidate" = ["data/*.json", "data/*.md"]
+
+"jobwatch.preferences" = ["*.R", "*.jags"]
+
+"pipeline.agentic" = ["data/*.json", "data/*.md"]

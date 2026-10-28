@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Your candidate assessment{% endblock %}
+{% block content %}
+<div class="jobpage"><h1>Your candidate assessment</h1>
+{% if profile_problems %}<div class="ph-alert ph-alert--warning" role="status"><strong>Check your profile files</strong>
+<ul>{% for p in profile_problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
+<h2>Statistical occupation fit</h2>
+{% if statistics.status == 'available' %}
+<p>{{ statistics.evidence_count }} evidence records; {{ statistics.mapped_evidence_count }} linked to work activities.
+{{ statistics.confirmed_count }} confirmed links; {{ statistics.suggested_count }} suggested links.</p>
+<p>These scores compare your evidence with occupational work activities. They are not hiring probability or proof of eligibility.</p>
+<p>Suggested links need verification. The job evaluator still checks your evidence against each actual vacancy.</p>
+<div class="ph-table-wrap"><table class="ph-table"><thead><tr><th>Occupation</th><th>Activity coverage</th><th>Activity similarity</th><th>Combined fit</th><th>Evidence status</th></tr></thead><tbody>
+{% for fit in statistics.fits %}<tr><th scope="row">{{ fit.title }} ({{ fit.code }})</th><td data-label="Activity coverage">{{ '%.1f'|format(fit.dwa_coverage * 100) }}%</td><td data-label="Activity similarity">{{ '%.1f'|format(fit.gwa_similarity * 100) }}%</td><td data-label="Combined fit">{{ '%.1f'|format(fit.proximity * 100) }}%</td><td data-label="Evidence status">{{ fit.recommendation_status|replace('_',' ') }}</td></tr>{% endfor %}
+</tbody></table></div>
+<details><summary>How these scores are calculated</summary><p>Reference: {{ statistics.reference_version }}. Crosswalks link multiple occupations and do not establish equivalent qualifications.</p><p>Combined fit = 60% weighted activity coverage + 40% cosine similarity. These are fixed design weights, not fitted coefficients. Missing evidence means unverified, not incapable.</p><p>Suggested links come from local text retrieval and are not verified qualifications.</p></details>
+<details><summary>Inspect evidence-to-activity links</summary><ul>{% for link in statistics.links %}<li>{{ link.evidence }} → {{ link.activity }} ({{ link.state }})</li>{% endfor %}</ul></details>
+{% elif statistics.status == 'unmapped' %}<p>Occupation reference loaded. No evidence-to-activity links meet the retrieval criteria yet; no numerical fit is asserted.</p>
+{% else %}<p>Statistical inputs are unavailable or invalid. No numerical fit is asserted.</p>{% endif %}
+{% if outcomes %}<h2>Outcome model</h2>
+<p>{{ outcomes.applied }} submitted applications; {{ outcomes.callbacks }} recorded callbacks; {{ outcomes.pending }} still awaiting a resolved outcome.</p>
+{% if outcomes.status == 'untrained' %}<p>Untrained: no observed outcomes. No hiring probability is available.</p>
+{% else %}<p>Descriptive only: {{ outcomes.resolved }} resolved outcomes. No validated per-job probability is available; held-out calibration is required.</p>
+<p>Among resolved outcomes only: posterior mean {{ '%.1f'|format(outcomes.resolved_posterior.mean * 100) }}%, 95% highest-density interval [{{ '%.1f'|format(outcomes.resolved_posterior.hdi[0] * 100) }}%, {{ '%.1f'|format(outcomes.resolved_posterior.hdi[1] * 100) }}%], assuming the existing Beta(1,15) prior. Unresolved applications are excluded; this selection can bias the rate.</p>{% endif %}
+{% endif %}
+{% if candidate %}
+<p class="muted">Based on your saved evidence and career preferences. Missing evidence is shown as a gap, not an invented qualification.</p>
+<h2>Supported strengths</h2><ul>{% for strength in candidate.strengths %}<li>{{ strength.claim }}</li>{% endfor %}</ul>
+<h2>Gaps to work on</h2><ul>{% for gap in candidate.gaps %}<li>{{ gap.gap }}: {{ gap.action }}</li>{% endfor %}</ul>
+<h2>Career directions</h2>{% for target in candidate.target_paths %}<section><h3>{{ target.family|replace('_',' ')|title }}</h3><p>{{ target.rationale }}</p><ul>{% for step in target.next_steps %}<li>{{ step }}</li>{% endfor %}</ul></section>{% endfor %}
+{% else %}<p>Your assessment will appear after Jobwatch evaluates your saved profile.</p>{% endif %}
+</div>{% endblock %}

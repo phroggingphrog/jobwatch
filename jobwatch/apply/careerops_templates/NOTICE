@@ -1,0 +1,3 @@
+Copied from career-ops (https://github.com/santifer/career-ops), MIT License, see LICENSE-career-ops.
+cv-template.ats.html and sections/*.html are unchanged except sections/experience.html, which adds
+Role Overview and Key Achievements blocks (marked). Look: career-ops ATS template unchanged; two label styles in careerops_cv.py EXTRA_CSS.

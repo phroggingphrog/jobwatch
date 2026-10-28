@@ -1,0 +1,83 @@
+# Queries for the aggregator collectors (slow tier, every 2 h). Terms cover the 21 target
+# ANZSCO arms (rules.yaml decides what actually matches). Rotation keeps each run small.
+location: "Melbourne, VIC"
+
+seek:
+  enabled: true
+  where: "All Melbourne VIC"
+  # dateRange=1 means "listed since local midnight": runs just after midnight would miss
+  # ads listed late the previous evening, so 2 (since yesterday) closes that gap; dedupe
+  # drops the repeats. Code default is 1.
+  date_range: 2
+  max_pages: 2             # hard max 2
+  page_size: 22
+  searches_per_run: 8      # keywords per run, rotating -> all 20 every 3 runs (<= 16 requests/run)
+  # Seek robots.txt disallows /api/jobsearch/ for all agents. Owner accepted the ToS risk for
+  # personal low-volume use (PLAN D3). Set true to honour robots.txt (Seek then stops).
+  respect_robots: false
+  keywords:
+    - accounts payable
+    - accounts receivable
+    - bookkeeper
+    - payroll officer
+    - administration officer
+    - administration assistant
+    - data entry
+    - graduate accountant
+    - graduate auditor
+    - junior data analyst
+    - business analyst
+    - graduate analyst
+    - admin
+    - accounting internship
+    - vacation program
+    - graduate program
+    - part time accounts
+    - casual bookkeeper
+    - finance internship
+    - data analyst internship
+
+jobspy:
+  enabled: true
+  sites: [linkedin, indeed, google]
+  location: "Melbourne, VIC"
+  hours_old: 6             # slow tier runs every 2 h; 6 h gives overlap
+  results_wanted: 20       # per site per search (hard max 25)
+  searches_per_run: 4      # rotating
+  pause_seconds: 2
+  searches:
+    - {term: "accounts officer"}
+    - {term: "bookkeeper"}
+    - {term: "payroll officer"}
+    - {term: "administration officer"}
+    - {term: "data entry"}
+    - {term: "graduate accountant"}
+    - {term: "graduate auditor"}
+    - {term: "junior data analyst"}
+    - {term: "junior business analyst"}
+    - {term: "accounting internship"}
+    - {term: "vacation program"}
+    - {term: "part time accounts assistant"}
+
+# so the collector uses a browser TLS fingerprint (curl_cffi). Personal low-volume use:
+# 4 keyword pages per slow run (every 2 h), 4 s apart, last 24 h only. Set enabled: false to stop.
+jora:
+  enabled: true
+  where: "Melbourne VIC"
+  age: 24h
+  searches_per_run: 4
+  delay_s: 4
+  keywords:
+    - ""                      # all new Melbourne jobs (newest first, one page)
+    - accounts
+    - bookkeeper
+    - payroll
+    - administration
+    - data entry
+    - graduate
+    - analyst
+    - internship
+    - vacation program
+    - part time accounts
+    - casual bookkeeper
+    - management trainee

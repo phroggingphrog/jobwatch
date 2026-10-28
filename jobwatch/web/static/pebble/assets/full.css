@@ -1,0 +1,56 @@
+/* Full-build layout only. Pebble tokens and Phrog components remain the design system. */
+.f-stack{display:grid;gap:var(--space-4);min-width:0}
+.f-heading{display:grid;gap:var(--space-2)}
+.f-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:var(--space-3);min-width:0}
+.f-tools{display:flex;align-items:end;flex-wrap:wrap;gap:var(--space-3)}
+.f-field{display:grid;gap:var(--space-2);min-width:0;flex:1;min-inline-size:min(100%,160px)}
+.f-field input,.f-field select,.f-field textarea{width:100%;min-width:0}
+.f-grid{display:grid;gap:var(--space-4);grid-template-columns:minmax(0,1fr)}
+.f-kpis{display:grid;gap:var(--space-3);grid-template-columns:repeat(2,minmax(0,1fr))}
+.f-kpi{padding:var(--card-inset);display:grid;gap:var(--space-2)}
+.f-kpi strong{font-size:var(--fs-26);font-family:var(--font-sans);line-height:1.3}
+.f-list{background:var(--card);color:var(--card-foreground);border:var(--border-width) solid var(--card-border);border-radius:var(--radius);overflow:hidden}
+.f-list>li{padding:var(--card-inset);display:grid;gap:var(--space-3);min-width:0}
+.f-list>li+li{border-top:var(--border-width) solid var(--border)}
+.f-list h2,.f-list h3,.f-heading h2{font-family:var(--font-display);font-size:var(--fs-20);line-height:1.4}
+.f-list p,.f-list a,.f-list blockquote,.f-list code{overflow-wrap:anywhere}
+.f-list details>summary,.f-stack details>summary{cursor:pointer;min-height:var(--target-min);display:flex;align-items:center;font-weight:600}
+.f-list details[open]>summary{margin-bottom:var(--space-3)}
+.f-quote{border-inline-start:var(--space-1) solid var(--border);padding-inline-start:var(--space-4)}
+.f-tablebox{border:var(--border-width) solid var(--card-border);border-radius:var(--radius);background:var(--card);overflow:hidden}
+.f-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:var(--fs-13)}
+.f-table th,.f-table td{padding:var(--space-3);border-bottom:var(--border-width) solid var(--border);text-align:left;vertical-align:top;overflow-wrap:anywhere;background:transparent}
+.f-table th{font-weight:600;color:var(--muted-foreground)}
+.f-table tr:last-child td{border-bottom:0}
+.f-table tbody tr:hover{background:var(--row-hover-bg)}
+.f-table th button{font:inherit;color:inherit;display:flex;align-items:center;gap:var(--space-1);background:none;border:0;cursor:pointer;min-height:var(--target-min);text-align:left;width:100%}
+.f-table td a{font-weight:600}
+.f-columns{display:flex;gap:var(--space-4);flex-wrap:wrap;padding:var(--space-3) 0}
+.f-columns .ph-check{min-height:var(--target-min);align-items:center}
+.f-draft{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;max-width:70ch}
+.f-chart{display:grid;grid-template-columns:repeat(auto-fit,minmax(2rem,1fr));gap:var(--space-2);align-items:end;min-width:0}
+.f-chart button{display:flex;flex-direction:column;justify-content:end;align-items:center;gap:var(--space-2);padding:var(--space-2) 0;border:0;border-bottom:var(--border-width) solid var(--border);background:transparent;color:var(--foreground);height:calc(var(--space-6)*5);min-width:var(--target-min);cursor:pointer;font-size:var(--fs-12)}
+.f-chart-mark{width:var(--space-6);height:var(--bar-height);background:var(--primary);border-radius:var(--space-1) var(--space-1) 0 0;display:block;max-width:100%}
+.f-chart-value{min-height:var(--target-min);display:flex;align-items:center;font-size:var(--fs-15);color:var(--foreground)}
+.f-chart-note{display:flex;justify-content:space-between;gap:var(--space-3);max-width:100%;font-size:var(--fs-12);color:var(--muted-foreground)}
+.f-meter{height:var(--space-3);background:var(--muted);border-radius:var(--radius-sm);overflow:hidden}
+.f-meter span{display:block;height:100%;width:var(--meter-width);background:var(--primary)}
+.f-breakdown{display:grid;gap:var(--space-3)}
+.f-breakdown li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2)}
+.f-breakdown .f-meter{grid-column:1/-1}
+.f-formgrid{display:grid;gap:var(--space-3);grid-template-columns:minmax(0,1fr)}
+.f-formgrid .ph-check{min-height:var(--target-min);align-items:center}
+#action-dialog,#employer-preview{max-width:min(calc(100vw - var(--space-6)),720px);width:100%;max-height:calc(100dvh - var(--space-6));overflow:auto}
+#action-body{display:grid;gap:var(--space-3)}
+#employer-preview .ph-formframe{border:0}
+.f-empty{padding:var(--card-inset)}
+.f-state{display:grid;gap:var(--space-4);padding:var(--card-inset)}
+.f-state .ph-skeleton{height:var(--space-6)}
+.f-errorcode{font-family:var(--font-mono);font-size:var(--fs-26)}
+.f-chat-tools{display:flex;gap:var(--space-2);flex-wrap:wrap}
+.f-attach{display:flex;gap:var(--space-2);align-items:center;flex-wrap:wrap}
+:where(button,input,textarea,select,summary,a):focus-visible{outline:var(--focus-width) solid var(--ring);outline-offset:var(--space-1)}
+@media(min-width:768px){.f-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.f-formgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.f-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(max-width:900px){.f-table,.f-table tbody,.f-table tr,.f-table td{display:block;width:100%}.f-table thead{display:none}.f-table tr{padding:var(--space-4);border-bottom:var(--border-width) solid var(--border)}.f-table td{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:var(--space-3);border:0;padding:var(--space-2) 0}.f-table td::before{content:attr(data-label);font-weight:600;color:var(--muted-foreground)}.f-table tr:last-child{border:0}}
+@media(max-width:639px){.ph-btn,.ph-btn--sm,.ph-input,.ph-select,.ph-msg-actions__btn,.ph-branch__btn,.ph-threads__btn{min-height:var(--target-min)}.ph-msg-actions__btn,.ph-branch__btn{min-width:var(--target-min)}details>summary{min-height:var(--target-min);display:flex;align-items:center;cursor:pointer}.f-row a,.f-table td a,.f-list li a{min-height:var(--target-min);display:inline-flex;align-items:center}.f-list,.f-tablebox{max-width:100%}input,select,textarea{font-size:16px}.f-chart{gap:var(--space-1)}.f-chart button{min-width:0;min-height:var(--target-min)}.f-chart-mark{width:var(--space-4)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

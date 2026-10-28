@@ -1,0 +1,2212 @@
+{
+  "version": "vic-council-localities-20261011",
+  "metro_source": "https://liveinmelbourne.vic.gov.au/discover/melbourne/metropolitan-melbourne",
+  "metro_councils": [
+    "Banyule",
+    "Bayside",
+    "Boroondara",
+    "Brimbank",
+    "Cardinia",
+    "Casey",
+    "Darebin",
+    "Frankston",
+    "Glen Eira",
+    "Greater Dandenong",
+    "Hobsons Bay",
+    "Hume",
+    "Kingston",
+    "Knox",
+    "Manningham",
+    "Maribyrnong",
+    "Maroondah",
+    "Melbourne",
+    "Melton",
+    "Merri-bek",
+    "Monash",
+    "Moonee Valley",
+    "Mornington Peninsula",
+    "Nillumbik",
+    "Port Phillip",
+    "Stonnington",
+    "Whitehorse",
+    "Whittlesea",
+    "Wyndham",
+    "Yarra",
+    "Yarra Ranges"
+  ],
+  "source_pages": [
+    {
+      "council": "Banyule",
+      "url": "https://www.vic.gov.au/know-your-council-banyule-city-council",
+      "sha256": "d7a1dfac5d5196ad058261ef74c1208f1cf59d105aeb7a5174dcf55346fc9433"
+    },
+    {
+      "council": "Bayside",
+      "url": "https://www.vic.gov.au/know-your-council-bayside-city-council",
+      "sha256": "f9ead813d0ef7cb6122f7a4570897e4b137b4cda92c1eb01d439034238cea65f"
+    },
+    {
+      "council": "Boroondara",
+      "url": "https://www.vic.gov.au/know-your-council-boroondara-city-council",
+      "sha256": "307ca87ef07fdb29ae19babd585bcaa977ce65bc161b6186c4b3fcf963237d07"
+    },
+    {
+      "council": "Brimbank",
+      "url": "https://www.vic.gov.au/know-your-council-brimbank-city-council",
+      "sha256": "d8d175d9eefe0557c376725b34cda6b5aa62921b000f13846d79911688091421"
+    },
+    {
+      "council": "Cardinia",
+      "url": "https://www.vic.gov.au/know-your-council-cardinia-shire-council",
+      "sha256": "2380b5175663c413400c353f8636b2273f896b1485527c0ebb3edd3399a8fade"
+    },
+    {
+      "council": "Casey",
+      "url": "https://www.vic.gov.au/know-your-council-casey-city-council",
+      "sha256": "21c0f82cea7d15ebd570f6bbfee47c7bcc071d83a8ec40f5e523bcadfe66e0f9"
+    },
+    {
+      "council": "Darebin",
+      "url": "https://www.vic.gov.au/know-your-council-darebin-city-council",
+      "sha256": "2c2dc8d437804cad6801fb57cf0fb00fdc1d664d762b1d5247dbe5a5ca5a0eb8"
+    },
+    {
+      "council": "Frankston",
+      "url": "https://www.vic.gov.au/know-your-council-frankston-city-council",
+      "sha256": "5fb6a06312d4bf6867e27abcda2b96f0581a3a817b67907e27800c1404d122c0"
+    },
+    {
+      "council": "Glen Eira",
+      "url": "https://www.vic.gov.au/know-your-council-glen-eira-city-council",
+      "sha256": "be2b4dd8f30a9a4b6ea23bcd492b2e53b418f64c9371a0109a51df5068a732df"
+    },
+    {
+      "council": "Greater Dandenong",
+      "url": "https://www.vic.gov.au/know-your-council-greater-dandenong-city-council",
+      "sha256": "0637e4e8c10cecb5f7d031325f6ae141d9cab0553068595f0a3184906d67efa8"
+    },
+    {
+      "council": "Hobsons Bay",
+      "url": "https://www.vic.gov.au/know-your-council-hobsons-bay-city-council",
+      "sha256": "fe3802fd1a48f6cade74848ae0b7ce3e683516c8829c9fcad9ce37561b97440b"
+    },
+    {
+      "council": "Hume",
+      "url": "https://www.vic.gov.au/know-your-council-hume-city-council",
+      "sha256": "a40b953ee8a2298db2d8b55410835116be0ce7fa2718ad6d349cc7e2f2134a09"
+    },
+    {
+      "council": "Kingston",
+      "url": "https://www.vic.gov.au/know-your-council-kingston-city-council",
+      "sha256": "c4f991aa83f97fb578853ab47345aa60a05e0c4c3a4e33002421690ddec2480a"
+    },
+    {
+      "council": "Knox",
+      "url": "https://www.vic.gov.au/know-your-council-knox-city-council",
+      "sha256": "004d047a9007f2e3793b4197cc7c33a061ca387fcecb15517406bf247f0db111"
+    },
+    {
+      "council": "Manningham",
+      "url": "https://www.vic.gov.au/know-your-council-manningham-city-council",
+      "sha256": "de66c709fc3f7a4fbfd23a4d179212784e4d031118c140811ca297b096accbc1"
+    },
+    {
+      "council": "Maribyrnong",
+      "url": "https://www.vic.gov.au/know-your-council-maribyrnong-city-council",
+      "sha256": "b74eed0e08dc18ee1e3bee3488b55a9f96d61d1aefe398cb734afadb038f6b69"
+    },
+    {
+      "council": "Maroondah",
+      "url": "https://www.vic.gov.au/know-your-council-maroondah-city-council",
+      "sha256": "681e0269336f3944066bcf6aa52bd8e775374d375042dfb9a4a3c5a76aab09fe"
+    },
+    {
+      "council": "Melbourne",
+      "url": "https://www.vic.gov.au/know-your-council-melbourne-city-council",
+      "sha256": "cb8a87e5a1fe74e7d6089df8069828460771cd58c9d11e46d68cc33555ae66c8"
+    },
+    {
+      "council": "Melton",
+      "url": "https://www.vic.gov.au/know-your-council-melton-city-council",
+      "sha256": "c99c90cb63860bef22efb8ef6cac2df62a21433a12f48a81533ef9c155a06e6f"
+    },
+    {
+      "council": "Merri-bek",
+      "url": "https://www.vic.gov.au/know-your-council-merri-bek-city-council",
+      "sha256": "ad31791334329c1a0e78c9186bf394b3decc601454e3409c77b22f430bb1d5b6"
+    },
+    {
+      "council": "Monash",
+      "url": "https://www.vic.gov.au/know-your-council-monash-city-council",
+      "sha256": "1fdd721a2529e5a8c033037fe3301c1a085697bd6c2ad192066e534e78602d49"
+    },
+    {
+      "council": "Moonee Valley",
+      "url": "https://www.vic.gov.au/know-your-council-moonee-valley-city-council",
+      "sha256": "f1448f2fd62b37374e2d67d31fc97e77c68b67bbed9e5ad2cf3d7a584440e802"
+    },
+    {
+      "council": "Mornington Peninsula",
+      "url": "https://www.vic.gov.au/know-your-council-mornington-peninsula-shire-council",
+      "sha256": "d6792f6b6f6bf0002e62ae9b3dd70e9c2e5cb062c7f0fe1006767d9686102a90"
+    },
+    {
+      "council": "Nillumbik",
+      "url": "https://www.vic.gov.au/know-your-council-nillumbik-shire-council",
+      "sha256": "f9968f0aab97355f192203b743514da5570afaf38713cc26052b363d064a37bf"
+    },
+    {
+      "council": "Port Phillip",
+      "url": "https://www.vic.gov.au/know-your-council-port-phillip-city-council",
+      "sha256": "c385aaaebf25ac6e3bbbb4ae97dde5593bf6303ad35ba497dbfc13c20e42b572"
+    },
+    {
+      "council": "Stonnington",
+      "url": "https://www.vic.gov.au/know-your-council-stonnington-city-council",
+      "sha256": "1ef73416de9eeb9e4eac38c9b64bb090096d28f26b494b36154b8214d248b14e"
+    },
+    {
+      "council": "Whitehorse",
+      "url": "https://www.vic.gov.au/know-your-council-whitehorse-city-council",
+      "sha256": "ca0543b20af44dde25fe7fab8791fef02bb5bef883032fd01f4bd43401508941"
+    },
+    {
+      "council": "Whittlesea",
+      "url": "https://www.vic.gov.au/know-your-council-whittlesea-city-council",
+      "sha256": "1e92db5edb1258d0685bfeae07255efc7d311bef6169e6a763ccd440bc36617b"
+    },
+    {
+      "council": "Wyndham",
+      "url": "https://www.vic.gov.au/know-your-council-wyndham-city-council",
+      "sha256": "5d0fd659c0fef35e30d508b47aa73faf55ad121443d822b6a96dd451e2481ee7"
+    },
+    {
+      "council": "Yarra",
+      "url": "https://www.vic.gov.au/know-your-council-yarra-city-council",
+      "sha256": "d2e9077140187c546e14cbc6ebdc31b21a006d4b7dd5ca5f57ce341746a5879d"
+    },
+    {
+      "council": "Yarra Ranges",
+      "url": "https://www.vic.gov.au/know-your-council-yarra-ranges-shire-council",
+      "sha256": "7760f9b9298a0c589b6d49d76c02d6465e4eeb5c3e8edfa29706a352f0862a3a"
+    },
+    {
+      "council": "Alpine",
+      "url": "https://www.vic.gov.au/know-your-council-alpine-shire-council",
+      "sha256": "4ad2d8b71abe1512463413e59945572dff0906a81da54afdbd43f5a1e8157bd0"
+    },
+    {
+      "council": "Ararat",
+      "url": "https://www.vic.gov.au/know-your-council-ararat-rural-city-council",
+      "sha256": "bdd60c5e21c2a31661cf0e6519d9f839305d5c4196c7ef31a592242f01103b8a"
+    },
+    {
+      "council": "Ballarat",
+      "url": "https://www.vic.gov.au/know-your-council-ballarat-city-council",
+      "sha256": "edd59103b1067c7076c5ba55e57776179503b21fb10aba1b5740e6546913613b"
+    },
+    {
+      "council": "Bass Coast",
+      "url": "https://www.vic.gov.au/know-your-council-bass-coast-shire-council",
+      "sha256": "d9a927199293f33d53d2f99bff127f836ae910f6ad94df5704dff7a339f6ad1c"
+    },
+    {
+      "council": "Baw Baw",
+      "url": "https://www.vic.gov.au/know-your-council-baw-baw-shire-council",
+      "sha256": "74da6e20c367729b2bda47669b8ba1f7349a38dd1b425325ffd98864e5d626cb"
+    },
+    {
+      "council": "Benalla",
+      "url": "https://www.vic.gov.au/know-your-council-benalla-rural-city-council",
+      "sha256": "7acf080ce94055af33b3916563983545d788d7bd73b0d314381d0c676bc07172"
+    },
+    {
+      "council": "Buloke",
+      "url": "https://www.vic.gov.au/know-your-council-buloke-shire-council",
+      "sha256": "cb2dd74c2927c666879050058469172c0b7675daa2f94702aea011676a3c1624"
+    },
+    {
+      "council": "Campaspe",
+      "url": "https://www.vic.gov.au/know-your-council-campaspe-shire-council",
+      "sha256": "185c8b37a5eee4066800775fb8d02c4b42bdf2aa0994d1dca283af392473fc60"
+    },
+    {
+      "council": "Central Goldfields",
+      "url": "https://www.vic.gov.au/know-your-council-central-goldfields-shire-council",
+      "sha256": "cf94c2f14ad79c6d946339841a5aee290838b33a06b7cc4a0478f8a6243c5b56"
+    },
+    {
+      "council": "Colac Otway",
+      "url": "https://www.vic.gov.au/know-your-council-colac-otway-shire-council",
+      "sha256": "60f18f835cda75eb7d0ffb3120f2507b2208c534450037571435cd954d1ac2b9"
+    },
+    {
+      "council": "Corangamite",
+      "url": "https://www.vic.gov.au/know-your-council-corangamite-shire-council",
+      "sha256": "845bfdff7dca7343249b87223847bf81a3d5974e9fb6d55c55c9bf81a5a62383"
+    },
+    {
+      "council": "East Gippsland",
+      "url": "https://www.vic.gov.au/know-your-council-east-gippsland-shire-council",
+      "sha256": "776bfeae7539bc18531269e8dd7d96a226acb7e78b500a469fc15512e1cd5b32"
+    },
+    {
+      "council": "Gannawarra",
+      "url": "https://www.vic.gov.au/know-your-council-gannawarra-shire-council",
+      "sha256": "b265bde4e93ab3d3466439aae3e7561c9d387114728c60bfe782a249020529f0"
+    },
+    {
+      "council": "Glenelg",
+      "url": "https://www.vic.gov.au/know-your-council-glenelg-shire-council",
+      "sha256": "8db37382d3ff9d80a43a8546ad2fcaaab1e1484a6bca357115807e0a7adedab5"
+    },
+    {
+      "council": "Golden Plains",
+      "url": "https://www.vic.gov.au/know-your-council-golden-plains-shire-council",
+      "sha256": "6c54301d3f1397d26f18da64dd1e2646410e6f67cb8e9f748f06424d934344c9"
+    },
+    {
+      "council": "Greater Bendigo",
+      "url": "https://www.vic.gov.au/know-your-council-greater-bendigo-city-council",
+      "sha256": "e0a256a0e4085c5b639a4aad691506543f337fd7cac24126f69f5a5e1fe78b56"
+    },
+    {
+      "council": "Greater Geelong",
+      "url": "https://www.vic.gov.au/know-your-council-greater-geelong-city-council",
+      "sha256": "a4ba9293b318dd4c72b950eb6fc535d1fae04fdc7fddfb063fbfa13563620a33"
+    },
+    {
+      "council": "Greater Shepparton",
+      "url": "https://www.vic.gov.au/know-your-council-greater-shepparton-city-council",
+      "sha256": "07666bce8db169b6b2b9c9e8653cab09cc68eab2087aaee8ebbf7bdad9e0d96c"
+    },
+    {
+      "council": "Hepburn",
+      "url": "https://www.vic.gov.au/know-your-council-hepburn-shire-council",
+      "sha256": "3895c18736583e4e2d628d1301f67966bacbfb92dbefebf653743dbdb1b8bfa0"
+    },
+    {
+      "council": "Hindmarsh",
+      "url": "https://www.vic.gov.au/know-your-council-hindmarsh-shire-council",
+      "sha256": "fdb162125bfb17f0bafe7281010df4e47e63b7041c9e8fefa72933d35b032eb3"
+    },
+    {
+      "council": "Horsham",
+      "url": "https://www.vic.gov.au/know-your-council-horsham-rural-city-council",
+      "sha256": "8db1ae317d70e1c03df0d8ae8464683b9e90eadf1c50abbff084c5eb8b06275c"
+    },
+    {
+      "council": "Indigo",
+      "url": "https://www.vic.gov.au/know-your-council-indigo-shire-council",
+      "sha256": "07cda65830b700de89d7757fab2f2a5f72826233c8c2f9d6521f270e631bc789"
+    },
+    {
+      "council": "Latrobe",
+      "url": "https://www.vic.gov.au/know-your-council-latrobe-city-council",
+      "sha256": "9e6435b40cf7becff77fca9c4a812eb3b95484bf4aff0e3a700f5eb7d8a6c4ef"
+    },
+    {
+      "council": "Loddon",
+      "url": "https://www.vic.gov.au/know-your-council-loddon-shire-council",
+      "sha256": "dd4582a236b7a30dd13c3bc005b4e86c77d12ed6ce546814b298135513b32a75"
+    },
+    {
+      "council": "Macedon Ranges",
+      "url": "https://www.vic.gov.au/know-your-council-macedon-ranges-shire-council",
+      "sha256": "35d017dcdb634d688ed618178f9d578d8c068455f28087ea6f48f8817e463bf5"
+    },
+    {
+      "council": "Mansfield",
+      "url": "https://www.vic.gov.au/know-your-council-mansfield-shire-council",
+      "sha256": "48a934295091c05d4e07ababaae7a141c934d98b683e2ff1754397182276bc58"
+    },
+    {
+      "council": "Mildura",
+      "url": "https://www.vic.gov.au/know-your-council-mildura-rural-city-council",
+      "sha256": "a309401d1a59edd90eeb3eb80015cddda7721aa6f1a3a38f47b491592eb57ed7"
+    },
+    {
+      "council": "Mitchell",
+      "url": "https://www.vic.gov.au/know-your-council-mitchell-shire-council",
+      "sha256": "ddbcd4c43bdea7ffb7669efe44f940a431ab1eb9f98d0abb70f30563bcf082cb"
+    },
+    {
+      "council": "Moira",
+      "url": "https://www.vic.gov.au/know-your-council-moira-shire-council",
+      "sha256": "080d53f2ca04d1b53b417a28eda0afd135829768e4bbac8464b4466c18f90f30"
+    },
+    {
+      "council": "Moorabool",
+      "url": "https://www.vic.gov.au/know-your-council-moorabool-shire-council",
+      "sha256": "c5c5739379fc98d1ed85bdbd0f0cde4f756316e3c90d02a2ce76b880280a5a64"
+    },
+    {
+      "council": "Mount Alexander",
+      "url": "https://www.vic.gov.au/know-your-council-mount-alexander-shire-council",
+      "sha256": "891aa1843cb211eb936727a9cd5dea02ef3517c44ed1ad00171536a8e487caab"
+    },
+    {
+      "council": "Moyne",
+      "url": "https://www.vic.gov.au/know-your-council-moyne-shire-council",
+      "sha256": "3a910096a798567bc33fe9db1d12770845d2d7ea196c6bb5366c967bb1cca6f7"
+    },
+    {
+      "council": "Murrindindi",
+      "url": "https://www.vic.gov.au/know-your-council-murrindindi-shire-council",
+      "sha256": "8a55dfb1a4d9ed5a0944ea1a58fa938963e92551aa9a80cc9bd0b11e7c2d3132"
+    },
+    {
+      "council": "Northern Grampians",
+      "url": "https://www.vic.gov.au/know-your-council-northern-grampians-shire-council",
+      "sha256": "deb55d099a40977729d95062e7080cbfafc8f7e8af12512aba983f73a3d6304c"
+    },
+    {
+      "council": "Pyrenees",
+      "url": "https://www.vic.gov.au/know-your-council-pyrenees-shire-council",
+      "sha256": "58becec109ed187d07540f6899019fef7987e9e8208ab6bdc14ff50bca1df569"
+    },
+    {
+      "council": "Queenscliffe",
+      "url": "https://www.vic.gov.au/know-your-council-queenscliffe-borough-council",
+      "sha256": "a24aac5952bbe6b07be75c5beba5059a71d6e7ac7be858273573169b0fd67424"
+    },
+    {
+      "council": "South Gippsland",
+      "url": "https://www.vic.gov.au/know-your-council-south-gippsland-shire-council",
+      "sha256": "eaa0a5b672c889418c38e0f6cf75709d49fd948e64acaa55b9d684a0812af48d"
+    },
+    {
+      "council": "Southern Grampians",
+      "url": "https://www.vic.gov.au/know-your-council-southern-grampians-shire-council",
+      "sha256": "1a09d2478426d90126cdd128a93038c576cf8d5efaba4e8ea49f91029fe7a112"
+    },
+    {
+      "council": "Strathbogie",
+      "url": "https://www.vic.gov.au/know-your-council-strathbogie-shire-council",
+      "sha256": "d6bce408c4b8d75b63376b880a8544264cdd15b682697343c44ebb397a5517df"
+    },
+    {
+      "council": "Surf Coast",
+      "url": "https://www.vic.gov.au/know-your-council-surf-coast-shire-council",
+      "sha256": "fa98d665ee98ba7495db9c5014738ddb04279db1b9203d1988312efb58d870bd"
+    },
+    {
+      "council": "Swan Hill",
+      "url": "https://www.vic.gov.au/know-your-council-swan-hill-rural-city-council",
+      "sha256": "6ae250cd2c3b0024038075cfcffbe53bbf2353604963724cbb04eb157fc0f8b4"
+    },
+    {
+      "council": "Towong",
+      "url": "https://www.vic.gov.au/know-your-council-towong-shire-council",
+      "sha256": "95904f294a830af80d3b4938b4bd408c89ce1571bada252367f8458fa2e273b0"
+    },
+    {
+      "council": "Wangaratta",
+      "url": "https://www.vic.gov.au/know-your-council-wangaratta-rural-city-council",
+      "sha256": "1add981cfcc438b6fd049e9d7b63dc470c9d37e24d6405af3ee0b20792efa4c5"
+    },
+    {
+      "council": "Warrnambool",
+      "url": "https://www.vic.gov.au/know-your-council-warrnambool-city-council",
+      "sha256": "8d1365042ba5aace8a1ecf87116426d77de61a60fce118c3f8e91301ea2dbfac"
+    },
+    {
+      "council": "Wellington",
+      "url": "https://www.vic.gov.au/know-your-council-wellington-shire-council",
+      "sha256": "6433db670257c93ca829ca948920ac6b618364b06e4f372b3996004c4cde62cb"
+    },
+    {
+      "council": "West Wimmera",
+      "url": "https://www.vic.gov.au/know-your-council-west-wimmera-shire-council",
+      "sha256": "8b87910bb2fe27b9bebefbe29df6f74398633b8941ab8629aeb4e7283d9ea1c4"
+    },
+    {
+      "council": "Wodonga",
+      "url": "https://www.vic.gov.au/know-your-council-wodonga-city-council",
+      "sha256": "a29088b05fb2f64a2a101c14bce42207b175e55f41f0734770a2dc590852f1d1"
+    },
+    {
+      "council": "Yarriambiack",
+      "url": "https://www.vic.gov.au/know-your-council-yarriambiack-shire-council",
+      "sha256": "91af08bd1ee7b31bc569ed2dee076f5139d4fe7d5ca4cb0e6b62fc7a3c8b92df"
+    }
+  ],
+  "localities": {
+    "abbotsford": [
+      "Yarra"
+    ],
+    "aberfeldie": [
+      "Moonee Valley"
+    ],
+    "aintree": [
+      "Melton"
+    ],
+    "airport west": [
+      "Moonee Valley"
+    ],
+    "albanvale": [
+      "Brimbank"
+    ],
+    "albert park": [
+      "Port Phillip"
+    ],
+    "albion": [
+      "Brimbank"
+    ],
+    "alphington": [
+      "Darebin",
+      "Yarra"
+    ],
+    "altona": [
+      "Hobsons Bay"
+    ],
+    "altona meadows": [
+      "Hobsons Bay"
+    ],
+    "altona north": [
+      "Hobsons Bay"
+    ],
+    "ardeer": [
+      "Brimbank"
+    ],
+    "armadale": [
+      "Stonnington"
+    ],
+    "arthurs creek": [
+      "Nillumbik"
+    ],
+    "arthurs seat": [
+      "Mornington Peninsula"
+    ],
+    "ascot vale": [
+      "Moonee Valley"
+    ],
+    "ashburton": [
+      "Boroondara"
+    ],
+    "ashwood": [
+      "Monash"
+    ],
+    "aspendale": [
+      "Kingston"
+    ],
+    "aspendale gardens": [
+      "Kingston"
+    ],
+    "attwood": [
+      "Hume"
+    ],
+    "avondale heights": [
+      "Moonee Valley"
+    ],
+    "avonsleigh": [
+      "Cardinia"
+    ],
+    "badger creek": [
+      "Yarra Ranges"
+    ],
+    "balaclava": [
+      "Port Phillip"
+    ],
+    "balnarring": [
+      "Mornington Peninsula"
+    ],
+    "balnarring beach": [
+      "Mornington Peninsula"
+    ],
+    "balwyn": [
+      "Boroondara"
+    ],
+    "balwyn north": [
+      "Boroondara"
+    ],
+    "bangholme": [
+      "Greater Dandenong"
+    ],
+    "batman": [
+      "Merri-bek"
+    ],
+    "baxter": [
+      "Mornington Peninsula"
+    ],
+    "bayles": [
+      "Cardinia"
+    ],
+    "bayswater": [
+      "Knox"
+    ],
+    "bayswater north": [
+      "Maroondah"
+    ],
+    "beaconsfield": [
+      "Cardinia",
+      "Casey"
+    ],
+    "beaconsfield upper": [
+      "Cardinia"
+    ],
+    "beaumaris": [
+      "Bayside"
+    ],
+    "beenak": [
+      "Yarra Ranges"
+    ],
+    "belgrave": [
+      "Yarra Ranges"
+    ],
+    "belgrave heights": [
+      "Yarra Ranges"
+    ],
+    "belgrave south": [
+      "Yarra Ranges"
+    ],
+    "bellfield": [
+      "Banyule"
+    ],
+    "bend of islands": [
+      "Nillumbik"
+    ],
+    "bentleigh": [
+      "Glen Eira"
+    ],
+    "bentleigh east": [
+      "Glen Eira"
+    ],
+    "berwick": [
+      "Casey"
+    ],
+    "beveridge": [
+      "Whittlesea"
+    ],
+    "big pats creek": [
+      "Yarra Ranges"
+    ],
+    "bittern": [
+      "Mornington Peninsula"
+    ],
+    "black rock": [
+      "Bayside"
+    ],
+    "blackburn": [
+      "Whitehorse"
+    ],
+    "blackburn north": [
+      "Whitehorse"
+    ],
+    "blackburn south": [
+      "Whitehorse"
+    ],
+    "blairgowrie": [
+      "Mornington Peninsula"
+    ],
+    "blind bight": [
+      "Casey"
+    ],
+    "bonbeach": [
+      "Kingston"
+    ],
+    "boneo": [
+      "Mornington Peninsula"
+    ],
+    "bonnie brook": [
+      "Melton"
+    ],
+    "boronia": [
+      "Knox"
+    ],
+    "box hill": [
+      "Whitehorse"
+    ],
+    "box hill north": [
+      "Whitehorse"
+    ],
+    "box hill south": [
+      "Whitehorse"
+    ],
+    "braeside": [
+      "Kingston"
+    ],
+    "braybrook": [
+      "Maribyrnong"
+    ],
+    "briar hill": [
+      "Banyule",
+      "Nillumbik"
+    ],
+    "brighton": [
+      "Bayside"
+    ],
+    "brighton east": [
+      "Bayside",
+      "Glen Eira"
+    ],
+    "broadmeadows": [
+      "Hume"
+    ],
+    "brookfield": [
+      "Melton"
+    ],
+    "brooklyn": [
+      "Brimbank",
+      "Hobsons Bay"
+    ],
+    "bruces creek": [
+      "Whittlesea"
+    ],
+    "brunswick": [
+      "Merri-bek"
+    ],
+    "brunswick east": [
+      "Merri-bek"
+    ],
+    "brunswick west": [
+      "Merri-bek"
+    ],
+    "bulla": [
+      "Hume"
+    ],
+    "bulleen": [
+      "Manningham"
+    ],
+    "bundoora": [
+      "Banyule",
+      "Darebin",
+      "Whittlesea"
+    ],
+    "bunyip": [
+      "Cardinia"
+    ],
+    "bunyip north": [
+      "Cardinia"
+    ],
+    "burnley": [
+      "Yarra"
+    ],
+    "burnside": [
+      "Melton"
+    ],
+    "burnside heights": [
+      "Melton"
+    ],
+    "burwood": [
+      "Boroondara",
+      "Monash",
+      "Whitehorse"
+    ],
+    "burwood east": [
+      "Whitehorse"
+    ],
+    "cairnlea": [
+      "Brimbank"
+    ],
+    "calder park": [
+      "Brimbank"
+    ],
+    "caldermeade": [
+      "Cardinia"
+    ],
+    "cambarville": [
+      "Yarra Ranges"
+    ],
+    "camberwell": [
+      "Boroondara"
+    ],
+    "campbellfield": [
+      "Hume"
+    ],
+    "cannons creek": [
+      "Casey"
+    ],
+    "canterbury": [
+      "Boroondara"
+    ],
+    "cape schanck": [
+      "Mornington Peninsula"
+    ],
+    "cardinia": [
+      "Cardinia"
+    ],
+    "carlton": [
+      "Melbourne"
+    ],
+    "carlton north": [
+      "Melbourne",
+      "Yarra"
+    ],
+    "carnegie": [
+      "Glen Eira"
+    ],
+    "caroline springs": [
+      "Melton"
+    ],
+    "carrum": [
+      "Kingston"
+    ],
+    "carrum downs": [
+      "Frankston"
+    ],
+    "catani": [
+      "Cardinia"
+    ],
+    "caulfield": [
+      "Glen Eira"
+    ],
+    "caulfield east": [
+      "Glen Eira"
+    ],
+    "caulfield north": [
+      "Glen Eira"
+    ],
+    "caulfield south": [
+      "Glen Eira"
+    ],
+    "chadstone": [
+      "Monash"
+    ],
+    "chelsea": [
+      "Kingston"
+    ],
+    "chelsea heights": [
+      "Kingston"
+    ],
+    "cheltenham": [
+      "Bayside",
+      "Kingston"
+    ],
+    "chirnside park": [
+      "Yarra Ranges"
+    ],
+    "christmas hills": [
+      "Nillumbik"
+    ],
+    "chum creek": [
+      "Yarra Ranges"
+    ],
+    "clarinda": [
+      "Kingston"
+    ],
+    "clarkefield": [
+      "Hume"
+    ],
+    "clayton": [
+      "Monash"
+    ],
+    "clayton south": [
+      "Kingston"
+    ],
+    "clematis": [
+      "Cardinia",
+      "Yarra Ranges"
+    ],
+    "clifton hill": [
+      "Yarra"
+    ],
+    "clyde": [
+      "Casey"
+    ],
+    "clyde north": [
+      "Casey"
+    ],
+    "coatesville": [
+      "Glen Eira"
+    ],
+    "cobblebank": [
+      "Melton"
+    ],
+    "coburg": [
+      "Darebin",
+      "Merri-bek"
+    ],
+    "coburg north": [
+      "Darebin",
+      "Merri-bek"
+    ],
+    "cockatoo": [
+      "Cardinia"
+    ],
+    "cocoroc": [
+      "Wyndham"
+    ],
+    "coldstream": [
+      "Yarra Ranges"
+    ],
+    "collingwood": [
+      "Yarra"
+    ],
+    "coolaroo": [
+      "Hume"
+    ],
+    "cora lynn": [
+      "Cardinia"
+    ],
+    "cottles bridge": [
+      "Nillumbik"
+    ],
+    "craigieburn": [
+      "Hume"
+    ],
+    "cranbourne": [
+      "Casey"
+    ],
+    "cranbourne east": [
+      "Casey"
+    ],
+    "cranbourne north": [
+      "Casey"
+    ],
+    "cranbourne south": [
+      "Casey"
+    ],
+    "cranbourne west": [
+      "Casey"
+    ],
+    "cremorne": [
+      "Yarra"
+    ],
+    "crib point": [
+      "Mornington Peninsula"
+    ],
+    "cromer": [
+      "Bayside"
+    ],
+    "croydon": [
+      "Maroondah"
+    ],
+    "croydon hills": [
+      "Maroondah"
+    ],
+    "croydon north": [
+      "Maroondah"
+    ],
+    "croydon south": [
+      "Maroondah"
+    ],
+    "dallas": [
+      "Hume"
+    ],
+    "dalmore": [
+      "Cardinia"
+    ],
+    "dandenong": [
+      "Greater Dandenong"
+    ],
+    "dandenong north": [
+      "Greater Dandenong"
+    ],
+    "dandenong south": [
+      "Greater Dandenong"
+    ],
+    "deanside": [
+      "Melton"
+    ],
+    "deepdeene": [
+      "Boroondara"
+    ],
+    "deer park": [
+      "Brimbank"
+    ],
+    "delahey": [
+      "Brimbank"
+    ],
+    "dendy": [
+      "Bayside"
+    ],
+    "derrimut": [
+      "Brimbank"
+    ],
+    "devon meadows": [
+      "Casey"
+    ],
+    "dewhurst": [
+      "Cardinia"
+    ],
+    "diamond creek": [
+      "Nillumbik"
+    ],
+    "diggers rest": [
+      "Hume",
+      "Melton"
+    ],
+    "dingley village": [
+      "Kingston"
+    ],
+    "dixons creek": [
+      "Yarra Ranges"
+    ],
+    "docklands": [
+      "Melbourne"
+    ],
+    "don valley": [
+      "Yarra Ranges"
+    ],
+    "doncaster": [
+      "Manningham"
+    ],
+    "doncaster east": [
+      "Manningham"
+    ],
+    "donnybrook": [
+      "Whittlesea"
+    ],
+    "donvale": [
+      "Manningham"
+    ],
+    "doreen": [
+      "Nillumbik",
+      "Whittlesea"
+    ],
+    "doveton": [
+      "Casey"
+    ],
+    "dromana": [
+      "Mornington Peninsula"
+    ],
+    "eaglemont": [
+      "Banyule"
+    ],
+    "east melbourne": [
+      "Melbourne"
+    ],
+    "eden park": [
+      "Whittlesea"
+    ],
+    "edithvale": [
+      "Kingston"
+    ],
+    "elsternwick": [
+      "Glen Eira"
+    ],
+    "eltham": [
+      "Banyule",
+      "Nillumbik"
+    ],
+    "eltham north": [
+      "Banyule",
+      "Nillumbik"
+    ],
+    "elwood": [
+      "Port Phillip"
+    ],
+    "emerald": [
+      "Cardinia",
+      "Yarra Ranges"
+    ],
+    "endeavour hills": [
+      "Casey"
+    ],
+    "epping": [
+      "Whittlesea"
+    ],
+    "essendon": [
+      "Moonee Valley"
+    ],
+    "essendon north": [
+      "Moonee Valley"
+    ],
+    "essendon west": [
+      "Moonee Valley"
+    ],
+    "eumemmerring": [
+      "Casey"
+    ],
+    "exford": [
+      "Melton"
+    ],
+    "eynesbury": [
+      "Melton",
+      "Wyndham"
+    ],
+    "fairfield": [
+      "Darebin",
+      "Yarra"
+    ],
+    "fawkner": [
+      "Hume",
+      "Merri-bek"
+    ],
+    "fernshaw": [
+      "Yarra Ranges"
+    ],
+    "ferntree gully": [
+      "Knox"
+    ],
+    "ferny creek": [
+      "Yarra Ranges"
+    ],
+    "fieldstone": [
+      "Melton"
+    ],
+    "fingal": [
+      "Mornington Peninsula"
+    ],
+    "fitzroy": [
+      "Yarra"
+    ],
+    "fitzroy north": [
+      "Merri-bek",
+      "Yarra"
+    ],
+    "flemington": [
+      "Melbourne",
+      "Moonee Valley"
+    ],
+    "flinders": [
+      "Mornington Peninsula"
+    ],
+    "footscray": [
+      "Maribyrnong"
+    ],
+    "forest hill": [
+      "Whitehorse"
+    ],
+    "fountain gate": [
+      "Casey"
+    ],
+    "frankston": [
+      "Frankston"
+    ],
+    "frankston north": [
+      "Frankston"
+    ],
+    "frankston south": [
+      "Frankston"
+    ],
+    "fraser rise": [
+      "Melton"
+    ],
+    "garden city": [
+      "Port Phillip"
+    ],
+    "gardenvale": [
+      "Glen Eira"
+    ],
+    "garfield": [
+      "Cardinia"
+    ],
+    "garfield north": [
+      "Cardinia"
+    ],
+    "gembrook": [
+      "Cardinia"
+    ],
+    "gilderoy": [
+      "Yarra Ranges"
+    ],
+    "gladstone park": [
+      "Hume"
+    ],
+    "gladysdale": [
+      "Yarra Ranges"
+    ],
+    "glen huntly": [
+      "Glen Eira"
+    ],
+    "glen iris": [
+      "Boroondara",
+      "Stonnington"
+    ],
+    "glen waverely": [
+      "Monash"
+    ],
+    "glenferrie south": [
+      "Boroondara"
+    ],
+    "glenroy": [
+      "Merri-bek"
+    ],
+    "gowanbrae": [
+      "Merri-bek"
+    ],
+    "grangefields": [
+      "Melton"
+    ],
+    "greensborough": [
+      "Banyule",
+      "Nillumbik"
+    ],
+    "greenvale": [
+      "Hume"
+    ],
+    "greythorn": [
+      "Boroondara"
+    ],
+    "gruyere": [
+      "Yarra Ranges"
+    ],
+    "guys hill": [
+      "Cardinia"
+    ],
+    "hadfield": [
+      "Merri-bek"
+    ],
+    "hallam": [
+      "Casey"
+    ],
+    "hampton": [
+      "Bayside"
+    ],
+    "hampton east": [
+      "Bayside"
+    ],
+    "hampton park": [
+      "Casey"
+    ],
+    "harkaway": [
+      "Casey"
+    ],
+    "harkness": [
+      "Melton"
+    ],
+    "hastings": [
+      "Mornington Peninsula"
+    ],
+    "hawksburn": [
+      "Stonnington"
+    ],
+    "hawthorn": [
+      "Boroondara"
+    ],
+    "hawthorn east": [
+      "Boroondara"
+    ],
+    "healesville": [
+      "Yarra Ranges"
+    ],
+    "heath hill": [
+      "Cardinia"
+    ],
+    "heatherton": [
+      "Kingston"
+    ],
+    "heathmont": [
+      "Maroondah"
+    ],
+    "heidelberg": [
+      "Banyule"
+    ],
+    "heidelberg heights": [
+      "Banyule"
+    ],
+    "heidelberg west": [
+      "Banyule"
+    ],
+    "highett": [
+      "Bayside",
+      "Kingston"
+    ],
+    "hillside": [
+      "Brimbank",
+      "Melton"
+    ],
+    "hmas cerberus": [
+      "Mornington Peninsula"
+    ],
+    "hoddles creek": [
+      "Yarra Ranges"
+    ],
+    "hopetoun gardens": [
+      "Glen Eira"
+    ],
+    "hoppers crossing": [
+      "Wyndham"
+    ],
+    "hotham hill": [
+      "Melbourne"
+    ],
+    "hughesdale": [
+      "Monash"
+    ],
+    "humevale": [
+      "Whittlesea"
+    ],
+    "huntingdale": [
+      "Monash"
+    ],
+    "hurstbridge": [
+      "Nillumbik"
+    ],
+    "iona": [
+      "Cardinia"
+    ],
+    "ivanhoe": [
+      "Banyule"
+    ],
+    "ivanhoe east": [
+      "Banyule"
+    ],
+    "jacana": [
+      "Hume"
+    ],
+    "junction village": [
+      "Casey"
+    ],
+    "kalkallo": [
+      "Hume"
+    ],
+    "kallista": [
+      "Yarra Ranges"
+    ],
+    "kalorama": [
+      "Yarra Ranges"
+    ],
+    "kangaroo ground": [
+      "Nillumbik"
+    ],
+    "karingal": [
+      "Frankston"
+    ],
+    "kealba": [
+      "Brimbank"
+    ],
+    "keilor": [
+      "Brimbank",
+      "Hume"
+    ],
+    "keilor downs": [
+      "Brimbank"
+    ],
+    "keilor east": [
+      "Brimbank",
+      "Moonee Valley"
+    ],
+    "keilor lodge": [
+      "Brimbank"
+    ],
+    "keilor north": [
+      "Brimbank"
+    ],
+    "keilor park": [
+      "Brimbank"
+    ],
+    "kensington": [
+      "Melbourne"
+    ],
+    "keon park": [
+      "Darebin"
+    ],
+    "kew": [
+      "Boroondara"
+    ],
+    "kew east": [
+      "Boroondara"
+    ],
+    "keysborough": [
+      "Greater Dandenong"
+    ],
+    "kilsyth": [
+      "Maroondah",
+      "Yarra Ranges"
+    ],
+    "kilsyth south": [
+      "Maroondah"
+    ],
+    "kinglake": [
+      "Nillumbik"
+    ],
+    "kinglake central": [
+      "Nillumbik"
+    ],
+    "kinglake west": [
+      "Nillumbik",
+      "Whittlesea"
+    ],
+    "kings park": [
+      "Brimbank"
+    ],
+    "kingsbury": [
+      "Darebin"
+    ],
+    "kingsville": [
+      "Maribyrnong"
+    ],
+    "knoxfield": [
+      "Knox"
+    ],
+    "koo wee rup": [
+      "Cardinia"
+    ],
+    "koo wee rup north": [
+      "Cardinia"
+    ],
+    "kooyong": [
+      "Stonnington"
+    ],
+    "kunyung": [
+      "Mornington Peninsula"
+    ],
+    "kurunjang": [
+      "Melton"
+    ],
+    "lalor": [
+      "Whittlesea"
+    ],
+    "lang lang": [
+      "Cardinia"
+    ],
+    "lang lang east": [
+      "Cardinia"
+    ],
+    "langwarrin": [
+      "Frankston"
+    ],
+    "langwarrin south": [
+      "Frankston"
+    ],
+    "launching place": [
+      "Yarra Ranges"
+    ],
+    "laverton": [
+      "Hobsons Bay",
+      "Wyndham"
+    ],
+    "laverton north": [
+      "Wyndham"
+    ],
+    "laverton raaf": [
+      "Wyndham"
+    ],
+    "lilydale": [
+      "Yarra Ranges"
+    ],
+    "little river": [
+      "Wyndham"
+    ],
+    "longwarry": [
+      "Cardinia"
+    ],
+    "lower plenty": [
+      "Banyule"
+    ],
+    "lynbrook": [
+      "Casey"
+    ],
+    "lyndhurst": [
+      "Casey",
+      "Greater Dandenong"
+    ],
+    "lysterfield": [
+      "Knox",
+      "Yarra Ranges"
+    ],
+    "lysterfield south": [
+      "Casey"
+    ],
+    "macclesfield": [
+      "Yarra Ranges"
+    ],
+    "macleod": [
+      "Banyule",
+      "Darebin"
+    ],
+    "maidstone": [
+      "Maribyrnong"
+    ],
+    "main ridge": [
+      "Mornington Peninsula"
+    ],
+    "malvern": [
+      "Stonnington"
+    ],
+    "malvern east": [
+      "Stonnington"
+    ],
+    "mambourin": [
+      "Wyndham"
+    ],
+    "maribyrnong": [
+      "Maribyrnong"
+    ],
+    "maryknoll": [
+      "Cardinia"
+    ],
+    "matlock": [
+      "Yarra Ranges"
+    ],
+    "mccrae": [
+      "Mornington Peninsula"
+    ],
+    "mckinnon": [
+      "Glen Eira"
+    ],
+    "mcmahons creek": [
+      "Yarra Ranges"
+    ],
+    "meadow heights": [
+      "Hume"
+    ],
+    "melbourne": [
+      "Melbourne",
+      "Port Phillip"
+    ],
+    "melbourne airport": [
+      "Hume"
+    ],
+    "melbourne west": [
+      "Melbourne"
+    ],
+    "melton": [
+      "Melton"
+    ],
+    "melton south": [
+      "Melton"
+    ],
+    "melton west": [
+      "Melton"
+    ],
+    "mentone": [
+      "Kingston"
+    ],
+    "menzies creek": [
+      "Cardinia",
+      "Yarra Ranges"
+    ],
+    "merlynston": [
+      "Merri-bek"
+    ],
+    "mernda": [
+      "Whittlesea"
+    ],
+    "merricks": [
+      "Mornington Peninsula"
+    ],
+    "merricks beach": [
+      "Mornington Peninsula"
+    ],
+    "merricks north": [
+      "Mornington Peninsula"
+    ],
+    "mickleham": [
+      "Hume"
+    ],
+    "middle park": [
+      "Port Phillip"
+    ],
+    "mill park": [
+      "Whittlesea"
+    ],
+    "millgrove": [
+      "Yarra Ranges"
+    ],
+    "mitcham": [
+      "Whitehorse"
+    ],
+    "modella": [
+      "Cardinia"
+    ],
+    "monbulk": [
+      "Yarra Ranges"
+    ],
+    "monomeith": [
+      "Cardinia"
+    ],
+    "mont albert": [
+      "Boroondara",
+      "Whitehorse"
+    ],
+    "mont albert north": [
+      "Whitehorse"
+    ],
+    "montmorency": [
+      "Banyule"
+    ],
+    "montrose": [
+      "Yarra Ranges"
+    ],
+    "moonee ponds": [
+      "Moonee Valley"
+    ],
+    "moorabbin": [
+      "Kingston"
+    ],
+    "moorabbin airport": [
+      "Kingston"
+    ],
+    "moorooduc": [
+      "Mornington Peninsula"
+    ],
+    "mooroolbark": [
+      "Yarra Ranges"
+    ],
+    "morang south": [
+      "Whittlesea"
+    ],
+    "mordialloc": [
+      "Kingston"
+    ],
+    "moreland": [
+      "Merri-bek"
+    ],
+    "mornington": [
+      "Mornington Peninsula"
+    ],
+    "mount burnett": [
+      "Cardinia"
+    ],
+    "mount cottrell": [
+      "Melton",
+      "Wyndham"
+    ],
+    "mount dandenong": [
+      "Yarra Ranges"
+    ],
+    "mount eliza": [
+      "Mornington Peninsula"
+    ],
+    "mount evelyn": [
+      "Yarra Ranges"
+    ],
+    "mount martha": [
+      "Mornington Peninsula"
+    ],
+    "mount toolebewong": [
+      "Yarra Ranges"
+    ],
+    "mount waverley": [
+      "Monash"
+    ],
+    "mulgrave": [
+      "Monash"
+    ],
+    "murrumbeena": [
+      "Glen Eira"
+    ],
+    "nangana": [
+      "Cardinia"
+    ],
+    "nar nar goon": [
+      "Cardinia"
+    ],
+    "nar nar goon north": [
+      "Cardinia"
+    ],
+    "narre warren": [
+      "Casey"
+    ],
+    "narre warren east": [
+      "Yarra Ranges"
+    ],
+    "narre warren north": [
+      "Casey"
+    ],
+    "narre warren south": [
+      "Casey"
+    ],
+    "newport": [
+      "Hobsons Bay"
+    ],
+    "niddrie": [
+      "Moonee Valley"
+    ],
+    "noble park": [
+      "Greater Dandenong"
+    ],
+    "noble park north": [
+      "Greater Dandenong"
+    ],
+    "north melbourne": [
+      "Melbourne"
+    ],
+    "northcote": [
+      "Darebin"
+    ],
+    "notting hill": [
+      "Monash"
+    ],
+    "nunawading": [
+      "Manningham",
+      "Whitehorse"
+    ],
+    "nutfield": [
+      "Nillumbik"
+    ],
+    "nyora": [
+      "Cardinia"
+    ],
+    "oak park": [
+      "Merri-bek"
+    ],
+    "oaklands junction": [
+      "Hume"
+    ],
+    "oakleigh": [
+      "Monash"
+    ],
+    "oakleigh east": [
+      "Monash"
+    ],
+    "oakleigh south": [
+      "Kingston",
+      "Monash"
+    ],
+    "officer": [
+      "Cardinia"
+    ],
+    "officer south": [
+      "Cardinia"
+    ],
+    "olinda": [
+      "Yarra Ranges"
+    ],
+    "ormond": [
+      "Glen Eira"
+    ],
+    "pakenham": [
+      "Cardinia"
+    ],
+    "pakenham south": [
+      "Cardinia"
+    ],
+    "pakenham upper": [
+      "Cardinia"
+    ],
+    "panton hill": [
+      "Nillumbik"
+    ],
+    "park orchards": [
+      "Manningham",
+      "Maroondah"
+    ],
+    "parkdale": [
+      "Kingston"
+    ],
+    "parkville": [
+      "Melbourne",
+      "Merri-bek"
+    ],
+    "parwan": [
+      "Melton"
+    ],
+    "pascoe vale": [
+      "Merri-bek"
+    ],
+    "pascoe vale south": [
+      "Merri-bek"
+    ],
+    "patterson": [
+      "Glen Eira"
+    ],
+    "patterson lakes": [
+      "Kingston"
+    ],
+    "pearcedale": [
+      "Casey",
+      "Mornington Peninsula"
+    ],
+    "pinewood": [
+      "Monash"
+    ],
+    "plenty": [
+      "Nillumbik"
+    ],
+    "plumpton": [
+      "Melton"
+    ],
+    "point cook": [
+      "Wyndham"
+    ],
+    "point leo": [
+      "Mornington Peninsula"
+    ],
+    "port melbourne": [
+      "Melbourne",
+      "Port Phillip"
+    ],
+    "portsea": [
+      "Mornington Peninsula"
+    ],
+    "powelltown": [
+      "Yarra Ranges"
+    ],
+    "prahran": [
+      "Stonnington"
+    ],
+    "preston": [
+      "Darebin"
+    ],
+    "princes hill": [
+      "Yarra"
+    ],
+    "quandong": [
+      "Wyndham"
+    ],
+    "ravenhall": [
+      "Melton"
+    ],
+    "red hill": [
+      "Mornington Peninsula"
+    ],
+    "red hill south": [
+      "Mornington Peninsula"
+    ],
+    "reefton": [
+      "Yarra Ranges"
+    ],
+    "regent west": [
+      "Darebin"
+    ],
+    "research": [
+      "Nillumbik"
+    ],
+    "reservoir": [
+      "Darebin"
+    ],
+    "richmond": [
+      "Yarra"
+    ],
+    "ringwood": [
+      "Maroondah"
+    ],
+    "ringwood east": [
+      "Maroondah"
+    ],
+    "ringwood north": [
+      "Manningham",
+      "Maroondah"
+    ],
+    "ripponlea": [
+      "Port Phillip"
+    ],
+    "rockbank": [
+      "Melton"
+    ],
+    "rosanna": [
+      "Banyule"
+    ],
+    "rosebud": [
+      "Mornington Peninsula"
+    ],
+    "rosebud west": [
+      "Mornington Peninsula"
+    ],
+    "rowville": [
+      "Knox"
+    ],
+    "roxburgh park": [
+      "Hume"
+    ],
+    "rye": [
+      "Mornington Peninsula"
+    ],
+    "rythdale": [
+      "Cardinia"
+    ],
+    "safety beach": [
+      "Mornington Peninsula"
+    ],
+    "saint helena": [
+      "Banyule"
+    ],
+    "sandhurst": [
+      "Frankston"
+    ],
+    "sandringham": [
+      "Bayside"
+    ],
+    "sassafras": [
+      "Knox",
+      "Yarra Ranges"
+    ],
+    "scoresby": [
+      "Knox"
+    ],
+    "seabrook": [
+      "Hobsons Bay"
+    ],
+    "seaford": [
+      "Frankston"
+    ],
+    "seaholme": [
+      "Hobsons Bay"
+    ],
+    "seddon": [
+      "Maribyrnong"
+    ],
+    "selby": [
+      "Yarra Ranges"
+    ],
+    "seville": [
+      "Yarra Ranges"
+    ],
+    "seville east": [
+      "Yarra Ranges"
+    ],
+    "sherbrooke": [
+      "Yarra Ranges"
+    ],
+    "shoreham": [
+      "Mornington Peninsula"
+    ],
+    "silvan": [
+      "Yarra Ranges"
+    ],
+    "skye": [
+      "Frankston"
+    ],
+    "smiths gully": [
+      "Nillumbik"
+    ],
+    "somers": [
+      "Mornington Peninsula"
+    ],
+    "somerton": [
+      "Hume"
+    ],
+    "somerville": [
+      "Mornington Peninsula"
+    ],
+    "sorrento": [
+      "Mornington Peninsula"
+    ],
+    "south kingsville": [
+      "Hobsons Bay"
+    ],
+    "south melbourne": [
+      "Port Phillip"
+    ],
+    "south yarra": [
+      "Melbourne",
+      "Stonnington"
+    ],
+    "southbank": [
+      "Melbourne",
+      "Port Phillip"
+    ],
+    "spotswood": [
+      "Hobsons Bay"
+    ],
+    "springvale": [
+      "Greater Dandenong"
+    ],
+    "springvale south": [
+      "Greater Dandenong"
+    ],
+    "st albans": [
+      "Brimbank"
+    ],
+    "st andrews": [
+      "Nillumbik"
+    ],
+    "st andrews beach": [
+      "Mornington Peninsula"
+    ],
+    "st kilda": [
+      "Port Phillip"
+    ],
+    "st kilda east": [
+      "Glen Eira",
+      "Port Phillip"
+    ],
+    "st kilda west": [
+      "Port Phillip"
+    ],
+    "steels creek": [
+      "Yarra Ranges"
+    ],
+    "strathewen": [
+      "Nillumbik"
+    ],
+    "strathmore": [
+      "Moonee Valley"
+    ],
+    "strathmore heights": [
+      "Moonee Valley"
+    ],
+    "strathtulloh": [
+      "Melton"
+    ],
+    "studfield": [
+      "Knox"
+    ],
+    "sunbury": [
+      "Hume"
+    ],
+    "sunshine": [
+      "Brimbank"
+    ],
+    "sunshine north": [
+      "Brimbank"
+    ],
+    "sunshine west": [
+      "Brimbank"
+    ],
+    "surrey hills": [
+      "Boroondara",
+      "Whitehorse"
+    ],
+    "sydenham": [
+      "Brimbank"
+    ],
+    "syndal": [
+      "Monash"
+    ],
+    "tarneit": [
+      "Wyndham"
+    ],
+    "tarrawarra": [
+      "Yarra Ranges"
+    ],
+    "taylors hill": [
+      "Melton"
+    ],
+    "taylors lakes": [
+      "Brimbank"
+    ],
+    "tecoma": [
+      "Yarra Ranges"
+    ],
+    "templestowe": [
+      "Manningham"
+    ],
+    "templestowe lower": [
+      "Manningham"
+    ],
+    "tenby point": [
+      "Cardinia"
+    ],
+    "the basin": [
+      "Knox"
+    ],
+    "the patch": [
+      "Yarra Ranges"
+    ],
+    "thomastown": [
+      "Whittlesea"
+    ],
+    "thornbury": [
+      "Darebin"
+    ],
+    "thornhill park": [
+      "Melton"
+    ],
+    "three bridges": [
+      "Yarra Ranges"
+    ],
+    "tonimbuk": [
+      "Cardinia"
+    ],
+    "toolangi": [
+      "Yarra Ranges"
+    ],
+    "toolern vale": [
+      "Melton"
+    ],
+    "tooradin": [
+      "Cardinia",
+      "Casey"
+    ],
+    "toorak": [
+      "Stonnington"
+    ],
+    "toorongo": [
+      "Yarra Ranges"
+    ],
+    "tootgarook": [
+      "Mornington Peninsula"
+    ],
+    "tottenham": [
+      "Maribyrnong"
+    ],
+    "travancore": [
+      "Moonee Valley"
+    ],
+    "tremont": [
+      "Yarra Ranges"
+    ],
+    "truganina": [
+      "Melton",
+      "Wyndham"
+    ],
+    "tuerong": [
+      "Mornington Peninsula"
+    ],
+    "tullamarine": [
+      "Brimbank",
+      "Hume",
+      "Merri-bek"
+    ],
+    "tyabb": [
+      "Mornington Peninsula"
+    ],
+    "tynong": [
+      "Cardinia"
+    ],
+    "tynong north": [
+      "Cardinia"
+    ],
+    "upper ferntree gully": [
+      "Knox",
+      "Yarra Ranges"
+    ],
+    "upwey": [
+      "Yarra Ranges"
+    ],
+    "vermont": [
+      "Maroondah",
+      "Whitehorse"
+    ],
+    "vermont south": [
+      "Whitehorse"
+    ],
+    "vervale": [
+      "Cardinia"
+    ],
+    "viewbank": [
+      "Banyule"
+    ],
+    "wandin east": [
+      "Yarra Ranges"
+    ],
+    "wandin north": [
+      "Yarra Ranges"
+    ],
+    "wantirna": [
+      "Knox"
+    ],
+    "wantirna south": [
+      "Knox"
+    ],
+    "warburton": [
+      "Yarra Ranges"
+    ],
+    "warburton east": [
+      "Yarra Ranges"
+    ],
+    "warneet": [
+      "Casey"
+    ],
+    "warrandyte": [
+      "Manningham"
+    ],
+    "warrandyte north": [
+      "Nillumbik"
+    ],
+    "warrandyte south": [
+      "Manningham"
+    ],
+    "warranwood": [
+      "Maroondah"
+    ],
+    "waterways": [
+      "Kingston"
+    ],
+    "watsonia": [
+      "Banyule"
+    ],
+    "watsonia north": [
+      "Banyule"
+    ],
+    "watsons creek": [
+      "Nillumbik"
+    ],
+    "wattle glen": [
+      "Nillumbik"
+    ],
+    "weir views": [
+      "Melton"
+    ],
+    "werribee": [
+      "Wyndham"
+    ],
+    "werribee south": [
+      "Wyndham"
+    ],
+    "wesburn": [
+      "Yarra Ranges"
+    ],
+    "west footscray": [
+      "Maribyrnong"
+    ],
+    "westmeadows": [
+      "Hume"
+    ],
+    "wheelers hill": [
+      "Monash"
+    ],
+    "whittlesea": [
+      "Whittlesea"
+    ],
+    "wildwood": [
+      "Hume"
+    ],
+    "williams landing": [
+      "Wyndham"
+    ],
+    "williamstown": [
+      "Hobsons Bay"
+    ],
+    "williamstown north": [
+      "Hobsons Bay"
+    ],
+    "windsor": [
+      "Port Phillip",
+      "Stonnington"
+    ],
+    "wollert": [
+      "Whittlesea"
+    ],
+    "wonga park": [
+      "Manningham",
+      "Maroondah"
+    ],
+    "woodstock": [
+      "Whittlesea"
+    ],
+    "woori yallock": [
+      "Yarra Ranges"
+    ],
+    "wyndham vale": [
+      "Wyndham"
+    ],
+    "yallambie": [
+      "Banyule"
+    ],
+    "yan yean": [
+      "Nillumbik",
+      "Whittlesea"
+    ],
+    "yannathan": [
+      "Cardinia"
+    ],
+    "yarra glen": [
+      "Yarra Ranges"
+    ],
+    "yarra junction": [
+      "Yarra Ranges"
+    ],
+    "yarrambat": [
+      "Nillumbik"
+    ],
+    "yarraville": [
+      "Maribyrnong"
+    ],
+    "yellingbo": [
+      "Yarra Ranges"
+    ],
+    "yering": [
+      "Yarra Ranges"
+    ],
+    "yuroke": [
+      "Hume"
+    ]
+  },
+  "ambiguous_localities": [
+    "bellfield",
+    "beveridge",
+    "clarkefield",
+    "heath hill",
+    "hillside",
+    "kinglake",
+    "kinglake central",
+    "kinglake west",
+    "lang lang",
+    "little river",
+    "longwarry",
+    "modella",
+    "nyora",
+    "parwan",
+    "tenby point",
+    "toolangi",
+    "toolern vale",
+    "toorongo"
+  ]
+}

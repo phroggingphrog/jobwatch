@@ -1,0 +1,10 @@
+[Unit]
+Description=jobwatch outcome sync, every 2 h 07:00-21:00 Melbourne
+
+[Timer]
+OnCalendar=*-*-* 07,09,11,13,15,17,19,21:00:00 Australia/Melbourne
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

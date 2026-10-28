@@ -1,0 +1,16 @@
+{
+ "jobPostingInfo": {
+  "title": "Data Entry Operator",
+  "jobDescription": "<p>Key data.</p>",
+  "location": "Docklands",
+  "additionalLocations": [
+   "Sydney NSW"
+  ],
+  "startDate": "2026-10-04",
+  "timeType": "Full time",
+  "country": {
+   "descriptor": "Australia",
+   "alpha2Code": "AU"
+  }
+ }
+}

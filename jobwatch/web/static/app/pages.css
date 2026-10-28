@@ -1,0 +1,75 @@
+/* Jobwatch server pages (profile, preferences, answers, accounts, models, chat, prepare) on the app's design tokens. */
+.c-wrap{align-content:start}
+.c-wrap h1{font-size:var(--fs-26,26px);line-height:32px;font-weight:600;letter-spacing:-.02em;margin:0 0 var(--space-2,8px)}
+.c-wrap h2{font-size:19px;letter-spacing:-.01em;margin:var(--space-4,16px) 0 var(--space-2,8px)}
+.c-wrap h3{font-size:16px;margin:var(--space-3,12px) 0 var(--space-1,4px)}
+.c-wrap p{margin:0 0 var(--space-2,8px)}
+.c-wrap .ph-card{padding:20px;border-radius:18px;margin-bottom:var(--space-4,16px)}
+.c-wrap .ph-card>h2:first-child{margin-top:0}
+.c-wrap input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),.c-wrap select,.c-wrap textarea{
+  display:block;width:100%;max-width:36rem;min-height:var(--target-min,40px);background:var(--input-bg);color:var(--input-fg);
+  border:var(--border-width,1px) solid var(--input-border);border-radius:var(--radius-md,10px);padding:8px 12px;font:inherit;font-size:var(--fs-15,15px)}
+.c-wrap input:focus-visible,.c-wrap select:focus-visible,.c-wrap textarea:focus-visible{outline:var(--focus-width,2px) solid var(--focus-ring);outline-offset:2px}
+.c-wrap label{font-weight:500}
+.c-wrap .ph-table{width:100%}
+.c-wrap .ph-alert{margin-bottom:var(--space-4,16px)}
+.c-wrap .ph-btn+.ph-btn{margin-left:var(--space-2,8px)}
+.c-wrap code,.mono{font-family:var(--font-mono)}
+.jobpage{max-width:960px}
+.muted,.faint{color:var(--muted-foreground)}
+.small{font-size:.875rem}
+.mono{font-family: var(--font-mono); font-size: .88em;}
+.muted{color: var(--muted-foreground);}
+.faint{color: var(--muted-foreground);}
+.count{font: 500 11px/1 var(--font-mono); padding: 3px 6px; border-radius: 999px; background: var(--muted); color: var(--muted-foreground);}
+.is-active .count{background: var(--primary); color: var(--primary-foreground);}
+.count-bad{background: var(--alert-error-bg); color: var(--destructive);}
+.page-head{display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px;}
+.page-head p{margin: 0; color: var(--muted-foreground);}
+.row{display: flex; flex-wrap: wrap; align-items: center; gap: 8px;}
+.small{font-size: .85rem;}
+.dot{margin: 0 .4em; color: var(--muted-foreground);}
+.card-sub .dot{flex: none;}
+.jobpage{max-width: 880px; margin: 0 auto;}
+.crumbs{margin-bottom: 12px; font-size: .92rem;}
+.jobpage-card{overflow: clip;}
+.jobpage{--job-head-top: 52px;}
+.rail-sum .count{margin-left: 4px;}
+.jobs-table tr.row-hidden td{opacity: .6;}
+@media (max-width: 720px){
+.page-head .row{ width: 100%; }
+}
+@media (pointer: coarse), (max-width: 720px){
+.board .btn, .tablepage .btn, .jobpage .btn, .actions .btn, .sheet .btn{ min-height: 44px; }
+}
+.ai-banner.is-hide .muted{color: inherit; opacity: .8;}
+.kw-score .muted{margin: 0;}
+.jsec p.ai-reason.muted{font-size: .92rem; max-width: 64ch;}
+.kb-closed, .ib-history{margin-top: 20px; padding: 0;}
+.kb-closed > summary, .ib-history > summary{padding: 12px 16px; cursor: pointer; font-weight: 600; border-radius: var(--radius);}
+.kb-closed > summary::marker, .ib-history > summary::marker{color: var(--muted-foreground);}
+.kb-closed[open] > summary, .ib-history[open] > summary{border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0;}
+.kb-closed-note{margin: 12px 16px 4px; color: var(--muted-foreground); font-size: .88rem;}
+.kb-closed-list{list-style: none; margin: 0; padding: 4px 16px 12px;}
+.err{max-width: 460px; margin: 10vh auto 0; padding: 0 8px; text-align: center;}
+.err-code{margin: 0; font: 500 4.5rem/1 var(--font-mono); color: var(--primary); opacity: .4; letter-spacing: -.04em;}
+.err h1{margin: 10px 0 8px; font-size: 1.5rem;}
+.err-actions{margin-top: 20px; display: flex; justify-content: center; flex-wrap: wrap; gap: 8px;}
+.followup-copy{display: block; width: 100%; box-sizing: border-box; margin: .5rem 0 1rem; padding: .75rem; font: inherit; line-height: 1.5;}
+.prep-toc{display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .4rem 1.5rem; padding-left: 1.25rem;}
+.prep-report-section{margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);}
+.prep-report-section article{margin: 1rem 0;}
+
+.account-list{list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem;}
+.account-row{display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;}
+.account-row form{margin-left: auto;}
+.account-name{font-weight: 600; min-width: 6rem;}
+.c-wrap small{display:block;color:var(--muted-foreground);opacity:1;font-size:13px;margin-top:4px}
+.jx-qfield{margin-bottom:var(--space-4,16px)}
+.jx-qfield small{margin-top:0}
+.browser-panel .ph-btn{min-height:36px}
+.c-wrap details>summary{min-height:24px;cursor:pointer}
+.mrow{margin:0 0 var(--space-4,16px)}.mrow-line{display:flex;gap:var(--space-2,8px);align-items:center;margin:var(--space-1,4px) 0}
+.mrow-line input{flex:1;min-width:0}.mwhy.bad,.mres.bad{color:var(--destructive)}.mres{display:block;min-height:1em}.mres.ok{color:var(--success)}
+.c-wrap details>summary{min-height:32px;display:flex;align-items:center}
+@media (max-width:640px){.c-wrap .ph-table{font-size:13px;table-layout:auto;width:100%}.c-wrap .ph-table th,.c-wrap .ph-table td{white-space:normal;overflow-wrap:anywhere;padding:6px 4px}}

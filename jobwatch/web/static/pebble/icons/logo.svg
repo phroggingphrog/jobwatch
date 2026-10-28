@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Jobwatch</title>
+  <defs>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .tile{fill:#0a64e0}
+    .g-solid{fill:#ffffff;stroke:#ffffff}
+    .g-line{fill:none;stroke:#ffffff}
+    .g-acc{fill:#ffe08a}
+    .g-cut{fill:none;stroke:#0a64e0}
+    @media (prefers-color-scheme: dark){
+      .tile{fill:#0d2547}
+      .g-solid{fill:#4da3ff;stroke:#4da3ff}
+      .g-line{fill:none;stroke:#4da3ff}
+      .g-acc{fill:#ffb84d}
+      .g-cut{fill:none;stroke:#0d2547}
+    }
+  </style>
+  <rect class="tile" width="1024" height="1024"/>
+  <circle class="g-line" cx="458" cy="458" r="210" stroke-width="72"/>
+  <path class="g-line" d="M606 606L770 770" stroke-width="80" stroke-linecap="round"/>
+  <circle class="g-acc" cx="458" cy="458" r="78"/>
+</svg>

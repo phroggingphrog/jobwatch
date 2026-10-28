@@ -1,0 +1,114 @@
+{
+ "refineSearch": {
+  "status": 200,
+  "totalHits": 4,
+  "data": {
+   "jobs": [
+    {
+     "descriptionTeaser": "Join us as a General Manager and play a pivotal role in shaping Coles Group\u2019s strategy. Lead large, multi-disciplinary teams to drive change and deliver value for customers and suppliers. Ideal for experienced executives with a strong background in retail, FMCG, or consumer industries.",
+     "state": "Victoria",
+     "reqId": "144221",
+     "latitude": "-37.8455842",
+     "address": "800 Toorak Rd,Hawthorn East   Melbourne,Victoria,3123,Australia",
+     "externalApply": false,
+     "cityState": "Hawthorn East   Melbourne, Victoria",
+     "country": "Australia",
+     "locale": "en_AU",
+     "title": "General Manager",
+     "workLocation": "",
+     "cityStateCountry": "Hawthorn East   Melbourne, Victoria, Australia",
+     "jobVisibility": [
+      "external"
+     ],
+     "location": "Hawthorn East   Melbourne, Victoria, Australia",
+     "type": "External",
+     "siteType": "external",
+     "multi_category": [
+      "Enterprise Management and Administration"
+     ],
+     "city": "Hawthorn East   Melbourne",
+     "multi_location": [
+      "Hawthorn East   Melbourne, Victoria, Australia"
+     ],
+     "applyUrl": "",
+     "visibilityType": "External",
+     "longitude": "145.048081",
+     "jobId": "144221",
+     "jobSeqNo": "COGRAU144221EXTERNALENAU",
+     "postedDate": "2025-01-13T00:00:00.000+0000",
+     "dateCreated": "2025-01-13T05:29:42.299+0000",
+     "category": "Enterprise Management and Administration",
+     "isMultiLocation": true,
+     "multi_location_array": [
+      {
+       "latlong": {
+        "lon": 145.048081,
+        "lat": -37.8455842
+       },
+       "location": "Hawthorn East   Melbourne, Victoria, Australia"
+      }
+     ],
+     "isMultiCategory": true,
+     "multi_category_array": [
+      {
+       "category": "Enterprise Management and Administration"
+      }
+     ],
+     "badge": ""
+    },
+    {
+     "descriptionTeaser": "Seeking individuals interested in joining Coles as a Team Member. Submit your details and preferences to Coles, and be matched to suitable roles based on your availability and interests. Ideal for those keen to apply for store-based positions and interested in the retail sector.",
+     "state": "Victoria",
+     "reqId": "56681",
+     "latitude": "-37.8455842",
+     "address": "800 Toorak Rd,Hawthorn East   Melbourne,Victoria,3123,Australia",
+     "externalApply": false,
+     "cityState": "Hawthorn East   Melbourne, Victoria",
+     "country": "New Zealand",
+     "locale": "en_AU",
+     "title": "Team Member - Auckland",
+     "workLocation": "",
+     "cityStateCountry": "Hawthorn East   Melbourne, Victoria, Australia",
+     "jobVisibility": [
+      "external"
+     ],
+     "location": "Auckland, Auckland, New Zealand",
+     "type": "External",
+     "siteType": "external",
+     "multi_category": [
+      "Store Team Member"
+     ],
+     "city": "Hawthorn East   Melbourne",
+     "multi_location": [
+      "Auckland, Auckland, New Zealand"
+     ],
+     "applyUrl": "",
+     "visibilityType": "External",
+     "longitude": "145.048081",
+     "jobId": "999001",
+     "jobSeqNo": "COGRAU56681EXTERNALENAU",
+     "postedDate": "2022-06-20T00:00:00.000+0000",
+     "dateCreated": "2022-06-20T13:42:12.170+0000",
+     "category": "Store Team Member",
+     "isMultiLocation": true,
+     "multi_location_array": [
+      {
+       "latlong": {
+        "lon": 145.048081,
+        "lat": -37.8455842
+       },
+       "location": "Hawthorn East   Melbourne, Victoria, Australia"
+      }
+     ],
+     "isMultiCategory": true,
+     "multi_category_array": [
+      {
+       "category": "Store Team Member"
+      }
+     ],
+     "badge": ""
+    }
+   ]
+  }
+ }
+}

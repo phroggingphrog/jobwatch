@@ -1,0 +1,44 @@
+<section id="preparation-status" data-automation-active="{{ 'true' if browser.automation_active else 'false' }}"
+         hx-get="/job/{{ job.id }}/prepare/status" hx-trigger="every 3s" hx-swap="outerHTML" aria-live="polite">
+  {% if error %}<p class="ph-alert ph-alert--error">{{ error }}</p>{% endif %}
+  {% if browser.automation_active %}
+    <p><strong>Filling your application…</strong> Jobwatch is preparing answers and attaching your documents. Browser controls return when it finishes.</p>
+  {% elif job.status == 'applied' %}
+    <p class="ph-alert"><strong>Applied.</strong> Jobwatch saw your Submit go through and marked this job Applied.</p>
+  {% elif prepared and prepared.status == 'ready_for_owner' %}
+    <p class="ph-alert"><strong>Filled and ready for your review.</strong> Check the live application below, then click its Submit button yourself.</p>
+  {% elif prepared and prepared.reason == 'missing_profile_facts' %}
+    <p><strong>A few facts are missing from your profile.</strong> Answer here once; Jobwatch will remember them and fill the application.</p>
+    <form method="post" action="/job/{{ job.id }}/answers" class="answer-intake">
+    <input type="hidden" name="preparation_run_id" value="{{ prepared.run_id }}">
+    {% for question in prepared.missing %}
+      <label>{{ question.question }}
+      {% if question.type == 'checkbox' or question.kind == 'radio' %}
+        <select name="answer_{{ question.question_id }}" required><option value="">Choose…</option><option value="true">Yes</option><option value="false">No</option></select>
+      {% elif question.options %}
+        <select name="answer_{{ question.question_id }}" {% if question.multiple or question.type == 'select-multiple' %}multiple{% endif %} required>
+          {% if not question.multiple and question.type != 'select-multiple' %}<option value="">Choose…</option>{% endif %}
+          {% for option in question.options %}<option value="{{ option.value if option is mapping else option }}">{{ option.label if option is mapping else option }}</option>{% endfor %}
+        </select>
+      {% else %}<textarea name="answer_{{ question.question_id }}" rows="2" maxlength="8000" required></textarea>{% endif %}
+      </label>
+    {% endfor %}
+    <button class="ph-btn ph-btn--default" type="submit">Save answers and finish filling</button>
+    </form>
+  {% elif prepared and prepared.status == 'needs_adapter' %}
+    <p class="ph-alert ph-alert--warning">This site's form needs additional automation support. The completed fields are still in the browser; the application is not ready yet.</p>
+  {% elif prepared and prepared.reason == 'owner_session_required' %}
+    <p>Complete the site's sign-in or verification in the live browser, then choose Fill application.</p>
+  {% elif prepared and prepared.status == 'blocked' %}
+    <p class="ph-alert ph-alert--warning">Preparation stopped before finishing. Your application has not been submitted. You can retry after checking the live page.</p>
+  {% endif %}
+  {% if not can_prepare and job.status != 'applied' %}<p>Verified application documents are needed before filling. <a href="/#job/{{ job.id }}">View document status</a>.</p>{% endif %}
+  {% if browser.open and can_prepare and not browser.automation_active %}
+  <form method="post" action="/job/{{ job.id }}/prepare"><button class="ph-btn ph-btn--default" type="submit">Fill application</button></form>
+  {% endif %}
+  {% if prepared and prepared.review_answers %}
+  <details><summary>Review the prepared answers</summary>
+    <dl class="prepared-answers">{% for answer in prepared.review_answers %}<dt>{{ answer.question }}</dt><dd>{{ answer.value }}</dd>{% endfor %}</dl>
+  </details>
+  {% endif %}
+</section>

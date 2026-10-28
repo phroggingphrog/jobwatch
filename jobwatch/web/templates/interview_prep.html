@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Interview preparation{% endblock %}
+{% block content %}
+<div class="ph-page-head"><h1>Interview preparation for {{ job.title }}</h1><p>{{ job.company }}</p></div>
+<p>{% if not job.standalone %}<a href="/#job/{{ posting_id }}">Back to job</a> · {% endif %}<a href="/interview-prep">Prepare another interview</a> · <a href="/#applications">Applications</a></p>
+{% if job.jd_source %}<p><strong>JD source:</strong> {{ job.jd_source }} · Saved {{ job.acquired_at }}</p>
+<details><summary>Review the saved job description</summary><p>{% if job.source_url|interview_source_url %}<a href="{{ job.source_url|interview_source_url }}" rel="noopener noreferrer" target="_blank">Open source</a>{% endif %}</p><pre style="white-space:pre-wrap">{{ job.ad_text }}</pre></details>{% endif %}
+{% include "_interview_prep_status.html" %}
+<section class="ph-card">
+<h2>Your private interview context</h2>
+<p>Optional notes help tailor the preparation. These notes are not used in public search queries. Save before generating; changing notes hides the previous report.</p>
+<form method="post" action="{{ prep_url }}/inputs">
+<input type="hidden" name="revision" value="{{ revision }}">
+{% for field, label in input_fields %}
+<p><label for="prep-{{ field }}">{{ label }}</label><textarea class="followup-copy" id="prep-{{ field }}" name="{{ field }}" rows="4" maxlength="{{ 10000 if field == 'prior_compensation' else 20000 }}">{{ inputs[field] }}</textarea></p>
+{% endfor %}
+<p>Up to 60,000 characters across all notes. Leave unavailable sources blank.</p>
+<button class="ph-btn ph-btn--outline" type="submit">Save private context</button>
+</form>
+</section>
+{% endblock %}

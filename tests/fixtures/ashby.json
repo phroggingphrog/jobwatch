@@ -1,0 +1,58 @@
+{
+ "jobs": [
+  {
+   "id": "aaaa-1111",
+   "title": "Junior Data Analyst",
+   "department": "Data",
+   "team": "Analytics",
+   "employmentType": "FullTime",
+   "location": "Melbourne, Australia",
+   "secondaryLocations": [],
+   "publishedAt": "2026-10-05T01:00:00.000+00:00",
+   "isListed": true,
+   "isRemote": false,
+   "workplaceType": "Hybrid",
+   "address": {
+    "postalAddress": {
+     "addressCountry": "Australia",
+     "addressRegion": "VIC",
+     "addressLocality": "Melbourne"
+    }
+   },
+   "jobUrl": "https://jobs.ashbyhq.com/exampleco/aaaa-1111?utm_source=x",
+   "applyUrl": "https://jobs.ashbyhq.com/exampleco/aaaa-1111/application",
+   "descriptionPlain": "Entry-level analyst role. 1-2 years experience with SQL preferred.",
+   "compensation": {
+    "compensationTierSummary": "$70K \u2013 $80K"
+   }
+  },
+  {
+   "id": "d3bc1ced-3ce4-4086-a050-555055dbb1ff",
+   "title": "Senior / Staff Fullstack Engineer",
+   "department": "Product",
+   "team": "Engineering",
+   "employmentType": "FullTime",
+   "location": "Europe",
+   "shouldDisplayCompensationOnJobPostings": false,
+   "secondaryLocations": [],
+   "publishedAt": "2021-04-27T20:13:45.158+00:00",
+   "isListed": true,
+   "isRemote": true,
+   "workplaceType": "Remote",
+   "address": {
+    "postalAddress": {
+     "addressCountry": "European Union"
+    }
+   },
+   "jobUrl": "https://jobs.ashbyhq.com/linear/d3bc1ced-3ce4-4086-a050-555055dbb1ff",
+   "applyUrl": "https://jobs.ashbyhq.com/linear/d3bc1ced-3ce4-4086-a050-555055dbb1ff/application",
+   "descriptionPlain": "At Linear, we're building the product development system for teams and agents. AI is fundamentally changing how software gets built, and we\u2019re shaping the tools this new era requires. \n\nFounded in 2019, Linear has become the platform of choice for more than 40,000 companies (including OpenAI, Coinbase, and Ramp) to plan, build, and ship their products. Today, our team is distributed across North America, Europe, and Australia, and we\u2019re continuing to grow internationally. What unites us is relentless focus, fast execution, and a deep care for software craftsmanship. \n\nAs a small team, we\u2019re all generalists and constantly picking up new challenges. When it comes to code, we\u2019re looking to work with experienced people who can pick a problem and solve it.  We use TypeScript and build scalable ",
+   "compensation": {
+    "compensationTierSummary": null,
+    "scrapeableCompensationSalarySummary": null,
+    "compensationTiers": [],
+    "summaryComponents": []
+   }
+  }
+ ]
+}

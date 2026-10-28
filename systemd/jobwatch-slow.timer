@@ -1,0 +1,10 @@
+[Unit]
+Description=jobwatch slow tier every 2 h with jitter (JobSpy, Seek, employer pages)
+
+[Timer]
+OnCalendar=00/2:10
+RandomizedDelaySec=15min
+Persistent=false
+
+[Install]
+WantedBy=timers.target
