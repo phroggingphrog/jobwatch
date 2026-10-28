@@ -5,9 +5,10 @@ import json
 import pytest
 
 from conftest import make_config
-from jobwatch import adtext, reader, recall
+from jobwatch.util import adtext as adtext
+from jobwatch import reader, recall
 from jobwatch import db as dbm
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from jobwatch.models import Posting
 from jobwatch.dedupe import ingest
 
@@ -432,7 +433,7 @@ def test_a_network_timeout_does_not_kill_the_run(world):
 
 
 def test_llm_string_error_payload_is_an_llm_error_not_an_attribute_error():
-    from jobwatch.llm import LLMError
+    from jobwatch.util.llm import LLMError
     llm = LLM(transport=lambda *a: (500, {"error": "upstream exploded"}), keys=["k"])
     with pytest.raises(LLMError, match="upstream exploded"):
         llm.chat("openai/sol", [{"role": "user", "content": "hi"}], json_mode=False)

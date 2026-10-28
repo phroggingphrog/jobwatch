@@ -15,7 +15,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urljoin, urlsplit
 
-from ..http import HttpError
+from jobwatch.util.http import HttpError
 from ..models import Posting, clean_text, html_to_text, iso, work_type_of
 from .base import CollectorContext, run_per_employer
 

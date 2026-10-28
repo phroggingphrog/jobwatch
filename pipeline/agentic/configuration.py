@@ -20,7 +20,7 @@ def runtime_config(config):
         raise AgenticError('invalid_configuration')
     if type(raw.get('research_enabled', False)) is not bool:
         raise AgenticError('invalid_configuration')
-    from jobwatch.model_choice import chosen   # the person's own pick wins over config/jobwatch.yaml
+    from jobwatch.util.model_choice import chosen   # the person's own pick wins over config/jobwatch.yaml
     pick = chosen()
     values = {'worker_model': pick.get('writer') or raw.get('worker_model', DEFAULT_MODEL),
               'evaluator_model': pick.get('evaluator') or raw.get('evaluator_model', DEFAULT_MODEL),

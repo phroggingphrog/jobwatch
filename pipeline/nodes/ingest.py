@@ -1,6 +1,6 @@
 """Node 1: ingestion and deduplication. Plain code, no model.
 
-Collectors (jobwatch.pipeline.run) keep scraping and normalising postings into `postings`. This node admits every
+Collectors (jobwatch.run.run) keep scraping and normalising postings into `postings`. This node admits every
 posting still listed, in the person's own state / remote-Australia (filters.location_rule), with the WHOLE ad text
 (fetched here when the source allows it). No title word lists: what the job is gets judged by meaning in node 2-3.
 Same ad text as a job already in the pipeline -> archived as a duplicate (sha256 of the normalised text).
@@ -15,7 +15,7 @@ import re
 import time
 from datetime import timedelta
 
-from jobwatch import adtext
+from jobwatch.util import adtext as adtext
 from jobwatch.filters import Rules
 from jobwatch.models import Posting, fold, now_utc
 from jobwatch.reader import is_sponsored
@@ -156,7 +156,7 @@ BROWSER_FALLBACK = {"seek", "jobspy_src"}
 
 def _browser_text(conn, r, text: str, kind: str, *, deadline: float | None = None) -> tuple[str, str]:
     import time
-    from jobwatch.interview_browser import browser_ad
+    from jobwatch.interview.browser import browser_ad
     try:
         remaining = 45 if deadline is None else min(45, deadline-time.time())
         if remaining <= 0:

@@ -2,7 +2,7 @@
 import json
 
 from jobwatch.candidate.contracts import JOB_ROLE_FAMILIES
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.nodes import extract
 from pipeline.schemas import JobFacts
 from test_personal_legacy_gate import facts

@@ -3,7 +3,8 @@ import json
 from hashlib import sha256
 import pytest
 from tests.baseline_support import world, frozen
-from jobwatch import db, users, adtext
+from jobwatch import db, users
+from jobwatch.util import adtext as adtext
 from jobwatch.candidate import intake
 from pipeline.agentic import shortlist
 

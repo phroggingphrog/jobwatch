@@ -96,7 +96,7 @@ def test_result_tampering_and_holdout_export_audit(frozen):
 
 
 def test_monitoring_maxima_hold_for_a_library_caller_not_only_the_cli(frozen):
-    """Break: enforce the 500/300 monitoring caps in jobwatch/evaluation_cli.py alone."""
+    """Break: enforce the 500/300 monitoring caps in jobwatch/commands/evaluation.py alone."""
     record=prepared(frozen)
     assert (evaluate_runs.MONITOR_LIMIT,evaluate_runs.MONITOR_SECONDS)==(500,300)
     for limit,seconds in ((evaluate_runs.MONITOR_LIMIT+1,300),(500,evaluate_runs.MONITOR_SECONDS+1),(10000,3600)):

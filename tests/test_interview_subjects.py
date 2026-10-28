@@ -4,9 +4,9 @@ import json
 import pytest
 
 from jobwatch import db, ledger
-from jobwatch.interview_ad import InterviewAd
-from jobwatch.interview_inputs import InterviewInputs
-from jobwatch.interview_subjects import create_subject, load_subject, save_subject_inputs
+from jobwatch.interview.ad import InterviewAd
+from jobwatch.interview.inputs import InterviewInputs
+from jobwatch.interview.subjects import create_subject, load_subject, save_subject_inputs
 from pipeline.agentic.contracts import AgenticError
 
 

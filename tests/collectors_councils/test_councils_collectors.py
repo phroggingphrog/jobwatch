@@ -8,7 +8,7 @@ from jobwatch import collectors as registry
 from jobwatch.collectors import (ats_elmo, ats_jobs_search, ats_pulse, ats_recruitmenthub, ats_scouttalent,
                                  ats_techone)
 from jobwatch.config import DEFAULT_SETTINGS
-from jobwatch.http import HttpError
+from jobwatch.util.http import HttpError
 
 
 def council(provider, **kw):

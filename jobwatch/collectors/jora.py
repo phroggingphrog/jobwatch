@@ -8,7 +8,7 @@ searches.yaml to stop it.
 """
 from __future__ import annotations
 
-from jobwatch.place import location_text
+from jobwatch.util.place import location_text
 
 import hashlib
 import html

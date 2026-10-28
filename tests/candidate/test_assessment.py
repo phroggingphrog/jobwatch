@@ -1,6 +1,6 @@
 """Candidate-first assessment uses real Deep Agents tools and synthetic evidence only."""
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 import copy
 import json
 

@@ -1,8 +1,8 @@
 """Real persisted synthetic evaluations must pass freshness and safety checks."""
 import pytest
 from tests.test_agentic_service import world, SyntheticGateway
-from jobwatch.llm import LLM
-from jobwatch import adtext
+from jobwatch.util.llm import LLM
+from jobwatch.util import adtext as adtext
 from jobwatch.preference_service import pool, create_next, record_pick
 from jobwatch.preferences import PreferenceStore, PreferenceError
 from pipeline.agentic.service import agentic_batch_run

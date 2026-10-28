@@ -5,12 +5,13 @@ import re
 
 import numpy as np
 
-from jobwatch import model_choice, users
+from jobwatch.util import model_choice as model_choice
+from jobwatch import users
 from jobwatch.apply.paths import safe_write_bytes
 from jobwatch.candidate.contracts import digest
 from jobwatch.candidate.policy import DecisionPolicy
 from jobwatch.config import Config
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic.execution import QWEN_EMBEDDING_MODEL
 
 
@@ -32,7 +33,7 @@ def hash_transport(calls=None, *, chat=None, fail_after=None):
         nonlocal embeddings
         if url.endswith('/embeddings'):
             if fail_after is not None and embeddings >= fail_after:
-                from jobwatch.llm import SafeLLMError
+                from jobwatch.util.llm import SafeLLMError
                 raise SafeLLMError('unavailable')
             embeddings += 1
             calls.append(body)

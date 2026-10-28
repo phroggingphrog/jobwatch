@@ -5,7 +5,7 @@ target-arm pre-check, capped at `detail_cap` (default 10) per employer per run.
 """
 from __future__ import annotations
 
-from ..http import HttpError
+from jobwatch.util.http import HttpError
 from ..models import Posting, html_to_text, is_australian, iso, work_type_of
 from .base import CollectorContext, run_per_employer
 

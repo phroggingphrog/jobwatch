@@ -80,7 +80,7 @@ def test_embedding_cache_reuses_person_bound_primary_vectors(tmp_path, monkeypat
 
 def test_public_classifier_is_counted_and_keeps_unknown_usage_charged(monkeypatch):
     from types import SimpleNamespace
-    from jobwatch import openrouter_extras as extras
+    from jobwatch.util import openrouter_extras as extras
     from pipeline.agentic import execution
     from pipeline.agentic.runtime import BatchBudget, JobBudget
     monkeypatch.setattr(extras, '_key', lambda _: 'synthetic')
@@ -144,7 +144,7 @@ def test_cached_native_ready_rechecks_prescreen_after_liveness(world, monkeypatc
     from pipeline.agentic import service
     from pipeline.agentic.evaluator import evaluate_job
     from test_agentic_service import SyntheticGateway
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     from pipeline.schemas import Stage
     conn, config, bundle, add = world
     add(42)

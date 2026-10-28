@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from jobwatch import cli, users
+from jobwatch import cli, run as pipeline, users
 from jobwatch.apply import paths as apaths
 from jobwatch.candidate import intake
 
@@ -40,7 +40,7 @@ def _two_people(tmp_path, monkeypatch):
 
 
 def test_run_skips_a_person_without_a_confirmed_profile(tmp_path, monkeypatch, capsys):
-    from jobwatch import pipeline
+    from jobwatch import run as pipeline
     _two_people(tmp_path, monkeypatch)
     ran = []
     monkeypatch.setattr(pipeline, "run", lambda *a, **k: ran.append(users.current()) or {"run_id": 1, "requests": 0, "pruned": 0,
@@ -67,7 +67,7 @@ def test_read_skips_a_person_without_a_confirmed_profile(tmp_path, monkeypatch, 
 
 def test_user_all_splits_the_unit_budget_over_the_people_who_run(tmp_path, monkeypatch, capsys):
     from conftest import confirm_discovery
-    from jobwatch import execution_mode, pipeline
+    from jobwatch import execution_mode, run as pipeline
     from jobwatch.config import load_config
     _two_people(tmp_path, monkeypatch)
     confirm_discovery(load_config(), "friend")                # now both are confirmed

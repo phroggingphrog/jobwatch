@@ -14,7 +14,7 @@ import json
 import re
 from urllib.parse import urlsplit
 
-from ..http import HttpError
+from jobwatch.util.http import HttpError
 from ..models import Posting, html_to_text, is_australian, iso
 from .base import CollectorContext, run_per_employer
 

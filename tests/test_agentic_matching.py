@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from jobwatch import model_choice
-from jobwatch.llm import LLM
+from jobwatch.util import model_choice as model_choice
+from jobwatch.util.llm import LLM
 from pipeline.agentic.contracts import AgenticError, AgenticGateDecision
 from pipeline.agentic.evaluation import blind_matching_packet, compare_matching_runs
 from pipeline.agentic.execution import QWEN_EMBEDDING_MODEL, require_route

@@ -7,9 +7,9 @@ searches.yaml to honour robots.txt instead (the collector then records a clean e
 """
 from __future__ import annotations
 
-from jobwatch.place import location_text
+from jobwatch.util.place import location_text
 
-from ..http import HttpError
+from jobwatch.util.http import HttpError
 from ..models import Posting, is_australian, iso, salary_from_text, work_type_of
 from .base import CollectorContext, rotate
 

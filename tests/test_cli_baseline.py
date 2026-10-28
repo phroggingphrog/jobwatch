@@ -149,7 +149,7 @@ def test_label_help_names_the_judgment_requirement(capsys):
 
 
 def test_label_commands_are_the_only_label_writers():
-    allowed = {'pipeline/agentic/baseline.py', 'jobwatch/baseline_cli.py', 'jobwatch/evaluation_cli.py'}
+    allowed = {'pipeline/agentic/baseline.py', 'jobwatch/commands/baseline.py', 'jobwatch/commands/evaluation.py'}
     pattern = re.compile(r'\b(?:label_case|write_label)\(')
     found = set()
     for folder in ('jobwatch', 'pipeline'):

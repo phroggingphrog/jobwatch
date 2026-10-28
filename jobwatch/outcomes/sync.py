@@ -17,7 +17,8 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 from .. import db as dbm
-from .. import google_oauth, users
+from jobwatch.google import oauth as google_oauth
+from jobwatch import users
 from ..commands import apply_api
 from ..commands.state import RANK, SUBMITTED
 from ..models import now_utc
@@ -51,7 +52,7 @@ _STOP = {"pty", "ltd", "limited", "group", "australia", "australian", "inc", "th
 
 def _place_words() -> set[str]:
     """The person's own state and city words are not company names (state code, state name, city)."""
-    from jobwatch.place import STATES, location_text, person_state
+    from jobwatch.util.place import STATES, location_text, person_state
     state = person_state()
     words = set(re.findall(r"[a-z]+", f"{state or ''} {STATES.get(state, '')} {location_text()}".lower()))
     return words | ({"victorian"} if state == "VIC" else set())
@@ -333,7 +334,7 @@ def run_outcomes(config, dry_run: bool = False, show: bool = False, printer=prin
     try:
         stats["expired"] = expire(conn, int(conf["expire_days"]), now, dry_run)
         if mcp is None and users.current() != users.DEFAULT_USER and google_oauth.load():
-            from ..google_gmail import GmailMcp      # a connected friend reads their own Gmail
+            from jobwatch.google.gmail import GmailMcp      # a connected friend reads their own Gmail
             mcp, conf = GmailMcp(), {**conf, "mailboxes": [{"account": "gmail", "mailbox": "all"}]}
         elif mcp is None and users.current() != users.DEFAULT_USER:
             # the local MCP mail server is the owner's mailboxes: never match them to a friend's applications

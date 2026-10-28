@@ -65,13 +65,13 @@ def test_paused_job_is_skipped_while_unrelated_job_is_attempted(world, monkeypat
 
 
 def test_collector_budget_does_not_invent_minimum_time(monkeypatch):
-    from jobwatch import pipeline
+    from jobwatch import run as pipeline
     monkeypatch.setattr(pipeline.time, 'monotonic', lambda: 1000.)
     assert pipeline.ai_budget(0.) == 0
 
 
 def test_collector_http_refuses_requests_after_deadline(monkeypatch):
-    from jobwatch.http import Fetcher, Blocked
+    from jobwatch.util.http import Fetcher, Blocked
     fetcher = Fetcher(deadline=time.time()-1)
     monkeypatch.setattr(fetcher.session, 'request', lambda *a, **kw: pytest.fail('Network after deadline'))
     with pytest.raises(Blocked, match='collection_deadline'):
@@ -86,7 +86,7 @@ def test_ingestion_does_not_start_a_posting_after_deadline(world):
 
 
 def test_browser_fallback_receives_the_remaining_invocation_time(monkeypatch):
-    from jobwatch import interview_browser
+    from jobwatch.interview import browser as interview_browser
     seen = []
     monkeypatch.setattr(interview_browser, 'browser_ad', lambda *a, **kw: seen.append(kw['deadline']) or SimpleNamespace(text=''))
     before = time.monotonic()
@@ -95,7 +95,7 @@ def test_browser_fallback_receives_the_remaining_invocation_time(monkeypatch):
 
 
 def test_public_extras_stop_at_shared_deadline_without_renewing_timeout(monkeypatch):
-    from jobwatch import openrouter_extras as extras
+    from jobwatch.util import openrouter_extras as extras
     monkeypatch.setattr(extras, '_key', lambda config: 'synthetic')
     seen = []
     monkeypatch.setattr(extras.requests, 'post', lambda *a, **kw:
@@ -109,7 +109,7 @@ def test_public_extras_stop_at_shared_deadline_without_renewing_timeout(monkeypa
 
 
 def test_daily_allowance_caps_resumed_checkpoint_without_new_spending(world, monkeypatch):
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     from tests.test_agentic_service import SyntheticGateway
     from pipeline.agentic.persistence import latest_result
     conn, config, bundle, add = world
@@ -136,7 +136,7 @@ def test_daily_allowance_caps_resumed_checkpoint_without_new_spending(world, mon
 
 
 def test_cancellation_releases_job_and_preserves_invocation_posting(world):
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     from tests.test_agentic_service import SyntheticGateway
     from pipeline.agentic import execution
     from pipeline.agentic.runtime import RuntimeErrorSafe

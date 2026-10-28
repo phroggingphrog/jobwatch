@@ -5,7 +5,7 @@ import sqlite3
 
 import pytest
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic.autonomous import evaluate_autonomous
 from pipeline.agentic.runtime import RuntimeErrorSafe
 from test_agentic_evaluate import build_case, budget
@@ -92,6 +92,15 @@ def test_unknown_native_usage_remains_conservatively_charged(tmp_path):
     assert len(seen) == 4 and value['unknown_usage_calls'] == 4
     assert value['tokens'] == 0 and value['charged_tokens'] == b.charged_tokens > 0
     assert all(d['usage_known'] is False for d in value['details'])
+
+def test_default_off_and_configuration_validation(monkeypatch):
+    from pipeline.agentic.service import _config
+    from jobwatch.util import model_choice as model_choice
+    monkeypatch.setattr(model_choice, 'chosen', lambda: {})
+    assert _config({}).get('autonomous_evaluation', False) is False
+    assert _config({'agentic': {'autonomous_evaluation': True}})['autonomous_version']
+    with pytest.raises(Exception, match='invalid_configuration'):
+        _config({'agentic': {'autonomous_evaluation': 'true'}})
 
 
 def test_native_reasoning_is_preserved_through_tool_turns_and_checkpoint_resume(tmp_path):
@@ -323,7 +332,7 @@ def test_native_json_text_cannot_trigger_protocol_fallback(tmp_path):
 
 def test_default_off_and_configuration_validation(monkeypatch):
     from pipeline.agentic.service import _config
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice
     monkeypatch.setattr(model_choice, 'chosen', lambda: {})
     assert _config({}).get('autonomous_evaluation', False) is False
     assert _config({'agentic': {'autonomous_evaluation': True}})['autonomous_version']

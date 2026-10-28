@@ -1,5 +1,5 @@
 """Chat page: one thread on the board. jobwatch posts its news here (and to the person's notification channels, see jobwatch.notify); the person asks
-questions or gives rulings, and the model they chose for the "chat" role (jobwatch.model_choice) answers from a live
+questions or gives rulings, and the model they chose for the "chat" role (jobwatch.util.model_choice) answers from a live
 snapshot of the board. The assistant reads only; it never changes rules, submits or messages anyone. Rulings stay in the
 thread for the maintainer to act on.
 """
@@ -9,7 +9,7 @@ import os
 import re
 from collections import Counter
 
-from jobwatch.model_choice import get_model
+from jobwatch.util.model_choice import get_model
 from pathlib import Path
 
 from fastapi import Form, Request
@@ -121,7 +121,7 @@ def snapshot(conn, question: str = "") -> str:
 
 
 def answer(conn, llm=None) -> str:
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     rows = conn.execute("SELECT role,text FROM chat_messages WHERE " + nt.CHAT_VISIBLE + " ORDER BY id DESC LIMIT ?", (HISTORY,)).fetchall()[::-1]
     messages = [{"role": "system", "content": system_prompt() + "\n\nSNAPSHOT\n" + snapshot(conn, rows[-1][1] if rows else "")}]
     for role, text in rows:

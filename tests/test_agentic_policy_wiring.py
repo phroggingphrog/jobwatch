@@ -10,7 +10,7 @@ import pytest
 from jobwatch import preference_service
 from jobwatch.candidate import intake
 from jobwatch.candidate.policy import default_policy
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import decision_log, gate, service
 from pipeline.agentic.contracts import AgenticError
 from pipeline.agentic.location import commute_km_for, km_from_home

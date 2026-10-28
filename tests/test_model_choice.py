@@ -1,5 +1,5 @@
 """Models settings: a saved pick is returned by get_model; any model id is allowed."""
-from jobwatch import model_choice as mc
+from jobwatch.util import model_choice as mc
 from jobwatch import users
 
 

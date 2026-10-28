@@ -11,10 +11,11 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from jobwatch import adtext, users
+from jobwatch.util import adtext as adtext
+from jobwatch import users
 from jobwatch.apply import paths as apaths
 from jobwatch.candidate import intake
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import baseline
 from pipeline.agentic.baseline import (
     OwnerLabel, effective_tags, label_case, latest_labels, read_labels, write_label,

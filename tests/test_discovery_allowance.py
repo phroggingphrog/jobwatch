@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import incidents, service
 from tests.test_agentic_service import SyntheticGateway, world  # noqa: F401
 

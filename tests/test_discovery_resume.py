@@ -1,7 +1,7 @@
 """An unstarted quota deferral must not inherit yesterday's tiny batch allocation."""
 import time
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import incidents, service
 from pipeline.agentic.persistence import latest_result
 from tests.test_agentic_service import SyntheticGateway, world  # noqa: F401

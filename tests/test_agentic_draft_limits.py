@@ -11,7 +11,7 @@ from pipeline.agentic.service import agentic_batch_run, run_agentic_job, _draft_
 from pipeline.agentic.persistence import latest_result
 from pipeline.agentic.store import AgenticStore
 from pipeline.schemas import Stage
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from test_agentic_service import world, SyntheticGateway
 from test_agentic_store import Harness, key, empty, reserve
 

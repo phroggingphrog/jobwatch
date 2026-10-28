@@ -1,7 +1,7 @@
 import pytest
 
 from jobwatch import db, ledger
-from jobwatch.interview_inputs import InterviewInputs, load_inputs, save_inputs
+from jobwatch.interview.inputs import InterviewInputs, load_inputs, save_inputs
 from pipeline.agentic.contracts import AgenticError
 
 

@@ -16,7 +16,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from jobwatch.llm import DeadlineExceeded
+from jobwatch.util.llm import DeadlineExceeded
 from jobwatch.reader import KIND_GUIDE, NOT_TARGET_KINDS, _clean
 
 from .. import store

@@ -7,7 +7,7 @@ from typing import Any, Callable, Iterable
 from xml.etree.ElementTree import ParseError
 
 from ..config import Config
-from ..http import Fetcher, HttpError
+from jobwatch.util.http import Fetcher, HttpError
 from ..models import Posting
 
 log = logging.getLogger("jobwatch.collectors")

@@ -237,7 +237,7 @@ def test_reader_prepares_digest_before_ingest_and_shares_daily_ledger(world, mon
 
 
 def test_collect_only_cannot_prepare_candidate_digest(world, monkeypatch):
-    from jobwatch import pipeline
+    from jobwatch import run as pipeline
     conn, config, bundle, add = world
     config.settings['pipeline']['agentic']['autonomous_evaluation'] = True
     calls = []
@@ -269,8 +269,9 @@ def test_digest_failure_is_held_with_specific_incident(world, monkeypatch):
 def test_authenticated_discovery_endpoint_prepares_digest_with_shared_paid_accounting(world, monkeypatch):
     import time
     from fastapi.testclient import TestClient
-    from jobwatch import users, model_choice
-    from jobwatch.llm import LLM
+    from jobwatch import users
+    from jobwatch.util import model_choice
+    from jobwatch.util.llm import LLM
     from pipeline.agentic.api import Principal, create_api
     from pipeline.agentic import discovery, execution
     from pipeline.nodes import ingest
@@ -364,7 +365,7 @@ def test_configuration_validation_equivalent_for_both_layouts(raw):
 
 def test_config_pick_overrides_and_clamps_survive_extraction(monkeypatch):
     from pipeline.agentic.configuration import runtime_config
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {'evaluator':'synthetic-choice'})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {'evaluator':'synthetic-choice'})
     raw = dict(evaluator_model='synthetic-config', job_seconds=1000, batch_seconds=2000)
     root, nested = runtime_config({'agentic':raw}), runtime_config({'pipeline':{'agentic':raw}})
     assert root == nested

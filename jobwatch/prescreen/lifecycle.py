@@ -14,7 +14,7 @@ def _row(conn, posting_id):
 
 
 def _ad_text(conn, row) -> str:
-    from jobwatch import adtext
+    from jobwatch.util import adtext as adtext
     try:
         text, kind = adtext.local_text(conn, dict(row))
     except Exception:                       # noqa: BLE001 - no stored ad: the listing fields decide

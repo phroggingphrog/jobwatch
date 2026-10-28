@@ -28,7 +28,7 @@ def test_confirm_refresh_and_read_native_fields_and_plan(tmp_path, monkeypatch, 
         assert len(calls) == before
         from jobwatch.models import Posting
         from jobwatch.dedupe import ingest
-        from jobwatch import adtext
+        from jobwatch.util import adtext as adtext
         from pipeline import store
         store.ensure(conn)
         text = 'Accountant reconciles supplier ledgers and prepares journals. ' * 16

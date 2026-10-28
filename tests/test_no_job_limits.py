@@ -5,8 +5,9 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from jobwatch import model_choice, users
-from jobwatch.llm import LLM
+from jobwatch.util import model_choice as model_choice
+from jobwatch import users
+from jobwatch.util.llm import LLM
 from pipeline.agentic import discovery_settings, execution, service
 from pipeline.agentic.api import Principal, create_api
 from pipeline.agentic.contracts import AgenticError
@@ -133,7 +134,7 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     users.create_user_dirs('sam')
     users.create_user_dirs('sue')
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda *a, **k: {})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda *a, **k: {})
     return tmp_path
 
 
@@ -305,7 +306,7 @@ def test_other_bad_requests_are_not_retried():
     def transport(url, headers, body, timeout):
         calls.append(1)
         return 400, {'error': {'message': 'context too long'}}
-    from jobwatch.llm import SafeLLMError
+    from jobwatch.util.llm import SafeLLMError
     with pytest.raises(SafeLLMError):
         LLM(transport=transport, keys=['k']).chat_once('deepseek-flash', [{'role': 'user', 'content': 'x'}])
     assert len(calls) == 1

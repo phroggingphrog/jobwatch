@@ -1,7 +1,7 @@
 """Classify an employer/ATS email into an application outcome (PLAN-apply D8).
 
 Rules first; ambiguous mail (no rule, or conflicting rules) may go to a paid allowlisted model via
-jobwatch.llm with the subject + first 1,500 chars only. 'hired' is never a result: an offer is
+jobwatch.util.llm with the subject + first 1,500 chars only. 'hired' is never a result: an offer is
 'offer' with a review flag.
 """
 from __future__ import annotations
@@ -100,10 +100,10 @@ LLM_PROMPT = (
 
 
 def classify_llm(subject: str, body: str, llm=None, model: str = DEFAULT_MODEL) -> Verdict | None:
-    """Ask the allowlisted model. Returns None if jobwatch.llm is unavailable or fails."""
+    """Ask the allowlisted model. Returns None if jobwatch.util.llm is unavailable or fails."""
     if llm is None:
         try:
-            from ..llm import LLM
+            from jobwatch.util.llm import LLM
         except ModuleNotFoundError:
             return None
         llm = LLM()

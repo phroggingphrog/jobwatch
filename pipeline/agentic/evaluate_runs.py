@@ -171,8 +171,8 @@ def replay(baseline_id, *, partition='development', allow_holdout=False, limit=5
                 evaluated=usage=None
                 if paid:
                     if llm is None:
-                        from jobwatch.llm import LLM, load_keys
-                        from jobwatch.model_choice import own_key
+                        from jobwatch.util.llm import LLM, load_keys
+                        from jobwatch.util.model_choice import own_key
                         index=0 if own_key() else inputs['runtime']['credential_index']
                         keys=load_keys()
                         if index>=len(keys):

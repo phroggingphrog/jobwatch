@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 
 def test_migrate_needs_confirm_before_loading_config_or_opening_db(monkeypatch,capsys):
-    from jobwatch import preference_cli
+    from jobwatch.commands import preference as preference_cli
     def forbidden(*a,**kw): raise AssertionError('access before confirmation')
     monkeypatch.setattr(preference_cli,'load_config',forbidden)
     monkeypatch.setattr(preference_cli.sqlite3,'connect',forbidden)
@@ -15,7 +15,7 @@ def test_migrate_needs_confirm_before_loading_config_or_opening_db(monkeypatch,c
 
 
 def test_register_migrate_flag():
-    from jobwatch import preference_cli
+    from jobwatch.commands import preference as preference_cli
     parser=argparse.ArgumentParser(); sub=parser.add_subparsers(dest='cmd')
     preference_cli.register(sub)
     args=parser.parse_args(['preferences','migrate','--confirm-owner'])
@@ -23,7 +23,7 @@ def test_register_migrate_flag():
 
 
 def test_explicit_migrate_uses_rw_and_does_not_fit(monkeypatch,capsys):
-    from jobwatch import preference_cli
+    from jobwatch.commands import preference as preference_cli
     from jobwatch.preferences import migration
     opened=[];called=[]
     class Conn:
@@ -40,7 +40,7 @@ def test_explicit_migrate_uses_rw_and_does_not_fit(monkeypatch,capsys):
 
 
 def test_explicit_migrate_missing_database_returns_safe_error(monkeypatch,capsys,tmp_path):
-    from jobwatch import preference_cli
+    from jobwatch.commands import preference as preference_cli
     missing=tmp_path/'does-not-exist.sqlite'
     monkeypatch.setattr(preference_cli,'load_config',lambda *a:SimpleNamespace(db_path=missing))
     args=SimpleNamespace(cmd='preferences',action='migrate',confirm_owner=True,config_dir=None)

@@ -7,7 +7,7 @@ import types
 
 import pytest
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import baseline
 from pipeline.agentic.contracts import (
     AgenticEvaluation, AgenticGateDecision, Dimension, EvidenceJudgment, Requirement, RequirementMatch,

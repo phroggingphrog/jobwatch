@@ -3,7 +3,7 @@ import sqlite3
 import time
 from types import SimpleNamespace
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 from jobwatch import notify as nt
 from jobwatch.web import chat_routes
 from tests.notify_support import FakeChannel, use_fake_channel

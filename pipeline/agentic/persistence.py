@@ -92,7 +92,7 @@ def latest_result(conn: sqlite3.Connection, posting_id: int, *, data_root: Path 
         except (AgenticError, KeyError):
             result['status'], result['reason'] = 'held', 'artifact_invalid'
     if result['status'] == 'ready':
-        from jobwatch import adtext
+        from jobwatch.util import adtext as adtext
         from jobwatch.candidate.contracts import content_hash
         cursor = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,))
         posting_row = cursor.fetchone()

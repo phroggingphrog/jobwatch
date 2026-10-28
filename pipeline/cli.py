@@ -22,7 +22,7 @@ def register(sub) -> None:
 def handle(args) -> int | None:
     if getattr(args, "cmd", None) != "pipeline":
         return None
-    from jobwatch import adtext
+    from jobwatch.util import adtext as adtext
     from jobwatch import db as dbm
     from jobwatch.config import load_config
 

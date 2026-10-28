@@ -2,7 +2,7 @@
 from pathlib import Path
 import sqlite3
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import service
 from pipeline.agentic.persistence import PersistenceAdapter, latest_result
 from pipeline.agentic.store import AgenticStore

@@ -192,7 +192,7 @@ class WebBackend(Backend):
 
     # -- models (the web page's own module functions)
     def models(self) -> dict:
-        from jobwatch import model_choice as mc
+        from jobwatch.util import model_choice as mc
         from jobwatch.web.models_routes import list_models
         ids, ok = list_models(self.person)
         picks = mc.chosen(self.person)
@@ -201,7 +201,7 @@ class WebBackend(Backend):
         return {'rows': rows, 'options': ids, 'gateway_ok': ok, 'gateway': mc.gateway_view(self.person)}
 
     def save_models(self, picks: dict[str, str]) -> str:
-        from jobwatch import model_choice as mc
+        from jobwatch.util import model_choice as mc
         try:
             mc.set_models(picks, self.person)
         except (mc.ModelRefused, ValueError) as exc:
@@ -222,7 +222,7 @@ class WebBackend(Backend):
         return intake.save_upload(self.person, path.name, path.read_bytes(), kind)
 
     def chat_model(self) -> str:
-        from jobwatch import model_choice as mc
+        from jobwatch.util import model_choice as mc
         try:
             return mc.get_model('chat', self.person)
         except Exception:  # noqa: BLE001

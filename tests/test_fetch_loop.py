@@ -11,12 +11,13 @@ from pathlib import Path
 import pytest
 
 from conftest import confirm_discovery, make_config
-from jobwatch import adtext, reader
+from jobwatch.util import adtext as adtext
+from jobwatch import reader
 from jobwatch import db as dbm
-from jobwatch import pipeline
+from jobwatch import run as pipeline
 from jobwatch.collectors import jsonld_pages
 from jobwatch.dedupe import ingest
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from jobwatch.models import Posting
 
 FIX = Path(__file__).parent / "fixtures" / "adtext"
@@ -423,7 +424,7 @@ def _args(**over):
 
 
 def test_cli_review_and_recall_skip_while_another_run_holds_the_lock(world, monkeypatch, capsys):
-    from jobwatch import review_cli
+    from jobwatch.commands import review as review_cli
     confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     ran = []
@@ -641,7 +642,7 @@ def test_refetch_bypasses_the_24h_wait_and_the_try_cap_for_pending_ads(world, mo
 
 
 def test_cli_refetch_flag_reaches_review_pending(world, monkeypatch):
-    from jobwatch import review_cli
+    from jobwatch.commands import review as review_cli
     confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     seen = []
@@ -652,7 +653,7 @@ def test_cli_refetch_flag_reaches_review_pending(world, monkeypatch):
 
 # --------------------------------------------------- round 2: rederive takes review.lock
 def test_cli_rederive_exits_1_without_touching_rows_while_a_review_runs(world, monkeypatch, capsys):
-    from jobwatch import review_cli
+    from jobwatch.commands import review as review_cli
     confirm_discovery(world.config)
     monkeypatch.setenv("JOBWATCH_DB", str(world.config.db_path))
     pid = world.add("Clerk", desc="The whole ad is in the feed. " * 40)
@@ -670,7 +671,7 @@ def test_cli_rederive_exits_1_without_touching_rows_while_a_review_runs(world, m
 
 # --------------------------------------------------- round 2: partial is reported like teaser
 def test_review_stats_and_printer_count_partial_like_teaser(world, capsys, monkeypatch):
-    from jobwatch import review_cli
+    from jobwatch.commands import review as review_cli
     cut = ("Process invoices and answer supplier queries. " * 60)[:2000]
     world.add("Teaser Clerk", source="ats_techone", desc="short", url="https://example.com/1")
     world.add("Cut Clerk", source="ats_techone", desc=cut, url="https://example.com/2")

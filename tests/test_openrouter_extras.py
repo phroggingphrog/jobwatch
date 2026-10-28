@@ -1,6 +1,6 @@
 import sqlite3
 
-import jobwatch.openrouter_extras as extras
+import jobwatch.util.openrouter_extras as extras
 
 PROFILE = """# Profile
 ## Your Target Roles
@@ -62,12 +62,12 @@ def test_embed_sends_the_key_only_to_the_gateway_it_belongs_to(monkeypatch):
     import importlib
     from types import SimpleNamespace
 
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     real = importlib.reload(extras)                      # conftest stubs embed(); this test needs the real one
     sent = []
     monkeypatch.setattr(real.requests, "post", lambda url, **kw: sent.append((url, kw["headers"])) or
                         SimpleNamespace(status_code=200, json=lambda: {"data": [{"index": 0, "embedding": [1.0]}]}))
     model_choice.set_gateway("https://own.example.com/v1", "own-key")
-    monkeypatch.setattr("jobwatch.llm.load_keys", lambda: [model_choice.own_key()])    # as load_keys: own key alone
+    monkeypatch.setattr("jobwatch.util.llm.load_keys", lambda: [model_choice.own_key()])    # as load_keys: own key alone
     assert real.embed(["x"]) == [[1.0]]
     assert sent[-1][0] == "https://own.example.com/v1/embeddings" and sent[-1][1]["authorization"] == "Bearer own-key"

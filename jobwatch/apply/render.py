@@ -184,7 +184,7 @@ def letter_markdown(draft: dict, profile, posting: dict, tagged: bool = False,
     body = ["\n" + " ".join(_claim_text(c, tagged) for c in p) for p in paras if p]
     if tagged:
         return "\n".join(body).strip() + "\n"
-    from ..place import person_timezone          # the person's own zone (profile, else install default), not always Melbourne
+    from jobwatch.util.place import person_timezone          # the person's own zone (profile, else install default), not always Melbourne
     day = (today or datetime.now(person_timezone())).strftime("%-d/%-m/%Y")
     header = [_header_md(profile, cv_tpl)]
     company = (posting.get("company") or "").strip()

@@ -1,15 +1,15 @@
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 import json
 import pytest
 from test_interview_inputs import conn
 from test_interview_service import world,AD,writer_for
 from test_interview_prep import Reviewer
 from jobwatch import ledger
-from jobwatch.interview_ad import InterviewAd
-from jobwatch.interview_inputs import InterviewInputs
-from jobwatch.interview_subjects import create_subject,save_subject_inputs
-from jobwatch.interview_prep import generate,load_report,enqueue,queued_subject_ids
+from jobwatch.interview.ad import InterviewAd
+from jobwatch.interview.inputs import InterviewInputs
+from jobwatch.interview.subjects import create_subject, save_subject_inputs
+from jobwatch.interview.prep import generate, load_report, enqueue, queued_subject_ids
 
 
 def subject(conn):return create_subject(conn,InterviewAd('https://example.test/other','https://example.test/other','Analyst','Example',AD,'2026-10-11T00:00:00+00:00','browser'))
@@ -59,13 +59,13 @@ def test_matching_report_requires_current_ad_and_profile(world,monkeypatch):
     from test_agentic_contracts import _evaluation_base,key
     from pipeline.agentic.contracts import AgenticEvaluation,RequirementSet,Requirement,RequirementMatch,SourceCitation
     from jobwatch.candidate.contracts import content_hash
-    from jobwatch.interview_prep import matching_posting
+    from jobwatch.interview.prep import matching_posting
     conn,bundle,config=world;h=content_hash(AD.encode())
     reqs=RequirementSet(ad_hash=h,requirements=(Requirement(id='r1',text='SQL',tier='stated',importance='high',
         jd_signal=SourceCitation(source_id='ad',content_hash=h,quote='SQL')),))
     base=_evaluation_base(reqs);base['run_key']=key().model_copy(update={'posting_id':1,'ad_hash':h,'evidence_hash':bundle.bundle_hash})
     evaluation=AgenticEvaluation(**base,matches=(RequirementMatch(requirement_id='r1',match='partial',evidence=(),risk='gap',mitigation='practice'),))
-    monkeypatch.setattr('jobwatch.interview_prep.latest_result',lambda *a:{'evaluation':evaluation.model_dump(mode='json')})
+    monkeypatch.setattr('jobwatch.interview.prep.latest_result',lambda *a:{'evaluation':evaluation.model_dump(mode='json')})
     url=conn.execute('SELECT url FROM postings WHERE id=1').fetchone()[0]
     assert matching_posting(conn,url,config,bundle=bundle)==1
     assert matching_posting(conn,'https://other.example/job',config,bundle=bundle,title='Synthetic role',company='Example')==1
@@ -73,5 +73,5 @@ def test_matching_report_requires_current_ad_and_profile(world,monkeypatch):
     assert matching_posting(conn,url,config,bundle=bundle) is None
     conn.execute('UPDATE ad_text SET text=? WHERE posting_id=1',(AD,));conn.commit()
     changed=evaluation.model_copy(update={'run_key':evaluation.run_key.model_copy(update={'evidence_hash':'f'*64})})
-    monkeypatch.setattr('jobwatch.interview_prep.latest_result',lambda *a:{'evaluation':changed.model_dump(mode='json')})
+    monkeypatch.setattr('jobwatch.interview.prep.latest_result',lambda *a:{'evaluation':changed.model_dump(mode='json')})
     assert matching_posting(conn,url,config,bundle=bundle) is None

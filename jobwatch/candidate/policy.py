@@ -493,7 +493,7 @@ _ALTERNATIVE = re.compile(r"[;/|]|\bor\b", re.I)
 
 
 def _location_hit(value: str, location_text: str) -> bool:
-    from jobwatch.place import STATES
+    from jobwatch.util.place import STATES
     from pipeline.agentic.location import regions_named
     code = value.strip().upper()
     if code not in STATES:

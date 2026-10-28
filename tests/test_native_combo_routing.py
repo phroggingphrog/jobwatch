@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from jobwatch import model_choice as mc
+from jobwatch.util import model_choice as mc
 from jobwatch import users
 from pipeline.agentic import service
 from pipeline.agentic import autonomous

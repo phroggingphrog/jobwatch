@@ -4,7 +4,7 @@ wrangle(docs, user) takes CV, cover-letter and supporting-evidence documents and
 that person's own folder: profile.yaml + master_resume.md + cv.md, evidence.yaml (items in the legacy
 schema apply/evidence.py reads) and style/examples/ (their own letter samples).
 
-build_profile(cv_text, user) asks the reader model (JOBWATCH_LLM_MODEL, via jobwatch.llm) to
+build_profile(cv_text, user) asks the reader model (JOBWATCH_LLM_MODEL, via jobwatch.util.llm) to
 extract a structured profile, writes profile.yaml + master_resume.md + cv.md into that
 person's profile dir, and returns (profile dict, open questions as plain strings).
 """
@@ -20,8 +20,8 @@ import yaml
 
 from . import users
 from .apply.evidence import build_evidence, check_evidence, norm
-from .llm import LLM
-from .model_choice import get_model
+from jobwatch.util.llm import LLM
+from jobwatch.util.model_choice import get_model
 
 
 PROMPT = """You read a CV and extract a job-search profile. Use only what the CV says; never invent.

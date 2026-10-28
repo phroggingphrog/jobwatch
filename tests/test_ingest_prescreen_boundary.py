@@ -1,6 +1,6 @@
 """Canonical location skip audit and override through ingestion."""
 from conftest import make_config
-from jobwatch import adtext
+from jobwatch.util import adtext
 from jobwatch.prescreen import lifecycle, store
 from pipeline.nodes import ingest
 from test_prescreen import conn, pinned, accountant, _posting

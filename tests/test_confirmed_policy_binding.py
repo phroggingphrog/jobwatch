@@ -28,7 +28,7 @@ def test_confirmation_between_policy_capture_and_key_aborts_before_paid_work(wor
 def test_cached_ready_does_not_survive_confirmation_during_public_recheck(world, monkeypatch):
     from jobwatch import users
     from jobwatch.candidate import intake
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     from pipeline.agentic import service
     from pipeline.agentic.persistence import latest_result
     from pipeline.schemas import Stage

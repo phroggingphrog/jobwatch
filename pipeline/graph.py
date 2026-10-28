@@ -20,7 +20,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 
 from . import store
 from .nodes import draft, evaluate, extract, form_map, gate, ingest, sort
@@ -241,8 +241,8 @@ def enabled(config) -> bool:
 
 
 def after_collect(conn, config, max_seconds: float | None = None) -> dict:
-    """Timer hook (jobwatch.pipeline.run): one graph run under the shared review lock, within the unit's time."""
-    from jobwatch import adtext
+    """Timer hook (jobwatch.run.run): one graph run under the shared review lock, within the unit's time."""
+    from jobwatch.util import adtext as adtext
     with adtext.review_lock(adtext.lock_path(config)) as got:
         if not got:
             return {"skipped": "busy"}

@@ -5,7 +5,7 @@ import pipeline.nodes.ingest as ingest
 
 def test_seek_ad_text_comes_from_the_browser_when_download_fails(monkeypatch):
     saved = {}
-    monkeypatch.setattr("jobwatch.interview_browser.browser_ad",
+    monkeypatch.setattr("jobwatch.interview.browser.browser_ad",
                         lambda url, deadline=None: SimpleNamespace(text="Graduate Accountant. " * 40))
     monkeypatch.setattr(ingest.adtext, "save_text", lambda conn, pid, text, src: saved.update(pid=pid, src=src))
     text, kind = ingest._browser_text(None, {"id": 7, "url": "https://www.seek.com.au/job/1"}, "teaser", "teaser")

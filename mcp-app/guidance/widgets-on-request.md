@@ -1,1 +1,0 @@
-Never open a widget unless the person asks for it (for example "open the dashboard", "show the widget" or "show the view"); otherwise answer in text. If asked, call {{tool:open_dashboard}}. {{tool:review_submission}} also carries the Submit review view: it is the person's Submit boundary, so call it only when they ask to review or submit.

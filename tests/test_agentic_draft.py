@@ -182,7 +182,7 @@ def test_independent_reviewer_cannot_choose_its_own_passing_criteria(tmp_path):
 
 def test_real_deepagent_writer_reads_checks_then_submits(tmp_path, monkeypatch):
     import json
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     from pipeline.agentic import draft
     from pipeline.agentic.runtime import BatchBudget, JobBudget
     bundle = _bundle(tmp_path)

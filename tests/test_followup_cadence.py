@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from jobwatch.followups import FollowupHistory, FollowupPin, cadence
+from jobwatch.followup.tracking import FollowupHistory, FollowupPin, cadence
 
 TODAY = date(2026, 10, 11)
 

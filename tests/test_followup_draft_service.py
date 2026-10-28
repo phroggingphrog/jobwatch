@@ -1,5 +1,5 @@
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 from datetime import timedelta
 import json
 
@@ -10,8 +10,8 @@ from test_followup_draft import Writer, Reviewer
 from jobwatch import ledger
 from jobwatch.candidate.evidence import snapshot_evidence
 from jobwatch.config import Config, DEFAULT_CONFIG_DIR, DEFAULT_SETTINGS, _merge
-from jobwatch.followup_drafts import generate, load_draft
-from jobwatch.followup_events import application_cadence
+from jobwatch.followup.drafts import generate, load_draft
+from jobwatch.followup.events import application_cadence
 from pipeline.agentic.contracts import AgenticError
 
 

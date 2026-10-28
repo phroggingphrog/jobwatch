@@ -5,7 +5,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from jobwatch import cli, users
+from jobwatch import cli, run as pipeline, users
 from pipeline.agentic import discovery_ops, execution, incidents, service
 from pipeline.agentic.api import Principal, create_api
 from pipeline.agentic.api_store import APIStore
@@ -59,7 +59,7 @@ def test_active_discovery_cancellation_retains_posting_after_registry_closes(wor
 
 @pytest.mark.parametrize('command', ['read', 'run'])
 def test_cli_outer_exception_marks_registry_failed(world, monkeypatch, command):
-    from jobwatch import expiry, pipeline, profile_check
+    from jobwatch import expiry, run as pipeline, profile_check
     config, _ = world
     monkeypatch.setattr(cli, 'load_config', lambda *a: config)
     monkeypatch.setattr(cli, '_extensions', lambda: [])

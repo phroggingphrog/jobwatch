@@ -1,5 +1,5 @@
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -26,7 +26,7 @@ def draft_client(tmp_path,monkeypatch):
         base_url = model_choice.SERVER_URL
         def chat_once(self,model,*args,**kwargs):
             return (writer if model=='claude/sonnet' else reviewer).chat_once(model,*args,**kwargs)
-    monkeypatch.setattr('jobwatch.followup_drafts.configured_llm',lambda _:Combo())
+    monkeypatch.setattr('jobwatch.followup.drafts.configured_llm',lambda _:Combo())
     with TestClient(create_app(config),base_url='http://localhost',headers=OK) as client:
         client.pid=pid;client.writer=writer;client.profile=profile;client.config=config
         client.post(f'/api/job/{pid}/status',json={'status':'applied'})
@@ -85,13 +85,13 @@ def test_invalid_profile_is_readiness_response_without_model_calls(draft_client,
 
 def test_owner_explicitly_retries_held_draft(draft_client,monkeypatch):
     c=draft_client;url=f'/applications/{c.pid}/followup-draft'
-    original=__import__('jobwatch.followup_drafts',fromlist=['configured_llm']).configured_llm
+    original=__import__('jobwatch.followup.drafts',fromlist=['configured_llm']).configured_llm
     class Failed:
         base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw):raise RuntimeError('private failure')
-    monkeypatch.setattr('jobwatch.followup_drafts.configured_llm',lambda _:Failed())
+    monkeypatch.setattr('jobwatch.followup.drafts.configured_llm',lambda _:Failed())
     assert 'Retry within remaining allowance' in c.post(url).text
-    monkeypatch.setattr('jobwatch.followup_drafts.configured_llm',original)
+    monkeypatch.setattr('jobwatch.followup.drafts.configured_llm',original)
     assert 'Draft held for verification' in c.post(url).text
     assert not c.writer.calls
     assert 'Draft ready for your review' in c.post(url,data={'retry':'true'}).text

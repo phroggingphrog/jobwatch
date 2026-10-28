@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass, field
 from urllib.parse import urlparse
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 from pipeline.agentic.runtime import RuntimeErrorSafe, _usage_total
 
 _CURRENT = contextvars.ContextVar('jobwatch_execution', default=None)

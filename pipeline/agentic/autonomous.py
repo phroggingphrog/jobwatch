@@ -25,11 +25,12 @@ from langsmith import tracing_context
 from pydantic import Field
 from typing import Literal
 
-from jobwatch import users, model_choice
+from jobwatch import users
+from jobwatch.util import model_choice as model_choice
 from jobwatch.candidate.assessment import EvidenceSelection, verify_candidate_citations
 from jobwatch.candidate.contracts import digest
 from jobwatch.candidate.evidence import bind_career_profile, career_profile_text, verify_evidence_snapshot
-from jobwatch.llm import SafeLLMError
+from jobwatch.util.llm import SafeLLMError
 from pipeline.agentic import execution
 from pipeline.agentic.chat_storage import ChatSaver
 from pipeline.agentic.contracts import (AgenticEvaluation, AgenticError, RequirementSet, SourceCitation,

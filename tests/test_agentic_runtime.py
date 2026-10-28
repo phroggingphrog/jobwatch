@@ -1,7 +1,7 @@
 """Behavioral tests for the bounded, model-selected runtime."""
 from __future__ import annotations
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 
 from pydantic import BaseModel, ConfigDict
 import pytest
@@ -132,7 +132,7 @@ def test_model_can_choose_different_tool_sequence():
 
 
 def test_429_opens_batch_circuit_and_no_credential_retry():
-    from jobwatch.llm import LLM, SafeLLMError
+    from jobwatch.util.llm import LLM, SafeLLMError
     calls = []
     llm = LLM(transport=lambda *args: calls.append(args) or (429, {"error": {"message": "secret"}}),
               keys=["synthetic-one", "synthetic-two"])
@@ -165,7 +165,7 @@ def test_transport_and_handler_exceptions_have_no_raw_context_or_private_payload
 
 
 def test_chat_once_without_explicit_test_key_never_loads_keyfiles():
-    from jobwatch.llm import LLM, SafeLLMError
+    from jobwatch.util.llm import LLM, SafeLLMError
     calls = []
     llm = LLM(transport=lambda *args: calls.append(args) or (200, {}), keys=None)
     with pytest.raises(SafeLLMError) as caught:
@@ -174,7 +174,7 @@ def test_chat_once_without_explicit_test_key_never_loads_keyfiles():
 
 
 def test_authentication_failure_does_not_retry_keys_or_leak_response():
-    from jobwatch.llm import LLM, SafeLLMError
+    from jobwatch.util.llm import LLM, SafeLLMError
     calls = []
     llm = LLM(transport=lambda *args: calls.append(args) or (401, {"error": {"message": "private"}}),
               keys=["fake-key-one", "fake-key-two"])
@@ -198,7 +198,7 @@ def test_gateway_failure_pauses_other_jobs_in_same_batch(code):
 
 def test_a_call_cut_off_by_the_run_clock_is_a_deadline_not_an_outage():
     import time
-    from jobwatch.llm import LLM, SafeLLMError
+    from jobwatch.util.llm import LLM, SafeLLMError
     def slow(url, headers, body, timeout):
         raise TimeoutError()
     llm = LLM(transport=slow, keys=['k'])

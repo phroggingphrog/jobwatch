@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 import yaml
 
-from jobwatch.openrouter_extras import _post, extras_settings
+from jobwatch.util.openrouter_extras import _post, extras_settings
 
 MATCH_AT = 0.8
 TEXT_TYPES = {"text", "email", "tel", "url", "textarea", "search", "number", "date", ""}

@@ -12,7 +12,8 @@ import os
 import threading
 from copy import deepcopy
 
-from jobwatch import model_choice, users
+from jobwatch.util import model_choice as model_choice
+from jobwatch import users
 from jobwatch.apply.paths import ensure_dir
 from jobwatch.config import load_config
 from pipeline.agentic import chat

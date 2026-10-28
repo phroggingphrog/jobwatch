@@ -122,7 +122,7 @@ def _model_versions():
 
 
 def input_manifest(conn, *, bundle, policy, cfg, structural, approved_profile=_UNSET):
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice
     verify_evidence_snapshot(bundle)
     approved = _approved(approved_profile)
     constraints, projection = _projection(approved)
@@ -296,7 +296,7 @@ def _store(conn, result, stable_key):
 def ensure_digest(conn, *, bundle, policy, cfg, structural, budget, llm, config=None, approved_profile=_UNSET):
     """Prepare native understanding once per binding, using the caller's paid budget."""
     from contextlib import closing
-    from jobwatch import adtext
+    from jobwatch.util import adtext
     from jobwatch.apply.paths import data_dir
     from pipeline.agentic.private_sqlite import connect
     args = dict(bundle=bundle, policy=policy, cfg=cfg, structural=structural, config=config,

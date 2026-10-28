@@ -15,8 +15,8 @@ from urllib.parse import quote_plus
 
 import feedparser
 
-from jobwatch.place import area_pattern, location_text
-from ..http import HttpError
+from jobwatch.util.place import area_pattern, location_text
+from jobwatch.util.http import HttpError
 from ..models import Posting, html_to_text, iso
 from .base import CollectorContext, rotate
 

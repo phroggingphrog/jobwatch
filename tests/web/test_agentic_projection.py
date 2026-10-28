@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from jobwatch import db
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from jobwatch.web import queries
 from jobwatch.web.app import create_app
 from pipeline.agentic.persistence import latest_result

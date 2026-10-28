@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from jobwatch import adtext
+from jobwatch.util import adtext as adtext
 from jobwatch import db as dbm
 from jobwatch.dedupe import ingest
 from jobwatch.models import Posting, html_to_text

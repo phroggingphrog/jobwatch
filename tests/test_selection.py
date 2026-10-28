@@ -64,7 +64,7 @@ def test_selected_only_execution_passes_expected_keys_and_stable_batch(frozen,mo
         return {'processed':0,'deferred':[]}
     monkeypatch.setattr('pipeline.agentic.service.agentic_batch_run',prepare)
     from types import SimpleNamespace
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     result = selection.execute(frozen.conn,frozen.config,row['id'],row['input_hash'],row['run_id'],
                                llm=SimpleNamespace(base_url=model_choice.SERVER_URL))
     assert calls[0][0] == data['posting_ids']
@@ -76,7 +76,7 @@ def test_selected_only_execution_passes_expected_keys_and_stable_batch(frozen,mo
 
 def test_recovery_accepts_its_own_progress_but_refuses_changed_ranking_context(frozen,monkeypatch):
     from types import SimpleNamespace
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     data=payload(frozen)
     row=selection.request(frozen.conn,frozen.config,**data,request_id='recover',actor='person')
     selection.dispatch_pending(frozen.conn,frozen.config)
@@ -94,7 +94,7 @@ def test_recovery_accepts_its_own_progress_but_refuses_changed_ranking_context(f
 
 def test_completed_selection_republishes_same_result_after_api_crash_without_preparing_again(frozen,monkeypatch):
     from types import SimpleNamespace
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     row=selection.request(frozen.conn,frozen.config,**payload(frozen),request_id='completion-crash',actor='person')
     selection.dispatch_pending(frozen.conn,frozen.config)
     row=selection.status(frozen.conn,row['id'])

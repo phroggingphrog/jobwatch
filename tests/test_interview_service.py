@@ -1,5 +1,5 @@
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 import json
 
 import pytest
@@ -9,8 +9,8 @@ from test_interview_prep import Writer, Reviewer, proposal
 from jobwatch import ledger
 from jobwatch.candidate.evidence import snapshot_evidence
 from jobwatch.config import Config, DEFAULT_CONFIG_DIR, DEFAULT_SETTINGS, _merge
-from jobwatch.interview_inputs import InterviewInputs, save_inputs
-from jobwatch.interview_prep import generate, load_report
+from jobwatch.interview.inputs import InterviewInputs, save_inputs
+from jobwatch.interview.prep import generate, load_report
 
 AD='Reconcile accounts using SQL. '+('Assist the accounting team with accurate ledgers. '*30)
 
@@ -105,10 +105,10 @@ def test_late_worker_cannot_settle_or_publish_after_takeover(world):
 
 
 def test_auto_trigger_requires_interview_current_evaluation_and_no_attempt(world,monkeypatch):
-    from jobwatch.interview_prep import should_prepare_after_interview
+    from jobwatch.interview.prep import should_prepare_after_interview
     conn,bundle,config=world
     context={'application':{'status':'interview'},'evaluation':{'global_score':4.0}}
-    monkeypatch.setattr('jobwatch.interview_prep.capture',lambda *a:(context,AD,'a'*64))
+    monkeypatch.setattr('jobwatch.interview.prep.capture',lambda *a:(context,AD,'a'*64))
     assert should_prepare_after_interview(conn,1,config)
     context['evaluation']['global_score']=3.9
     assert should_prepare_after_interview(conn,1,config)  # career score cannot veto the person's interview transition
@@ -120,7 +120,7 @@ def test_auto_trigger_requires_interview_current_evaluation_and_no_attempt(world
 
 
 def test_missing_evaluation_does_not_start_automatic_work(world):
-    from jobwatch.interview_prep import should_prepare_after_interview
+    from jobwatch.interview.prep import should_prepare_after_interview
     conn,bundle,config=world
     assert not should_prepare_after_interview(conn,1,config)
 
@@ -133,7 +133,7 @@ def test_stricter_batch_limit_prevents_dispatch(world):
 
 
 def test_queued_request_is_durable_and_only_undispatched_work_recovers(world):
-    from jobwatch.interview_prep import enqueue,queued_posting_ids,is_queued
+    from jobwatch.interview.prep import enqueue, queued_posting_ids, is_queued
     conn,bundle,config=world
     assert enqueue(conn,1,config) and is_queued(conn,1,config)
     before=ledger.snapshot(conn);ledger.reindex(conn)
@@ -145,7 +145,7 @@ def test_queued_request_is_durable_and_only_undispatched_work_recovers(world):
 
 
 def test_source_change_before_worker_never_dispatches_unrequested_snapshot(world):
-    from jobwatch.interview_prep import enqueue,queued_posting_ids
+    from jobwatch.interview.prep import enqueue, queued_posting_ids
     conn,bundle,config=world
     enqueue(conn,1,config)
     save_inputs(conn,1,InterviewInputs(invite='Changed before dispatch'),expected_revision=0)
@@ -156,12 +156,12 @@ def test_source_change_before_worker_never_dispatches_unrequested_snapshot(world
 
 
 def test_committed_interview_transition_is_recovered_without_repeating_after_input_change(world,monkeypatch):
-    from jobwatch.interview_prep import queued_posting_ids
+    from jobwatch.interview.prep import queued_posting_ids
     conn,bundle,config=world
     ledger.upsert(conn,'applications','applications',{'posting_id':1,'status':'interview','created_at':'2026-10-11','updated_at':'2026-10-11'})
     context={'application':{'status':'interview','interview_event_id':7},'evaluation':{'global_score':4.0}}
     identity=['a'*64]
-    monkeypatch.setattr('jobwatch.interview_prep.capture',lambda *a:(context,AD,identity[0]))
+    monkeypatch.setattr('jobwatch.interview.prep.capture',lambda *a:(context,AD,identity[0]))
     assert queued_posting_ids(conn,config)==(1,)
     row=conn.execute('select * from interview_runs').fetchone()
     value=json.loads(row['detail_json']);assert value['trigger_event_id']==7
