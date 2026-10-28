@@ -51,7 +51,6 @@ No further paid attempt or argument normalization was performed. Tasks 4.2–5.4
 remain blocked; the original change's acceptance/release boxes remain open.
 Live remains `9111a0d`, reader scheduling paused and collect-only timers active.
 
-
 ### Contract follow-up at 81fd5d2
 
 The custom-combo attempt at `4a6e4fb` failed canonical payload validation after
@@ -66,3 +65,21 @@ zero digest/embedding operations and reconciled ledger. Both native responses
 omitted facts/location_fit/legitimacy despite their required schema and delivered
 correction. The incident is retained. Tasks 4.1–5.4 remain open. Full release
 suite was stopped after acceptance failed; no full-pass claim, merge or deployment.
+
+### Split extraction repair (2026-10-28 session)
+
+Offline repair in worktree `feat/autonomous-evaluation-slice`: native Evaluation
+now exposes `complete_requirement_set`, `complete_ad_facts`, and optional
+one-shot `complete_requirements`, with targeted feedback for each step
+(`autonomous-screen-evaluate-v5`). Prescreen ENGINE_VERSION 3 location-parent
+fix remains in source. Focused verification: `pytest`
+`tests/test_autonomous_evaluation.py`,
+`tests/test_native_completion_contract.py`, `tests/test_prescreen.py` — 110 passed
+in 85.69s (synthetic only).
+
+**Deployment gate:** deployed checkout `~/apps/jobwatch-native` is `7de59ab` with
+a 282-line legacy `autonomous.py`; acceptance source lives on the worktree branch
+(716-line graph). Tasks 4.1–5.4 stay blocked until that branch is reconciled
+into the live service path and the agent is restarted on the reviewed revision.
+Reader timer remains masked/inactive; no paid provider acceptance was run in this
+session after the repair.

@@ -14,7 +14,7 @@ def test_dimension_error_identifies_dimensions_and_advertises_required_keys(tmp_
     choices = native_choices(roles)
     bad = copy.deepcopy(choices[-1])
     bad['arguments']['dimensions']['wrong_name'] = bad['arguments']['dimensions'].pop('cv_match')
-    llm, seen = transport([*choices[:2], bad, choices[-1]])
+    llm, seen = transport([*choices[:3], bad, choices[-1]])
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
             screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
@@ -34,13 +34,24 @@ def test_primary_evidence_progress_identifies_unseen_records(tmp_path):
     assert len(bundle.items) >= 2
     choices = native_choices(roles)
     extra = {'tool': 'read_candidate_evidence', 'arguments': {'evidence_ids': [i.id for i in bundle.items]}}
-    llm, seen = transport([*choices[:2], extra, choices[-1]])
+    llm, seen = transport([choices[0], choices[1], choices[2], extra, choices[-1]])
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
             screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
     assert result.matches
-    outputs = [json.loads(m['content']) for m in seen[-1]['messages'] if m['role'] == 'tool']
-    first = outputs[1]['evidence_progress'];last = outputs[2]['evidence_progress']
+    progress = []
+    for body in seen:
+        for message in body['messages']:
+            if message['role'] != 'tool' or not isinstance(message.get('content'), str):
+                continue
+            try:
+                payload = json.loads(message['content'])
+            except ValueError:
+                continue
+            if isinstance(payload, dict) and 'evidence_progress' in payload:
+                progress.append(payload['evidence_progress'])
+    first = progress[0]
+    last = progress[-1]
     assert first['remaining_evidence_ids'] and first['all_primary_evidence_returned'] is False
     assert last['remaining_evidence_ids'] == [] and last['all_primary_evidence_returned'] is True
     assert last['returned'] == last['total'] == len(bundle.items)
@@ -51,7 +62,7 @@ def test_essential_gap_reports_both_missing_risk_fields_without_rewriting_matche
     choices = native_choices(roles)
     bad = copy.deepcopy(choices[-1])
     bad['arguments']['matches'][0].update(risk='', mitigation='')
-    llm, seen = transport([*choices[:2], bad, choices[-1]])
+    llm, seen = transport([*choices[:3], bad, choices[-1]])
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
             screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
