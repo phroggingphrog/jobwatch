@@ -56,11 +56,10 @@ this vanilla-client direction.
    reasoning router, budgets and Qwen embedding route. Disable hosted tracing.
    Development `cross-model.json` is not runtime model configuration.
 4. Keep separate read/run and human-action credentials. Enable
-   `JOBWATCH_LIBRECHAT_ENABLED=true`, `JOBWATCH_MCP_APP_ENABLED=true` and
-   `JOBWATCH_NATIVE_BROWSER_ENABLED=true`. Set `JOBWATCH_AGENT_PUBLIC_URL`
-   to the existing HTTPS Jobwatch origin and `JOBWATCH_APP_ORIGIN` to LibreChat's
-   HTTPS origin. Bind the native API and MCP app to loopback (18914/18918 by
-   default); containers can use private authenticated bridge forwards.
+   `JOBWATCH_LIBRECHAT_ENABLED=true`, the historical `JOBWATCH_MCP_APP_ENABLED=true` compatibility gate for protected native client controls, and `JOBWATCH_NATIVE_BROWSER_ENABLED=true`.
+   Set `JOBWATCH_AGENT_PUBLIC_URL` to the existing HTTPS Jobwatch origin and
+   `JOBWATCH_APP_ORIGIN` to LibreChat's HTTPS origin. Bind the native API to
+   loopback; containers can use private authenticated bridge forwards.
 5. Generate `JOBWATCH_LIBRECHAT_IDENTITY_KEY` server-side and configure the same
    secret in Jobwatch and LibreChat's private environment. Pin
    `JOBWATCH_LIBRECHAT_OWNER_SUBJECT` to the existing owner's authenticated
@@ -68,13 +67,11 @@ this vanilla-client direction.
    provisioned atomically as separate people. Users never enter or share
    Jobwatch keys. Credentials remain encrypted/server-side; model and client
    text cannot select a person or grant human authority.
-6. Deploy the backend/browser owner before enabling automatic cards. The optional
-   `jobwatch-mcp-app` process uses the same checkout, identity mapping and native
-   runtime (`JOBWATCH_NATIVE_URL=http://127.0.0.1:18914`). Configure the website's
+6. Deploy the backend/browser owner and configure the website's
    `JOBWATCH_NATIVE_BROWSER_URL` to use the shared loopback owner. The website
    remains independently usable; do not require its pages for chat workflows.
 7. Merge [librechat.yaml](librechat.yaml) into the existing configuration of a
-   LibreChat build supporting Jobwatch account enrollment and automatic MCP Apps.
+   LibreChat build supporting Jobwatch account enrollment.
    Replace example URLs/bridge addresses. `JOBWATCH_AGENT_BASE_URL` includes
    `/v1`; `jobwatch.baseUrl` names the native root without `/v1`.
    `apiKey: user_provided` is the endpoint's storage mode: authenticated server
@@ -154,8 +151,7 @@ retried automatically.
 
 Record the actual checks for each release; source tests alone do not prove a
 public deployment. The 2026-10-23 backend release passed 3830 tests with 10 skips.
-Public authenticated checks observed two isolated accounts, automatic cards,
-upload/parse/profile confirmation, model changes and native approval handling.
+Public authenticated checks observed two isolated accounts, native upload/parse/profile confirmation, model changes and native approval handling.
 The original screenshot's loading timeout was not reproduced.
 
 **Full public application acceptance remains incomplete.** The controlled

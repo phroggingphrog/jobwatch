@@ -835,7 +835,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
     mcp = load_mcp_tools(person, config)
     permissions = [FilesystemPermission(operations=['write'], paths=['/skills/**'], mode='deny')]
     boundary = _PrivateBoundary(person)
-    from pipeline.agentic.genui import guidance as genui_guidance
+    from pipeline.agentic.presentation import guidance as presentation_guidance
     attachment_context = ('\nThe server received these document uploads for this conversation: '
         + json.dumps(upload_ids) + '. Use these upload_ids with profile_start for profile intake. '
         'The upload references are not profile facts, human answers or approval.\n') if upload_ids else ''
@@ -844,7 +844,7 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             + json.dumps(attachment_receipts) + '. All originals were received and saved privately. '
             'Only readable files with upload_ids can be passed to profile_start. '
             'For unreadable files, explain the limitation without claiming the upload failed.\n')
-    return create_deep_agent(model=model, system_prompt=SYSTEM + genui_guidance() + attachment_context,
+    return create_deep_agent(model=model, system_prompt=SYSTEM + presentation_guidance() + attachment_context,
         backend=backend, store=store,
         checkpointer=saver, skills=['/skills/'], memory=['/memories/AGENTS.md'],
         permissions=permissions, middleware=[TodoListMiddleware(), boundary,

@@ -25,6 +25,7 @@ def auth(key=HUMAN):
 @pytest.fixture
 def native(tmp_path,monkeypatch,manager,submission_site):
     monkeypatch.setenv('JOBWATCH_LIBRECHAT_ENABLED','true')
+    monkeypatch.setenv('JOBWATCH_NATIVE_BROWSER_ENABLED','true')
     monkeypatch.setenv('JOBWATCH_MCP_APP_ENABLED','true')
     monkeypatch.setenv('JOBWATCH_APP_ORIGIN','https://chat.example.test')
     manager.data_root=None
@@ -133,7 +134,7 @@ def test_accounts_and_expired_browser_grants_are_isolated(native,monkeypatch):
 
 def test_website_adapter_uses_shared_native_session_not_pages(native,monkeypatch):
     client,manager,_,prepared=native
-    from jobwatch.apply.browser_remote import RemoteBrowserSessions,RemoteBrowserService
+    from jobwatch.apply.browser_remote import RemoteBrowserSessions, RemoteBrowserService
     import requests
     monkeypatch.setenv('JOBWATCH_NATIVE_BROWSER_URL','http://127.0.0.1:18914')
     monkeypatch.setenv('JOBWATCH_AGENT_TOKEN',CHAT)
@@ -207,3 +208,43 @@ def test_browser_capability_refuses_a_wrong_or_stale_digest_and_presses_nothing(
     assert refused.status_code==409,refused.text
     manager.with_page('1',lambda page:page.wait_for_timeout(300))
     assert seen==[('GET','/')]
+
+
+def test_client_upload_exact_bytes_scope_replay_and_native_cap(native):
+    client=native[0]
+    data=b'Synthetic fixture evidence.\n'*7000  # exceeds the normal API JSON cap
+    spec={'filename':'synthetic.txt','kind':'evidence','sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
+    path='/api/agent/client/upload-ticket'
+    assert client.post(path,headers=auth(CHAT),json=spec).status_code==403
+    cap=client.post(path,headers=auth(),json=spec).json()
+    headers={'Authorization':'JobwatchUpload '+cap['ticket'],'Origin':'null','Content-Type':'application/octet-stream'}
+    assert client.post('/api/agent/client/upload',headers=headers,content=data+b'x').status_code==409
+    response=client.post('/api/agent/client/upload',headers=headers,content=data)
+    assert response.status_code==201
+    assert response.headers['access-control-allow-origin']=='null'
+    assert response.json()['sha256']==spec['sha256']
+    assert client.post('/api/agent/client/upload',headers=headers,content=data).status_code==401
+    assert client.post('/api/agent/client/upload',content=data).status_code==401
+    assert 'access-control-allow-origin' not in client.get('/api/agent/client/models',headers=auth(CHAT)).headers
+    assert client.options('/api/agent/client/upload',headers={'Origin':'https://evil.example'}).status_code==403
+    assert client.options('/api/agent/client/upload',headers={'Origin':'null'}).status_code==200
+    assert client.post(path,headers=auth(),json={**spec,'bytes':10*1024*1024+1}).status_code==422
+    # An expired capability is never accepted, even before body buffering.
+    cap=client.post(path,headers=auth(),json=spec).json()
+    from pipeline.agentic.client_api import _db
+    with _db() as conn:conn.execute('UPDATE tickets SET expires=?',(time.time()-1,))
+    assert client.post('/api/agent/client/upload',headers={**headers,'Authorization':'JobwatchUpload '+cap['ticket']},content=data).status_code==401
+
+
+def test_client_simple_upload_binds_ticket_and_accepts_native_ten_mib(native):
+    client=native[0]
+    data=b'synthetic text\n'+b' '*(10*1024*1024-15)
+    assert len(data)==10*1024*1024
+    spec={'filename':'boundary.txt','kind':'cv','sha256':hashlib.sha256(data).hexdigest(),'bytes':len(data)}
+    cap=client.post('/api/agent/client/upload-ticket',headers=auth(),json=spec).json()
+    h={'Origin':'null','Content-Type':'text/plain'}
+    body=cap['ticket'].encode()+b'\n'+data
+    response=client.post('/api/agent/client/upload',headers=h,content=body)
+    assert response.status_code==201 and response.json()['sha256']==spec['sha256']
+    assert client.post('/api/agent/client/upload',headers=h,content=body).status_code==401
+    assert client.post('/api/agent/client/upload',headers=h,content=b'bad\n'+data).status_code==401
