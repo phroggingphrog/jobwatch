@@ -14,7 +14,7 @@ from conftest import confirm_discovery, make_config
 from jobwatch.util import adtext as adtext
 from jobwatch import reader
 from jobwatch import db as dbm
-from jobwatch import pipeline
+from jobwatch import run as pipeline
 from jobwatch.collectors import jsonld_pages
 from jobwatch.dedupe import ingest
 from jobwatch.util.llm import LLM

@@ -241,7 +241,7 @@ def enabled(config) -> bool:
 
 
 def after_collect(conn, config, max_seconds: float | None = None) -> dict:
-    """Timer hook (jobwatch.pipeline.run): one graph run under the shared review lock, within the unit's time."""
+    """Timer hook (jobwatch.run.run): one graph run under the shared review lock, within the unit's time."""
     from jobwatch.util import adtext as adtext
     with adtext.review_lock(adtext.lock_path(config)) as got:
         if not got:

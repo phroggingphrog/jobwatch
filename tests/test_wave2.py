@@ -6,7 +6,7 @@ import pytest
 from conftest import FakeHttp, FakeResponse, fixture_json, fixture_text, make_config, make_ctx
 from jobwatch import cli
 from jobwatch import db as dbm
-from jobwatch import pipeline
+from jobwatch import run as pipeline
 from jobwatch.collectors import (ats_atlassian, ats_oracle, ats_phenom, ats_successfactors, careers_vic,
                                  jsonld_pages, rss)
 from jobwatch.filters import Rules

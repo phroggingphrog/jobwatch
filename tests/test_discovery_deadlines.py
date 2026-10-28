@@ -65,7 +65,7 @@ def test_paused_job_is_skipped_while_unrelated_job_is_attempted(world, monkeypat
 
 
 def test_collector_budget_does_not_invent_minimum_time(monkeypatch):
-    from jobwatch import pipeline
+    from jobwatch import run as pipeline
     monkeypatch.setattr(pipeline.time, 'monotonic', lambda: 1000.)
     assert pipeline.ai_budget(0.) == 0
 

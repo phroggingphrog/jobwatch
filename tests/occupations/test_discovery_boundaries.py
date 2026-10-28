@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from conftest import make_config
-from jobwatch import db, pipeline as collection, users
+from jobwatch import db, run as collection, users
 from jobwatch.candidate import intake
 from jobwatch.candidate.policy import build_policy
 from jobwatch.occupations import hypotheses, loaders

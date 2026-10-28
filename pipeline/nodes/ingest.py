@@ -1,6 +1,6 @@
 """Node 1: ingestion and deduplication. Plain code, no model.
 
-Collectors (jobwatch.pipeline.run) keep scraping and normalising postings into `postings`. This node admits every
+Collectors (jobwatch.run.run) keep scraping and normalising postings into `postings`. This node admits every
 posting still listed, in the person's own state / remote-Australia (filters.location_rule), with the WHOLE ad text
 (fetched here when the source allows it). No title word lists: what the job is gets judged by meaning in node 2-3.
 Same ad text as a job already in the pipeline -> archived as a duplicate (sha256 of the normalised text).

@@ -7,7 +7,7 @@ import pytest
 from conftest import make_config
 from jobwatch import collectors as registry
 from jobwatch import db as dbm
-from jobwatch import pipeline
+from jobwatch import run as pipeline
 from jobwatch.digest import gather, render
 from jobwatch.models import Posting
 

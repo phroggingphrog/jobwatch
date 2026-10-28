@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     rc = 0
     # People run one after another inside one unit: split its time over those who will actually run (a person
     # without a confirmed scope is skipped in ~0 s), so the whole run stays inside the unit's TimeoutStartSec.
-    from . import pipeline
+    from . import run as pipeline
     unit_seconds = pipeline.SLOW_UNIT_BUDGET_S if '--tier' in argv and argv[argv.index('--tier')+1] == 'slow' else pipeline.UNIT_BUDGET_S
     slow = '--tier' in argv and argv[argv.index('--tier')+1] == 'slow'
     invocation_deadline = time.time() + unit_seconds
@@ -180,7 +180,7 @@ def _main(argv: list[str], *, deadline=None) -> int:
         # 2026-10-19 owner: "make the reader read more ads per run". The collect runs leave the reader ~4 min, so it
         # read 2-5 ads and skipped ~17 each time; this run is the reader alone with the whole 13 min.
         from pipeline.agentic import service as agentic
-        from .pipeline import PEOPLE_SHARE, UNIT_BUDGET_S
+        from .run import PEOPLE_SHARE, UNIT_BUDGET_S
         conn = dbm.connect(config.db_path)
         from . import expiry
         from .profile_check import check as _check_profile
@@ -212,7 +212,7 @@ def _main(argv: list[str], *, deadline=None) -> int:
             conn.close()
         return 0
     if args.cmd == "run":
-        from .pipeline import run
+        from .run import run
         if args.dry_run:
             summary = run(config, args.tier, dry_run=True, only=args.only, limit=args.limit,
                 assess=False, deadline=deadline)
