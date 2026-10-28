@@ -19,7 +19,7 @@ FALLBACK_TIMEZONE = "Australia/Sydney"
 
 
 def _candidate() -> dict:
-    from .apply.render import _candidate as read
+    from ..apply.render import _candidate as read
     return read()
 
 
@@ -55,7 +55,7 @@ def area_pattern() -> re.Pattern | None:
 def person_timezone() -> ZoneInfo:
     name = str(_candidate().get("timezone") or "").strip()
     if not name:
-        from .config import load_config
+        from ..config import load_config
         name = str(load_config().settings.get("timezone") or "")
     try:
         return ZoneInfo(name or FALLBACK_TIMEZONE)

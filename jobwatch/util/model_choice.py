@@ -81,7 +81,7 @@ def check(model: str, role: str | None = None, user: str | None = None) -> str:
 # -- choices -----------------------------------------------------------------------------------
 def _from_config(role: str) -> str | None:
     try:
-        from .config import load_config
+        from ..config import load_config
         node = load_config().settings or {}
         for key in ROLES[role][1]:
             node = node.get(key) if isinstance(node, dict) else None
@@ -129,7 +129,7 @@ def gateway_profile(model: str, user: str | None = None) -> dict:
     out = dict(PROFILE_DEFAULT)
     sources = []
     try:
-        from .config import load_config
+        from ..config import load_config
         node = ((load_config().settings or {}).get("pipeline") or {}).get("agentic") or {}
         sources.append((node.get("model_profiles") or {}).get(model))
     except Exception:
