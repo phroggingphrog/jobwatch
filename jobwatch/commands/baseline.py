@@ -52,7 +52,7 @@ def handle(args):
 
 
 def _freeze(args):
-    from .config import load_config
+    from jobwatch.config import load_config
     from pipeline.agentic import baseline
     config = load_config(args.config_dir)
     conn = sqlite3.connect(f"file:{config.db_path}?mode=ro", uri=True)

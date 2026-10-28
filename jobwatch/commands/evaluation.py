@@ -16,7 +16,7 @@ def register(sub):
     cases.add_argument('--posting-id',type=int,action='append')
     label=actions.add_parser('label',help='record a genuine terminal human judgment')
     label.add_argument('baseline_id');label.add_argument('case_id')
-    from jobwatch.baseline_cli import _YES_NO_UNSURE,LABEL_HELP
+    from jobwatch.commands.baseline import _YES_NO_UNSURE,LABEL_HELP
     label.description=LABEL_HELP
     label.add_argument('--suitable',choices=list(_YES_NO_UNSURE))
     label.add_argument('--relevance',type=int)
@@ -71,7 +71,7 @@ def _handle(args):
             conn.close()
         print(json.dumps(dict(baseline_id=record.baseline_id,cases=len(record.case_ids)),sort_keys=True))
     elif action=='label':
-        from jobwatch.baseline_cli import _label
+        from jobwatch.commands.baseline import _label
         return _label(args)
     elif action=='split':
         value=eval_data.create_split(args.baseline_id,seed=args.seed)

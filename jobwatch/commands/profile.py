@@ -12,9 +12,9 @@ def register(sub):
 def handle(args):
     if getattr(args, "cmd", None) != "profile":
         return None
-    from . import users
-    from .candidate import intake
-    from .candidate.contracts import CandidateError
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    from jobwatch.candidate.contracts import CandidateError
     person = users.current()
     try:
         n = intake.adopt_existing(person, actor="person")      # running this command is the person's own act

@@ -27,9 +27,9 @@ def register(sub) -> None:
 def handle(args) -> int | None:
     if getattr(args, "cmd", None) != "review":
         return None
-    from . import db as dbm
-    from . import reader
-    from .config import load_config
+    from jobwatch import db as dbm
+    from jobwatch import reader
+    from jobwatch.config import load_config
     config = load_config(args.config_dir)
     conn = dbm.connect(config.db_path)
     if args.action == "stats":
@@ -43,7 +43,7 @@ def handle(args) -> int | None:
               f"{kinds.get('partial', 0)} from a cut text only (ad body not fetched)")
         return 0
     if args.action in ("run", "recall", "sort"):
-        from . import discovery_gate
+        from jobwatch import discovery_gate
         if not discovery_gate.allowed("review " + args.action):
             return 0
         return _locked(args, config, conn)
@@ -64,7 +64,7 @@ def _locked(args, config, conn) -> int:
             print(json.dumps(reader.sort_not_target(conn, config, limit=args.limit, printer=print)))
             return 0
         if args.action == "recall":
-            from . import recall
+            from jobwatch import recall
             print(json.dumps(recall.triage_new(conn, config, limit=args.limit if args.limit is not None else None,
                                                printer=print)))
             return 0
