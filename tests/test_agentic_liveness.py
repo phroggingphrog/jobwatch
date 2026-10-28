@@ -1,6 +1,6 @@
 from datetime import datetime,timezone
 import pytest
-from jobwatch.interview_ad import InterviewAd,InterviewAdUnavailable
+from jobwatch.interview.ad import InterviewAd, InterviewAdUnavailable
 from pipeline.agentic.liveness import observe_posting,PostingObservation
 from pydantic import ValidationError
 

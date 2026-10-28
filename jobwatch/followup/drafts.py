@@ -7,11 +7,12 @@ import math
 import time
 import uuid
 
-from jobwatch import adtext, ledger
+from jobwatch.util import adtext as adtext
+from jobwatch import ledger
 from jobwatch.apply.paths import profile_dir
 from jobwatch.candidate.contracts import digest
 from jobwatch.candidate.evidence import snapshot_evidence, verify_evidence_snapshot
-from jobwatch.followup_events import application_cadence, history, _events, FollowupEventError
+from jobwatch.followup.events import application_cadence, history, _events, FollowupEventError
 from pipeline.agentic.contracts import AgenticError, parse_budget_checkpoint_json
 from pipeline.agentic.followup import (CRITERIA, FollowupDraft, compose_followup, snapshot_hash, validate_proposal)
 from pipeline.agentic.runtime import BatchBudget, JobBudget, validate_model_payload

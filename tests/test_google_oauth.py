@@ -4,7 +4,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from jobwatch import google_oauth as g
+from jobwatch.google import oauth as g
 from jobwatch import users
 
 

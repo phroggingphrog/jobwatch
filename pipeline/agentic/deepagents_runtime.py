@@ -27,8 +27,8 @@ from langgraph.errors import GraphRecursionError
 from langsmith import tracing_context
 from pydantic import BaseModel, Field
 
-from jobwatch import model_choice
-from jobwatch.llm import BASE_URL, LLM, SafeLLMError
+from jobwatch.util import model_choice as model_choice
+from jobwatch.util.llm import BASE_URL, LLM, SafeLLMError
 from pipeline.agentic import execution as invocation
 from pipeline.agentic.gateway import messages_for_gateway as _messages_for_gateway, call as gateway_call
 from pipeline.agentic.runtime import (MAX_ROLE_TURNS, JobBudget, RoleResult, RoleSpec,

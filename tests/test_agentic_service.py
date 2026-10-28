@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from conftest import confirm_discovery, make_config
-from jobwatch import adtext, db, ledger
+from jobwatch.util import adtext as adtext
+from jobwatch import db, ledger
 from jobwatch.candidate.evidence import snapshot_evidence
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic.contracts import RequirementSet
 from pipeline.agentic.persistence import PersistenceAdapter, latest_result
 from pipeline.agentic.review import REQUIRED_CRITERIA
@@ -162,7 +163,8 @@ def test_native_api_prepares_existing_pipeline_package(world, monkeypatch, embed
     """Authenticated HTTP -> real graph -> existing pipeline -> verified PDF download."""
     import time
     from fastapi.testclient import TestClient
-    from jobwatch import users, model_choice
+    from jobwatch import users
+    from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.api import create_api, Principal
     from pipeline.agentic.liveness import PostingObservation
     from jobwatch.candidate.contracts import content_hash
@@ -464,7 +466,7 @@ def test_manual_draft_uses_selected_runtime_and_flag_off_keeps_legacy_gate(world
 
 
 def test_gateway_credential_selection_is_explicit_and_never_falls_back(world, monkeypatch):
-    from jobwatch import llm
+    from jobwatch.util import llm as llm
     from pipeline.agentic import service
     _, config, _, _ = world
     monkeypatch.setattr(llm, 'load_keys', lambda: ['synthetic-first', 'synthetic-second'])
@@ -695,7 +697,7 @@ def test_real_deepagents_research_checkpoints_on_file_database(world, monkeypatc
 
 def _chat_llm(script):
     """Conversation-only gateway: replies come from `script`, one per supervisor call."""
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     replies, seen = iter(script), []
     def transport(url, headers, body, timeout):
         assert body['messages'][-1]['content'].startswith('Allowed tool schemas: ')
@@ -707,7 +709,8 @@ def _chat_llm(script):
 @pytest.mark.parametrize('call', [{'tool': 'assess_job', 'arguments': {}},
                                   {'tool': 'draft_followup', 'arguments': {'application_id': 999}}])
 def test_gated_call_with_unbindable_args_does_not_brick_the_thread(world, monkeypatch, call):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic.chat import dispatch
     conn, config, bundle, add = world
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'openai/sol')
@@ -721,7 +724,8 @@ def test_gated_call_with_unbindable_args_does_not_brick_the_thread(world, monkey
 
 
 def test_pending_approval_that_became_unbindable_is_refused_on_the_next_message(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic import chat
     from pipeline.agentic.contracts import AgenticError
     conn, config, bundle, add = world
@@ -741,7 +745,8 @@ def test_pending_approval_that_became_unbindable_is_refused_on_the_next_message(
 
 
 def test_model_that_keeps_emitting_unbindable_calls_fails_the_turn_after_three_refusals(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic.chat import dispatch
     from pipeline.agentic.runtime import RuntimeErrorSafe
     conn, config, bundle, add = world
@@ -754,7 +759,8 @@ def test_model_that_keeps_emitting_unbindable_calls_fails_the_turn_after_three_r
 
 
 def test_human_decision_on_an_approval_that_became_unbindable_is_refused(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic import chat
     from pipeline.agentic.contracts import AgenticError
     from pipeline.agentic.runtime import RuntimeErrorSafe
@@ -776,7 +782,8 @@ def test_human_decision_on_an_approval_that_became_unbindable_is_refused(world, 
 
 def test_transient_profile_error_does_not_refuse_a_valid_pending_approval(world, monkeypatch):
     """A profile/evidence read failure is not 'invalid arguments': the approval stays pending for the human."""
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate.contracts import CandidateError
     from pipeline.agentic import chat
     conn, config, bundle, add = world
@@ -800,7 +807,9 @@ def test_transient_profile_error_does_not_refuse_a_valid_pending_approval(world,
 
 def test_approved_auxiliary_call_with_extra_model_args_still_runs(world, monkeypatch):
     """The approval hashes the model's full args; the execution-time check must use those same args."""
-    from jobwatch import model_choice, users, interview_prep
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
+    from jobwatch.interview import prep as interview_prep
     from pipeline.agentic import chat
     conn, config, bundle, add = world
     add(42)
@@ -917,7 +926,8 @@ def _ready_fill(conn, monkeypatch, posting_id, **change):
 
 
 def test_an_approved_chat_submit_queues_exactly_the_reviewed_fill(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.apply import submit_confirm as sc
     from pipeline.agentic import chat
     conn, config, bundle, add = world
@@ -939,7 +949,8 @@ def test_an_approved_chat_submit_queues_exactly_the_reviewed_fill(world, monkeyp
 
 
 def test_ad_text_claiming_approval_still_needs_the_owner_and_an_approval_replays_once(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic import chat
     conn, config, bundle, add = world
     add(42)
@@ -960,7 +971,8 @@ def test_ad_text_claiming_approval_still_needs_the_owner_and_an_approval_replays
 
 
 def test_a_chat_submit_whose_fill_changed_after_the_request_is_refused(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic import chat
     from pipeline.agentic.runtime import RuntimeErrorSafe
     conn, config, bundle, add = world
@@ -981,7 +993,8 @@ def test_a_chat_submit_whose_fill_changed_after_the_request_is_refused(world, mo
 
 
 def test_a_chat_submit_without_a_reviewed_fill_is_refused_not_offered(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic import chat
     conn, config, bundle, add = world
     add(42)
@@ -1183,7 +1196,7 @@ REREAD_PARSE = {'facts': [*ONBOARD_PARSE['facts'],
 
 def _onboarding_llm(script):
     """Chat replies come from `script`; the profile parse (a different prompt) gets ONBOARD_PARSE. Never blocks."""
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     replies, seen = iter(script), []
     def transport(url, headers, body, timeout):
         if body['messages'][-1]['content'].startswith('Allowed tool schemas: '):
@@ -1221,7 +1234,8 @@ def _settled(person, pid, timeout=10):
 def onboarding(world, monkeypatch):
     """A person with no approved profile, one draft whose career focus the person has stated."""
     import time
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate import intake
     conn, config, bundle, add = world
     person = 'onboarder'
@@ -1534,7 +1548,8 @@ def test_profile_confirm_for_an_unknown_draft_is_refused_not_offered(onboarding)
 
 
 def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     conn, config, bundle, add = world
@@ -1569,7 +1584,8 @@ def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkey
 
 
 def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     conn, config, bundle, add = world
@@ -1589,7 +1605,8 @@ def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkey
 
 def test_profile_reread_keeps_answers_and_adds_document_facts(onboarding):
     """A failed read is fixed in the same draft: the person's answers stay and the documents are read into it again."""
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     person, prop, config = onboarding
@@ -1760,7 +1777,8 @@ def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):
 
 
 def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, monkeypatch):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     conn, config, bundle, add = world
@@ -1801,7 +1819,8 @@ def test_the_agent_api_refuses_to_bind_a_non_loopback_address(monkeypatch):
 
 
 def _typed_reply_setup(world, monkeypatch, script, thread):
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from pipeline.agentic import chat
     conn, config, bundle, add = world
     add(42)

@@ -13,8 +13,8 @@ import re
 from uuid import uuid4
 
 from jobwatch import ledger
-from jobwatch.interview_ad import InterviewAd, MAX_AD_CHARS, ats_target
-from jobwatch.interview_inputs import InterviewInputs
+from jobwatch.interview.ad import InterviewAd, MAX_AD_CHARS, ats_target
+from jobwatch.interview.inputs import InterviewInputs
 from jobwatch.models import canonical_url
 from pipeline.agentic.contracts import AgenticError
 

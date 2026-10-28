@@ -1,5 +1,5 @@
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 from jobwatch.settings import DEFAULT_MODEL
 import json
 from types import SimpleNamespace

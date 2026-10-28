@@ -4,7 +4,8 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from jobwatch import model_choice, users
+from jobwatch.util import model_choice as model_choice
+from jobwatch import users
 from jobwatch.candidate import intake
 from pipeline.agentic import chatgpt_connector, connector_http, connector_onboarding
 from tests.test_profile_api import CV, FakeLLM

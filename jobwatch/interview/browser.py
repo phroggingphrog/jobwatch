@@ -8,9 +8,9 @@ import json
 import re
 from urllib.parse import parse_qsl, urljoin, urlsplit, urlunsplit
 
-from jobwatch.adtext import _FILLED, _WALL
-from jobwatch.place import person_timezone
-from jobwatch.interview_ad import InterviewAd, InterviewAdUnavailable, MAX_AD_CHARS, ats_target, structured_ad, _plain
+from jobwatch.util.adtext import _FILLED, _WALL
+from jobwatch.util.place import person_timezone
+from jobwatch.interview.ad import InterviewAd, InterviewAdUnavailable, MAX_AD_CHARS, ats_target, structured_ad, _plain
 from jobwatch.models import canonical_url
 from jobwatch.collectors.jsonld_pages import job_postings
 from pipeline.agentic.research import SafeFetcher, ResearchUnavailable, PublicHTTPStatus
@@ -349,7 +349,7 @@ def indeed_ad(url):
 def seek_ad(url):
     """Seek returns 403 to the browser's plain fetches but serves its job page to a Chrome TLS fingerprint
     (2026-10-20); the ad is in the page's SEEK_REDUX_DATA, the same parser the collectors use."""
-    from jobwatch.adtext import _http_get, _REDUX, parse_seek_page, last_status
+    from jobwatch.util.adtext import _http_get, _REDUX, parse_seek_page, last_status
     m=re.search(r'/job/(\d+)',urlsplit(url).path)
     if not m:raise InterviewAdUnavailable('interview_ad_unavailable')
     page_url=f'https://www.seek.com.au/job/{m[1]}'
@@ -380,7 +380,7 @@ def seek_ad(url):
 def jora_ad(url):
     """Jora's Cloudflare check blocks headless Chromium (net::ERR_FAILED) and plain HTTP (403), but lets a
     Chrome TLS fingerprint through; the ad is div#job-description-container on the job page itself."""
-    from jobwatch.adtext import _do_get, _host_ok, _inner_html, _JORA_BODY, _JORA_PATH
+    from jobwatch.util.adtext import _do_get, _host_ok, _inner_html, _JORA_BODY, _JORA_PATH
     parts=urlsplit(url)
     if not _host_ok(url,('jora.com',)) or not _JORA_PATH.match(parts.path):
         raise InterviewAdUnavailable('interview_ad_unavailable')

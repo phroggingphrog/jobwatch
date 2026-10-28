@@ -17,7 +17,7 @@ from langchain_core.runnables.config import var_child_runnable_config
 from langchain_core.tools import tool
 from pydantic import BaseModel, ConfigDict
 
-from jobwatch.llm import BASE_URL, LLM
+from jobwatch.util.llm import BASE_URL, LLM
 from pipeline.agentic import deepagents_runtime as runtime
 from pipeline.agentic.contracts import BudgetCheckpoint, RequirementSet, StrictFrozen
 from pipeline.agentic.runtime import (BatchBudget, JobBudget, RoleSpec, RuntimeErrorSafe,
@@ -69,7 +69,8 @@ def transport_llm(choices, *, usage=None):
 def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
     """One backend conversation through the real graph, with no network/live data."""
     import sqlite3
-    from jobwatch import users, model_choice
+    from jobwatch import users
+    from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.chat import dispatch
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
@@ -118,7 +119,8 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize('message', ['Please use my attached CV.', ''])
 def test_chat_receives_owned_upload_references_without_changing_human_words(tmp_path, monkeypatch, message):
-    from jobwatch import users, model_choice
+    from jobwatch import users
+    from jobwatch.util import model_choice as model_choice
     from jobwatch.candidate import intake
     from pipeline.agentic.chat import dispatch
     from pipeline.agentic.execution import Execution
@@ -158,7 +160,8 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
     import sqlite3
     import time
     from fastapi.testclient import TestClient
-    from jobwatch import users, model_choice
+    from jobwatch import users
+    from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.api import create_api, Principal
     from pipeline.agentic.api_store import APIStore
     from pipeline.agentic.chat import skill_version
@@ -291,7 +294,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize('approval', [False, True])
 def test_recovery_requires_fresh_response_for_later_interrupt(tmp_path, monkeypatch, approval):
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.chat import dispatch
     from pipeline.agentic.execution import Execution
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
@@ -311,7 +314,7 @@ def test_recovery_requires_fresh_response_for_later_interrupt(tmp_path, monkeypa
 
 
 def test_recovery_before_first_checkpoint_on_existing_thread(tmp_path, monkeypatch):
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.chat import dispatch
     from pipeline.agentic.execution import Execution
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
@@ -354,7 +357,7 @@ def test_mcp_followup_approval_uses_application_identity():
 
 
 def test_chat_skill_files_are_read_only(tmp_path, monkeypatch):
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.chat import dispatch
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
@@ -778,7 +781,7 @@ def test_additional_roles_roundtrip_budget_checkpoint(name):
 
 
 def test_upstream_overload_503_waits_and_retries_same_call(monkeypatch):
-    import jobwatch.llm as L
+    import jobwatch.util.llm as L
     monkeypatch.setattr(L.time, 'sleep', lambda s: None)
     busy = (503, {'error': {'message': 'auth_unavailable: no auth available (last upstream error: server_is_overloaded)'}})
     llm, seen = transport_llm([busy, choice()]); b = budget()
@@ -787,7 +790,7 @@ def test_upstream_overload_503_waits_and_retries_same_call(monkeypatch):
 
 
 def test_upstream_overload_never_falls_back_to_claude(monkeypatch):  # owner 2026-10-19: no Claude subscription
-    import jobwatch.llm as L
+    import jobwatch.util.llm as L
     monkeypatch.setattr(L.time, 'sleep', lambda s: None)
     busy = (503, {'error': {'message': 'server_is_overloaded'}})
     models = []

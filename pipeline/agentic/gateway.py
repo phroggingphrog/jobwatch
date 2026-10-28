@@ -50,7 +50,7 @@ class PaidGatewayEmbeddings(Embeddings):
         return [vector for part in batches for vector in self._embed(part)]
 
     def _embed(self, texts):
-        from jobwatch.llm import SafeLLMError
+        from jobwatch.util.llm import SafeLLMError
         from pipeline.agentic.runtime import _usage_total
         execution.require_route(self.llm, self.model, embedding=True)
         self.budget.ensure_live()

@@ -19,8 +19,8 @@ from pathlib import Path
 
 from .. import ledger, onboarding
 from ..commands.state import SUBMITTED   # past the draft stages: a new draft never moves these back
-from ..llm import LLM
-from ..model_choice import get_model
+from jobwatch.util.llm import LLM
+from jobwatch.util.model_choice import get_model
 from . import render, review
 from .evidence import load_profile
 from .paths import drafts_dir, ensure_dir, safe_write_bytes, safe_write_text

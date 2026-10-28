@@ -7,7 +7,7 @@ available for full-ad retrieval even when their turn does not fit this run's cap
 """
 from __future__ import annotations
 
-from ..http import HttpError
+from jobwatch.util.http import HttpError
 from ..models import Posting, html_to_text, is_australian, iso, relative_posted, work_type_of
 from .base import CollectorContext, rotate, run_per_employer
 

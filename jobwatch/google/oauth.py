@@ -15,8 +15,8 @@ from urllib.parse import urlencode
 
 import requests
 
-from . import users
-from .settings import load as _load_settings
+from jobwatch import users
+from jobwatch.settings import load as _load_settings
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"

@@ -3,7 +3,7 @@ import pytest
 from tests.baseline_support import world, frozen
 from pipeline.agentic import service, decision_log
 from pipeline.agentic.persistence import latest_result
-from jobwatch import adtext
+from jobwatch.util import adtext as adtext
 
 
 def inputs(frozen,pid=42):

@@ -13,9 +13,9 @@ from .collectors.base import CollectorContext
 from .config import Config
 from .dedupe import ingest
 from .filters import Rules
-from .http import Fetcher
+from jobwatch.util.http import Fetcher
 from .models import canonical_url, now_utc, parse_date
-from .place import person_state
+from jobwatch.util.place import person_state
 
 log = logging.getLogger("jobwatch")
 

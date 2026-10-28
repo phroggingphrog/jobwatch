@@ -3,8 +3,8 @@ import json
 import time
 import pytest
 from datetime import datetime, timezone
-from jobwatch.interview_ad import InterviewAdUnavailable
-from jobwatch.interview_browser import PublicBrowserTransport,_snapshot_ad,acquire_ad,http_ad,browser_ad
+from jobwatch.interview.ad import InterviewAdUnavailable
+from jobwatch.interview.browser import PublicBrowserTransport, _snapshot_ad, acquire_ad, http_ad, browser_ad
 URL='https://employer.example/jobs/analyst'
 BODY='Analyse accounts using SQL and communicate accurate findings. '*400
 class Fetcher:
@@ -20,7 +20,7 @@ def snapshot(**kwargs):return dict(url=URL,title='Analyst',text=BODY,**kwargs)
 def test_saved_seek_job_reads_official_mirror_with_chrome_fetch(monkeypatch):
     # Seek 403s plain fetches and 308s to au.seek.com (2026-10-20): read the page with the Chrome-fingerprint fetcher.
     import json as _json
-    from jobwatch import adtext
+    from jobwatch.util import adtext as adtext
     saved = 'https://www.seek.com.au/job/95128443'
     actual = 'https://au.seek.com/job/95128443'
     redux = {"jobdetails": {"result": {"job": {"title": "Analyst", "content": "<p>" + BODY + "</p>",
@@ -45,7 +45,7 @@ def test_saved_seek_job_reads_official_mirror_with_chrome_fetch(monkeypatch):
     'http://www.seek.com.au/job/95128443',
 ])
 def test_seek_alias_scope_excludes_non_public_job_urls(url):
-    from jobwatch.interview_browser import public_posting_urls
+    from jobwatch.interview.browser import public_posting_urls
     from jobwatch.models import canonical_url
     assert public_posting_urls(url) == (canonical_url(url),)
 
@@ -280,7 +280,7 @@ def test_default_public_browser_bounds_required_large_ats_script(monkeypatch, sc
 
 def test_close_label_with_no_date_states_no_deadline():
     from datetime import datetime, timezone
-    from jobwatch.interview_browser import _closing_date
+    from jobwatch.interview.browser import _closing_date
     text = "Advertised:\n01 Sep 2026\nApplications close:\n← Back to search results\nApply now"
     # PageUp open-until-filled: no deadline at all, so no date is inferred however late it is read.
     for day in (12, 29, 31):
@@ -337,7 +337,7 @@ def test_pageup_redirect_for_a_gone_vacancy_is_closed(location,closed):
 # marked unreadable. Found by /qa on 2026-10-19 (posting 7535, careers.vic.gov.au).
 def test_closing_date_with_of_between_day_and_month():
     import pytest
-    from jobwatch.interview_browser import InterviewAdUnavailable, _closing_date
+    from jobwatch.interview.browser import InterviewAdUnavailable, _closing_date
     text = "Application close date: Wednesday 28th of October 2026\n"
     assert _closing_date(text, datetime(2026, 10, 19, tzinfo=timezone.utc)) is None     # still open
     with pytest.raises(InterviewAdUnavailable, match='interview_ad_closed'):            # the date was read
@@ -348,7 +348,7 @@ def test_closing_date_with_of_between_day_and_month():
 # ambiguous deadline, so the whole ad was marked unreadable (unimelb, posting 1718).
 def test_closing_date_with_time_and_melbourne_zone():
     import pytest
-    from jobwatch.interview_browser import InterviewAdUnavailable, _closing_date
+    from jobwatch.interview.browser import InterviewAdUnavailable, _closing_date
     text = "Applications close: Monday 26th October at 11:55 PM; Melbourne time zone.\nPosition Description:"
     _closing_date(text, datetime(2026, 10, 19, tzinfo=timezone.utc))  # still open: no exception
     with pytest.raises(InterviewAdUnavailable, match='interview_ad_closed'):
@@ -359,7 +359,7 @@ def test_closing_date_with_time_and_melbourne_zone():
 # so every such Jora ad stayed "couldn't read".
 def test_closing_date_with_trailing_slogan_jora():
     import pytest
-    from jobwatch.interview_browser import InterviewAdUnavailable, _closing_date
+    from jobwatch.interview.browser import InterviewAdUnavailable, _closing_date
     text = "Duties\nApplications close: 11th November 2026 - don’t miss out!\nFor further information please contact:"
     _closing_date(text, datetime(2026, 10, 19, tzinfo=timezone.utc))  # still open: no exception
     with pytest.raises(InterviewAdUnavailable, match='interview_ad_closed'):

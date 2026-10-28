@@ -276,7 +276,7 @@ def test_adapter_is_explicitly_enabled(monkeypatch):
 
 def test_top_selector_catalog_and_only_saved_model_is_accepted(client, monkeypatch):
     from pipeline.agentic import client_api
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     from jobwatch import users
     def catalog_for_person(person, config):
         assert users.current() == person
@@ -294,7 +294,7 @@ def test_top_selector_catalog_and_only_saved_model_is_accepted(client, monkeypat
 
 def test_model_snapshot_preserves_role_overrides_without_reloading_config(monkeypatch):
     from pipeline.agentic.client_api import configured_models
-    from jobwatch import model_choice
+    from jobwatch.util import model_choice as model_choice
     monkeypatch.setattr(model_choice, 'chosen', lambda person: {'writer': 'openai/luna'})
     monkeypatch.setattr(model_choice, '_from_config', lambda role: pytest.fail('configuration reloaded'))
     choices = configured_models('fixture-a', {'chat': {'model': 'openai/sol'},

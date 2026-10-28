@@ -152,8 +152,8 @@ def embed(texts: list[str], config=None) -> list[list[float]] | None:
     timeout = _timeout(cfg['timeout'] * 2)
     if timeout <= 0:
         return None
-    from jobwatch import model_choice
-    from jobwatch.llm import load_keys
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch.util.llm import load_keys
     keys = load_keys()
     if not keys:
         return None

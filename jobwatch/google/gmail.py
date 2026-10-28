@@ -8,7 +8,7 @@ from email.utils import getaddresses
 
 import requests
 
-from . import google_oauth
+from jobwatch.google import oauth as google_oauth
 
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
 

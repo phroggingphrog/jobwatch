@@ -30,14 +30,14 @@ _LOCALITY = re.compile(
 
 def _state() -> str | None:
     try:
-        from jobwatch.place import person_state
+        from jobwatch.util.place import person_state
         return person_state()
     except Exception:  # noqa: BLE001 - no profile: no area filter
         return None
 
 
 def _names_state(text: str, codes) -> bool:
-    from jobwatch.place import STATES
+    from jobwatch.util.place import STATES
     return any(re.search(rf'(?-i:\b{c}\b)', text) or re.search(rf'\b{STATES[c]}\b', text, re.I) for c in codes)
 
 
@@ -45,7 +45,7 @@ def _own_state_cited(quote: str, state: str | None) -> bool:
     """Non-VIC person: True when the text names their state, or when no state is known (no filter)."""
     if state is None:
         return True
-    from jobwatch.place import STATES
+    from jobwatch.util.place import STATES
     text = ' '.join((quote or '').split())
     if not _names_state(text, [state]):
         return False
@@ -215,7 +215,7 @@ def regions_named(text: str) -> frozenset[str]:
 
     Only when the text names no state does a Victorian place from the bundled data count as VIC, so a state
     named in the text always wins over place data ("Richmond NSW" is NSW, never VIC)."""
-    from jobwatch.place import STATES
+    from jobwatch.util.place import STATES
     text = _STREET_NAME.sub(' ', ' '.join((text or '').split()))
     found = {code for code, name in STATES.items()
              if re.search(rf'(?-i:\b{code}\b)', text) or re.search(rf'\b{re.escape(name)}\b', text, re.I)}
@@ -249,7 +249,7 @@ def _names_other_state(text: str) -> bool:
     Matches non-VIC state codes case-insensitively with optional dots ("nsw", "N.S.W.") and full state names,
     on top of regions_named. Ordinary words that equal a code ("act") also match: withholding a distance on
     ambiguous text is the accepted failure mode. regions_named itself stays case-sensitive."""
-    from jobwatch.place import STATES
+    from jobwatch.util.place import STATES
     text = ' '.join((text or '').split())
     if regions_named(text) - {'VIC'}:
         return True

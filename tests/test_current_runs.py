@@ -2,7 +2,7 @@
 import pytest
 from tests.test_agentic_service import SyntheticGateway
 from tests.baseline_support import world
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from jobwatch.candidate import intake
 from jobwatch.preferences import PreferenceError
 from pipeline.agentic import service

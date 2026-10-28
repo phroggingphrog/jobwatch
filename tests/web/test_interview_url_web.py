@@ -1,12 +1,12 @@
 from test_interview_web import prep_client
 from test_interview_service import AD
 from jobwatch import db
-from jobwatch.interview_ad import InterviewAd,InterviewAdUnavailable
+from jobwatch.interview.ad import InterviewAd, InterviewAdUnavailable
 
 
 def test_url_workflow_without_tracker_writes(prep_client,monkeypatch):
     c=prep_client
-    monkeypatch.setattr('jobwatch.interview_browser.acquire_ad',lambda url:InterviewAd(url,url,'Analyst','Example',AD,'2026-10-11T00:00:00+00:00','browser'))
+    monkeypatch.setattr('jobwatch.interview.browser.acquire_ad',lambda url:InterviewAd(url,url,'Analyst','Example',AD,'2026-10-11T00:00:00+00:00','browser'))
     before=db.connect(c.config.db_path);count=before.execute('SELECT count(*) FROM postings').fetchone()[0];before.close()
     page=c.post('/interview-prep/open',data={'url':'https://example.test/new'})
     assert page.status_code==200 and '/interview-prep/subjects/' in str(page.url)
@@ -29,9 +29,9 @@ def test_url_workflow_without_tracker_writes(prep_client,monkeypatch):
 
 def test_matching_report_precedes_network(prep_client,monkeypatch):
     c=prep_client
-    monkeypatch.setattr('jobwatch.interview_prep.matching_posting',lambda *a,**kw:c.pid)
+    monkeypatch.setattr('jobwatch.interview.prep.matching_posting',lambda *a,**kw:c.pid)
     def forbidden(*a,**kw):raise AssertionError('network must not run')
-    monkeypatch.setattr('jobwatch.interview_browser.acquire_ad',forbidden)
+    monkeypatch.setattr('jobwatch.interview.browser.acquire_ad',forbidden)
     page=c.post('/interview-prep/open',data={'url':'https://example.test/current'})
     assert str(page.url).endswith(f'/jobs/{c.pid}/interview-prep')
 
@@ -39,7 +39,7 @@ def test_matching_report_precedes_network(prep_client,monkeypatch):
 def test_closed_url_paste_recovery_and_origin(prep_client,monkeypatch):
     c=prep_client
     def closed(*a,**kw):raise InterviewAdUnavailable('interview_ad_closed')
-    monkeypatch.setattr('jobwatch.interview_browser.acquire_ad',closed)
+    monkeypatch.setattr('jobwatch.interview.browser.acquire_ad',closed)
     assert 'paste the full description' in c.post('/interview-prep/open',data={'url':'https://example.test/closed'}).text
     page=c.post('/interview-prep/open',data={'url':'https://example.test/closed','title':'Analyst','company':'Example','pasted_jd':AD})
     assert 'Saved description supplied by you' in page.text and not c.writer.calls

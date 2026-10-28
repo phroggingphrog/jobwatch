@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from . import model_choice
-from .settings import get as _setting
+from jobwatch.util import model_choice as model_choice
+from jobwatch.settings import get as _setting
 
 log = logging.getLogger(__name__)
 

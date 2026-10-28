@@ -1,5 +1,5 @@
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 from datetime import UTC, datetime
 
 import pytest
@@ -27,7 +27,7 @@ def prep_client(tmp_path, monkeypatch):
         base_url = model_choice.SERVER_URL
         def chat_once(self,model,*args,**kwargs):
             return (writer if model=='claude/sonnet' else reviewer).chat_once(model,*args,**kwargs)
-    monkeypatch.setattr('jobwatch.interview_prep.configured_llm',lambda _:Combo())
+    monkeypatch.setattr('jobwatch.interview.prep.configured_llm',lambda _:Combo())
     with TestClient(create_app(config),base_url='http://localhost',headers=OK) as client:
         client.pid=pid; client.writer=writer; client.profile=profile; client.config=config
         yield client
@@ -70,7 +70,7 @@ def test_private_readiness_and_not_found(prep_client):
 
 def test_held_requires_explicit_retry(prep_client,monkeypatch):
     c=prep_client; url=f'/jobs/{c.pid}/interview-prep'
-    import jobwatch.interview_prep as service
+    import jobwatch.interview.prep as service
     original=service.configured_llm
     class Failed:
         base_url = model_choice.SERVER_URL
@@ -88,7 +88,7 @@ def test_explicit_interview_status_checks_eligibility(prep_client,monkeypatch,pa
     def eligible(conn,pid,config):
         checks.append(conn.execute('SELECT status FROM applications WHERE posting_id=?',(pid,)).fetchone()[0])
         return True
-    monkeypatch.setattr('jobwatch.interview_prep.should_prepare_after_interview',eligible)
+    monkeypatch.setattr('jobwatch.interview.prep.should_prepare_after_interview',eligible)
     assert c.post(path.format(pid=c.pid),json={'status':'interview'}).status_code==200
     assert checks==['interview'] and len(c.writer.calls)==2
     c.post(path.format(pid=c.pid),json={'status':'interview'})
@@ -106,7 +106,7 @@ def test_owner_outcome_approval_queues_interview(prep_client,monkeypatch):
     def eligible(conn,pid,config):
         checks.append(conn.execute('SELECT status FROM applications WHERE posting_id=?',(pid,)).fetchone()[0])
         return True
-    monkeypatch.setattr('jobwatch.interview_prep.should_prepare_after_interview',eligible)
+    monkeypatch.setattr('jobwatch.interview.prep.should_prepare_after_interview',eligible)
     assert c.post(f'/api/inbox/{proposal_id}/approve').status_code==200
     assert checks==['interview'] and len(c.writer.calls)==2
 
@@ -123,7 +123,7 @@ def test_report_text_is_escaped_and_poll_is_fragment(prep_client,monkeypatch):
     page=c.post(url)
     assert '&lt;script&gt;example&lt;/script&gt;' in page.text
     assert '<script>example</script>' not in page.text
-    monkeypatch.setattr('jobwatch.interview_prep.load_report',lambda *a,**kw:{'status':'running','report':None})
+    monkeypatch.setattr('jobwatch.interview.prep.load_report',lambda *a,**kw:{'status':'running','report':None})
     poll=c.get(url,headers={'hx-request':'true'})
     assert 'hx-trigger="every 3s"' in poll.text and '<html' not in poll.text
 
@@ -142,11 +142,11 @@ def test_source_link_filter_only_public_https(prep_client):
 def test_interview_transition_saves_queue_before_dispatch(prep_client,monkeypatch):
     from fastapi import BackgroundTasks
     c=prep_client; scheduled=[]
-    monkeypatch.setattr('jobwatch.interview_prep.should_prepare_after_interview',lambda *a:True)
+    monkeypatch.setattr('jobwatch.interview.prep.should_prepare_after_interview',lambda *a:True)
     monkeypatch.setattr(BackgroundTasks,'add_task',lambda self,fn,*a,**kw:scheduled.append(fn))
     assert c.post(f'/api/job/{c.pid}/status',json={'status':'interview'}).status_code==200
     conn=db.connect(c.config.db_path)
-    from jobwatch.interview_prep import queued_posting_ids
+    from jobwatch.interview.prep import queued_posting_ids
     assert queued_posting_ids(conn,c.config)==(c.pid,)
     conn.close()
     assert len(scheduled)==1 and not c.writer.calls
@@ -155,7 +155,7 @@ def test_interview_transition_saves_queue_before_dispatch(prep_client,monkeypatc
 
 def test_startup_recovers_durable_queue_once(prep_client,monkeypatch):
     import threading
-    import jobwatch.interview_prep as service
+    import jobwatch.interview.prep as service
     c=prep_client; conn=db.connect(c.config.db_path)
     assert service.enqueue(conn,c.pid,c.config); conn.close()
     completed=threading.Event(); original=service.generate
@@ -173,7 +173,7 @@ def test_startup_recovers_durable_queue_once(prep_client,monkeypatch):
 
 def test_startup_recovers_a_friends_durable_queue_as_that_friend(prep_client,monkeypatch):
     import threading
-    import jobwatch.interview_prep as service
+    import jobwatch.interview.prep as service
     from jobwatch import users
     c=prep_client; done=threading.Event(); ran=[]
     with users.use('friend'):
@@ -192,7 +192,7 @@ def test_startup_recovers_a_friends_durable_queue_as_that_friend(prep_client,mon
 
 
 def test_startup_never_retries_held_unknown_dispatch(prep_client,monkeypatch):
-    import jobwatch.interview_prep as service
+    import jobwatch.interview.prep as service
     c=prep_client
     class Failed:
         base_url = model_choice.SERVER_URL
@@ -209,15 +209,15 @@ def test_queue_write_failure_is_private_unavailable(prep_client,monkeypatch):
     from pipeline.agentic.contracts import AgenticError
     c=prep_client
     def failed(*a,**kw): raise AgenticError('private_queue_failure')
-    monkeypatch.setattr('jobwatch.interview_prep.enqueue',failed)
+    monkeypatch.setattr('jobwatch.interview.prep.enqueue',failed)
     result=c.post(f'/jobs/{c.pid}/interview-prep')
     assert result.status_code==409 and 'private_queue_failure' not in result.text
     assert not c.writer.calls
 
 
 def test_worker_drains_new_owner_queued_snapshot(prep_client,monkeypatch):
-    import jobwatch.interview_prep as service
-    from jobwatch.interview_inputs import InterviewInputs, save_inputs
+    import jobwatch.interview.prep as service
+    from jobwatch.interview.inputs import InterviewInputs, save_inputs
     c=prep_client; original=service.generate; generated=[]
     def changed(conn,pid,config,**kwargs):
         generated.append(kwargs)
@@ -234,8 +234,8 @@ def test_worker_drains_new_owner_queued_snapshot(prep_client,monkeypatch):
 
 
 def test_worker_does_not_dispatch_unqueued_changed_source(prep_client,monkeypatch):
-    import jobwatch.interview_prep as service
-    from jobwatch.interview_inputs import InterviewInputs, save_inputs
+    import jobwatch.interview.prep as service
+    from jobwatch.interview.inputs import InterviewInputs, save_inputs
     c=prep_client; original=service.generate; calls=[]
     def changed_before_start(conn,pid,config,**kwargs):
         calls.append(kwargs)
@@ -249,8 +249,8 @@ def test_worker_does_not_dispatch_unqueued_changed_source(prep_client,monkeypatc
 
 
 def test_recovery_scan_cannot_enqueue_changed_sources(prep_client,monkeypatch):
-    import jobwatch.interview_prep as service
-    from jobwatch.interview_inputs import InterviewInputs, save_inputs
+    import jobwatch.interview.prep as service
+    from jobwatch.interview.inputs import InterviewInputs, save_inputs
     c=prep_client; conn=db.connect(c.config.db_path)
     assert service.enqueue(conn,c.pid,c.config);conn.close()
     original=service.queued_posting_ids
@@ -267,7 +267,7 @@ def test_recovery_scan_cannot_enqueue_changed_sources(prep_client,monkeypatch):
 
 
 def test_one_persons_active_interview_does_not_block_anothers_same_posting_id(prep_client,monkeypatch):
-    import jobwatch.interview_prep as service
+    import jobwatch.interview.prep as service
     from jobwatch import users
     from jobwatch.web.auth_routes import set_password
     c=prep_client; ran=[]

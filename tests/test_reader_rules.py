@@ -7,10 +7,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from jobwatch import adtext, reader, recall
+from jobwatch.util import adtext as adtext
+from jobwatch import reader, recall
 from jobwatch import db as dbm
-from jobwatch import llm as llmmod
-from jobwatch.llm import LLM, LLMError
+from jobwatch.util import llm as llmmod
+from jobwatch.util.llm import LLM, LLMError
 from jobwatch.models import now_utc
 from test_reader import CFG, FakeGateway, make_llm, model, world, confirmed_candidate  # noqa: F401  (world is a fixture)
 

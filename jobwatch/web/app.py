@@ -88,7 +88,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         async def recover_interviews():
-            from jobwatch.interview_prep import queued_posting_ids, queued_subject_ids
+            from jobwatch.interview.prep import queued_posting_ids, queued_subject_ids
             from pipeline.agentic.contracts import AgenticError
             from jobwatch.candidate.contracts import CandidateError
             def schedule(pending):
@@ -411,11 +411,11 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get('/applications/{posting_id}/followup-draft', response_class=HTMLResponse)
     def followup_draft_page(request: Request, posting_id: int, channel: str = "email"):
-        from jobwatch.followup_drafts import load_draft
+        from jobwatch.followup.drafts import load_draft
         if channel not in {'email','linkedin'}: raise HTTPException(status_code=422)
         from pipeline.agentic.service import enabled
         from pipeline.agentic.contracts import AgenticError
-        from jobwatch.followup_events import FollowupEventError
+        from jobwatch.followup.events import FollowupEventError
         from jobwatch.candidate.contracts import CandidateError
         ok_id(posting_id)
         conn = conn_()
@@ -436,12 +436,12 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.post('/applications/{posting_id}/followup-draft')
     def followup_draft_start(request: Request, posting_id: int, background_tasks: BackgroundTasks, channel: str = Form("email"), retry: bool = Form(False)):
-        from jobwatch.followup_drafts import capture, generate
+        from jobwatch.followup.drafts import capture, generate
         if channel not in {'email','linkedin'}: raise HTTPException(status_code=422)
         from jobwatch.candidate.evidence import snapshot_evidence
         from pipeline.agentic.service import enabled
         from pipeline.agentic.contracts import AgenticError
-        from jobwatch.followup_events import FollowupEventError
+        from jobwatch.followup.events import FollowupEventError
         from jobwatch.candidate.contracts import CandidateError
         ok_id(posting_id)
         if not enabled(config): raise HTTPException(status_code=409,detail='Follow-up drafting is not enabled.')
@@ -489,7 +489,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     def interview_job(conn, posting_id):
         if type(posting_id) is str:
-            from jobwatch.interview_subjects import load_subject
+            from jobwatch.interview.subjects import load_subject
             from pipeline.agentic.contracts import AgenticError
             try:subject=load_subject(conn,posting_id)
             except AgenticError:raise HTTPException(status_code=404) from None
@@ -501,7 +501,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         return dict(row)
 
     def interview_state(conn, posting_id):
-        from jobwatch.interview_prep import load_report
+        from jobwatch.interview.prep import load_report
         from pipeline.agentic.service import enabled
         from pipeline.agentic.contracts import AgenticError
         from jobwatch.candidate.contracts import CandidateError
@@ -519,14 +519,14 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get('/jobs/{posting_id}/interview-prep', response_class=HTMLResponse)
     def interview_page(request: Request, posting_id: int):
-        from jobwatch.interview_inputs import load_inputs
+        from jobwatch.interview.inputs import load_inputs
         from pipeline.agentic.contracts import AgenticError
         conn = conn_()
         try:
             job = interview_job(conn, posting_id)
             try:
                 if type(posting_id) is str:
-                    from jobwatch.interview_subjects import load_subject
+                    from jobwatch.interview.subjects import load_subject
                     subject=load_subject(conn,posting_id)
                     inputs,revision=subject['inputs'],subject['revision']
                 else:inputs, revision = load_inputs(conn, posting_id)
@@ -542,7 +542,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     def interview_save_inputs(posting_id: int, revision: int = Form(...), invite: str = Form(''),
             panelist_profiles: str = Form(''), story_bank: str = Form(''), prior_compensation: str = Form(''),
             coffee_chat: str = Form(''), prior_round_notes: str = Form('')):
-        from jobwatch.interview_inputs import InterviewInputs, save_inputs
+        from jobwatch.interview.inputs import InterviewInputs, save_inputs
         from pipeline.agentic.contracts import AgenticError
         from pydantic import ValidationError
         conn = conn_()
@@ -552,7 +552,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 value = InterviewInputs(invite=invite, panelist_profiles=panelist_profiles, story_bank=story_bank,
                     prior_compensation=prior_compensation, coffee_chat=coffee_chat, prior_round_notes=prior_round_notes)
                 if type(posting_id) is str:
-                    from jobwatch.interview_subjects import save_subject_inputs
+                    from jobwatch.interview.subjects import save_subject_inputs
                     save_subject_inputs(conn,posting_id,value,expected_revision=revision)
                 else:save_inputs(conn, posting_id, value, expected_revision=revision)
             except (AgenticError, ValidationError):
@@ -562,7 +562,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.post('/jobs/{posting_id}/interview-prep')
     def interview_start(posting_id: int, background_tasks: BackgroundTasks, retry: bool = Form(False)):
-        from jobwatch.interview_prep import capture, generate
+        from jobwatch.interview.prep import capture, generate
         from jobwatch.candidate.evidence import snapshot_evidence
         from jobwatch.candidate.contracts import CandidateError
         from pipeline.agentic.contracts import AgenticError
@@ -579,7 +579,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         return RedirectResponse(interview_url(posting_id), status_code=303)
 
     def queue_interview(posting_id, background_tasks, *, retry=False, existing_only=False):
-        from jobwatch.interview_prep import enqueue
+        from jobwatch.interview.prep import enqueue
         from pipeline.agentic.contracts import AgenticError
         from jobwatch.candidate.contracts import CandidateError
         if not retry and not existing_only:
@@ -602,7 +602,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             attempt_retry = retry
             try:
                 c = conn_()
-                from jobwatch.interview_prep import generate, is_queued
+                from jobwatch.interview.prep import generate, is_queued
                 while True:
                     generate(c, posting_id, config, retry=attempt_retry, queued_only=not attempt_retry)
                     # A note edit may have queued a new snapshot while this posting was active.
@@ -622,7 +622,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                     with interview_lock: interview_active.discard(key)
         background_tasks.add_task(work)
     def maybe_queue_interview(conn, posting_id, background_tasks):
-        from jobwatch.interview_prep import should_prepare_after_interview
+        from jobwatch.interview.prep import should_prepare_after_interview
         from pipeline.agentic.contracts import AgenticError
         from jobwatch.candidate.contracts import CandidateError
         try:
@@ -669,7 +669,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     def interview_url_entry(request:Request):
         conn=conn_()
         try:
-            from jobwatch.interview_subjects import load_subject
+            from jobwatch.interview.subjects import load_subject
             from pipeline.agentic.contracts import AgenticError
             subjects=[]
             for row in conn.execute('SELECT subject_id FROM interview_subjects ORDER BY rowid DESC LIMIT 100'):
@@ -683,10 +683,10 @@ def create_app(config: Config | None = None) -> FastAPI:
     def open_interview(conn, url, pasted_jd, title, company):
         """Find or create the interview-prep subject for a job URL. Returns (reference, error text)."""
         from datetime import datetime,timezone
-        from jobwatch.interview_ad import InterviewAd,InterviewAdUnavailable,ats_target
-        from jobwatch.interview_browser import acquire_ad
-        from jobwatch.interview_subjects import create_subject
-        from jobwatch.interview_prep import matching_posting
+        from jobwatch.interview.ad import InterviewAd, InterviewAdUnavailable, ats_target
+        from jobwatch.interview.browser import acquire_ad
+        from jobwatch.interview.subjects import create_subject
+        from jobwatch.interview.prep import matching_posting
         from pipeline.agentic.contracts import AgenticError
         from jobwatch.candidate.contracts import CandidateError
         try:
@@ -750,7 +750,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/api/interview")
     def api_interview_list():
-        from jobwatch.interview_subjects import load_subject
+        from jobwatch.interview.subjects import load_subject
         from pipeline.agentic.contracts import AgenticError
         conn = conn_()
         try:
@@ -781,7 +781,7 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/api/interview/{ref}")
     def api_interview(ref: str):
-        from jobwatch.interview_inputs import load_inputs
+        from jobwatch.interview.inputs import load_inputs
         from pipeline.agentic.contracts import AgenticError
         pid = ref_of(ref)
         conn = conn_()
@@ -789,7 +789,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             job = interview_job(conn, pid)
             try:
                 if type(pid) is str:
-                    from jobwatch.interview_subjects import load_subject
+                    from jobwatch.interview.subjects import load_subject
                     sj = load_subject(conn, pid)
                     inputs, revision = sj['inputs'], sj['revision']
                 else:
@@ -822,10 +822,10 @@ def create_app(config: Config | None = None) -> FastAPI:
 
     @app.get("/api/followup-draft/{posting_id}")
     def api_followup_draft(posting_id: int, channel: str = "email"):
-        from jobwatch.followup_drafts import load_draft
+        from jobwatch.followup.drafts import load_draft
         from pipeline.agentic.service import enabled
         from pipeline.agentic.contracts import AgenticError
-        from jobwatch.followup_events import FollowupEventError
+        from jobwatch.followup.events import FollowupEventError
         from jobwatch.candidate.contracts import CandidateError
         if channel not in {'email', 'linkedin'}:
             raise HTTPException(status_code=422)
@@ -1039,8 +1039,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post("/api/applications/{posting_id}/followup")
     async def api_followup(request: Request, posting_id: int):
         from datetime import date
-        from jobwatch.followup_events import FollowupEventError, record_event
-        from jobwatch.place import person_timezone
+        from jobwatch.followup.events import FollowupEventError, record_event
+        from jobwatch.util.place import person_timezone
         LOCAL = person_timezone()
         ok_id(posting_id)
         b = await request.json()

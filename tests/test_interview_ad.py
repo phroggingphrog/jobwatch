@@ -2,7 +2,7 @@
 import json
 from datetime import datetime,timezone
 import pytest
-from jobwatch.interview_ad import structured_ad,ats_target,InterviewAdUnavailable
+from jobwatch.interview.ad import structured_ad, ats_target, InterviewAdUnavailable
 
 BODY='Analyse financial records and explain results to stakeholders. '*400
 class Fetcher:
@@ -77,8 +77,8 @@ def test_escaped_literal_source_text_is_preserved(provider,content):
 
 
 def test_oracle_closed_workday_403_and_extra_json():
-    from jobwatch.interview_ad import ats_target
-    from jobwatch.llm import parse_json
+    from jobwatch.interview.ad import ats_target
+    from jobwatch.util.llm import parse_json
     assert ats_target('https://x.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1005438')[0]=='oracle'
     assert parse_json('{"tool":"a","arguments":{}} Next\n{"tool":"b","arguments":{}}')=={'tool':'a','arguments':{}}
 
@@ -86,7 +86,7 @@ def test_oracle_closed_workday_403_and_extra_json():
 # Regression: Oracle HCM answers 200 with no items once a requisition is taken down; that is closed, not "couldn't read".
 def test_oracle_empty_result_means_closed():
     import pytest
-    from jobwatch.interview_ad import InterviewAdUnavailable
+    from jobwatch.interview.ad import InterviewAdUnavailable
     url='https://x.fa.ap1.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1005411'
     with pytest.raises(InterviewAdUnavailable,match='interview_ad_closed'):
         structured_ad(url,fetcher=Fetcher({'items':[],'count':0,'hasMore':False,'limit':499,'offset':0}))

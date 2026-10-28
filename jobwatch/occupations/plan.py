@@ -87,7 +87,7 @@ def searches_overlay(plan: SearchPlan, base: dict, policy=None) -> dict:
 def feeds_overlay(plan: SearchPlan, base: dict, policy) -> dict:
     """Scope existing Reddit feeds without inventing or enabling a new source."""
     from pipeline.agentic.location import regions_named
-    from jobwatch.place import STATES
+    from jobwatch.util.place import STATES
     out = deepcopy(base)
     conf = out.setdefault('reddit', {})
     regions = set(getattr(policy, 'regions', ()))

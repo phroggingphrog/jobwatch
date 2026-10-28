@@ -15,7 +15,7 @@ import re
 import time
 from datetime import timedelta
 
-from jobwatch import adtext
+from jobwatch.util import adtext as adtext
 from jobwatch.filters import Rules
 from jobwatch.models import Posting, fold, now_utc
 from jobwatch.reader import is_sponsored
@@ -155,7 +155,7 @@ BROWSER_FALLBACK = {"seek", "jobspy_src"}
 
 def _browser_text(conn, r, text: str, kind: str, *, deadline: float | None = None) -> tuple[str, str]:
     import time
-    from jobwatch.interview_browser import browser_ad
+    from jobwatch.interview.browser import browser_ad
     try:
         remaining = 45 if deadline is None else min(45, deadline-time.time())
         if remaining <= 0:

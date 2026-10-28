@@ -4,7 +4,8 @@ from __future__ import annotations
 from fastapi import Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from .. import google_oauth, users
+from jobwatch.google import oauth as google_oauth
+from jobwatch import users
 
 NEEDS = "needs the Google client ID in .env (see SETUP.md)"
 

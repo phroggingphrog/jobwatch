@@ -5,7 +5,8 @@ import sqlite3
 import pytest
 
 from conftest import make_config
-from jobwatch import adtext, db
+from jobwatch.util import adtext as adtext
+from jobwatch import db
 from jobwatch.candidate import policy as policy_mod
 from jobwatch.filters import Rules
 from jobwatch.models import Posting

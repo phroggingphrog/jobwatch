@@ -1,7 +1,7 @@
 """Synthetic whole-ad and evidence-isolation acceptance through actual role tools."""
 from __future__ import annotations
 
-from jobwatch import model_choice
+from jobwatch.util import model_choice as model_choice
 
 import copy
 import json

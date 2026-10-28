@@ -54,7 +54,8 @@ def handle(args) -> int | None:
 
 def _locked(args, config, conn) -> int:
     """`review` and `review recall`, one at a time: a second run (or the pipeline hook) skips with a note."""
-    from . import adtext, reader
+    from jobwatch.util import adtext as adtext
+    from jobwatch import reader
     with adtext.review_lock(adtext.lock_path(config)) as got:
         if not got:
             print(json.dumps({"skipped": "busy", "note": "another review or recall run holds review.lock"}))
@@ -82,7 +83,8 @@ def _locked(args, config, conn) -> int:
 
 def _rederive(config, conn) -> int:
     """`review rederive` rewrites every verdict, so it never runs beside a review: busy = say so, change nothing."""
-    from . import adtext, reader
+    from jobwatch.util import adtext as adtext
+    from jobwatch import reader
     with adtext.review_lock(adtext.lock_path(config)) as got:
         if not got:
             print("another review or recall run holds review.lock; rederive changed nothing, try again when it ends")

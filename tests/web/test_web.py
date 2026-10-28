@@ -227,7 +227,7 @@ def test_draft_worker_runs_as_the_person_who_started_it(client, monkeypatch, tmp
 
 def test_board_times_use_the_persons_timezone(tmp_path, monkeypatch):
     from datetime import UTC, datetime
-    from jobwatch import place
+    from jobwatch.util import place as place
     from jobwatch.apply import render
     from jobwatch.web import queries as q
     monkeypatch.setattr(place, "_candidate", render._candidate)       # the real profile reader, not the Melbourne stub

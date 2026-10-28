@@ -103,7 +103,7 @@ def classify_llm(subject: str, body: str, llm=None, model: str = DEFAULT_MODEL) 
     """Ask the allowlisted model. Returns None if jobwatch.llm is unavailable or fails."""
     if llm is None:
         try:
-            from ..llm import LLM
+            from jobwatch.util.llm import LLM
         except ModuleNotFoundError:
             return None
         llm = LLM()

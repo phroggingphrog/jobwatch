@@ -12,7 +12,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from jobwatch.apply.evidence import Profile
-from jobwatch.model_choice import get_model
+from jobwatch.util.model_choice import get_model
 from jobwatch.apply.review import SCHEMA_HELP
 from jobwatch.candidate.evidence import career_profile_text, verify_evidence_snapshot
 from pipeline.agentic.letter_rules import letter_text as third_letter_text, third_opinion

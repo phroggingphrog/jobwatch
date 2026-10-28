@@ -113,7 +113,7 @@ def execute(person, config, run_id, payload, *, seconds=600):
                     scope.daily_token_ceiling, spent[1], per_run_cap) if scope is not None else 'daily_budget'
                 if scope is None or spent[0] >= scope.daily_assessments or remaining <= 0:
                     return {'deferred': 'daily_budget'}
-                from jobwatch import adtext
+                from jobwatch.util import adtext as adtext
                 with adtext.review_lock(adtext.lock_path(config)) as acquired:
                     if not acquired:
                         return {'skipped': 'busy'}

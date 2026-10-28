@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.nodes import sort
 
 

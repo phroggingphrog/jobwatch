@@ -16,8 +16,8 @@ from typing import Literal
 from pydantic import Field,model_validator
 
 from jobwatch.candidate.contracts import content_hash
-from jobwatch.interview_ad import InterviewAdUnavailable, structured_ad
-from jobwatch.interview_browser import browser_ad, _closing_date, _snapshot_ad, public_posting_urls
+from jobwatch.interview.ad import InterviewAdUnavailable, structured_ad
+from jobwatch.interview.browser import browser_ad, _closing_date, _snapshot_ad, public_posting_urls
 from jobwatch.models import canonical_url,fold
 from pipeline.agentic.contracts import StrictFrozen, AgenticError
 

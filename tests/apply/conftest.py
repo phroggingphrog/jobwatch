@@ -10,7 +10,7 @@ import yaml
 
 from jobwatch import db as dbm
 from jobwatch.apply.evidence import build_evidence, load_profile
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 
 FAKE_CV = """# Alex Example
 

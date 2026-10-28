@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 from yaml.events import AliasEvent, DocumentStartEvent, ScalarEvent, SequenceStartEvent, MappingStartEvent
 
-from jobwatch.textdates import only_dates
+from jobwatch.util.textdates import only_dates
 from jobwatch.apply.evidence import PF_RULES, extract_cv, extract_profile_yaml, extract_taxonomy, norm
 from ._private_io import PathEscapeError, read_profile_source
 from .contracts import (

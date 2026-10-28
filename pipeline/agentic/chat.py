@@ -36,10 +36,11 @@ from langgraph.types import Command
 from langsmith import tracing_context
 from pydantic import Field, TypeAdapter
 
-from jobwatch import users, model_choice
+from jobwatch import users
+from jobwatch.util import model_choice as model_choice
 from jobwatch.apply.paths import ensure_dir
 from jobwatch.candidate.contracts import CandidateError
-from jobwatch.llm import LLM, load_keys
+from jobwatch.util.llm import LLM, load_keys
 from pipeline.agentic.deepagents_runtime import _messages_for_gateway
 from pipeline.agentic.mcp_client import load_mcp_tools
 from pipeline.agentic.contracts import AgenticError
@@ -230,11 +231,11 @@ def _approval_binding(name, args, config):
             jobs.row_factory = sqlite3.Row
             bundle = snapshot_evidence(profile_dir())
             if name == 'draft_followup':
-                from jobwatch.followup_drafts import capture
+                from jobwatch.followup.drafts import capture
                 _, _, identity = capture(jobs, args['application_id'], bundle)
                 value['snapshot'] = identity
             elif name == 'prepare_interview':
-                from jobwatch.interview_prep import capture
+                from jobwatch.interview.prep import capture
                 _, _, identity = capture(jobs, args['posting_id'], bundle, config)
                 value['snapshot'] = identity
             else:
@@ -540,9 +541,9 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         with job_connection(config, write=True) as jobs:
             jobs.row_factory = sqlite3.Row
             if name == 'draft_followup':
-                from jobwatch.followup_drafts import generate
+                from jobwatch.followup.drafts import generate
             else:
-                from jobwatch.interview_prep import generate
+                from jobwatch.interview.prep import generate
             value = generate(jobs, identity, config, writer=llm, reviewer=llm)
             if value:
                 value = TypeAdapter(Any).dump_python(value, mode='json')

@@ -21,7 +21,7 @@ from datetime import timedelta
 
 from . import db as dbm
 from .filters import Rules
-from .llm import LLM, LLMError
+from jobwatch.util.llm import LLM, LLMError
 from .models import Posting, now_utc
 
 from .reader import _PROFILE_FALLBACK, _defang, _yes, load_interest, person_prefs, settings, strip_contact
@@ -110,7 +110,7 @@ def triage_new(conn, config, *, limit: int | None = 400, llm: LLM | None = None,
     """Triage up to `limit` candidate postings; add the plausible ones to `matches`. Never raises for a bad batch.
     max_seconds: no new batch is started after this many seconds (stats["time_limit"]); the rest is asked next run. None = no limit."""
     cfg = settings(config)
-    model = cfg.get("triage_model") or __import__("jobwatch.model_choice", fromlist=["x"]).get_model("reader")
+    model = cfg.get("triage_model") or __import__("jobwatch.util.model_choice", fromlist=["x"]).get_model("reader")
     rules = Rules(config.rules, config.employers, conn=conn)
     # only the owner's interest decisions go to the triage model, never the CV
     profile = load_interest() or _PROFILE_FALLBACK

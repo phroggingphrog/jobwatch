@@ -1,5 +1,5 @@
 """Explicit paid/fit paths exercised with synthetic local transports only."""
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from pipeline.agentic import eval_data,evaluate_runs,eval_fit
 from pipeline.agentic.service import agentic_batch_run
 from tests.baseline_support import world, frozen  # noqa:F401

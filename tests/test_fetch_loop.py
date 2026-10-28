@@ -11,12 +11,13 @@ from pathlib import Path
 import pytest
 
 from conftest import confirm_discovery, make_config
-from jobwatch import adtext, reader
+from jobwatch.util import adtext as adtext
+from jobwatch import reader
 from jobwatch import db as dbm
 from jobwatch import pipeline
 from jobwatch.collectors import jsonld_pages
 from jobwatch.dedupe import ingest
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from jobwatch.models import Posting
 
 FIX = Path(__file__).parent / "fixtures" / "adtext"

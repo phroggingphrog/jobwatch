@@ -9,7 +9,7 @@ import os
 import re
 from collections import Counter
 
-from jobwatch.model_choice import get_model
+from jobwatch.util.model_choice import get_model
 from pathlib import Path
 
 from fastapi import Form, Request
@@ -121,7 +121,7 @@ def snapshot(conn, question: str = "") -> str:
 
 
 def answer(conn, llm=None) -> str:
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     rows = conn.execute("SELECT role,text FROM chat_messages WHERE " + nt.CHAT_VISIBLE + " ORDER BY id DESC LIMIT ?", (HISTORY,)).fetchall()[::-1]
     messages = [{"role": "system", "content": system_prompt() + "\n\nSNAPSHOT\n" + snapshot(conn, rows[-1][1] if rows else "")}]
     for role, text in rows:

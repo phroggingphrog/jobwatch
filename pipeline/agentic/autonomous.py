@@ -21,9 +21,10 @@ from langgraph.graph import StateGraph, MessagesState, START, END
 from langsmith import tracing_context
 from pydantic import Field
 
-from jobwatch import users, model_choice
+from jobwatch import users
+from jobwatch.util import model_choice as model_choice
 from jobwatch.candidate.contracts import digest
-from jobwatch.llm import SafeLLMError
+from jobwatch.util.llm import SafeLLMError
 from pipeline.agentic import execution
 from pipeline.agentic.chat_storage import ChatSaver
 from pipeline.agentic.contracts import AgenticEvaluation

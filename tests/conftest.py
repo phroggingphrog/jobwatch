@@ -17,7 +17,7 @@ import yaml
 from jobwatch.collectors.base import CollectorContext
 from jobwatch.config import Config, DEFAULT_SETTINGS, DEFAULT_CONFIG_DIR, _merge
 from jobwatch.filters import Rules
-from jobwatch.http import HttpError
+from jobwatch.util.http import HttpError
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -107,7 +107,7 @@ def _no_env(monkeypatch, tmp_path):
 def _no_live_model(monkeypatch):
     """No test may reach the real OmniRoute: an LLM() built without keys finds none and refuses before any request.
     Tests that need a model pass a fake transport and their own keys."""
-    from jobwatch import llm as llmmod
+    from jobwatch.util import llm as llmmod
     monkeypatch.setattr(llmmod, "load_keys", lambda: [])
 
 
@@ -139,7 +139,7 @@ def _cv_printer_without_browser(monkeypatch, request):
 @pytest.fixture(autouse=True)
 def _no_openrouter_key(monkeypatch):
     # Tests never reach OpenRouter (Jev) or OmniRoute (embeddings): no key means both return None and the pipeline runs as before.
-    import jobwatch.openrouter_extras as extras
+    import jobwatch.util.openrouter_extras as extras
     monkeypatch.setattr(extras, "_key", lambda cfg: None)
     monkeypatch.setattr(extras, "embed", lambda texts, config=None: None)
 
@@ -148,7 +148,7 @@ def _no_openrouter_key(monkeypatch):
 @pytest.fixture(autouse=True)
 def _person_in_melbourne(monkeypatch):
     """The app is per person (jobwatch.place); tests use the owner's values: Brunswick, VIC, Melbourne time."""
-    import jobwatch.place as place
+    import jobwatch.util.place as place
     monkeypatch.setattr(place, "_candidate", lambda: {"location": "Brunswick, VIC", "state": "VIC",
                                                        "timezone": "Australia/Melbourne"})
 
@@ -176,9 +176,10 @@ SYNTHETIC_CV = b"Alex Example\nAccounts Assistant\n\nExperience\nLedger Co, Acco
 def confirm_discovery(config, person=None):
     """Synthetic: turn discovery on for a person through the public intake API (adopt any hand-made files, propose from a
     synthetic CV with a fake model, confirm with the scope shown). Returns the new version number."""
-    from jobwatch import model_choice, users
+    from jobwatch.util import model_choice as model_choice
+    from jobwatch import users
     from jobwatch.candidate import intake
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     person = person or users.current()
     facts = {"facts": [{"section": "experience", "value": "Accounts Assistant, Ledger Co", "basis": "evidence", "upload": 1,
                         "sources": [{"line": 5, "quote": "Ledger Co, Accounts Assistant, 2021 - 2023"}]}], "questions": []}

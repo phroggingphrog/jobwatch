@@ -12,10 +12,10 @@ import os
 import re
 from pathlib import Path
 
-from . import users
-from .settings import get as _setting
+from jobwatch import users
+from jobwatch.settings import get as _setting
 
-from .settings import DEFAULT_MODEL  # noqa: E402
+from jobwatch.settings import DEFAULT_MODEL  # noqa: E402
 SERVER_URL = _setting("JOBWATCH_LLM_BASE_URL", "https://api.openai.com/v1")
 
 # role -> (words on the page, where config/jobwatch.yaml keeps it)

@@ -118,7 +118,7 @@ def test_corrupt_files_and_rows_are_refused(tmp_path, conn):
 
 
 def test_make_embedder_refuses_wrong_gateway(conn):
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     with discovery_budget(conn, 'test', token_ceiling=100000) as budget:
         with pytest.raises(AgenticError, match='gateway_not_allowed'):
             make_embedder(LLM(transport=hash_transport(), keys=['s'], base_url='http://127.0.0.1:9/v1'), make_config(), budget)
@@ -126,7 +126,7 @@ def test_make_embedder_refuses_wrong_gateway(conn):
 
 def test_settings_do_not_change_run_key(monkeypatch):
     from pipeline.agentic import service
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {})
     off = make_config({'pipeline': {'agentic': {'enabled': True}}})
     on = make_config({'pipeline': {'agentic': {'enabled': True, 'relevance': 'on', 'search_plan': True,
         'dedupe': 'semantic', 'ordering': 'hypotheses'}, 'discovery': {'similar_at': .7}}})

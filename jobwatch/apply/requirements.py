@@ -14,7 +14,7 @@ import json
 import sqlite3
 
 from .. import ledger
-from ..llm import LLM
+from jobwatch.util.llm import LLM
 from .evidence import norm
 
 INFERRED_MAX_WEIGHT = 0.3
@@ -106,7 +106,7 @@ def get_or_extract(conn: sqlite3.Connection, posting_id: int, llm: LLM, model: s
     if p is None:
         raise ValueError(f"posting {posting_id} not found")
     text, structured = full_posting_text(conn, p), structured_block(p)
-    from ..model_choice import get_model
+    from jobwatch.util.model_choice import get_model
     res = llm.chat(model or get_model("reader"), [{"role": "system", "content": SYSTEM},
                            {"role": "user", "content": f"STRUCTURED FIELDS:\n{structured}\n\n"
                                                        f"POSTING TEXT:\n{text}"}])

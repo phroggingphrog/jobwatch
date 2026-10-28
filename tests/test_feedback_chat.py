@@ -1,8 +1,9 @@
 """Real graph interrupts keep model suggestions separate from human writes."""
 import json
 import pytest
-from jobwatch import users,model_choice
-from jobwatch.llm import LLM
+from jobwatch import users
+from jobwatch.util import model_choice as model_choice
+from jobwatch.util.llm import LLM
 from pipeline.agentic import chat,shortlist
 from pipeline.agentic.service import agentic_batch_run
 from pipeline.agentic.runtime import RuntimeErrorSafe

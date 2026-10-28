@@ -34,7 +34,7 @@ def _tz() -> ZoneInfo:
 
 @functools.lru_cache(maxsize=64)
 def _tz_for(person: str, profile: str, mtime: int) -> ZoneInfo:
-    from jobwatch.place import person_timezone
+    from jobwatch.util.place import person_timezone
     return person_timezone()
 
 
@@ -1330,7 +1330,7 @@ def applications(conn, drafts_root: Path, now: datetime | None = None) -> list[d
         last = d["last_event_at"] or d["updated_at"]
         d["last_at"] = last
         d["days_applied"] = days_since(d["applied_at"], now) if d["applied_at"] else None
-        from jobwatch.followup_events import application_cadence, recent_events, FollowupEventError
+        from jobwatch.followup.events import application_cadence, recent_events, FollowupEventError
         import uuid
         d['followup_history'] = {'total': 0, 'items': []}
         try:

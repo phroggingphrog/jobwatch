@@ -51,8 +51,8 @@ from pathlib import Path
 from typing import Callable, NamedTuple
 from urllib.parse import quote, urljoin, urlsplit
 
-from . import db as dbm
-from .models import fold, html_to_text, now_utc
+from jobwatch import db as dbm
+from jobwatch.models import fold, html_to_text, now_utc
 
 log = logging.getLogger(__name__)
 _FETCH_DEADLINE = contextvars.ContextVar('jobwatch_ad_fetch_deadline', default=None)

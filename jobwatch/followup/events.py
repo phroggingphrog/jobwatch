@@ -7,9 +7,9 @@ import re
 from zoneinfo import ZoneInfo
 
 from jobwatch import ledger
-from jobwatch.followups import FollowupHistory, FollowupPin, cadence
+from jobwatch.followup.tracking import FollowupHistory, FollowupPin, cadence
 
-from jobwatch.place import person_timezone
+from jobwatch.util.place import person_timezone
 ACTIONS = {'applied_confirmed', 'response', 'interview_completed', 'sent', 'pin', 'clear_pin'}
 ACTIVE = {'applied', 'assessment', 'interview'}
 

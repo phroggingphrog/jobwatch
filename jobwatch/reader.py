@@ -21,11 +21,11 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import adtext
-from .textdates import blank_dates, only_dates
+from jobwatch.util import adtext as adtext
+from jobwatch.util.textdates import blank_dates, only_dates
 from . import db as dbm
 from .apply import paths as apaths
-from .llm import LLM, LLMError, parse_json
+from jobwatch.util.llm import LLM, LLMError, parse_json
 from .models import fold, now_utc, parse_date
 from jobwatch.settings import DEFAULT_MODEL
 
@@ -411,7 +411,7 @@ def load_profile(config) -> str:
 
 
 def settings(config) -> dict:
-    from .model_choice import chosen
+    from jobwatch.util.model_choice import chosen
     cfg = {**DEFAULTS, **((config.settings or {}).get("reader") or {})}
     pick = chosen().get("reader")          # the person's own pick wins over config/jobwatch.yaml
     return {**cfg, "model": pick, "triage_model": pick} if pick else cfg

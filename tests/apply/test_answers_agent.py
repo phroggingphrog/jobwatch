@@ -244,7 +244,7 @@ def test_owner_answer_lock_refuses_symlinks(tmp_path):
 
 def test_actual_deepagents_reads_source_then_answers_and_gets_fresh_review(tmp_path):
     import json
-    from jobwatch.llm import LLM
+    from jobwatch.util.llm import LLM
     from pipeline.agentic.runtime import BatchBudget, JobBudget
     (tmp_path / "cv.md").write_text("# Synthetic\nEmail: person@example.test\nReconciled ledgers in Excel.")
     sources = load_answer_sources(tmp_path)

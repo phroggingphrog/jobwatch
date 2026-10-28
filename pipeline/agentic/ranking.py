@@ -12,7 +12,7 @@ from typing import Literal, Mapping, Sequence
 from pydantic import Field
 
 from jobwatch.candidate.projection import _quotes as _profile_quotes
-from jobwatch.place import STATES
+from jobwatch.util.place import STATES
 from pipeline.agentic.contracts import AgenticEvaluation, StrictFrozen
 from pipeline.agentic.location import location_verdict
 

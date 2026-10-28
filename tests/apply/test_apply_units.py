@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from jobwatch import llm as llm_mod
+from jobwatch.util import llm as llm_mod
 from jobwatch.apply import paths
 from jobwatch.apply.evidence import build_evidence, check_evidence, extract_cv
 from jobwatch.apply.requirements import INFERRED_MAX_WEIGHT, get_or_extract, verify_requirements
@@ -138,7 +138,7 @@ def test_verifier_rejects_trivial_spans_overclaimed_years_and_unparsable_results
 def test_letter_date_uses_the_persons_timezone(profile, monkeypatch):
     from datetime import UTC, datetime
     from zoneinfo import ZoneInfo
-    from jobwatch import place
+    from jobwatch.util import place as place
     from jobwatch.apply import render
 
     class Fixed(datetime):                       # 2026-10-21 12:00 UTC: the 21st in Melbourne, the 22nd in Kiritimati

@@ -4,9 +4,10 @@ import stat
 
 import pytest
 
-from jobwatch import model_choice, users
+from jobwatch.util import model_choice as model_choice
+from jobwatch import users
 from jobwatch.candidate import intake
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 
 SYNTHETIC_CV = """Alex Example
 Accounts Assistant

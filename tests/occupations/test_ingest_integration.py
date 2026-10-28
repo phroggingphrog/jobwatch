@@ -1,7 +1,8 @@
 from types import SimpleNamespace
 
 from conftest import make_config
-from jobwatch import db, adtext
+from jobwatch import db
+from jobwatch.util import adtext as adtext
 from jobwatch.models import Posting
 from jobwatch.dedupe import ingest as save_posting
 from jobwatch.occupations.plan import search_plan

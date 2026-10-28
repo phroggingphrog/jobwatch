@@ -6,11 +6,12 @@ import math
 import time
 import uuid
 
-from jobwatch import adtext, ledger
+from jobwatch.util import adtext as adtext
+from jobwatch import ledger
 from jobwatch.apply.paths import profile_dir
 from jobwatch.candidate.contracts import content_hash, digest
 from jobwatch.candidate.evidence import snapshot_evidence, verify_evidence_snapshot
-from jobwatch.interview_inputs import load_inputs
+from jobwatch.interview.inputs import load_inputs
 from pipeline.agentic.contracts import AgenticError, AgenticEvaluation, parse_budget_checkpoint_json
 from pipeline.agentic.interview import InterviewReport, prepare_interview, snapshot_hash, validate_report
 from pipeline.agentic.persistence import latest_result
@@ -36,7 +37,7 @@ def _save_run(conn,reference,identity,value):
 
 
 def _subject_capture(conn,subject_id,bundle,config):
-    from jobwatch.interview_subjects import load_subject
+    from jobwatch.interview.subjects import load_subject
     subject=load_subject(conn,subject_id)
     ad=subject['ad']
     context={'subject_id':subject_id,'title':ad.title,'company':ad.company,'url':ad.url,'location':'',

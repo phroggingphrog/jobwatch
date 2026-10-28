@@ -20,8 +20,8 @@ import yaml
 
 from . import users
 from .apply.evidence import build_evidence, check_evidence, norm
-from .llm import LLM
-from .model_choice import get_model
+from jobwatch.util.llm import LLM
+from jobwatch.util.model_choice import get_model
 
 
 PROMPT = """You read a CV and extract a job-search profile. Use only what the CV says; never invent.

@@ -37,9 +37,9 @@ from .. import users
 from ..apply.evidence import norm
 from ..apply import paths as apaths
 from ..apply.paths import ensure_dir
-from ..llm import LLM, DeadlineExceeded, LLMError
+from jobwatch.util.llm import LLM, DeadlineExceeded, LLMError
 from .contracts import CandidateError
-from ..model_choice import get_model
+from jobwatch.util.model_choice import get_model
 from ._private_io import read_regular_file
 from . import projection
 from .evidence import _ALLOWED, snapshot_evidence

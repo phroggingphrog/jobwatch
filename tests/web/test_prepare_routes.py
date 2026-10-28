@@ -262,7 +262,7 @@ def test_evaluation_displays_actual_evidence_risk_and_mitigation_with_escaping(t
 def test_current_profile_or_ad_change_holds_preparation(tmp_path, monkeypatch):
     from tests.test_agentic_service import world
     from pipeline.agentic.service import snapshot_inventory
-    from jobwatch import adtext
+    from jobwatch.util import adtext as adtext
     from jobwatch.apply.paths import profile_dir
     conn, config, bundle, add = world.__wrapped__(tmp_path, monkeypatch)
     try:

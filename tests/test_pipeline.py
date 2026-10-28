@@ -14,7 +14,7 @@ from conftest import make_config
 from jobwatch import db as dbm
 from jobwatch.apply import chain
 from jobwatch.dedupe import ingest as ingest_posting
-from jobwatch.llm import LLM
+from jobwatch.util.llm import LLM
 from jobwatch.models import Posting
 from pipeline import graph, store
 from pipeline.nodes import gate
@@ -105,7 +105,7 @@ def world(tmp_path, monkeypatch):
         "PURSUES: accounting, accounts payable, bookkeeping, admin. NOT WANTED: retail, hospitality, call centre.")
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(pdir))
-    monkeypatch.setattr("jobwatch.adtext.pace", lambda *a, **k: None)
+    monkeypatch.setattr("jobwatch.util.adtext.pace", lambda *a, **k: None)
     config = make_config(tmp_path=tmp_path)
     conn = dbm.connect(config.db_path)
     drafts = {"n": 0, "fail": 0}
@@ -417,7 +417,7 @@ def test_annotate_only_touches_archived_jobs(world):
 def test_a_slow_ad_page_does_not_crash_the_run(world, monkeypatch):
     """Run 224 (2026-10-08 06:40 UTC): a curl timeout inside node 1's fetch killed the whole AI step."""
     conn, add, run, _ = world
-    from jobwatch import adtext
+    from jobwatch.util import adtext as adtext
     real = adtext.ensure_text
     calls = {"n": 0}
 

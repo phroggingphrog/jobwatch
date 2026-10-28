@@ -7,8 +7,9 @@ import sys
 
 import pytest
 
-from jobwatch import model_choice, users
-from jobwatch.llm import LLM
+from jobwatch.util import model_choice as model_choice
+from jobwatch import users
+from jobwatch.util.llm import LLM
 from pipeline.agentic.mcp_client import load_mcp_tools
 
 STUB_SERVER = '''

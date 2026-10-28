@@ -43,7 +43,7 @@ def _confirmed_profile(person, ceiling=900):
 
 
 def test_default_is_finite_and_inherits_confirmed_scope(data_dir, monkeypatch):
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {})
     assert discovery_settings.get_settings('sam', CONFIG)['daily_token_ceiling'] == 1234
     _, _, _ = _confirmed_profile('sam', ceiling=876)
     assert discovery_settings.get_settings('sam', CONFIG)['daily_token_ceiling'] == 876
@@ -51,7 +51,7 @@ def test_default_is_finite_and_inherits_confirmed_scope(data_dir, monkeypatch):
 
 
 def test_unlimited_setting_is_person_scoped_and_written_privately(data_dir, monkeypatch):
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {})
     assert discovery_settings.set_settings('sam', CONFIG, None)['daily_token_ceiling'] is None
     assert discovery_settings.get_settings('sam', CONFIG)['daily_token_ceiling'] is None
     assert discovery_settings.get_settings('sue', CONFIG)['daily_token_ceiling'] == 1234
@@ -73,7 +73,7 @@ def test_settings_schema_forbids_extra_fields():
 
 
 def test_malformed_existing_setting_fails_closed(data_dir, monkeypatch):
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {})
     _confirmed_profile('sam', ceiling=900)
     path = discovery_settings._path('sam')
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -105,7 +105,7 @@ def test_user_override_does_not_rewrite_or_bypass_confirmed_profile_digest(data_
 
 
 def test_future_confirmation_scope_uses_current_user_setting(data_dir, monkeypatch):
-    monkeypatch.setattr('jobwatch.model_choice.chosen', lambda: {})
+    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {})
     discovery_settings.set_settings('sam', CONFIG, None)
     proposal = intake.Proposal(
         id='a' * 16, revision=1, base_version=None, uploads=(),

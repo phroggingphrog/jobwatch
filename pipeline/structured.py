@@ -12,7 +12,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from jobwatch.llm import DeadlineExceeded, LLM, parse_json
+from jobwatch.util.llm import DeadlineExceeded, LLM, parse_json
 
 MAX_ATTEMPTS = 3
 T = TypeVar("T", bound=BaseModel)

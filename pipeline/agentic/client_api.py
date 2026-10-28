@@ -17,7 +17,8 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from jobwatch import users, model_choice
+from jobwatch import users
+from jobwatch.util import model_choice as model_choice
 from jobwatch.apply.paths import ensure_dir
 from jobwatch.candidate import intake
 from pipeline.agentic.api_store import APIStore

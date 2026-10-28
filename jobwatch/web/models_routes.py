@@ -5,7 +5,7 @@ from fastapi import Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from jobwatch import model_choice as mc
+from jobwatch.util import model_choice as mc
 from jobwatch import users
 
 _CACHE: dict = {}          # (person, gateway url) -> (time, [model ids])
@@ -20,7 +20,7 @@ def list_models(user: str) -> tuple[list[str], bool]:
         return hit[1], True
     try:
         import requests
-        from jobwatch.llm import load_keys
+        from jobwatch.util.llm import load_keys
         keys = load_keys()
         with requests.Session() as s:
             s.trust_env = False
@@ -81,7 +81,7 @@ def register(app, config, conn_factory, render):
             return JSONResponse({"ok": False, "error": why})
 
         def run():
-            from jobwatch.llm import LLM
+            from jobwatch.util.llm import LLM
             return LLM().chat(model, [{"role": "user", "content": "reply OK"}], json_mode=False,
                               max_tokens=16, timeout=40).text
 

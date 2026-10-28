@@ -12,7 +12,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from jobwatch import adtext, users
+from jobwatch.util import adtext as adtext
+from jobwatch import users
 from jobwatch.apply.paths import profile_dir
 from jobwatch.candidate.analysis import analyse_candidate
 from jobwatch.candidate.inputs import load_inputs
@@ -21,9 +22,8 @@ from jobwatch.candidate.assessment import (CandidateAssessment, assessment_run_k
 from jobwatch.candidate.contracts import TargetPolicy, content_hash, digest
 from jobwatch.candidate.evidence import career_profile_text, snapshot_evidence, verify_evidence_snapshot
 from jobwatch.candidate.policy import DecisionPolicy, default_policy, policy_for
-from jobwatch.llm import LLM
-from jobwatch.openrouter_extras import (KNOCKOUT_REASONS, extras_settings, jev_screen, rank_by_target,
-                                       same_vacancy, vectors, deadline_scope)
+from jobwatch.util.llm import LLM
+from jobwatch.util.openrouter_extras import KNOCKOUT_REASONS, extras_settings, jev_screen, rank_by_target, same_vacancy, vectors, deadline_scope
 from pipeline import store as pipeline_store
 from pipeline.schemas import Stage
 from pipeline.agentic.contracts import (AgenticError, AgenticEvaluation, AgenticGateDecision, DraftProposal,
@@ -99,7 +99,7 @@ def _config(config):
         raise AgenticError('invalid_configuration')
     if type(raw.get('research_enabled', False)) is not bool:
         raise AgenticError('invalid_configuration')
-    from jobwatch.model_choice import chosen   # the person's own pick wins over config/jobwatch.yaml
+    from jobwatch.util.model_choice import chosen   # the person's own pick wins over config/jobwatch.yaml
     pick = chosen()
     values = {'worker_model': pick.get('writer') or raw.get('worker_model', DEFAULT_MODEL),
               'evaluator_model': pick.get('evaluator') or raw.get('evaluator_model', DEFAULT_MODEL),
@@ -217,8 +217,8 @@ def _research(posting, budget, cfg):
 
 def configured_llm(config):
     """Use exactly the configured existing gateway credential, without fallback."""
-    from jobwatch.llm import load_keys
-    from jobwatch.model_choice import own_key
+    from jobwatch.util.llm import load_keys
+    from jobwatch.util.model_choice import own_key
     selected = 0 if own_key() else _config(config)['credential_index']
     keys = load_keys()
     if selected >= len(keys):
@@ -898,7 +898,7 @@ def _spent_today(conn, scope_day_start):
 
 def _local_midnight(now):
     from datetime import datetime
-    from jobwatch.place import person_timezone
+    from jobwatch.util.place import person_timezone
     return datetime.fromtimestamp(now, person_timezone()).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
 
 

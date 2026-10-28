@@ -16,7 +16,7 @@ import yaml
 
 from jobwatch.settings import get as get_setting
 
-from jobwatch.openrouter_extras import _cosine, vectors
+from jobwatch.util.openrouter_extras import _cosine, vectors
 
 PER_QUESTION = 4
 MIN_SCORE = 0.4  # 2026-10-12: facts with no real answer (salary, 'how did you hear') scored ~0.35

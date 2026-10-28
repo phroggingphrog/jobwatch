@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import re
 
-from ..llm import LLM
+from jobwatch.util.llm import LLM
 
 from ..settings import get as _setting
 
@@ -242,7 +242,7 @@ def drop_stock_framing(draft: dict, *, style_options: dict | None = None) -> int
 
 def run_reviewer(llm: LLM, cv_tagged: str, letter_tagged: str, posting_text: str,
                  cited_evidence: list[dict], claim_ids: set, model: str | None = None) -> list[dict]:
-    from ..model_choice import get_model
+    from jobwatch.util.model_choice import get_model
     res = llm.chat(model or get_model("reviewer"), reviewer_messages(cv_tagged, letter_tagged, posting_text, cited_evidence),
                    max_tokens=4000)
     return clean_edits(res.data, claim_ids)

@@ -177,7 +177,8 @@ def mount(app, require, get_config, *, client_principal=None):
     @app.post('/v1/chat/completions')
     async def completion(body: Completion, request: Request,
                          x_jobwatch_conversation: str = Header(), x_jobwatch_uploads: str = Header(default=''), principal=Depends(write)):
-        from jobwatch import model_choice, users
+        from jobwatch.util import model_choice as model_choice
+        from jobwatch import users
         # The authenticated LibreChat server saves the explicit selector choice
         # through the human-scoped model API before forwarding this request.
         with users.use(principal.person):

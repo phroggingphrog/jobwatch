@@ -16,7 +16,7 @@ import sqlite3
 from pathlib import Path
 
 from jobwatch.candidate.person import field_phrase
-from jobwatch.openrouter_extras import _cosine, _post, extras_settings, vectors
+from jobwatch.util.openrouter_extras import _cosine, _post, extras_settings, vectors
 
 PRIVATE_ID = re.compile(r"work_rights|visa|answers|referee|contact|email|phone|linkedin|candidate\.name|candidate\.location")
 PRIVATE_TEXT = re.compile(r"(?i)\bvisa\b|subclass|\b500\b|@|\+?61\s?4|\b04\d{2}\s?\d{3}\s?\d{3}\b|linkedin\.com|"

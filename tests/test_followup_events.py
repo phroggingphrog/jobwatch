@@ -4,7 +4,7 @@ import json
 import pytest
 
 from jobwatch import db, ledger
-from jobwatch.followup_events import FollowupEventError, record_event, application_cadence
+from jobwatch.followup.events import FollowupEventError, record_event, application_cadence
 
 NOW = datetime(2026, 10, 11, 1, tzinfo=UTC)
 
