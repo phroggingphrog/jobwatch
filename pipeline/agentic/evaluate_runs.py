@@ -106,8 +106,6 @@ def _paid_evaluation(case,inputs,dp,ex,batch,llm):
     from jobwatch.candidate.contracts import AnalysisResult
     cfg=inputs['runtime']
     require_route(llm,cfg['evaluator_model'])
-    if cfg.get('embedding_model'):
-        require_route(llm,cfg['embedding_model'],embedding=True)
     candidate=case.candidate
     if candidate is None and case.evaluation['run_key'].get('candidate_hash'):
         raise AgenticError('frozen_candidate_unavailable')

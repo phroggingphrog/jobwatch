@@ -205,8 +205,6 @@ def execute(conn,config,ident,manifest_hash,run_id,*,llm=None,llm_factory=None):
         llm=llm or (llm_factory() if llm_factory else service.configured_llm(config))
         for name in ('worker_model','evaluator_model','reviewer_model','answer_model'):
             execution.require_route(llm,cfg[name])
-        if cfg['embedding_model'] is not None:
-            execution.require_route(llm,cfg['embedding_model'],embedding=True)
         active=execution.current()
         if active:
             active.check()

@@ -15,9 +15,13 @@ def policy(**kwargs):
         home=None, regions=(), remote_ok=False, **kwargs)
 
 
+def hypotheses(*titles):
+    return [SimpleNamespace(title=t, id=f'anzsco2022:{i}') for i, t in enumerate(titles)]
+
+
 def scope_plan():
-    return plans.search_plan(policy(), [SimpleNamespace(title='Nurse', id='test:nurse')],
-                             extra_locations=('Sydney, NSW', 'Perth, WA'))
+    return plans.search_plan(policy(), hypotheses('Nurse'),
+        extra_locations=('Sydney, NSW', 'Perth, WA'))
 
 
 @pytest.mark.parametrize('collector', ['seek', 'jora', 'jobspy'])
@@ -162,7 +166,7 @@ def test_remote_search_shares_request_cap_and_rotates_after_local_scope():
     p = policy()
     p.home = {'place': 'Sydney', 'state': 'NSW', 'country': 'Australia'}
     p.remote_ok = True
-    searches = plans.searches_overlay(plans.search_plan(p, [SimpleNamespace(title='Nurse', id='test:nurse')]), {'seek': {'searches_per_run': 1}}, p)
+    searches = plans.searches_overlay(plans.search_plan(p, hypotheses('Nurse')), {'seek': {'searches_per_run': 1}}, p)
     ctx = make_ctx(FakeHttp({'seek.com.au': {'data': []}}), searches=searches)
     for _ in range(2):
         seek.collect(ctx)

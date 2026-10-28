@@ -19,19 +19,26 @@ career-master source or unapproved mapping is used.
 
 Without an embedding setting, retrieval stays lexical with model query expansion.
 The optional `pipeline.agentic.embedding_model` setting enables dense retrieval via
-`PaidGatewayEmbeddings`, using LangChain's
-[`Embeddings` interface](https://docs.langchain.com/oss/python/integrations/embeddings/).
-The adapter uses the existing server-bound gateway, explicit selected credential,
-and shared durable job/API reservations. No retry, provider/credential fallback,
-hosted tracing, or legacy public-ad transport is used.
+LangChain's [`Embeddings` interface](https://docs.langchain.com/oss/python/integrations/embeddings/).
 
-The owner selected **Qwen** on 2026-10-21. Source configuration now selects
-`openrouter/qwen/qwen3-embedding-8b`, advertised by the existing OmniRoute model
-catalog and [listed as paid by OpenRouter](https://openrouter.ai/qwen/qwen3-embedding-8b).
-This exact model is allowed only for embedding operations, not chat. The counted
-adapter applies Qwen's query-only `Instruct: ...\nQuery:...` format, leaving evidence
-documents plain, following the [official model card](https://huggingface.co/Qwen/Qwen3-Embedding-8B).
-This changes the source release configuration, not the live service.
+Paid provider selectors use `PaidGatewayEmbeddings`, the server-bound gateway, an
+explicit selected credential and shared durable job/API reservations. The owner
+selected Qwen on 2026-10-21; source config selects
+`openrouter/qwen/qwen3-embedding-8b`, which is restricted to embedding operations.
+Its query-only `Instruct: ...\nQuery:...` formatting follows the
+[official model card](https://huggingface.co/Qwen/Qwen3-Embedding-8B).
+
+An explicit `ollama/<model-tag>` selector uses `LocalOllamaEmbeddings` and the
+Ollama `/api/embed` endpoint pinned to `http://127.0.0.1:11434`. It sends no
+credentials, disables environment proxies and does not follow redirects. Install
+Ollama and pull an embedding-capable model (for example `ollama pull
+nomic-embed-text`), then set `pipeline.agentic.embedding_model` to
+`ollama/nomic-embed-text`. Model compatibility is checked when the request runs;
+the local route is explicit and never an automatic fallback from paid Qwen. Local
+calls remain bounded by the existing discovery time/token budget and share the
+private model-keyed vector cache. Token accounting is conservative request-size
+estimation because Ollama does not return provider usage.
+
 
 Dense indexing covers exact overlapping spans of every canonical record and the
 frozen requirement texts. Vectors stay in memory for this job. Cosine and BM25

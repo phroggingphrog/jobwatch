@@ -16,7 +16,7 @@ import numpy as np
 
 from jobwatch import db, users
 from jobwatch.apply.paths import safe_write_bytes
-from pipeline.agentic.gateway import PaidGatewayEmbeddings
+from pipeline.agentic.gateway import make_embedding_adapter
 from pipeline.agentic.runtime import BatchBudget, JobBudget, RuntimeErrorSafe
 
 from . import DiscoveryError
@@ -165,7 +165,7 @@ def make_embedder(llm, config, budget):
     model = _config(config)['embedding_model']
     if model is None:
         raise DiscoveryError('embedding_not_configured')
-    return PaidGatewayEmbeddings(llm, model, budget)
+    return make_embedding_adapter(llm, model, budget)
 
 
 def discovery_tokens_since(conn, start):

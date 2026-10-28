@@ -190,7 +190,7 @@ def field_hypotheses(person, *, limit=15, llm=None, config=None, policy=None, co
         reference = loaders.load_reference_records()
         if not reference.records:
             raise DiscoveryError('reference_unavailable')
-        from pipeline.agentic.service import _config, configured_llm
+        from pipeline.agentic.service import _config
         model = _config(config)['embedding_model']
         if model is None:
             raise DiscoveryError('embedding_not_configured')
@@ -201,7 +201,10 @@ def field_hypotheses(person, *, limit=15, llm=None, config=None, policy=None, co
         # Reuse the discovery settings validator; configuration never enters a RunKey.
         from pipeline.agentic.discovery import settings
         ceiling = settings(config)['embedding_token_ceiling']
-        llm = llm if llm is not None else configured_llm(config)
+        from pipeline.agentic.execution import ollama_embedding_model
+        if llm is None and ollama_embedding_model(model) is None:
+            from pipeline.agentic.service import configured_llm
+            llm = configured_llm(config)
         owns_connection = conn is None
         if owns_connection:
             database_path = config.db_path

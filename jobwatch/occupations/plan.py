@@ -42,39 +42,44 @@ def _unique(items):
     return tuple(out)
 
 
-def _search_locations(policy, extra_locations) -> tuple[str, ...]:
-    from pipeline.agentic.location import CAPITALS, regions_named, victorian_place
-    from jobwatch.place import STATES
+_NEGATION = re.compile(r'\b(?:no|not|never|avoid|without|except|excluding)\b', re.I)
 
-    negation = re.compile(r'\b(?:no|not|never|avoid|without|except|excluding)\b', re.I)
-    candidates = []
+
+def _search_locations(policy, extra_locations) -> tuple[str, ...]:
+    """Collector places derived from structured home and approved extra answers.
+
+    Only canonical city/suburb names are emitted, never the person's original sentence.
+    Ambiguous or unapproved input is covered by the approved region codes instead.
+    """
+    from pipeline.agentic.location import CAPITALS, regions_named, victorian_place
+
     home = policy.home or {}
-    inputs = []
-    if isinstance(home, dict):
-        value = ', '.join(str(home[k]) for k in ('place', 'state') if home.get(k))
-        if value:
-            inputs.append(value)
-    for value in extra_locations:
-        if isinstance(value, str) and value.strip():
-            inputs.append(value.strip())
-    permitted = set(getattr(policy, 'regions', ()))
-    for text in inputs:
-        if negation.search(text):
+    raw = [', '.join(str(home[k]) for k in ('place', 'state') if home.get(k)), *extra_locations]
+    approved = tuple(getattr(policy, 'regions', ()) or ())
+    approved_set = set(approved)
+    places = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        text = ' '.join(item.split())
+        if not text or _NEGATION.search(text):
             continue
         regions = regions_named(text)
-        if len(regions) > 1:
+        if len(regions) != 1:
             continue
-        if regions == {'VIC'}:
-            place = victorian_place(text)
-            if place and (not permitted or 'VIC' in permitted):
-                candidates.append(place.title() + ', VIC')
+        state = next(iter(regions))
+        name = None
+        if state == 'VIC':
+            name = victorian_place(text)
+        else:
+            name = next((city for city, code in CAPITALS.items()
+                         if code == state and re.search(rf'\b{re.escape(city)}\b', text, re.I)), None)
+        if not name:
             continue
-        for city, state in CAPITALS.items():
-            if re.search(rf'\b{re.escape(city)}\b', text, re.I) and state in regions and (not permitted or state in permitted):
-                candidates.append(city.title() + ', ' + state)
-                break
-    candidates.extend(region for region in getattr(policy, 'regions', ()) if region in STATES)
-    return _unique(candidates)
+        if approved_set and state not in approved_set:
+            continue
+        places.append(f'{name.title()}, {state}')
+    return _unique([*places, *approved])
 
 
 def search_plan(policy, hypotheses, *, extra_locations=(), max_queries=12) -> SearchPlan:

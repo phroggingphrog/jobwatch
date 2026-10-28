@@ -2,12 +2,13 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from conftest import make_config
 from jobwatch import db, pipeline as collection, users
 from jobwatch.candidate import intake
 from jobwatch.candidate.policy import build_policy
-from jobwatch.occupations import hypotheses, loaders
+from jobwatch.occupations import DiscoveryError, hypotheses, loaders
 from jobwatch.occupations.embeddings import VectorStore
 from jobwatch.occupations.plan import load_plan, query_for, save_plan, search_plan
 from pipeline import store
@@ -74,7 +75,7 @@ def test_reconsider_reaches_changed_rule_after_twenty_still_excluded_jobs(env, m
     assert all(states[pid] == 'archived' for pid in range(1, 21))
 
 
-def test_dry_run_collection_uses_unpaid_scope_but_never_refreshes_discovery(tmp_path, monkeypatch):
+def test_dry_run_refuses_unprepared_discovery_without_paid_refresh(tmp_path, monkeypatch):
     config = make_config(settings={'pipeline': {'agentic': {'enabled': True, 'search_plan': True}},
                                   'tiers': {'fast': [], 'slow': []}}, tmp_path=tmp_path)
     called = []
@@ -88,13 +89,17 @@ def test_dry_run_collection_uses_unpaid_scope_but_never_refreshes_discovery(tmp_
         return original(conn, config, dry_run=dry_run)
     monkeypatch.setattr(discovery, 'prepare_run', prepare)
     monkeypatch.setattr(discovery, 'refresh', forbidden)
+    monkeypatch.setattr(discovery, 'policy_for', lambda person: make_policy())
     monkeypatch.setattr(collection, 'tier_collectors', lambda *args: [])
-    result = collection.run(config, 'fast', dry_run=True, printer=lambda *args: None)
+    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(
+        basis=('supplier reconciliation',), locations=(), daily_token_ceiling=1_000_000))
+    with pytest.raises(DiscoveryError) as caught:
+        collection.run(config, 'fast', dry_run=True, printer=lambda *args: None)
+    assert caught.value.code == 'discovery_not_prepared'
     assert called == [True]
-    assert result['collectors'] == [] and result['ai'] == {}
 
 
-def test_prepare_run_refreshes_when_reference_changes(tmp_path, monkeypatch):
+def test_prepare_run_refreshes_stale_hypotheses_before_projecting_plan(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     person = 'boundary-person'
     policy = make_policy()
@@ -104,10 +109,8 @@ def test_prepare_run_refreshes_when_reference_changes(tmp_path, monkeypatch):
     monkeypatch.setattr(loaders, 'load_reference_records', lambda **kwargs: current_reference[0])
     monkeypatch.setattr(hypotheses, 'policy_for', lambda person: policy)
     monkeypatch.setattr(discovery, 'policy_for', lambda person: policy)
-    scope_text = 'anything related to my CV'
-    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(basis=(scope_text,), locations=(), daily_token_ceiling=1_000_000))
+    monkeypatch.setattr(intake, 'discovery_scope', lambda person: SimpleNamespace(basis=('supplier reconciliation',), locations=(), daily_token_ceiling=1_000_000))
     monkeypatch.setattr(hypotheses, 'reference_store', lambda model=None: VectorStore(tmp_path / 'reference', model))
-    monkeypatch.setattr(discovery, 'effective_mode', lambda cfg: 'agentic')
     calls = []
     llm = approved_llm(hash_transport(calls))
     refreshed = []
@@ -122,18 +125,19 @@ def test_prepare_run_refreshes_when_reference_changes(tmp_path, monkeypatch):
         connection = db.connect(config.db_path)
         try:
             fields = hypotheses.field_hypotheses(person, config=config, llm=llm, policy=policy, conn=connection)
-            original_plan = search_plan(policy, fields)
-            save_plan(person, original_plan)
+            save_plan(person, search_plan(policy, fields))
             current_reference[0] = current_reference[0].model_copy(update={'versions': {'anzsco2022': 'toy-2', 'onet': 'toy-1'}})
             assert hypotheses.cached_hypotheses(person, config=config) is None
-            assert load_plan(person) == original_plan
+            assert load_plan(person) is not None  # a saved plan never outranks current evidence
             monkeypatch.setattr(discovery, 'refresh', refresh)
             prepared = discovery.prepare_run(connection, config)
-            cached = hypotheses.cached_hypotheses(person, config=config)
             assert refreshed == [person]
-            assert len(calls) > 0
-            assert cached is not None and set(prepared.extra['search_plan'].hypotheses) == {h.id for h in cached}
-            assert scope_text.casefold() not in prepared.extra['search_plan'].queries['seek']
-            assert set(prepared.extra['search_plan'].queries['seek']) == {query_for(h.title) for h in cached if query_for(h.title)}
+            current = hypotheses.cached_hypotheses(person, config=config)
+            assert current
+            plan = prepared.extra['search_plan']
+            assert plan.hypotheses == tuple(h.id for h in current)
+            assert set(plan.queries['seek']) == {query_for(h.title) for h in current}
+            assert 'supplier reconciliation' not in plan.queries['seek']
+            assert load_plan(person) == plan
         finally:
             connection.close()

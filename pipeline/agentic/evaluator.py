@@ -317,9 +317,10 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             analysis = structural_summary(structural)
     embeddings = None
     if embedding_model:
-        from pipeline.agentic.gateway import PaidGatewayEmbeddings
-        embeddings = PaidGatewayEmbeddings(llm, embedding_model, budget)
-    evidence_search = RequirementEvidenceSearch(bundle, original, embeddings=embeddings, embedding_model=embedding_model)
+        from pipeline.agentic.gateway import make_embedding_adapter
+        embeddings = make_embedding_adapter(llm, embedding_model, budget)
+    evidence_search = RequirementEvidenceSearch(bundle, original, embeddings=embeddings,
+                                                embedding_model=embedding_model)
     tools = [
         Tool("read_candidate_evidence", EvidenceSelection,
              lambda args, _: evidence_search.read(args.evidence_ids)),

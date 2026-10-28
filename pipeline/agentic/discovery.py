@@ -76,33 +76,42 @@ def refresh(person, config, *, llm=None, conn=None, seconds=240.0):
         from jobwatch.occupations.loaders import load_reference_records
         return dict(profile_version=policy.profile_version, hypotheses=len(hypotheses),
                     plan_hash=plan.plan_hash, datasets=load_reference_records().versions)
+
+
 def _current_plan(person):
     policy, plan = policy_for(person), load_plan(person)
-    if (policy is None or plan is None or plan.profile_version != policy.profile_version
-            or plan.policy_hash != policy.policy_hash):
+    if policy is None or plan is None or plan.profile_version != policy.profile_version or plan.policy_hash != policy.policy_hash:
         return policy, None
     return policy, plan
 
 
 def prepare_run(conn, config, *, dry_run=False):
+    person = users.current()
     try:
-        person = users.current()
         scope = intake.discovery_scope(person)
         if scope is None:
             return config
         if not settings(config)['search_plan']:
+            # A confirmed profile is only searchable through derived hypotheses;
+            # never fall back to its raw evidence sentences or shared settings.
             raise DiscoveryError('confirmed_scope_unavailable')
         policy = policy_for(person)
         if policy is None:
             raise DiscoveryError('no_policy')
-        hypotheses = _fields().cached_hypotheses(person, config=config)
+        fields = _fields()
+        hypotheses = fields.cached_hypotheses(person, config=config)
         if hypotheses is None:
             if dry_run:
                 raise DiscoveryError('discovery_not_prepared')
             refresh(person, config, conn=conn)
-            hypotheses = _fields().cached_hypotheses(person, config=config)
+            policy = policy_for(person)
+            if policy is None:
+                raise DiscoveryError('no_policy')
+            hypotheses = fields.cached_hypotheses(person, config=config)
         if not hypotheses:
             raise DiscoveryError('no_profile_facts')
+        # Rebuild from current validated evidence rather than trusting a saved
+        # plan's older query algorithm.
         plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
         if not any(plan.queries.values()):
             raise DiscoveryError('no_profile_facts')
@@ -115,9 +124,9 @@ def prepare_run(conn, config, *, dry_run=False):
         raise
     except Exception as exc:
         log.info('discovery prepare: %s', type(exc).__name__)
+        # Never fall back to another person's shared search settings after a
+        # failed confirmed-scope projection.
         raise DiscoveryError('confirmed_scope_unavailable') from None
-
-
 
 
 def recall_filter(base, config):

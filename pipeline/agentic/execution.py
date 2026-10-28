@@ -15,6 +15,15 @@ from pipeline.agentic.runtime import RuntimeErrorSafe, _usage_total
 _CURRENT = contextvars.ContextVar('jobwatch_execution', default=None)
 _PAID = re.compile(r'^(?:openai|claude|google)/[A-Za-z0-9._-]+$')
 QWEN_EMBEDDING_MODEL = 'openrouter/qwen/qwen3-embedding-8b'
+_OLLAMA_EMBEDDING = re.compile(r'^ollama/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$')
+
+
+def ollama_embedding_model(model):
+    """Return a local Ollama tag from an explicit `ollama/<tag>` setting."""
+    if type(model) is not str:
+        return None
+    match = _OLLAMA_EMBEDDING.fullmatch(model)
+    return match.group(1) if match else None
 
 
 def embedding_model_allowed(model):

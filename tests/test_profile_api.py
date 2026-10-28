@@ -92,6 +92,7 @@ def test_full_profile_flow_over_http(env):
     assert r.status_code == 200 and r.json()['revision'] == rev + 2 and qid not in [q['id'] for q in r.json()['questions']]
     conf = c.get(f'{P}/proposals/{pid}/confirmation', headers=h()).json()
     assert conf['does_not_authorise'] and conf['scope']['locations'] == ['Perth']
+    assert conf['search_method'].startswith('Job titles are derived from your confirmed CV')
     assert c.get(P + '/', headers=h()).json()['version'] is None
     r = c.post(f'{P}/proposals/{pid}/confirm', json={k: conf[k] for k in ('proposal_digest', 'scope_digest')}, headers=h(APPROVE))
     assert r.status_code == 201 and r.json() == {'version': 1}

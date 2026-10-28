@@ -88,8 +88,9 @@ def _config(config):
               'job_seconds': min(900, float(raw.get('job_seconds', 900))),
               'batch_seconds': min(1800, float(raw.get('batch_seconds', 1800)))}
     if values['embedding_model'] is not None:
-        from pipeline.agentic.execution import embedding_model_allowed
-        if not embedding_model_allowed(values['embedding_model']):
+        from pipeline.agentic.execution import embedding_model_allowed, ollama_embedding_model
+        if (ollama_embedding_model(values['embedding_model']) is None
+                and not embedding_model_allowed(values['embedding_model'])):
             raise AgenticError('invalid_configuration')
     for name in ('occupation_reference_path', 'occupation_mappings_path'):
         value = raw.get(name)

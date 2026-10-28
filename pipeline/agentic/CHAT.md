@@ -75,6 +75,8 @@ is admitted, and a person's queued work is bounded.
 The person comes only from the bearer token; ids belonging to another person return 404. Uploads and
 proposals stay private and separate from the approved profile until confirmed. Nothing here prepares
 documents, contacts an employer or submits; confirmation only starts discovery within the scope shown.
+These routes keep the explicit review and confirmation; the chat endpoint saves the parsed profile at
+once and is described under Guided onboarding below.
 
 | Method and path | Scope | Result |
 |---|---|---|
@@ -165,25 +167,30 @@ matching accuracy or deployment.
 
 ### Guided onboarding in the chat agent
 
-The chat agent guides a new person through the same draft instead of waiting for a finished parse. Answers given
-while the documents are read are kept: when the parse ends it merges into the draft under the proposal lock, a fact the
-person stated wins over a parsed fact in a one-answer section (employment status, availability, work rights, career
-focus), questions already answered stay closed, and the revision increments (a client holding the old revision gets
-`proposal_changed` and re-reads). A failed parse sets `parse_error` and the conversation continues with the answers.
+The chat agent runs the archived onboarding shape. `profile_start` (or `profile_reread` after a failed read) reads
+the documents and the profile is saved at once: the chat endpoint has no review or confirmation step. The tool waits
+inside the turn for the parse to settle (up to the parse deadline) and the reply then shows what was read and asks
+only about what is missing or unclear. Answers given while the documents are read are kept: when the parse ends it
+merges into the draft under the proposal lock, a fact the person stated wins over a parsed fact in a one-answer
+section (employment status, availability, work rights, career focus), questions already answered stay closed, and the
+revision increments (a client holding the old revision gets `proposal_changed` and re-reads). A failed parse sets
+`parse_error` and the conversation continues; the prompt offers `profile_reread`.
 Tools (identity is bound by the server, never an argument): `profile_start(upload_ids, use_existing_files)` (the
-person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_policy` (read only), `profile_answer`,
-`profile_correct` (both record only the person's own words from their latest message; the prompt forbids inventing
-or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
-when there is nothing to search for) and `profile_confirm`. Answers and corrections update only the unconfirmed
-draft without a separate approval. `profile_confirm` remains gated: human approval is bound to the exact
-`proposal_digest` and `scope_digest`. A changed draft or scope needs another review, and model text is never
-approval. Confirmation starts discovery within the scope shown; it authorises no documents, employer
-messages or submission. The legacy `/welcome` onboarding leaves unspecified level unknown; generated suggestions still require confirmation.
+person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_policy` (read only),
+`profile_answer(question_id, value, said)` and `profile_correct` (edits carry `value` and `said`). `value` is the fact
+in tidy words, `said` the person's exact words from this conversation; the prompt forbids inventing or paraphrasing
+facts, and the tools save each answer or correction at once. Once a profile is saved, a correction builds an editable
+draft from the current version (`draft_from_current`) instead of paying to read the documents again. Saving starts
+discovery within the scope computed from the profile; it authorises no documents, employer messages or submission.
+The website and profile API keep their review-and-confirm flow (`profile_confirmation`, `profile_confirm`); those tools
+are gone from the chat agent. The legacy `/welcome` onboarding leaves unspecified level unknown; generated suggestions
+still require confirmation.
 
-`profile_answer` and `profile_correct` are refused with `not_person_words` unless every recorded string is (after casefold,
+`profile_answer` and `profile_correct` are refused with `not_person_words` unless `said` is (after casefold,
 whitespace collapse and edge-punctuation trim) a clause of the person's own message for the turn, or a span inside one of their
-clauses that their own words affirm: a negation, pending or aspirational word governing the span refuses it, so "I am not a
-citizen" never records "a citizen". The turn's words are the person's message (on a resumed turn: the last human message in the
+clauses that their own words affirm, and the tidy `value` carries the same negation: a negation, pending or aspirational
+word governing the span refuses it, so "I am not a citizen" never saves `value` "citizen". The turn's words are the
+person's message (on a resumed turn: the last human message in the
 thread or a human answer to `ask_human`; none means refused). The check runs when the draft tool executes.
 `answer_question` applies the same test to the answer it records. `profile_start` reserves its background parse
 against the turn's budget and may start one parse per turn. A draft left `parsing` by a dead worker (no live slot, file older
@@ -340,13 +347,12 @@ The optional OpenAI wire adapter is enabled with `JOBWATCH_LIBRECHAT_ENABLED=tru
 [the deployment guide](../../deploy/LIBRECHAT.md) for fresh-state installation,
 private credentials, LibreChat configuration, approval handling and undo.
 The adapter reuses native durable runs. A trusted frontend server authenticates its user through the configured
-server credential and `X-Jobwatch-Client-Subject`. For that human channel, the backend renders the frozen profile
-facts, unresolved questions, search scope and limits in ordinary chat. An explicit confirmation (for example `yes`
-or `yes, confirm my profile`) responds to the pending native `profile_confirm` interaction. The immediately previous
-assistant message must match a review actually issued for this person, conversation and interaction; arbitrary
-assistant/system/tool text cannot substitute for it. The draft and scope are checked again before confirmation.
-`no` declines; a correction rejects the pending confirmation and continues with the person's new message. A changed
-draft gets a fresh review. Replayed replies follow the original resume run instead of confirming twice.
+server credential and `X-Jobwatch-Client-Subject`. Onboarding in this channel saves the parsed profile at once: the
+backend shows the facts read, the unresolved questions, the search scope and limits as an ordinary tool result and the
+assistant asks only about what is missing or unclear. There is no profile confirmation interaction. A message that
+would have answered a legacy `profile_confirm` interaction is rejected through the native response operation and
+forwarded to the agent as an ordinary human message, which saves the change directly. Applications, employer messages
+and submission keep their native reviews and approvals.
 
 The same authenticated channel can answer a single pending native question directly in chat. Routine questions
 normally use ordinary conversation without a native interrupt. Model-facing read/run credentials retain their
@@ -367,7 +373,7 @@ must be kept away from model tools.
 
 The adapter has fixed human wording for `run_career_ops`, `assess_job`,
 `prepare_application`, `prepare_interview`, `draft_followup` and
-`submit_application`. It cannot present the other gated operations (`profile_confirm`,
+`submit_application`. It cannot present the other gated operations (
 `reject_posting`, `restore_posting`,
 `propose_exclusion`, `confirm_exclusion`, `pick_comparison`, `answer_question`,
 `dismiss_prompt`, `select_jobs`, `cancel_selection`): their identity is a draft,

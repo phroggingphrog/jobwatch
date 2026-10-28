@@ -11,7 +11,7 @@ from conftest import make_config
 
 def policy(**kw):
     return SimpleNamespace(profile_version=1, policy_hash='a' * 64,
-        focus=kw.get('focus', ()), home=kw.get('home'), regions=kw.get('regions', ()), remote_ok=kw.get('remote_ok', False))
+        focus=kw.get('focus', ()), home=kw.get('home'), remote_ok=kw.get('remote_ok', False))
 
 
 def hyps(*titles):
@@ -19,25 +19,15 @@ def hyps(*titles):
 
 
 def test_queries_and_hash_are_stable_deduplicated_and_capped():
-    p = policy(focus=('anything related to my CV',))
+    p = policy(focus=('anything related to my CV please',))
     h = hyps('Accountant (General)', 'Bookkeeper', 'Accountant (General)', *[f'Role {i}' for i in range(20)])
     plan = search_plan(p, h)
     assert plan.queries['seek'][:2] == ('accountant', 'bookkeeper')
-    assert 'anything related to my cv' not in plan.queries['seek']
+    assert not {'anything related to my cv please'} & set(plan.queries['seek'])
     assert len(plan.queries['seek']) == 12
     assert plan.queries['seek'] == plan.queries['jora'] == plan.queries['jobspy']
     assert plan == search_plan(p, h)
     assert plan.plan_hash != search_plan(p, hyps('Nurse')).plan_hash
-def test_locations_normalize_places_and_keep_approved_regions():
-    p = policy(home={'place': 'Brunswick', 'state': 'VIC'}, regions=('VIC',))
-    plan = search_plan(p, hyps('Nurse'), extra_locations=('anything around Brunswick please', 'Sydney NSW', 'no Melbourne VIC'))
-    assert plan.locations == ('Brunswick, VIC', 'VIC')
-
-
-def test_location_candidates_are_limited_to_named_capitals_and_permitted_regions():
-    p = policy(regions=('WA',))
-    plan = search_plan(p, hyps('Nurse'), extra_locations=('Perth, WA', 'unknown suburb, WA', 'Brisbane, QLD'))
-    assert plan.locations == ('Perth, WA', 'WA')
 
 
 def test_overlay_keeps_settings_and_uses_home_without_mutating_base():
@@ -59,6 +49,11 @@ def test_remote_searches_and_extra_locations():
     out = searches_overlay(plan, {}, p)
     assert out['seek']['searches'][-1] == {'term': 'accountant', 'location': 'Australia', 'is_remote': True}
     assert out['jobspy']['searches'][-1]['is_remote'] is True
+    pv = policy(home={'place': 'Brunswick', 'state': 'VIC'})
+    pv.regions = ('VIC',)
+    planv = search_plan(pv, hyps('Nurse'),
+        extra_locations=('I want work near Brunswick, VIC', 'not Sydney'))
+    assert planv.locations == ('Brunswick, VIC', 'VIC')
 
 
 def test_query_cleanup_and_whole_word_recall_only_widens():

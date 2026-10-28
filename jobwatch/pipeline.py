@@ -165,7 +165,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
     error = None
     try:
         from pipeline.agentic import discovery
-        # Dry runs may use prepared profile-derived discovery, but never create it.
+        # Dry runs cannot trigger paid profile-index generation.
         config = discovery.prepare_run(conn, config, dry_run=dry_run)
         rules = Rules(config.rules, config.employers)
         http_conf = config.settings.get("http") or {}

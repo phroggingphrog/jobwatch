@@ -720,10 +720,11 @@ def _new_id(facts) -> str:
     return "f%d" % (1 + max((int(f.id[1:]) for f in facts if re.fullmatch(r"f\d+", f.id)), default=0))
 
 
-def _person_fact(fid: str, section: str, value, basis: Basis = Basis.EVIDENCE) -> ProfileFact:
+def _person_fact(fid: str, section: str, value, basis: Basis = Basis.EVIDENCE, quote: str = "") -> ProfileFact:
     # evidence from the person means "stated by the person": no document source, never actor 'parser'
+    note = _STATED if not quote else f'{_STATED}: "{quote}"'
     return ProfileFact(id=fid, section=section, value=value if basis is Basis.EVIDENCE else "", basis=basis,
-                       sources=(), note=_STATED, actor="person")
+                       sources=(), note=note, actor="person")
 
 
 def _value(v):
@@ -753,15 +754,23 @@ def edit(person: str, proposal_id: str, *, expected_revision: int, edits: list[d
     """Apply the person's corrections atomically (all or none); one revision bump per call."""
     if not isinstance(edits, list) or not edits or len(edits) > _MAX_EDITS:
         raise IntakeError("invalid_edit")
+    for e in edits:
+        if isinstance(e, dict) and e.get("op") in ("add", "set") and "said" in e \
+                and (not isinstance(e["said"], str) or len(e["said"]) > _MAX_VALUE):
+            raise IntakeError("invalid_edit")              # the person's words: bounded like any value
 
     def change(cur: Proposal):
         facts = list(cur.facts)
         for e in edits:
             op = e.get("op") if isinstance(e, dict) else None
+            section = e.get("section") if isinstance(e, dict) else None
+            if section is not None and section not in SECTIONS:
+                raise IntakeError("invalid_edit")          # a section, when given, must be one we know
             if op == "add":
                 if e.get("section") not in SECTIONS:
                     raise IntakeError("invalid_edit")
-                facts.append(_person_fact(_new_id(facts), e["section"], _value(e.get("value"))))
+                facts.append(_person_fact(_new_id(facts), e["section"], _value(e.get("value")),
+                                          quote=e.get("said", "")))
             elif op in ("set", "remove"):
                 i = next((i for i, f in enumerate(facts) if f.id == e.get("fact_id")), None)
                 if i is None:
@@ -771,22 +780,25 @@ def edit(person: str, proposal_id: str, *, expected_revision: int, edits: list[d
                 elif e.get("basis") != "evidence":      # only a statement by the person; inference is the parser's
                     raise IntakeError("invalid_edit")
                 else:
-                    facts[i] = _person_fact(facts[i].id, facts[i].section, _value(e.get("value")))
+                    facts[i] = _person_fact(facts[i].id, facts[i].section, _value(e.get("value")),
+                                            quote=e.get("said", ""))
             else:
                 raise IntakeError("invalid_edit")
         return facts, cur.questions
     return _mutate(person, proposal_id, expected_revision, change)
 
 
-def answer(person: str, proposal_id: str, *, expected_revision: int, question_id: str, text: str) -> Proposal:
-    """Answer an open question: the question is removed from the open list and its section gets the
-    person's fact in place of the parser's 'unknown' placeholder (a later correction is an edit)."""
+def answer(person: str, proposal_id: str, *, expected_revision: int, question_id: str, text: str, quote: str = "") -> Proposal:
+    """Answer an open question, retaining the person's exact words as evidence."""
+    if not isinstance(quote, str) or len(quote) > _MAX_VALUE:
+        raise IntakeError("invalid_edit")
+
     def change(cur: Proposal):
         q = next((q for q in cur.questions if q.id == question_id), None)
         if q is None:
             raise IntakeError("question_not_found")
         facts = [f for f in cur.facts if not (f.section == q.section and f.basis is Basis.UNKNOWN and f.actor == "parser")]
-        facts.append(_person_fact(_new_id(cur.facts), q.section, _value(text)))
+        facts.append(_person_fact(_new_id(cur.facts), q.section, _value(text), quote=quote))
         return facts, [x for x in cur.questions if x.id != q.id]
     return _mutate(person, proposal_id, expected_revision, change)
 
@@ -941,17 +953,28 @@ def _refuse_hand_edits(pdir: Path, recorded: dict) -> None:
         if live != sha:
             raise IntakeError("profile_edited_by_hand")    # an unapproved hand edit: never silently overwritten
 
+def draft_from_current(person: str) -> Proposal:
+    """Create an editable draft from the current saved profile without reading documents."""
+    with _locked(person, "versions.lock"):
+        cur = current_version(person)
+        if cur is None or cur.get("adopted_from_files"):
+            raise IntakeError("proposal_not_found")
+        proposal = Proposal(
+            id=secrets.token_hex(8), revision=1, base_version=cur["version"],
+            uploads=tuple(cur.get("uploads", ())),
+            facts=tuple(ProfileFact.model_validate(f, strict=False) for f in cur["facts"]),
+            questions=tuple(Question.model_validate(q, strict=False) for q in cur.get("open_questions", ())),
+            status="draft")
+        save_proposal(person, proposal)
+        return proposal
+
+
 
 def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest: str,
-            actor: Literal["person"], config) -> int:
-    """Approve the draft the person was shown. Returns the new version number.
-
-    Under the proposal's own lock (the one edit/answer use) it re-checks status, digest and scope; then writes
-    profile-versions/<n>/ (approved.json, projected files, evidence snapshot), projects into profile/ and marks
-    the proposal confirmed. Nothing is written if any check fails."""
-    if actor != "person":
-        raise IntakeError("person_required")           # model text or an agent is never approval
-    load_proposal(person, proposal_id)                 # validates the id before it names a lock file
+            actor: Literal["person", "chat"], config) -> int:
+    if actor not in ("person", "chat"):
+        raise IntakeError("person_required")
+    load_proposal(person, proposal_id)
     with users.use(person), _locked(person, "versions.lock"), _locked(person, proposal_id + ".lock", "proposals"):
         cur = load_proposal(person, proposal_id)
         if cur.status == "parsing":
@@ -989,7 +1012,7 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         from .rules import carry_facts
         facts = carry_facts(last, facts)
         approved = {"schema": 1, "version": n, "proposal_id": cur.id, "proposal_digest": proposal_digest, "revision": cur.revision,
-                    "base_version": cur.base_version, "actor": "person", "uploads": list(cur.uploads),
+                    "base_version": cur.base_version, "actor": actor, "uploads": list(cur.uploads),
                     "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "scope": scope.model_dump(mode="json"), "scope_digest": scope_digest,
                     "facts": [f.model_dump(mode="json") for f in facts],

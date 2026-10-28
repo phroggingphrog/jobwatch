@@ -13,8 +13,11 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget
 from .fixtures import approved_llm, hash_transport, make_config
 
 
+
+
 def job(ceiling=100000):
     return JobBudget('a' * 64, BatchBudget('synthetic', token_ceiling=ceiling), token_ceiling=ceiling)
+
 
 
 def adapter(calls=None, *, fail_after=None, budget=None):

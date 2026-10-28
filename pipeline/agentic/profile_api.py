@@ -21,7 +21,8 @@ STATUS = {'proposal_in_progress': 409, 'proposal_parsing': 409, 'parse_interrupt
           'no_extractable_text': 422, 'invalid_edit': 422, 'parse_failed': 422, 'unreadable_document': 422,
           'nothing_to_adopt': 422,
           'upload_not_found': 404, 'proposal_not_found': 404, 'fact_not_found': 404, 'question_not_found': 404,
-          'extractor_unavailable': 503, 'person_required': 403, 'gateway_not_allowed': 403, 'model_not_allowed': 403}
+          'extractor_unavailable': 503, 'model_unavailable': 503, 'parse_timeout': 503,
+          'person_required': 403, 'gateway_not_allowed': 403, 'model_not_allowed': 403}
 
 
 class _Body(BaseModel):
@@ -111,7 +112,12 @@ def mount(app, require, get_config, llm_factory):
     @app.get(PREFIX + '/proposals/{proposal_id}/confirmation')
     def confirmation(proposal_id: str, principal=Depends(read)):
         result = call(principal.person, intake.confirmation, proposal_id, get_config(principal.person))
-        return {**result, 'scope': result['scope'].model_dump(mode='json')}
+        return {**result, 'scope': result['scope'].model_dump(mode='json'),
+                'search_method': ('Job titles are derived from your confirmed CV, skills and preferences. '
+                                  'Your chat sentences are not typed into job boards as search terms. The choices '
+                                  'are checked each run and recalculated when the confirmed profile changes. '
+                                  'Changes to your profile need your confirmation; applications and employer '
+                                  'messages are not authorised.')}
 
     @app.post(PREFIX + '/proposals/{proposal_id}/confirm', status_code=201)
     def confirm(proposal_id: str, body: ConfirmRequest, principal=Depends(approve)):
