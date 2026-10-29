@@ -398,3 +398,32 @@ Upstream sources checked 2026-10-27:
 and [returned glossary reference](https://deepwiki.com/career-ops-hq/career-ops#12).
 Upstream score weights, default thresholds and estimated compensation are not
 automatically approved Jobwatch policy.
+
+
+## Split requirement citation validation (2026-10-30)
+
+An owner-authorized test of a modified assessment combo ended held
+`invalid_citation`: three native requests and one classifier request, 31,467
+charged tokens (26,819 known actual plus a 4,648-token classifier reservation),
+41.99 seconds, no new digest calls or embeddings. Application accounting
+reconciled. Gateway logs identify Mistral Large responses through the owner's
+`free-stack` reference; this is not DeepSeek-only acceptance evidence. No
+canonical evaluation, gate or completed-job replay was produced.
+
+All eleven requirement quotes were exact and their hashes matched the ad, but
+the model supplied an incorrect source identifier. `complete_requirement_set`
+persisted those citations without validating them. `complete_ad_facts` then
+validated the stored requirements and returned a requirement citation error
+through the facts tool. Repeating facts could not correct the saved requirement
+set, and the correction allowance exhausted.
+
+The repair validates and canonicalizes requirement citations before persisting
+the split requirement set. Errors identify `requirements.<index>.jd_signal` on
+that tool. Combined extraction uses the same validation, retaining its nested
+field path. Source identifiers, hashes and exact quotes remain mandatory; no
+invalid identifier is replaced or inferred. The synthetic native completion
+regression first failed because no rejection feedback was returned, and checks
+that corrected requirements complete normally with zero-call completed reuse.
+
+The paid attempt remains held and its journals and charges are retained. This
+source repair does not authorize a paid retry, deployment or service activation.

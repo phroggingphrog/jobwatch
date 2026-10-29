@@ -69,3 +69,22 @@ def test_essential_gap_reports_both_missing_risk_fields_without_rewriting_matche
     assert result.matches[0].judgment.status == 'unknown'
     feedback = json.loads([m for m in seen[-1]['messages'] if m['role'] == 'tool'][-1]['content'])
     assert feedback['fields'] == ['matches.0.risk', 'matches.0.mitigation']
+
+
+def test_invalid_requirement_citation_is_corrected_before_split_ad_facts(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    bad = copy.deepcopy(choices[0])
+    bad['arguments']['requirements'][0]['jd_signal']['source_id'] = 'posting_ad'
+    llm, seen = transport([bad, *choices])
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        args = dict(conn=conn, posting={}, screen={'outcome': 'admit'},
+                    evidence_bundle=bundle, model='deepseek-flash')
+        result = evaluate_autonomous(key, ad, budget(key), llm, **args)
+        assert result.matches
+        feedback = json.loads([m for m in seen[1]['messages'] if m['role'] == 'tool'][-1]['content'])
+        assert feedback['error'] == 'invalid_citation'
+        assert feedback['fields'] == ['requirements.0.jd_signal']
+        assert all(r.jd_signal.source_id == 'ad' for r in result.requirements.requirements)
+        assert evaluate_autonomous(key, ad, budget(key), llm, **args) == result
+        assert len(seen) == 5

@@ -436,25 +436,30 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
     search = None
     emitted_evidence = set()
 
+    def checked_requirement_set(value, field_prefix):
+        if not value.requirements or value.ad_hash != key.ad_hash:
+            raise AgenticError('invalid_requirements')
+        checked = []
+        for index, requirement in enumerate(value.requirements):
+            try:
+                checked.append(requirement.model_copy(update={
+                    'jd_signal': _exact_ad_citation(requirement.jd_signal, ad_text, key.ad_hash)})
+                    if requirement.jd_signal else requirement)
+            except AgenticError:
+                raise CompletionError('invalid_citation', f'{field_prefix}.{index}.jd_signal') from None
+        requirements = value.model_copy(update={'requirements': tuple(checked)})
+        validate_citations(tuple(r.jd_signal for r in requirements.requirements if r.jd_signal),
+                           {'ad': (key.ad_hash, ad_text)})
+        return requirements
+
     def build_requirements(value):
         nonlocal extraction, search
         if extraction is not None:
             if value.model_dump() != extraction.model_dump():
                 raise RuntimeErrorSafe('requirements_changed')
             return
-        if not value.requirements.requirements or value.requirements.ad_hash != key.ad_hash:
-            raise AgenticError('invalid_requirements')
-        checked = []
-        for index, requirement in enumerate(value.requirements.requirements):
-            try:
-                checked.append(requirement.model_copy(update={
-                    'jd_signal': _exact_ad_citation(requirement.jd_signal, ad_text, key.ad_hash)})
-                    if requirement.jd_signal else requirement)
-            except AgenticError:
-                raise CompletionError('invalid_citation', f'requirements.requirements.{index}.jd_signal') from None
-        requirements = value.requirements.model_copy(update={'requirements': tuple(checked)})
+        requirements = checked_requirement_set(value.requirements, 'requirements.requirements')
         sources = {'ad': (key.ad_hash, ad_text)}
-        validate_citations(tuple(r.jd_signal for r in requirements.requirements if r.jd_signal), sources)
         try:
             location = _exact_ad_citation(value.location_evidence, ad_text, key.ad_hash) if value.location_evidence else None
         except AgenticError:
@@ -622,8 +627,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
             handle_tool_error=False)
 
     def complete_requirement_set(value):
-        if not value.requirements or value.ad_hash != key.ad_hash:
-            raise AgenticError('invalid_requirements')
+        value = checked_requirement_set(value, 'requirements')
         run.save('requirement_set', value.model_dump(mode='json'))
         return {'requirements_hash': value.requirement_hash,
                 'next': 'Call complete_ad_facts with facts, location_fit, legitimacy and optional location_evidence.'}
