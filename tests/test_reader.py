@@ -269,6 +269,45 @@ def test_confirmed_settings_change_cache_but_unconfirmed_files_do_not(world, tmp
     assert changed["skipped_same"] == 0 and changed["reviewed"] == 1 and len(gw.calls) == 1
 
 
+def _repost(conn, sid, desc, **over):
+    """A second requisition inside the dedupe window: same words, new source id and URL, so its own postings row."""
+    fields = {"location": "Melbourne VIC", **over}
+    p = Posting(source="ats_pageup", source_id=sid, url=f"https://example.com/{sid}", title="Accounts Clerk",
+                company="Acme", description=desc, raw={}, **fields)
+    pid, _ = ingest(conn, p)
+    conn.execute("INSERT INTO matches(posting_id, arm, arm_tier, arms_json, rules_json, flags_json, matched_at) "
+                 "VALUES(?,?,?,?,?,?,?)", (pid, "general_clerk", "core", "[]", "{}", "[]", dbm.ts()))
+    conn.commit()
+    return pid
+
+def test_identical_repost_reuses_a_stored_reading(world):
+    config, conn, add = world
+    desc = "Process invoices. MYOB and Excel needed. " * 20
+    first = add("Accounts Clerk", desc=desc)
+    gw = FakeGateway()
+    reader.review_pending(conn, config, llm=make_llm(gw), limit=1)
+    assert len(gw.calls) == 1
+    second = _repost(conn, "Accounts-Clerk-2", desc)
+    assert second != first
+    gw.calls.clear()
+    stats = reader.review_pending(conn, config, llm=make_llm(gw), limit=10)
+    assert stats["reused"] == 1 and stats["reviewed"] == 0 and gw.calls == []
+    a, b = conn.execute("SELECT posting_id, verdict, fit, score, content_hash FROM ad_reviews")
+    assert a["content_hash"] == b["content_hash"]
+    assert (a["verdict"], a["fit"], a["score"]) == (b["verdict"], b["fit"], b["score"])
+
+def test_repost_with_a_different_prompt_visible_field_is_read_again(world):
+    """Location and salary reach the prompt but not the content hash, so a different value needs its own reading."""
+    config, conn, add = world
+    desc = "Process invoices. MYOB and Excel needed. " * 20
+    add("Accounts Clerk", desc=desc)
+    gw = FakeGateway()
+    reader.review_pending(conn, config, llm=make_llm(gw), limit=1)
+    _repost(conn, "Accounts-Clerk-Sydney", desc, location="Sydney NSW")
+    gw.calls.clear()
+    stats = reader.review_pending(conn, config, llm=make_llm(gw), limit=10)
+    assert stats["reused"] == 0 and stats["reviewed"] == 1 and len(gw.calls) == 1
+
 def test_sponsored_ad_is_hidden_without_a_model_call(world):
     config, conn, add = world
     pid = add("Admin Assistant", source="seek", desc="short", raw={"displayType": "promoted", "isFeatured": True})
