@@ -51,9 +51,10 @@ class Fetcher:
         self.blocked: dict[str, str] = {}
         self.requests_made = 0
         self.deadline = deadline
+        self._deadline = None if deadline is None else self.clock() + max(0, deadline - time.time())
 
     def _remaining_timeout(self, url: str) -> float:
-        left = self.timeout if self.deadline is None else min(self.timeout, self.deadline-time.time())
+        left = self.timeout if self._deadline is None else min(self.timeout, self._deadline-self.clock())
         if left <= 0:
             raise Blocked(url, 0, 'collection_deadline')
         return left

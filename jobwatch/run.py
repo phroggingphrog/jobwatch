@@ -14,6 +14,7 @@ from .config import Config
 from .dedupe import ingest
 from .filters import Rules
 from jobwatch.util.http import Fetcher
+from jobwatch.util.deadline import CollectionDeadline, collection_budget
 from .models import canonical_url, now_utc, parse_date
 from jobwatch.util.place import person_state
 
@@ -179,11 +180,9 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         http_conf = config.settings.get("http") or {}
         http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5),
                        deadline=deadline)
-        for name in tier_collectors(config, tier, only):
-            if time.time() >= deadline:
-                ai = {'deferred': 'collection_deadline'}
-                break
-            results.append(run_collector(conn, config, rules, http, name, run_id, limit, tier))
+        with collection_budget(deadline - time.time()):
+            for name in tier_collectors(config, tier, only):
+                results.append(run_collector(conn, config, rules, http, name, run_id, limit, tier))
         note = publish(conn, dry_run)
         pruned = dbm.prune(conn, int(config.settings.get("retention_days", 90)))
         if not dry_run and assess:
@@ -217,6 +216,12 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                     alert(conn, f"the AI step of the job check crashed ({type(exc).__name__}).", "ai_step_crash")
                 except Exception:  # noqa: BLE001
                     pass
+    except CollectionDeadline:
+        error = 'collection_deadline'
+        ai = {'deferred': error}
+        if not dry_run:
+            from jobwatch.notify import alert
+            alert(conn, 'Job collection exhausted its wall-clock deadline.', 'collection_deadline')
     except BaseException as exc:                # recorded, then raised again: a crashed run must not look like an empty one
         error = type(exc).__name__              # the class only: a message could hold anything
         raise
