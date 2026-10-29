@@ -35,6 +35,16 @@ def transport(choices, *, include_usage=True, reasoning=False):
     return LLM(transport=send, keys=['synthetic-key']), seen
 
 
+def combined_native_choices(roles):
+    """Use the combined extraction protocol for tests of native tool recovery.
+
+    Keep this three-reply script independent of the split extraction protocol:
+    callers rely on extraction, evidence read, and completion in that order.
+    """
+    return [roles[1], roles[2],
+            {'tool': 'complete_evaluation', 'arguments': copy.deepcopy(roles[-1]['arguments'])}]
+
+
 def native_choices(roles):
     ext = roles[1]['arguments']
     facts = {key: ext[key] for key in ('facts', 'location_fit', 'location_evidence', 'legitimacy', 'uncertainties')

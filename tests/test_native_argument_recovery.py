@@ -8,7 +8,7 @@ import pytest
 from pipeline.agentic.autonomous import evaluate_autonomous
 from pipeline.agentic.runtime import BatchBudget, JobBudget, RuntimeErrorSafe
 from test_agentic_evaluate import build_case, budget
-from test_autonomous_evaluation import native_choices, transport
+from test_autonomous_evaluation import combined_native_choices as native_choices, transport
 
 
 def malformed_transport(choices, malformed_turns):
