@@ -124,6 +124,17 @@ def mount(app, require, get_config, llm_factory):
     def current(principal=Depends(read)):
         return call(principal.person, intake.current_version) or {'version': None}
 
+    @app.get(PREFIX + '/understanding')
+    def understanding(principal=Depends(read)):
+        from jobwatch.candidate.presentation import current_understanding
+        from pipeline.agentic.chat import job_database, job_connection
+        with users.use(principal.person):
+            config = get_config(principal.person)
+            if not job_database(config).exists():
+                return current_understanding(None)
+            with job_connection(config) as conn:
+                return current_understanding(conn)
+
     @app.get(PREFIX + '/versions')
     def versions(principal=Depends(read)):
         return {'versions': call(principal.person, intake.versions)}

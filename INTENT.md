@@ -1,6 +1,6 @@
 # Jobwatch: current product intent
 
-This is the normative product contract, reconciled on 2026-10-28. It states the
+This is the normative product contract, reconciled on 2026-10-30. It states the
 intended behavior, not a claim that every requirement is implemented or deployed.
 Keep this repository public and candidate-free. Changes to the product goal need
 the owner's explicit direction.
@@ -39,11 +39,13 @@ limitations rather than inventing or silently fitting replacement models.
 
 ## Client boundary
 
-Jobwatch is frontend-agnostic. Use standard LibreChat with native Artifacts, not a
-Jobwatch-specific card system, custom embedded dashboard or DSH renderer fork.
-The website is a separate frontend over the same backend; website integration
-follows backend delivery. MCP is an optional compatibility adapter. Neither a
-client nor an adapter owns orchestration or human approval authority.
+Jobwatch is frontend-agnostic. The preferred production client is the separate
+Jobwatch web interface or another trusted native API client that supports typed
+human approvals. The native API must work without LibreChat. LibreChat remains a
+compatibility and testing surface, using standard LibreChat and native Artifacts
+rather than a custom renderer fork or an architectural dependency. MCP is an
+optional compatibility adapter. Clients share the same canonical backend;
+neither a client nor an adapter owns orchestration or human approval authority.
 
 Return useful structured results, progress, questions and documents in chat.
 Canonical tool results remain authoritative; optional widgets or Artifacts must

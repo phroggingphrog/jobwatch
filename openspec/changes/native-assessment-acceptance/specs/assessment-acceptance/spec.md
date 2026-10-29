@@ -118,3 +118,32 @@ The system SHALL support a person-bound Evaluation combo and verified protocol p
 #### Scenario: Malformed arguments are corrected after interruption
 - **WHEN** a known tool returns malformed JSON arguments and its error feedback was persisted
 - **THEN** the malformed operation is not executed, the original tool arguments and reasoning remain preserved, and unchanged-input recovery reuses the feedback without consuming another correction allowance
+
+
+### Requirement: Informed autonomous execution with stable domain authority
+The native evaluator SHALL receive the current candidate context, model readiness,
+approved policy and exact evidence inventory once before its first model turn.
+It SHALL choose primary evidence reads and optional retrieval without a mandatory
+split-extraction or all-requirements-search sequence. Canonical complete-ad,
+coverage, citation, evidence-access and eligibility validation MUST remain gates.
+
+#### Scenario: Primary evidence before ad registration
+- **WHEN** the agent reads a known primary record before registering the ad
+- **THEN** the exact approved record and its actual access are retained
+- **AND** final completion still requires validated ad extraction and judgments
+
+#### Scenario: Evaluation needs no dense search
+- **WHEN** direct primary reads suffice for canonical evaluation
+- **THEN** registering the ad and completing evaluation make no embedding calls
+- **AND** unchanged completed reuse makes no additional paid operations
+
+### Requirement: Shared read-only candidate understanding
+Native clients and the existing candidate page SHALL project the same current
+canonical digest. They MUST keep approved constraints separate from suggestions,
+report model readiness and missing/stale/unconfirmed states, and MUST NOT prepare
+understanding, refit models or substitute legacy per-job assessments on a read.
+
+#### Scenario: Current understanding is unavailable
+- **WHEN** the authenticated person has no currently bound candidate digest
+- **THEN** the view reports its absence or staleness without a provider call
+- **AND** another person's digest cannot be used as a fallback

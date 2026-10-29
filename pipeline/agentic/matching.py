@@ -128,8 +128,7 @@ class RequirementEvidenceSearch:
             "items": self.read(identifiers)["items"],
             "boundary": "Bounded relevance shortlist, not exhaustive proof. No hit means unknown, not inability. Read other inventory records when useful."}
 
-    def search_many(self, args):
-        queries = args.queries
+    def validate_queries(self, queries):
         identifiers = [query.requirement_id for query in queries]
         if len(identifiers) != len(set(identifiers)):
             raise AgenticError("invalid_search")
@@ -137,6 +136,10 @@ class RequirementEvidenceSearch:
             raise AgenticError("unknown_requirement")
         if any(any(len(term) > 160 for term in query.related_terms) for query in queries):
             raise AgenticError("invalid_search")
+
+    def search_many(self, args):
+        queries = args.queries
+        self.validate_queries(queries)
         searches = []
         evidence_ids = []
         for query in queries:
@@ -155,7 +158,8 @@ class RequirementEvidenceSearch:
     def diagnostics(self, model):
         return {"version": MATCHING_VERSION, "baseline_commit": BASELINE_COMMIT,
             "model": model, "retrieval": self.method,
-            "dense_retrieval": 'active' if self.dense_ranks else ('empty_evidence' if self.embedding_model else 'not_configured'),
+            "dense_retrieval": 'active' if self.dense_ranks else ('not_requested' if self.embedding_model and self.items else
+                'empty_evidence' if self.embedding_model else 'not_configured'),
             "embedding_model": self.embedding_model, "judgment_stage": "separate_before_summary",
             "calibration": "not_measured", "summary": "career_ops_holistic_1_to_5",
             "eligibility_policy": "unchanged", "evidence_hash": self.bundle.bundle_hash,

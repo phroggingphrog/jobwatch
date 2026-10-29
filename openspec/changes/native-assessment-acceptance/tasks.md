@@ -19,6 +19,13 @@
 - [x] 3.1 Use the existing private harness/artifact mechanisms to report canonical coverage/citations/gate, native/classifier/child model calls, embeddings, digest delta/cold history, measured tokens, unknown charges, total wall time and ledger reconciliation. Verify synthetic success, held eligibility, provider failure and efficiency-miss reports; document the 3–6 total per-job model-call denominator.
 - [x] 3.2 Review the changed boundaries and run their focused integration checks, including stale digest refusing paid dispatch, source/correction recovery and bounded reader identity/idempotency; record the exact candidate source and results before provider dispatch, preserving all existing incidents and checkpoints.
 
+## 3A. Realign informed native evaluation with the owner intent
+
+- [x] 3.3 Supply the current reusable candidate/model/policy context and exact evidence inventory once at graph start, removing mandatory extraction/retrieval sequencing without weakening canonical completion.
+- [x] 3.4 Permit approved primary reads before ad registration; preserve access/payload replay and bind optional dense retrieval to an actual search request rather than ad freezing.
+- [x] 3.5 Share a read-only current-digest projection between the authenticated native profile API and existing candidate page; keep approved constraints separate, stale/missing states explicit and legacy per-job assessment out of the native view.
+- [x] 3.6 Complete one consolidated synthetic verification of the aligned flow, client isolation, no-call views, canonical safety and recovery. Make no paid attempts, change no routing and leave automatic assessment off.
+
 ## 4. Execute one controlled provider acceptance
 
 - [ ] 4.1 On a current digest and verified active posting, run one prepared DeepSeek evaluate-only acceptance through the actual canonical service. Require valid coverage, exact citations and canonical gate; report the 3–6 total per-job model-call efficiency target independently of quality acceptance and record all measured outcomes against original change task 4.5. If preflight or provider acceptance fails, retain evidence, leave this acceptance task open and stop paid experimentation for this pass.
@@ -83,3 +90,22 @@ a 282-line legacy `autonomous.py`; acceptance source lives on the worktree branc
 into the live service path and the agent is restarted on the reviewed revision.
 Reader timer remains masked/inactive; no paid provider acceptance was run in this
 session after the repair.
+
+
+### Intent realignment verification (2026-10-30)
+
+The owner-directed P1/P2 realignment supplies candidate understanding and policy
+at the first turn, makes direct primary reads independent of extraction order,
+defers dense retrieval until a valid search request, and shares current-digest
+presentation between native profile API and the existing candidate page.
+Native completion, citations, evidence access, eligibility and exact human
+approval authority remain unchanged. Candidate generation/model-version code was
+not changed; view changes do not purchase or invalidate candidate preparation.
+
+One consolidated affected integration pass: **196 passed, 1 warning in 299.25s**.
+It includes native execution/protocol/recovery/completion, digest binding/reuse,
+matching, native profile API and candidate views. Strict change validation and
+whitespace checks passed. These are isolated synthetic checks, not a new full
+release-suite or provider acceptance. No per-change tests, provider attempts,
+model refits, framework upgrades, routing changes, automatic assessment activation
+or deployment were performed. Tasks4.1–5.4 and original4.5/5.1–5.3 remain open.

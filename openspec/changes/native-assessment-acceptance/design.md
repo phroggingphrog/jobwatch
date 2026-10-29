@@ -54,3 +54,26 @@ During apply, keep reader scheduling paused and deterministic collection availab
 Only after acceptance, run the full reconciled release suite once and `jobwatch check --code`; address concrete failures and record exact results for original task 5.1. Back up native config/databases, reconcile reviewed source into the live branch, deploy the exact revision through the existing native services and confirm effective DeepSeek assessment-only native routing. This supplies original task 5.2, without treating a worktree commit as delivery.
 
 Keep the reader timer paused while invoking the deployed authenticated discovery endpoint once with `max_assessments=1`. Observe one canonical outcome and verify unchanged-input reuse. Record imported source, person identity, measured charges and current collector/health status for original task 5.3, then restore automatic assessment. If the live check fails, retain its checkpoints/accounting and return assessment to the paused state. Roll back code/config only as needed; never restore whole databases over new activity. Reconcile the original change's checkboxes only from evidence, not because this proposal exists. TASK-279 remains the work-status record.
+
+
+## Intent realignment (owner direction, 2026-10-30)
+
+The execution strategy inside the one native agent is flexible; domain authority
+is unchanged. Supply current candidate understanding, deterministic model
+readiness, approved policy and exact evidence IDs once at invocation start.
+Primary reads do not depend on registering requirements. Ad registration remains
+necessary for requirement-directed search and canonical completion. Split
+extraction is compatibility, not a forced orchestrator; search is optional and
+dense embeddings are prepared only when search is requested. Primary access and
+paid responses retain their existing journal/checkpoint semantics.
+
+A shared read-only presentation of the existing digest serves native clients
+and the candidate page. It cannot prepare missing understanding or substitute a
+legacy job assessment. This presentation lives outside digest-generation code,
+so a view-only change does not invalidate candidate understanding.
+
+Owner's standing approval replaces per-step operational approval prompts, but
+current explicit restrictions are controlling: no paid/model attempts, automatic
+assessment off, routing unchanged, one consolidated offline verification at the
+end. Eligibility/citations/exact human approvals remain enforced. Real provider,
+replay, release and browser acceptance claims remain separate and unverified.

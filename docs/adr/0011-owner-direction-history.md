@@ -431,3 +431,16 @@ and the daily 'assessments per day' count still apply.
 | R | date | CAP | question / deviation | ruling | by | ref |
 |---|---|---|---|---|---|---|
 | R3 | 2026-10-27 | CAP-2 | May assessment run on a cheaper paid route, and may per-job limits be removed? The hub INTENT 'Mechanisms required' line says paid `openai/`, `claude/`, `google/` combos only. | **CAP-2 assessment may use the paid OmniRoute `deepseek-flash` combo (owner's explicit choice; candidate facts are sent to that provider).** Per-job limits are removable per person. This is the owner's dated override of the 'Mechanisms required' provider list; free and stealth routes stay refused. | owner (chat 2026-10-27, quotes above) | feat/no-limits-cheap-model |
+
+
+## Recovery-plan client direction (2026-10-30)
+
+Owner supplied the Recovery & Launch Plan and directed implementation against it:
+
+> The native API must work without LibreChat. The preferred production client should be the separate JobWatch web interface or another trusted native API client that properly supports typed human approvals.
+
+> LibreChat remains a compatibility and testing surface, not an architectural dependency.
+
+This supersedes a LibreChat-first reading of earlier client directions. Shared
+canonical operations, typed exact-input approvals and the native backend remain
+authoritative; no client rewrite is a prerequisite for native assessment acceptance.

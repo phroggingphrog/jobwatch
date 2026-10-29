@@ -95,6 +95,20 @@ Errors are `{"error": code}`. 409: `proposal_changed`, `scope_changed`, `adopt_f
 `upload_not_found`, `proposal_not_found`, `fact_not_found`, `question_not_found`. 503: `extractor_unavailable`.
 403: `person_required`, and `gateway_not_allowed` / `model_not_allowed` when the gateway or the person's reader model is not an approved paid route (every parse path checks it before any text is sent). 409 also `proposal_in_progress` (one paid parse per person at a time, shared by the API and the chat tools; 180 s deadline) and `proposal_parsing` (confirm or add uploads while the documents are still being read). Capabilities include a `profile` object with the upload limits.
 
+### Reusable candidate understanding
+
+`GET /api/agent/profile/understanding` (read scope) returns the current canonical
+digest projection, approved constraints separately from agent suggestions, and
+all model readiness/provenance. Status is `current`, `missing`, `stale`,
+`profile_unconfirmed` or `unavailable`. This read never prepares a digest, calls a
+provider, refits a model or substitutes an old job's candidate assessment. The
+existing candidate page consumes the same read-only domain projection.
+
+Evaluation receives this already-prepared context once, with exact evidence IDs.
+Its single Deep Agent chooses primary reads and optional requirement retrieval;
+complete ad extraction, evidence-access validation and eligibility remain fixed
+completion contracts. Freezing an ad alone does not purchase embeddings.
+
 ### Decision policy from the confirmed profile
 
 The policy is derived from the person's latest confirmed profile and nothing else. Only an evidence-basis fact in the

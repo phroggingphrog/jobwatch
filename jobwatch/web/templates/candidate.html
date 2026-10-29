@@ -34,14 +34,20 @@
   </div>
 
   <div class="wk-sec"><h2 class="wk-h2">What the evidence supports</h2>
+  {% if understanding.status == 'current' %}
+    <p class="wk-sub">Current reusable understanding for approved profile version {{ understanding.profile_version }}. Agent suggestions do not change your approved constraints.</p>
+    <details class="wk-fold"><summary>Model readiness</summary><div class="wk-fold-b wk-prose"><ul>{% for name, model in understanding.models.items() %}<li>{{ name|replace('_',' ') }}: {{ model.status|default('See interpretation')|replace('_',' ') }}</li>{% endfor %}</ul></div></details>
+  {% endif %}
   {% if candidate %}
     <p class="wk-sub">Based on your saved evidence and career preferences. Missing evidence is shown as a gap, not an invented qualification.</p>
-    <div class="wk-panel wk-pad wk-prose"><h3 class="wk-h3">Supported strengths</h3><ul>{% for strength in candidate.strengths %}<li>{{ strength.claim }}</li>{% else %}<li>None recorded yet.</li>{% endfor %}</ul>
+    <div class="wk-panel wk-pad wk-prose"><h3 class="wk-h3">Supported strengths</h3><ul>{% for strength in candidate.strengths %}<li>{{ strength.claim }}{% if strength.citations %}<details><summary>Evidence</summary>{% for citation in strength.citations %}<blockquote><p>{{ citation.quote }}</p><cite>{{ citation.source_id }}</cite></blockquote>{% endfor %}</details>{% endif %}</li>{% else %}<li>None recorded yet.</li>{% endfor %}</ul>
     <h3 class="wk-h3">Gaps to work on</h3><ul>{% for gap in candidate.gaps %}<li>{{ gap.gap }}: {{ gap.action }}</li>{% else %}<li>None recorded.</li>{% endfor %}</ul></div>
     <h3 class="wk-h3">Career directions</h3>
     <div class="wk-rows">{% for target in candidate.target_paths %}<section class="wk-prose" style="padding:16px 20px"><h4 class="wk-title">{{ target.family|replace('_',' ')|title }}</h4><p>{{ target.rationale }}</p><ul>{% for step in target.next_steps %}<li>{{ step }}</li>{% endfor %}</ul></section>{% endfor %}</div>
+    {% if candidate.advisory_suggestions %}<h3 class="wk-h3">Suggestions for your review</h3><ul>{% for suggestion in candidate.advisory_suggestions %}<li>{{ suggestion }}</li>{% endfor %}</ul><p class="wk-sub">These suggestions do not change your approved constraints.</p>{% endif %}
+    {% if candidate.uncertainties %}<h3 class="wk-h3">Still uncertain</h3><ul>{% for uncertainty in candidate.uncertainties %}<li>{{ uncertainty }}</li>{% endfor %}</ul>{% endif %}
   {% else %}
-    <div class="wk-panel"><div class="wk-empty"><b>No assessment yet</b><span>Your assessment will appear after Jobwatch evaluates your saved profile.</span></div></div>
+    <div class="wk-panel"><div class="wk-empty"><b>{% if understanding.status == 'stale' %}Understanding needs a refresh{% elif understanding.status == 'profile_unconfirmed' %}Profile confirmation needed{% else %}No current understanding{% endif %}</b><span>Jobwatch reuses understanding bound to your approved profile and evidence. Viewing this page does not start an assessment or refresh.</span></div></div>
   {% endif %}
   </div>
   </div>

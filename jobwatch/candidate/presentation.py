@@ -23,3 +23,39 @@ def statistical_view(bundle, config):
             'fits': [dict(f.model_dump(mode='json'), title=titles[f.code]) for f in fits],
             'links': [{'evidence': evidence[m.evidence_id].quote, 'activity': dwas[m.dwa_id].title,
                        'state': m.state, 'method': m.method} for m in mappings]}
+
+
+def current_understanding(conn):
+    """Project the canonical current digest for clients; never prepare or refit it."""
+    import sqlite3
+    from jobwatch import users
+    from .contracts import CandidateError
+    from .policy import policy_for
+    from .intake import IntakeError
+    from pipeline.agentic.candidate_digest import current_policy_digest
+    from pipeline.agentic.contracts import AgenticError
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+
+    try:
+        policy = policy_for(users.current())
+        view = {'status': 'profile_unconfirmed' if policy is None else 'missing',
+                'profile_version': policy.profile_version if policy else None,
+                'candidate': None, 'approved_constraints': policy.model_dump(mode='json') if policy else {},
+                'models': {}}
+        if policy is None or conn is None:
+            return view
+        current = current_policy_digest(conn, policy)
+        if current is None:
+            table = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='candidate_digests'").fetchone()
+            if table and conn.execute('SELECT 1 FROM candidate_digests WHERE person=? LIMIT 1',
+                                      (users.current(),)).fetchone():
+                view['status'] = 'stale'
+            return view
+        data = current.model_dump(mode='json')
+        return {**view, 'status': 'current', 'identity': current.identity,
+            'candidate': {key: data[key] for key in ('strengths', 'gaps', 'target_paths',
+                'uncertainties', 'advisory_suggestions', 'model_interpretation')},
+            'approved_constraints': data['approved_constraints'], 'models': data['model_provenance']}
+    except (CandidateError, IntakeError, AgenticError, RuntimeErrorSafe, sqlite3.Error, OSError):
+        return {'status': 'unavailable', 'profile_version': None, 'candidate': None,
+                'approved_constraints': {}, 'models': {}}

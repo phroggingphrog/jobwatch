@@ -459,3 +459,24 @@ def test_a_refused_board_press_leaves_no_confirmed_event(tmp_path, monkeypatch):
     assert response.status_code == 409 and 'could not be pressed' in response.text
     conn = sqlite3.connect(client.data / 'jobwatch.db')
     assert not conn.execute("SELECT 1 FROM application_events WHERE kind='submit_confirmed'").fetchone()
+
+
+def test_native_candidate_page_uses_current_shared_understanding_not_job_assessment(tmp_path, monkeypatch):
+    from jobwatch.candidate import presentation
+    client, browser, _ = setup(tmp_path, monkeypatch, package=False)
+    real_config = prepare_routes._config
+    monkeypatch.setattr(prepare_routes, '_config', lambda c: {**real_config(c), 'autonomous_evaluation': True})
+    monkeypatch.setattr(prepare_routes, 'latest_result', lambda *a: pytest.fail('native view read legacy job candidate'))
+    monkeypatch.setattr(prepare_routes, 'configured_llm', lambda *a: pytest.fail('view called a model'))
+    def projection(conn):
+        return {'status': 'current', 'profile_version': 4,
+                'candidate': {'strengths': [{'claim': 'Synthetic current understanding', 'citations': []}],
+                              'gaps': [], 'target_paths': [], 'advisory_suggestions': ['Discuss adjacent roles'],
+                              'uncertainties': []}, 'models': {'callbacks': {'status': 'prior_only'}}}
+    monkeypatch.setattr(presentation, 'current_understanding', projection)
+    response = client.get('/candidate')
+    assert response.status_code == 200
+    assert 'Synthetic current understanding' in response.text
+    assert 'approved profile version 4' in response.text
+    assert 'prior only' in response.text and 'Discuss adjacent roles' in response.text
+    assert not browser.opened

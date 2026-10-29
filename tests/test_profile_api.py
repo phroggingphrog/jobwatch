@@ -407,3 +407,20 @@ def test_policy_reads_write_nothing_and_call_no_model(env):
 def test_the_policy_chat_tool_is_read_only_and_not_gated():
     from pipeline.agentic import chat
     assert 'profile_policy' not in chat.GATED
+
+
+def test_current_understanding_is_shared_read_only_and_server_scoped(env, monkeypatch):
+    from jobwatch.candidate import presentation
+    observed = []
+    def view(conn):
+        observed.append(users.current())
+        return {'status': 'missing', 'profile_version': None, 'candidate': None,
+                'approved_constraints': {}, 'models': {}}
+    monkeypatch.setattr(presentation, 'current_understanding', view)
+    assert env.get(P + '/understanding').status_code == 401
+    first = env.get(P + '/understanding?person=fixture-b', headers=h())
+    second = env.get(P + '/understanding', headers=h(OTHER))
+    assert first.status_code == second.status_code == 200
+    assert first.json()['candidate'] is None
+    assert observed == ['fixture-a', 'fixture-b']
+    assert env.fake.calls == []

@@ -110,3 +110,54 @@ def test_checkpoint_loss_after_successful_read_replays_primary_payload_without_r
         assert requests[0]['messages'] == seen[-1]['messages']
         assert evaluate_autonomous(key, ad, resumed_budget, resumed, conn=conn, **args) == result
         assert len(requests) == 1
+
+
+def test_informed_agent_can_read_primary_before_extraction_without_dense_search(tmp_path, monkeypatch):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    llm, seen = transport([choices[1], choices[0], choices[-1]])
+    def no_embeddings(*a, **kw):
+        pytest.fail('Direct evidence and ad registration must not purchase dense retrieval')
+    monkeypatch.setattr('pipeline.agentic.autonomous.CachedEmbeddings.embed_documents', no_embeddings)
+    digest = {'identity': 'synthetic-current-digest', 'strengths': [], 'gaps': [],
+              'advisory_suggestions': ['Discuss an adjacent field'], 'model_interpretation': {'callbacks': 'untrained'}}
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        args = dict(conn=conn, posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle,
+                    model='claude/sonnet', candidate_digest=digest, embedding_model='synthetic-embedding')
+        result = evaluate_autonomous(key, ad, budget(key), llm, **args)
+        first = json.loads(next(m['content'] for m in seen[0]['messages'] if m['role'] == 'user'))
+        context = first['candidate_context']
+        assert context['candidate_digest']['identity'] == digest['identity']
+        assert {i['id'] for i in context['evidence_inventory']} == {i.id for i in bundle.items}
+        assert 'advisory_suggestions' not in (context['decision_policy'] or {})
+        assert result.matching_diagnostics['accessed_evidence_ids']
+        assert result.matching_diagnostics['dense_retrieval'] == 'not_requested'
+        assert result.matching_diagnostics['searches'] == []
+        extraction_reply = json.loads([m for m in seen[-1]['messages'] if m['role'] == 'tool'][-1]['content'])
+        assert 'candidate_digest' not in extraction_reply and 'evidence_inventory' not in extraction_reply
+        assert evaluate_autonomous(key, ad, budget(key), llm, **args) == result
+        assert len(seen) == 3
+
+
+def test_primary_read_before_extraction_survives_checkpoint_loss(tmp_path):
+    from pipeline.agentic.runtime import BatchBudget, JobBudget
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    llm, seen = transport([choices[1], OSError('synthetic interruption before extraction')], reasoning=True)
+    path = tmp_path / 'context-recovery.sqlite'
+    args = dict(posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
+    b = budget(key)
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        with pytest.raises(RuntimeErrorSafe, match='model_unavailable'):
+            evaluate_autonomous(key, ad, b, llm, conn=conn, **args)
+        conn.execute('DELETE FROM chat_writes')
+        conn.execute('DELETE FROM chat_checkpoints')
+        conn.commit()
+    restored = JobBudget.restore(b.snapshot(), batch=BatchBudget('synthetic', token_ceiling=2_000_000))
+    resumed, requests = transport([choices[0], choices[-1]], reasoning=True)
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, restored, resumed, conn=conn, **args)
+        assert result.matches[0].judgment.status == 'demonstrated'
+        assert requests[0]['messages'] == seen[-1]['messages']
+        assert evaluate_autonomous(key, ad, restored, resumed, conn=conn, **args) == result
+    assert len(seen) == 2 and len(requests) == 2
