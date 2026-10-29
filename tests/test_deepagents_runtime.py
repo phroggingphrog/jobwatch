@@ -18,6 +18,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, ConfigDict
 
 from jobwatch.util.llm import BASE_URL, LLM
+from jobwatch.candidate import intake
 from pipeline.agentic import deepagents_runtime as runtime
 from pipeline.agentic.contracts import BudgetCheckpoint, RequirementSet, StrictFrozen
 from pipeline.agentic.runtime import (BatchBudget, JobBudget, RoleSpec, RuntimeErrorSafe,
@@ -121,7 +122,6 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
 def test_chat_receives_owned_upload_references_without_changing_human_words(tmp_path, monkeypatch, message):
     from jobwatch import users
     from jobwatch.util import model_choice as model_choice
-    from jobwatch.candidate import intake
     from pipeline.agentic.chat import dispatch
     from pipeline.agentic.execution import Execution
 
