@@ -48,10 +48,11 @@ def test_classifier_counts_in_efficiency_target_without_changing_runtime_limits(
     args = inputs();args['usage']['model_calls'] = 8;args['native_counts']['calls'] = 7
     result = native_acceptance_report(**args)
     assert result['quality']['passed'] is True and result['efficiency']['passed'] is False
-    assert result['efficiency']['per_job_model_calls'] == 7 and result['accepted'] is False
+    assert result['efficiency']['per_job_model_calls'] == 7 and result['accepted'] is True
 
 
-@pytest.mark.parametrize('change', ['missing_check', 'ledger', 'paid_reuse', 'unverified_reuse', 'unattributed', 'cold_digest'])
+@pytest.mark.parametrize('change', ['missing_check', 'ledger', 'paid_reuse', 'unverified_reuse',
+                                  'unattributed', 'cold_digest', 'unverified_digest_reuse'])
 def test_incomplete_acceptance_evidence_cannot_activate(change):
     args = inputs()
     if change == 'missing_check': del args['checks']['citations']
@@ -61,7 +62,11 @@ def test_incomplete_acceptance_evidence_cannot_activate(change):
     if change == 'unattributed': args['usage']['model_calls'] += 1
     if change == 'cold_digest':
         args['digest_counts']['calls'] = 1;args['digest_counts']['reused'] = False
-    assert native_acceptance_report(**args)['accepted'] is False
+    if change == 'unverified_digest_reuse': args['digest_counts']['reused'] = False
+    result = native_acceptance_report(**args)
+    assert result['accepted'] is False
+    if change == 'unverified_digest_reuse':
+        assert result['quality']['passed'] is True and result['accounting']['reconciled'] is True
 
 
 @pytest.mark.parametrize('field', ['ledger_charged', 'classifier_calls'])

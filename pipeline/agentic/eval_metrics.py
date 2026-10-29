@@ -56,7 +56,7 @@ def native_acceptance_report(*, usage, native_counts, digest_counts, classifier_
     def detail_sum(section, key):
         return sum(_count(item.get(section, {}).get(key)) for item in details if isinstance(item, Mapping))
     return {
-        'accepted': quality and efficiency and reconciled and reuse_verified,
+        'accepted': quality and warm and reconciled and reuse_verified,
         'quality': {'passed': quality, 'checks': safe_checks, 'gate_route': safe_route},
         'efficiency': {'passed': efficiency, 'per_job_model_calls': model_calls,
                        'target_max_model_calls': 6},

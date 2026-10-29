@@ -28,7 +28,7 @@ Reports SHALL include every per-job model call, including public classifiers, or
 #### Scenario: Valid result misses the call target
 - **WHEN** canonical evaluation succeeds but per-job model calls exceed six
 - **THEN** quality acceptance and efficiency failure are recorded separately
-- **AND** automatic activation remains blocked without imposing a new owner runtime cap
+- **AND** exceeding the target alone does not reject a valid assessment or stop legitimate evidence work; production activation still requires separate authorization and release evidence
 
 ### Requirement: Bounded source-access correction
 A recoverable request for candidate information through a skill-only reader SHALL return precise guidance to canonical evidence access without opening the requested file. Corrections SHALL retain completed work and remain bounded across resume. Canonical citations, person isolation and source-access checks MUST remain enforced.
@@ -68,7 +68,7 @@ A controlled warm-digest acceptance SHALL require verified person identity, a cu
 - **THEN** the run and charges remain recorded, automatic assessment stays paused and no further paid attempt starts automatically
 
 ### Requirement: Runtime release proof
-Automatic activation SHALL require quality acceptance, at most six measured per-job model calls, required release checks and a verified native-runtime reader outcome. Reports MUST name the deployed revision and effective assessment protocol. Rollback MUST preserve profile approvals, usage, incidents and new records; deterministic collection SHALL remain available where possible.
+Automatic activation SHALL require quality acceptance, zero-paid completed reuse, reconciled accounting, required release checks, a verified native-runtime reader outcome and separate authorization. Reports MUST identify the deployed revision, protocol and actual cost against the efficiency target. Rollback MUST preserve profile approvals, usage, incidents and new records; deterministic collection SHALL remain available where possible.
 
 #### Scenario: Source is ready but runtime remains old
 - **WHEN** source checks pass while the running native service still uses the previous revision

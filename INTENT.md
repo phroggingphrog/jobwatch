@@ -108,9 +108,10 @@ remain durable and scoped to the authenticated person.
 Use bounded correction and safe replay for provider failures. The current
 assessment acceptance target is a valid canonical evaluation within 3–6 total
 per-job model calls, with all classifier/child work counted, plus zero additional
-paid operations for unchanged-input reuse. Numeric call count without a valid
-result is failure. Preserve failed attempts and accounting; do not repeat paid
-candidate experiments without a concrete repair and authorization.
+paid operations for unchanged-input reuse. The call range is an efficiency target,
+not a runtime cap or a substitute for quality acceptance. Numeric call count
+without a valid result is failure. Preserve failed attempts and accounting; do
+not repeat paid candidate experiments without a concrete repair and authorization.
 
 ## Safety and authorization
 

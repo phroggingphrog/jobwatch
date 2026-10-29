@@ -133,7 +133,8 @@ def input_manifest(conn, *, bundle, policy, cfg, structural, approved_profile=_U
         'career_profile': digest(career_profile_text(bundle)), 'target_policy': digest(policy.model_dump(mode='json')),
         'decision_policy': projection['policy_hash'], 'structural': structural.run_key,
         'reference': structural.reference_hash, 'mapping': structural.mapping_hash,
-        'runtime': cfg, 'model': cfg['evaluator_model'], 'provider': model_choice.SERVER_URL, 'history': _table_snapshots(conn),
+        'runtime': {k: v for k, v in cfg.items() if k != 'autonomous_version'},
+        'model': cfg['evaluator_model'], 'provider': model_choice.SERVER_URL, 'history': _table_snapshots(conn),
         'model_versions': _model_versions(), 'version': VERSION, 'schema': 1,
         'skill': digest(SKILL.read_text()), 'implementation': digest(Path(__file__).read_text()),
     }

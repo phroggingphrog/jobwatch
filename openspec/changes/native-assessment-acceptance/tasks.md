@@ -21,7 +21,7 @@
 
 ## 4. Execute one controlled provider acceptance
 
-- [ ] 4.1 On a current digest and verified active posting, run one prepared DeepSeek evaluate-only acceptance through the actual canonical service. Require valid coverage, exact citations, canonical gate and at most six total per-job model calls; record all measured outcomes against original change task 4.5. If preflight or provider acceptance fails, retain evidence, leave this acceptance task open and stop paid experimentation for this pass.
+- [ ] 4.1 On a current digest and verified active posting, run one prepared DeepSeek evaluate-only acceptance through the actual canonical service. Require valid coverage, exact citations and canonical gate; report the 3–6 total per-job model-call efficiency target independently of quality acceptance and record all measured outcomes against original change task 4.5. If preflight or provider acceptance fails, retain evidence, leave this acceptance task open and stop paid experimentation for this pass.
 - [ ] 4.2 Repeat the accepted posting with unchanged inputs and verify zero extra model/classifier/embedding operations, consistent canonical evaluation/gate and matching durable accounting; publish only count-only evidence and mark original acceptance task 4.5 complete only when these checks actually pass.
 
 ## 5. Complete the existing release and observed-delivery tasks

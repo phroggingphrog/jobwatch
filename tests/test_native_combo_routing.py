@@ -78,6 +78,29 @@ def test_combo_prompt_changes_job_identity_but_not_current_digest(world, monkeyp
         assert mc.native_assessment_route(base) == {'model': base, 'prompt_hash': None}
 
 
+def test_evaluation_version_changes_job_identity_but_reuses_candidate_digest(world, monkeypatch):
+    from test_candidate_digest import inputs, transport as digest_transport, budget as digest_budget
+    from pipeline.agentic import candidate_digest as cd
+    conn, config, bundle, add = world
+    config.settings['pipeline']['agentic']['autonomous_evaluation'] = True
+    conn, args = inputs(world)
+    original_runtime = dict(args['cfg'])
+    calls = digest_transport(monkeypatch, bundle)
+    ready = cd.ensure_digest(conn, **args, budget=digest_budget(), llm=object())
+    add(42)
+    first = service.snapshot_inventory(conn, config, posting_ids=[42], evidence_bundle=bundle)
+
+    monkeypatch.setattr(autonomous, 'version', lambda: 'evaluation-only-revision')
+    changed_args = {**args, 'cfg': service._config(config)}
+    changed = service.snapshot_inventory(conn, config, posting_ids=[42], evidence_bundle=bundle)
+    assert changed[0]['run_key'] != first[0]['run_key']
+    assert cd.current_digest(conn, **changed_args) == ready
+    assert cd.ensure_digest(conn, **changed_args, budget=digest_budget(), llm=object()) == ready
+    assert len(calls) == 2
+    assert args['cfg'] == original_runtime
+    assert changed_args['cfg']['autonomous_version'] == 'evaluation-only-revision'
+
+
 @pytest.mark.parametrize('invalid', [
     {'assessment_combo': COMBO},
     {'assessment_prompt_hash': '1' * 64},
