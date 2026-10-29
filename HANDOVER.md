@@ -1,3 +1,5 @@
+> Deployment/workflow note (2026-10-27): dated entries below preserve historical evidence, not current release commands. The current source/service map is `~/projects/jobwatch/AGENTS.md`; re-read units and loaded revisions. OpenSpec owns change artifacts, Phrog Development owns behavior, and the existing tracker owns overall status. Older worktree paths may have been retired.
+
 # JobWatch discovery reliability — 2026-10-27
 
 Owner-approved plan: visible failures, reliable assessment and one confirmed profile.
