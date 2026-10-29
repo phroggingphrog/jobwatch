@@ -52,6 +52,14 @@ for command names; this table only says which entry point a mode starts from.
 | rebuild apply tables from the ledger | `jobwatch reindex` |
 | collector health | `jobwatch health` |
 
+## Reading from another agent
+
+An external agent reads Jobwatch through the MCP server, not through this skill. The
+read-only tools cost nothing and need no approval: `jobs_overview`, `job_detail`,
+`application_detail`, `assessment_detail`, `career_reader` and `followup_history`.
+Use `career_reader` for the advertisement words and `followup_history` for cadence.
+The only destructive tool is `submit_reviewed`, and it needs the person's own press.
+
 ## Rules that no mode may override
 
 - Never submit an application. `READY` means a person reviews the form map and presses

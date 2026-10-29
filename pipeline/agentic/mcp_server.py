@@ -12,6 +12,7 @@ import hmac
 import json
 import os
 import secrets
+from contextlib import contextmanager
 from typing import Any
 
 from fastmcp import Context, FastMCP
@@ -25,6 +26,7 @@ from pipeline.agentic.chat import _career_ops_skill, dispatch
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
 _MAX_QUESTION = 4000
+_READ_PARSE = frozenset({'evaluation', 'model_insights', 'company_research'})
 
 
 class _JobwatchTokenVerifier(TokenVerifier):
@@ -48,6 +50,27 @@ def _person_from_request() -> str:
         raise RuntimeErrorSafe('mcp_auth_required')
     return person
 
+
+@contextmanager
+def _read():
+    """A read-only, person-scoped connection for one read tool. Identity comes from the verified token only.
+
+    A read never starts a chat turn: no model call, no ledger charge and no approval prompt.
+    """
+    from jobwatch.config import load_config
+    from pipeline.agentic.chat import job_connection
+    person = _person_from_request()
+    with users.use(person):
+        with job_connection(load_config()) as conn:
+            yield conn
+
+def _identifier(value) -> int:
+    if type(value) is not int or value < 1:
+        raise RuntimeErrorSafe('invalid_request')
+    return value
+
+def _day(value) -> str | None:
+    return value.isoformat() if value is not None else None
 
 def _input_request(interaction: dict, index: int) -> tuple[str, ElicitRequest]:
     kind = interaction.get('type')
@@ -213,10 +236,15 @@ def create_server(*, token: str | None = None, person: str | None = None) -> Fas
     server = FastMCP('Jobwatch Career Ops',
         instructions=('Use career_ops_start_chat for a new natural-language Career Ops request. '
                       'Use career_ops_continue_chat with the opaque thread_id returned by the server. '
+                      'Use career_reader for the stored advertisement and followup_history for follow-up cadence. '
+                      'Both are read-only and spend nothing. '
                       'Human questions and run approvals arrive as MCP elicitation requests; do not invent answers.'),
         auth=auth,
         request_state_security=RequestStateSecurity(keys=[state_key], ttl=86400),
         mask_error_details=True)
+
+    from pipeline.agentic import chatgpt_connector
+    read_only = chatgpt_connector.READ_ONLY      # clients can tell a read from work before they call it
 
     @server.tool(name='career_ops_start_chat', title='Start a Jobwatch chat')
     def start_chat(message: str, ctx: Context) -> dict | InputRequiredResult:
@@ -231,10 +259,44 @@ def create_server(*, token: str | None = None, person: str | None = None) -> Fas
         return _turn(person=_person_from_request(), operation='continue', thread_id=thread_id,
                      message=message, ctx=ctx)
 
+    @server.tool(name='career_reader', title='Read a saved job advertisement', annotations=read_only)
+    def career_reader(posting_id: int) -> dict:
+        """Read the stored advertisement and its identity for one posting. No model call, no host path."""
+        posting_id = _identifier(posting_id)
+        from pipeline.agentic.service import _capture
+        with _read() as jobs:
+            captured = _capture(jobs, posting_id)
+        if captured is None:
+            return {'posting_id': posting_id, 'status': 'missing'}
+        identity, text, kind = captured
+        return {'posting_id': posting_id, 'status': 'ok', 'posting': identity, 'full_ad': text, 'text_kind': kind}
+
+    @server.tool(name='followup_history', title='Read follow-up cadence', annotations=read_only)
+    def followup_history(application_id: int) -> dict:
+        """Read recorded follow-up events and cadence for one application. Counts and dates only; sends nothing."""
+        application_id = _identifier(application_id)
+        from jobwatch.followup import events as followup_events
+        try:
+            with _read() as jobs:
+                hist = followup_events.history(jobs, application_id)
+                due = followup_events.application_cadence(jobs, application_id)
+        except followup_events.FollowupEventError as exc:
+            if str(exc) == 'application_missing':
+                return {'application_id': application_id, 'status': 'missing'}
+            return {'application_id': application_id, 'status': 'unknown', 'reason': str(exc)}
+        return {'application_id': application_id, 'status': 'ok', 'application_status': hist.status,
+                'applied_on': _day(hist.applied_on), 'response_on': _day(hist.response_on),
+                'interview_completed_on': _day(hist.interview_completed_on),
+                'sent_on': [_day(d) for d in hist.sent_on], 'pin_active': bool(hist.pin_active),
+                'pin_due_on': _day(hist.pin.due_on) if hist.pin else None,
+                'cadence': {'state': due.state, 'kind': due.kind, 'due_on': _day(due.due_on),
+                            'sent_count': due.sent_count,
+                            'followups_since_response': due.followups_since_response,
+                            'draft_allowed': due.draft_allowed, 'reason': due.reason}}
+
     if oauth is not None:
         server.custom_route('/oauth/consent', methods=['GET', 'POST'])(oauth.consent)
 
-    from pipeline.agentic import chatgpt_connector
     chatgpt_connector.register(server, lambda: _person_from_request())
 
     @server.resource('jobwatch://skills/career-ops', name='Career Ops skill',
