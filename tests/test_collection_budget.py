@@ -41,4 +41,4 @@ def test_fetch_deadline_is_monotonic(monkeypatch):
     with pytest.raises(Blocked, match='collection_deadline'):
         fetcher.request('GET', 'https://example.invalid')
     assert fetcher.requests_made == 0
-    fetcher.close()
+    fetcher.session.close()
