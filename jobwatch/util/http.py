@@ -13,6 +13,8 @@ from urllib.robotparser import RobotFileParser
 
 import requests
 
+from .deadline import Budget
+
 log = logging.getLogger(__name__)
 
 BROWSER_UA = (
@@ -51,12 +53,10 @@ class Fetcher:
         self.blocked: dict[str, str] = {}
         self.requests_made = 0
         self.deadline = deadline
+        self.budget = Budget(deadline, clock, sleep) if deadline is not None else None
 
     def _remaining_timeout(self, url: str) -> float:
-        left = self.timeout if self.deadline is None else min(self.timeout, self.deadline-time.time())
-        if left <= 0:
-            raise Blocked(url, 0, 'collection_deadline')
-        return left
+        return self.timeout if self.budget is None else min(self.timeout, self.budget.remaining())
 
     # -- pacing -----------------------------------------------------------
     def _pace(self, url: str, delay: float | None = None) -> None:
@@ -87,7 +87,9 @@ class Fetcher:
             response = self.session.request(method, url, timeout=self._remaining_timeout(url),
                                             headers=headers, **kwargs)
         except requests.RequestException as exc:
+            self._remaining_timeout(url)
             raise HttpError(url, 0, f"{type(exc).__name__} for {urlsplit(url).hostname}") from exc
+        self._remaining_timeout(url)
         return self._check(url, response)
 
     # -- helpers used by collectors -----------------------------------------

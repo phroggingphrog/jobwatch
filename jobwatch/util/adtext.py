@@ -46,6 +46,7 @@ import re
 import sqlite3
 import threading
 import time
+from .deadline import pause, timeout as budget_timeout
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, NamedTuple
@@ -133,7 +134,7 @@ def write_retry(conn, fn, tries: int = 4, wait: float = 5.0):
             conn.rollback()
             if "locked" not in str(exc) and "busy" not in str(exc) or attempt == tries - 1:
                 raise
-            time.sleep(wait)
+            pause(wait)
 
 
 def save_text(conn, posting_id: int, text: str, source: str) -> None:
@@ -285,7 +286,7 @@ def _do_get(url: str, browser: bool, timeout: float) -> _Resp:
     Seek and Jora; plain requests gets 403 on several career sites); False is plain requests for public JSON APIs.
     The body is streamed: at most MAX_BODY bytes after decompression and TOTAL_DEADLINE seconds in all, headers
     included (a gzip bomb or a slow drip raises FetchError); only a 200 body is read."""
-    seconds = TOTAL_DEADLINE
+    seconds = budget_timeout(TOTAL_DEADLINE)
     if _FETCH_DEADLINE.get() is not None:
         seconds = min(seconds, _FETCH_DEADLINE.get()-time.time())
     if seconds <= 0:
@@ -978,7 +979,7 @@ def fetch_host(source: str) -> str | None:
 
 
 def pace(seconds: float = 2.5) -> None:
-    time.sleep(seconds)
+    pause(seconds)
 
 
 # --- one review/recall run at a time ----------------------------------------------------------------------------

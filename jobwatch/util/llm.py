@@ -208,7 +208,8 @@ class LLM:
             if wait is None or (deadline is not None and deadline - time.monotonic() <= wait + 30):
                 break
             log.info("%s overloaded upstream; retrying in %ss", model, wait)
-            time.sleep(wait)
+            from .deadline import pause
+            pause(wait)
         fallback = OVERLOAD_FALLBACK.get(model)
         if not fallback:
             return status, payload

@@ -71,10 +71,11 @@ def test_collector_budget_does_not_invent_minimum_time(monkeypatch):
 
 
 def test_collector_http_refuses_requests_after_deadline(monkeypatch):
-    from jobwatch.util.http import Fetcher, Blocked
-    fetcher = Fetcher(deadline=time.time()-1)
+    from jobwatch.util.http import Fetcher
+    from jobwatch.util.deadline import CollectionDeadline
+    fetcher = Fetcher(deadline=time.monotonic()-1)
     monkeypatch.setattr(fetcher.session, 'request', lambda *a, **kw: pytest.fail('Network after deadline'))
-    with pytest.raises(Blocked, match='collection_deadline'):
+    with pytest.raises(CollectionDeadline, match='collection_deadline'):
         fetcher.get_text('https://example.invalid/job')
 
 

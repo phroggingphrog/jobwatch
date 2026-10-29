@@ -14,6 +14,7 @@ from .config import Config
 from .dedupe import ingest
 from .filters import Rules
 from jobwatch.util.http import Fetcher
+from jobwatch.util.deadline import Budget, collection_budget
 from .models import canonical_url, now_utc, parse_date
 from jobwatch.util.place import person_state
 
@@ -176,14 +177,22 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         # The scope projection is read-only and unpaid, including dry runs.
         config = discovery.prepare_run(conn, config)
         rules = Rules(config.rules, config.employers, conn=conn)
+        collection_deadline = time.monotonic() + max(0, deadline - time.time())
         http_conf = config.settings.get("http") or {}
         http = Fetcher(timeout=http_conf.get("timeout", 20), min_delay=http_conf.get("min_delay", 1.5),
-                       deadline=deadline)
-        for name in tier_collectors(config, tier, only):
-            if time.time() >= deadline:
-                ai = {'deferred': 'collection_deadline'}
-                break
-            results.append(run_collector(conn, config, rules, http, name, run_id, limit, tier))
+                       deadline=collection_deadline)
+        budget = Budget(collection_deadline)
+        with collection_budget(budget):
+            for name in tier_collectors(config, tier, only):
+                if time.monotonic() >= collection_deadline:
+                    ai = {'deferred': 'collection_deadline'}
+                    break
+                results.append(run_collector(conn, config, rules, http, name, run_id, limit, tier))
+        if budget.exhausted or http.budget.exhausted or time.monotonic() >= collection_deadline:
+            ai = {'deferred': 'collection_deadline'}
+            if not dry_run:
+                from jobwatch.notify import alert
+                alert(conn, 'Job collection exhausted its deadline.', 'collection_deadline')
         note = publish(conn, dry_run)
         pruned = dbm.prune(conn, int(config.settings.get("retention_days", 90)))
         if not dry_run and assess:
