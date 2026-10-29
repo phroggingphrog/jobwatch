@@ -85,6 +85,30 @@ def test_invalid_requirement_citation_is_corrected_before_split_ad_facts(tmp_pat
         feedback = json.loads([m for m in seen[1]['messages'] if m['role'] == 'tool'][-1]['content'])
         assert feedback['error'] == 'invalid_citation'
         assert feedback['fields'] == ['requirements.0.jd_signal']
+        assert feedback['expected_ad_source'] == {'source_id': 'ad', 'content_hash': key.ad_hash}
+        def citation_shapes(value):
+            if isinstance(value, dict):
+                properties = value.get('properties', {})
+                if {'source_id', 'content_hash', 'quote'} <= properties.keys():
+                    yield properties
+                for child in value.values():
+                    yield from citation_shapes(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from citation_shapes(child)
+
+        for tool in seen[0]['tools']:
+            function = tool['function']
+            if function['name'] in {'complete_requirement_set', 'complete_ad_facts', 'complete_requirements'}:
+                shapes = list(citation_shapes(function['parameters']))
+                assert shapes
+                assert all(citation['source_id']['const'] == 'ad' for citation in shapes)
+                assert all(citation['content_hash']['const'] == key.ad_hash for citation in shapes)
+            elif function['name'] == 'complete_evaluation':
+                shapes = list(citation_shapes(function['parameters']))
+                assert shapes
+                assert all('const' not in citation['source_id'] for citation in shapes)
+                assert all('const' not in citation['content_hash'] for citation in shapes)
         assert all(r.jd_signal.source_id == 'ad' for r in result.requirements.requirements)
         assert evaluate_autonomous(key, ad, budget(key), llm, **args) == result
         assert len(seen) == 5

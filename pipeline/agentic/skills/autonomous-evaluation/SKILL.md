@@ -11,7 +11,9 @@ No supervisor or role loop.
    then call complete_ad_facts with facts, location_fit and legitimacy, or supply
    every JDExtraction field in one complete_requirements call. Include location_evidence
    and uncertainties when applicable. Preserve employer importance,
-   essential versus preferred, exact ad citations and supplied ad_hash. Inferred
+   essential versus preferred, exact ad citations and supplied ad_hash. For every
+   ad citation use source_id="ad" and content_hash equal to the supplied ad_hash;
+   the quote must come from the supplied ad text. Inferred
    requirements cannot be high/critical or blockers. Deferred post-offer checks are
    unresolved future conditions, not current deficits or assumed consent. Missing
    seniority stays explicit in uncertainties. Never infer qualifications or rights.

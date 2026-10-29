@@ -421,7 +421,10 @@ The repair validates and canonicalizes requirement citations before persisting
 the split requirement set. Errors identify `requirements.<index>.jd_signal` on
 that tool. Combined extraction uses the same validation, retaining its nested
 field path. Source identifiers, hashes and exact quotes remain mandatory; no
-invalid identifier is replaced or inferred. The synthetic native completion
+invalid identifier is replaced or inferred. Ad-only tool schemas also advertise
+`source_id="ad"` and the supplied ad hash as constants, with the same expected
+values in citation correction feedback and the stage skill. Candidate citation
+schemas remain unchanged. The synthetic native completion
 regression first failed because no rejection feedback was returned, and checks
 that corrected requirements complete normally with zero-call completed reuse.
 

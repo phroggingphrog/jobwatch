@@ -538,6 +538,10 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                               'Evidence IDs must come from the supplied inventory or search results. '
                               'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
                               'Report sections must each be at most 4000 characters. Retry this operation once.'}
+            if code == 'invalid_citation' and name in {
+                    'complete_requirement_set', 'complete_ad_facts', 'complete_requirements'}:
+                answer['expected_ad_source'] = {'source_id': 'ad', 'content_hash': key.ad_hash}
+                answer['quote_rule'] = 'Use an exact quote from the supplied ad text; do not invent or replace source identifiers.'
             if 'dimensions' in fields:
                 answer['expected_keys'] = {'dimensions': list(DIMENSIONS)}
             if any(field == 'report' or field.startswith('report.') for field in fields):
@@ -616,6 +620,10 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                     match_shape['properties'][field]['description'] = (
                         'Must be nonempty for partial/missing matches to blocker/high/critical frozen requirements; '
                         'empty is permitted otherwise. Explain this gap without inventing candidate facts.')
+        if name in {'complete_requirement_set', 'complete_ad_facts', 'complete_requirements'}:
+            citation = advertised['$defs']['SourceCitation']['properties']
+            citation['source_id'] = {**citation['source_id'], 'const': 'ad'}
+            citation['content_hash'] = {**citation['content_hash'], 'const': key.ad_hash}
         if name == 'complete_requirements':
             advertised['properties']['requirements']['description'] = 'Object with ad_hash and requirements array, not a bare array.'
         return StructuredTool(name=name, description=(
