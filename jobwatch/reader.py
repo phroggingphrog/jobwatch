@@ -1292,6 +1292,50 @@ def _store(conn, posting_id, chash, model, kind, text_len, out, cost, model_json
          json.dumps(out["report"]) if out["report"] is not None else None))
 
 
+# A repost inside the dedupe window keeps its text but gets a new requisition id, so it owns a new postings
+# row and would pay for a second reading of the same words. The verdict of an identical ad is reused instead:
+# content hash (prompt version, model, profile settings, title, company, text) plus every other field the
+# prompt or the rules read but the hash does not cover.
+_REUSE_SQL = """
+SELECT p.location AS location, p.work_type AS work_type, p.salary_text AS salary_text,
+       r.verdict, r.hide_reason, r.fit, r.real_job, r.ad_kind, r.rights, r.rights_quote, r.seniority,
+       r.min_years, r.role_match, r.reason, r.pros_json, r.cons_json, r.flags_json, r.model_json,
+       r.score, r.archetype, r.legitimacy, r.report_json
+FROM ad_reviews r JOIN postings p ON p.id = r.posting_id
+WHERE r.content_hash = ? AND r.prompt_version = ? AND r.model = ? AND r.text_source = ?
+  AND r.posting_id <> ?
+LIMIT 50
+"""
+
+def _loads(value, default):
+    try:
+        return json.loads(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+def reuse_verdict(conn, posting_id: int, chash: str, model: str, kind: str, row) -> tuple[dict | None, dict | None]:
+    """The stored reading of a byte-identical ad under another posting, or (None, None).
+
+    Only a reading whose prompt-visible fields match is reused: location, work type and salary text reach the
+    prompt but are not part of the content hash, so a different value there needs its own reading. Reuse sends
+    nothing to a model and costs nothing.
+    """
+    for r in conn.execute(_REUSE_SQL, (chash, PROMPT_VERSION, model, kind, posting_id)).fetchall():
+        if ((r["location"] or "") != (row["location"] or "")
+                or (r["work_type"] or "") != (row["work_type"] or "")
+                or (r["salary_text"] or "") != (row["salary_text"] or "")):
+            continue
+        verdict = {"verdict": r["verdict"], "hide_reason": r["hide_reason"], "fit": r["fit"],
+                   "real_job": r["real_job"], "ad_kind": r["ad_kind"], "rights": r["rights"],
+                   "rights_quote": r["rights_quote"], "seniority": r["seniority"],
+                   "min_years": r["min_years"], "role_match": r["role_match"], "reason": r["reason"],
+                   "pros": _loads(r["pros_json"], []), "cons": _loads(r["cons_json"], []),
+                   "flags": _loads(r["flags_json"], []), "score": r["score"],
+                   "archetype": r["archetype"], "legitimacy": r["legitimacy"],
+                   "report": _loads(r["report_json"], None)}
+        return verdict, _loads(r["model_json"], None)
+    return None, None
+
 _BASE_SQL = """
 SELECT p.id, p.source, p.source_id, p.title, p.company, p.location, p.work_type, p.salary_text,
        p.description, p.raw_json, p.posted_at, p.first_seen_at,
@@ -1366,7 +1410,7 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
             text, _ = adtext.local_text(conn, row)
             if content_hash(row, text, cfg['model'], profile, settings_block()) != row['old_hash']:
                 rows.append(row)
-    stats = {"pending": len(rows), "reviewed": 0, "skipped_same": 0, "fetched": 0, "model_failed": 0,
+    stats = {"pending": len(rows), "reviewed": 0, "reused": 0, "skipped_same": 0, "fetched": 0, "model_failed": 0,
              "shown": 0, "hidden": 0, "review": 0, "teaser": 0, "partial": 0, "cost_usd": 0.0, "stopped": None,
              "errors": 0, "time_limit": None}
     work: list[tuple] = []
@@ -1428,6 +1472,14 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
                 stats["skipped_same"] += 1
                 used += stats["fetched"] > fetched_before    # a page was requested for it: that is a spent slot
                 continue
+            if not sponsored and not leak:
+                cached, cached_model = reuse_verdict(conn, row["id"], chash, cfg["model"], kind, row)
+                if cached is not None:                  # a byte-identical repost: same reading, no model call
+                    store(conn, row["id"], chash, cfg["model"], kind, len(text), cached, 0.0, cached_model)
+                    stats["reused"] += 1
+                    stats[{"show": "shown", "hide": "hidden"}.get(cached["verdict"], "review")] += 1
+                    used += stats["fetched"] > fetched_before
+                    continue
             work.append((row, text, kind, chash, sponsored))
             used += 1
         except Exception as exc:                # one bad ad must not abort the batch
