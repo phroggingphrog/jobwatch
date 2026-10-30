@@ -1883,3 +1883,30 @@ def test_a_typed_reply_with_a_question_and_an_approval_pending_answers_the_quest
     assert 'yes, from Monday' in tool_text['ask_human']
     assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() or \
         conn.execute('SELECT COUNT(*) FROM submit_requests').fetchone()[0] == 0
+
+def test_after_collect_clears_abandoned_claims_before_any_early_return(tmp_path, monkeypatch):
+    """A dead worker's expired claim must not keep reporting 'in progress', even when the run then skips."""
+    from jobwatch import db as dbm
+    from pipeline.agentic import service as svc
+    from pipeline.agentic.store import AgenticStore
+    conn = dbm.connect(tmp_path / 'abandoned.db')
+    store = AgenticStore(conn)
+    store.ensure()
+    conn.execute("INSERT INTO agentic_runs(run_key,posting_id,owner,generation,lease_until,status) "
+                 "VALUES('k1',7,'agentic-dead',1,1.0,'claimed')")
+    conn.execute("INSERT INTO agentic_runs(run_key,posting_id,owner,generation,lease_until,status) "
+                 "VALUES('k2',8,'agentic-live',1,9e12,'claimed')")
+    conn.commit()
+    svc._sweep_expired_claims(conn)
+    states = {r[0]: (r[1], r[2]) for r in conn.execute(
+        "SELECT run_key,status,reason FROM agentic_runs ORDER BY run_key")}
+    assert states['k1'] == ('failed', 'lease_expired')
+    assert states['k2'] == ('claimed', None)          # a live lease is untouched
+    conn.close()
+
+def test_the_claim_sweep_survives_a_missing_table(tmp_path):
+    from jobwatch import db as dbm
+    from pipeline.agentic import service as svc
+    conn = dbm.connect(tmp_path / 'fresh.db')
+    svc._sweep_expired_claims(conn)                    # no agentic_runs yet: a no-op, not an error
+    conn.close()
