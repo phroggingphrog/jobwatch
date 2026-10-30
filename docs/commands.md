@@ -132,8 +132,8 @@ not word overlap alone. Priors are neutral, and historical choices move only
 through an explicit migration that preserves originals and split assignments.
 The design is recorded in [ADR 0007](../docs/adr/0007-ranking-and-explained-shortlist.md)
 and [ranking rules](../docs/ranking-rules.md). Phases 1–5 are merged. The historical
-[Phase 5 verification](../docs/audits/2026-10-22-shortlist-release.md) retains its
-browser failure; the subsequent [browser repair](../docs/audits/2026-10-23-browser-popup.md)
+[Phase 5 verification](../docs/archive/audits/2026-10-22-shortlist-release.md) retains its
+browser failure; the subsequent [browser repair](../docs/archive/audits/2026-10-23-browser-popup.md)
 records the merged fix and passing release suite. Deployment remains separate.
 
 Phase 6 (merged in PR #24) adds reversible posting feedback, confirmed exclusion amendments,
@@ -141,7 +141,7 @@ bounded genuine-choice prompts and durable selected-job preparation. Native API
 and chat use the same domain services and exact human approvals. See the
 [worked example](../docs/examples/feedback-selection.md),
 [backend contract](../pipeline/agentic/CHAT.md#feedback-and-selected-preparation-phase-6)
-and [remaining-roadmap plan](../docs/superpowers/plans/2026-10-23-finish-backend-roadmap.md).
+and [remaining-roadmap plan](../docs/archive/superpowers/plans/2026-10-23-finish-backend-roadmap.md).
 
 Phase 7 provides private frozen replay, write-once grouped holdout splits, human
 labels, missing-label-aware metrics and bounded development monitoring through
@@ -149,7 +149,7 @@ labels, missing-label-aware metrics and bounded development monitoring through
 ordering. Paid evaluation and local fitting require explicit flags and remain
 separate from activation. See [the command example](../docs/examples/evaluation-monitoring.md)
 and [backend contract](../pipeline/agentic/CHAT.md#frozen-evaluation-and-bounded-monitoring-phase-7).
-The [Phase 7 verification](../docs/audits/2026-10-23-evaluation-monitoring.md) records
+The [Phase 7 verification](../docs/archive/audits/2026-10-23-evaluation-monitoring.md) records
 3804 passed, 11 skipped, resolved independent review, real synthetic sampler checks
 and the installed-database access incident. Source delivery is PR #25; no real
 blind-quality study or deployment is claimed.
