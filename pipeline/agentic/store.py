@@ -227,6 +227,24 @@ class AgenticStore:
             self._rollback()
             raise
 
+    def sweep_expired_claims(self) -> int:
+        """Mark claims whose lease ran out as failed.
+
+        A worker that dies without a result leaves the row 'claimed'. The claim itself is self-healing because
+        claim() takes over an expired lease, but nothing re-claims a posting that is no longer selected, so the
+        row reports 'in progress' for days to the board and to latest_result. This makes the record truthful.
+        """
+        self._begin()
+        try:
+            changed = self.conn.execute(
+                "UPDATE agentic_runs SET status='failed',reason='lease_expired',lease_until=0 "
+                "WHERE status='claimed' AND lease_until<=?", (float(self.clock()),)).rowcount
+            self._commit()
+            return changed
+        except Exception:
+            self._rollback()
+            raise
+
     def claim(self, key: RunKey, owner: str, lease_seconds: float) -> Claim | None:
         if type(key) is not RunKey or type(owner) is not str or not owner or len(owner) > 128 \
                 or type(lease_seconds) not in (int, float) or lease_seconds <= 0:

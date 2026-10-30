@@ -1022,9 +1022,26 @@ def validate_max_assessments(value):
     return value
 
 
+def _sweep_expired_claims(conn) -> None:
+    """Clear abandoned claims at the start of every run, before the early returns that skip the work.
+
+    A dead worker must not leave a posting showing 'in progress' for days. A sweep failure is logged and never
+    stops collection or assessment.
+    """
+    from pipeline.agentic.store import AgenticStore
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentic_runs'").fetchone():
+            return
+        cleared = AgenticStore(conn).sweep_expired_claims()
+        if cleared:
+            log.warning('agentic: cleared %d abandoned claim(s)', cleared)
+    except Exception as exc:                             # noqa: BLE001 - housekeeping must not break a run
+        log.warning('agentic: claim sweep skipped: %s: %s', type(exc).__name__, str(exc)[:120])
+
 def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, deadline=None, run_id=None,
                   max_assessments=None):
     validate_max_assessments(max_assessments)
+    _sweep_expired_claims(conn)
     if not enabled(config):
         return {'skipped': 'disabled'}
     from jobwatch import users
