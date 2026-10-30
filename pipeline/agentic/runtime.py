@@ -355,6 +355,7 @@ def validate_model_payload(model_type: type[BaseModel], payload: Any) -> BaseMod
     """
     invalid = False
     fields = ()
+    paths = ()
     try:
         if (not isinstance(model_type, type) or not issubclass(model_type, BaseModel)
                 or type(payload) is not dict):
@@ -363,12 +364,16 @@ def validate_model_payload(model_type: type[BaseModel], payload: Any) -> BaseMod
         value = model_type.model_validate(_json_tuples(payload, model_type), strict=False)
     except Exception as exc:
         if isinstance(exc, ValidationError):
-            fields = tuple(sorted({error['loc'][0] for error in exc.errors(include_input=False, include_context=False)
+            errors = exc.errors(include_input=False, include_context=False)
+            fields = tuple(sorted({error['loc'][0] for error in errors
                 if error['loc'] and error['loc'][0] in model_type.model_fields}))
+            # Field names and indexes only: enough to say which nested entry failed, never its input or context.
+            paths = tuple(sorted({'.'.join(str(part) for part in error['loc']) for error in errors if error['loc']}))
         invalid = True
     if invalid:
         error = RuntimeErrorSafe("invalid_model_payload")
         error.fields = fields
+        error.paths = paths
         raise error from None
     return value
 

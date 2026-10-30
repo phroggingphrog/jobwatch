@@ -527,7 +527,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         return result
 
     def tool(name, schema, handler, terminal=False):
-        def feedback(code, fields, journal_key):
+        def feedback(code, fields, journal_key, paths=()):
             prior = run.load(journal_key)
             if prior is not None:
                 return prior
@@ -562,7 +562,18 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
             if any(field == 'report' or field.startswith('report.') for field in fields):
                 answer.setdefault('expected_keys', {})['report'] = list(REPORT_FIELDS)
             if 'requirements' in fields and name in {'complete_requirements', 'complete_requirement_set'}:
-                answer['requirements_shape'] = 'Object with ad_hash and requirements array; not a bare array.'
+                # A bare array is a shape error; a deep path is one entry that broke a rule. Saying "shape" for a
+                # citation failure tells the model to fix the wrong thing and wastes the one allowed correction.
+                entries = tuple(path for path in paths if path.startswith('requirements.'))
+                if entries:
+                    answer['requirement_entries'] = (
+                        'These requirement entries failed validation: ' + ', '.join(entries) + '. '
+                        'A requirement whose tier is stated or structural needs jd_signal from the ad source '
+                        '(source_id, content_hash and an exact quote from the ad text). '
+                        'A requirement whose tier is inferred must have no jd_signal and must not be critical, '
+                        'high or a blocker. Correct only these entries.')
+                else:
+                    answer['requirements_shape'] = 'Object with ad_hash and requirements array; not a bare array.'
             if name == 'complete_ad_facts':
                 answer.setdefault('expected_keys', {})['complete_ad_facts'] = list(
                     AdFactsExtraction.model_json_schema().get('required', ()))
@@ -584,8 +595,8 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                 prior_feedback = run.load(journal_key)
                 if prior_feedback is not None:
                     return prior_feedback
-                def respond(code, fields):
-                    return feedback(code, fields, journal_key)
+                def respond(code, fields, paths=()):
+                    return feedback(code, fields, journal_key, paths)
                 if runtime.tool_call_id in message.additional_kwargs.get('jobwatch_argument_errors', {}):
                     return respond('invalid_tool_arguments_json', ['arguments'])
                 if name in schemas:
@@ -617,7 +628,8 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                                         'invalid_candidate_citation', 'contradictory_match', 'unretrieved_evidence',
                                         'requirements_required', 'requirements_changed', 'invalid_requirements'}:
                         raise
-                    return respond(exc.code, list(getattr(exc, 'fields', ())) or ['matches' if terminal else 'requirements'])
+                    return respond(exc.code, list(getattr(exc, 'fields', ())) or ['matches' if terminal else 'requirements'],
+                                   getattr(exc, 'paths', ()))
                 except ValueError:
                     return respond('invalid_evaluation', ['report' if terminal else 'requirements'])
         advertised = schema.model_json_schema()

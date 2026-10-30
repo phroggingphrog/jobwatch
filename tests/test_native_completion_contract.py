@@ -112,3 +112,70 @@ def test_invalid_requirement_citation_is_corrected_before_split_ad_facts(tmp_pat
         assert all(r.jd_signal.source_id == 'ad' for r in result.requirements.requirements)
         assert evaluate_autonomous(key, ad, budget(key), llm, **args) == result
         assert len(seen) == 5
+
+def _last_tool_payload(seen):
+    for body in reversed(seen):
+        for message in reversed(body['messages']):
+            if message['role'] == 'tool' and isinstance(message.get('content'), str):
+                try:
+                    return json.loads(message['content'])
+                except ValueError:
+                    continue
+    raise AssertionError('no tool payload')
+
+def _uncited_requirements(args):
+    """The same requirement set with the first entry turned into an uncited structural blocker."""
+    bad = copy.deepcopy(args)
+    entry = bad['requirements'][0]
+    entry.pop('jd_signal', None)
+    entry.update(tier='structural', importance='critical', blocker=True)
+    return bad
+
+def test_uncited_structural_requirement_names_the_entry_not_the_shape(tmp_path):
+    """A missing citation is an entry error. Telling the model its array shape is wrong burns the one correction."""
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    bad = {'tool': 'complete_requirement_set', 'arguments': _uncited_requirements(choices[0]['arguments'])}
+    llm, seen = transport([bad, choices[0], choices[1], choices[2], choices[3]])
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+            screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+    feedback = _last_tool_payload(seen[:2])
+    assert feedback['fields'] == ['requirements']
+    assert feedback['requirement_entries'].startswith('These requirement entries failed validation: requirements.0')
+    assert 'jd_signal' in feedback['requirement_entries'] and 'inferred' in feedback['requirement_entries']
+    assert 'requirements_shape' not in feedback
+    assert 'bad' not in json.dumps(feedback) and 'Reconciled ledgers' not in json.dumps(feedback)
+    assert result.matches and result.requirements.requirements[0].jd_signal is not None
+
+def test_uncited_structural_requirement_through_the_combined_tool(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    combined = {'tool': 'complete_requirements', 'arguments': {
+        'requirements': _uncited_requirements(choices[0]['arguments']),
+        **{k: v for k, v in choices[1]['arguments'].items()}}}
+    valid = {'tool': 'complete_requirements', 'arguments': {
+        'requirements': choices[0]['arguments'], **choices[1]['arguments']}}
+    llm, seen = transport([combined, valid, choices[2], choices[3]])
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+            screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+    feedback = _last_tool_payload(seen[:2])
+    assert feedback['fields'] == ['requirements']
+    assert feedback['requirement_entries'].startswith('These requirement entries failed validation: requirements.requirements.0')
+    assert 'requirements_shape' not in feedback
+    assert result.matches
+
+def test_a_container_requirements_error_still_gets_the_shape_hint(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    # The container itself is wrong, so no entry path exists: the shape hint is the correct answer here.
+    wrong = {'tool': 'complete_requirement_set',
+             'arguments': {'ad_hash': choices[0]['arguments']['ad_hash'], 'requirements': 'not-a-list'}}
+    llm, seen = transport([wrong, choices[0], choices[1], choices[2], choices[3]])
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+            screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+    feedback = _last_tool_payload(seen[:2])
+    assert feedback['requirements_shape'] == 'Object with ad_hash and requirements array; not a bare array.'
+    assert 'requirement_entries' not in feedback
