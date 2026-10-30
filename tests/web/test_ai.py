@@ -320,9 +320,7 @@ def test_javascript_url_never_becomes_a_link_on_an_ai_row(client):
     assert "javascript:" not in body(client, f"/job/{client.ids['good1']}/pane")
 
 
-# ======================================================================================================================
 # The career-ops evaluation (reader prompt v3): score 1-5, archetype, legitimacy and the report in report_json
-# ======================================================================================================================
 def req(requirement="Process invoices", importance="critical", tier="stated", jd_signal="Process invoices daily",
         match="strong", evidence="Processed 200 invoices a week"):
     return dict(requirement=requirement, importance=importance, tier=tier, jd_signal=jd_signal, match=match,
@@ -583,9 +581,7 @@ def test_a_show_verdict_from_a_cut_ad_is_listed_as_not_fully_read(client):
     conn.close()
 
 
-# ======================================================================================================================
 # round 3: only text_source 'full' is a read ad; a held-back job never says 'Apply'
-# ======================================================================================================================
 ODD_SOURCES = [None, "", "weird", " partial", "PARTIAL", "Partial ", "Full", " full", "full ", "teaser", "partial", "text"]
 
 

@@ -183,9 +183,7 @@ def fetch_seek(source_id: str, session=None, timeout: float = 25.0) -> str:
     return text
 
 
-# ---------------------------------------------------------------------------
 # Safe fetching (shared by every source)
-# ---------------------------------------------------------------------------
 class Ref(NamedTuple):
     """What a per-source fetcher may use about one posting. All of it comes from our own database."""
     source: str
@@ -733,9 +731,7 @@ def fetch_pulse(ref: Ref) -> str:
     return _accept(ref, html_body, ref_id=link, id_in=link, page_title=title)
 
 
-# ---------------------------------------------------------------------------
 # Registry and the public contract used by reader.py
-# ---------------------------------------------------------------------------
 class _Fetcher(NamedTuple):
     host: str                       # the reader keeps a per-host "blocked this run" set
     label: str                      # ad_text.source of what this fetcher saves
