@@ -25,6 +25,7 @@ from mcp.types import ElicitRequest, ElicitRequestFormParams, ElicitResult, Inpu
 from jobwatch import users
 from pipeline.agentic.chat import _career_ops_skill, dispatch
 from pipeline.agentic.runtime import RuntimeErrorSafe
+from pipeline.agentic import connector_http
 
 log = logging.getLogger(__name__)
 
@@ -348,6 +349,44 @@ def create_server(*, token: str | None = None, person: str | None = None, access
         server.custom_route('/oauth/consent', methods=['GET', 'POST'])(oauth.consent)
 
     chatgpt_connector.register(server, lambda: _person_from_request())
+
+    @server.tool(name='onboarding_status', title='Read onboarding status')
+    def onboarding_status() -> dict:
+        """Read the authenticated person's onboarding status."""
+        return connector_http.onboarding_status_operation(_person_from_request())
+
+    @server.tool(name='onboarding_start', title='Start onboarding')
+    def onboarding_start(upload_ids: list[str], base_version: int) -> dict:
+        """Start onboarding from the authenticated person's saved uploads."""
+        body = connector_http.OnboardingStart(upload_ids=upload_ids, base_version=base_version)
+        return connector_http.onboarding_start_operation(_person_from_request(), body)
+
+    @server.tool(name='onboarding_update', title='Update onboarding draft')
+    def onboarding_update(proposal_id: str, expected_revision: int, edits: list[dict]) -> dict:
+        """Apply typed edits to the authenticated person's onboarding draft."""
+        body = connector_http.OnboardingUpdate(proposal_id=proposal_id, expected_revision=expected_revision, edits=edits)
+        return connector_http.onboarding_update_operation(_person_from_request(), body)
+
+    @server.tool(name='onboarding_answer', title='Answer onboarding question')
+    def onboarding_answer(proposal_id: str, expected_revision: int, question_id: str, text: str) -> dict:
+        """Record an answer to a question in the authenticated person's onboarding draft."""
+        body = connector_http.OnboardingAnswer(proposal_id=proposal_id, expected_revision=expected_revision,
+                                               question_id=question_id, text=text)
+        return connector_http.onboarding_answer_operation(_person_from_request(), body)
+
+    @server.tool(name='onboarding_review', title='Review onboarding draft')
+    def onboarding_review(proposal_id: str) -> dict:
+        """Review the authenticated person's onboarding proposal."""
+        body = connector_http.OnboardingProposal(proposal_id=proposal_id)
+        return connector_http.onboarding_review_operation(_person_from_request(), body)
+
+    @server.tool(name='onboarding_confirm', title='Confirm onboarding profile')
+    def onboarding_confirm(proposal_id: str, proposal_digest: str, scope_digest: str,
+                           confirmed: bool) -> dict:
+        """Confirm the exact reviewed onboarding profile for the authenticated person."""
+        body = connector_http.OnboardingConfirm(proposal_id=proposal_id, proposal_digest=proposal_digest,
+                                                 scope_digest=scope_digest, confirmed=confirmed)
+        return connector_http.onboarding_confirm_operation(_person_from_request(), body)
 
     @server.resource('jobwatch://skills/career-ops', name='Career Ops skill',
                      description='Reusable Jobwatch Career Ops instructions and safety boundaries.')

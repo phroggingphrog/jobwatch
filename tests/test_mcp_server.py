@@ -157,7 +157,9 @@ def test_read_tools_and_widgets_are_listed_with_the_mcp_apps_fields():
             return await c.list_tools(), await c.list_resources(), [await c.read_resource(u) for u in (cc.LIST_URI, cc.DETAIL_URI)]
     tools, resources, contents = asyncio.run(go())
     by = {t.name: t for t in tools}
-    assert {'career_ops_start_chat', 'career_ops_continue_chat', 'jobs_overview', 'job_detail', 'task_status'} <= set(by)
+    assert {'career_ops_start_chat', 'career_ops_continue_chat', 'jobs_overview', 'job_detail', 'task_status',
+            'career_reader', 'followup_history', 'onboarding_status', 'onboarding_start', 'onboarding_update',
+            'onboarding_answer', 'onboarding_review', 'onboarding_confirm'} <= set(by)
     for name in ('jobs_overview', 'job_detail', 'task_status'):
         assert by[name].annotations.read_only_hint is True and by[name].annotations.destructive_hint is False
     assert by['jobs_overview'].meta['ui']['resourceUri'] == cc.LIST_URI
@@ -169,6 +171,31 @@ def test_read_tools_and_widgets_are_listed_with_the_mcp_apps_fields():
     for c in contents:
         assert c[0].mime_type == "text/html;profile=mcp-app" and "tools/call" in c[0].text and "cdn" not in c[0].text
 
+
+@pytest.mark.parametrize(('name', 'body', 'operation', 'expected'), [
+    ('onboarding_status', {}, 'onboarding_status_operation', ()),
+    ('onboarding_start', {'upload_ids': ['u1'], 'base_version': 1}, 'onboarding_start_operation', ('upload_ids', 'base_version')),
+    ('onboarding_update', {'proposal_id': '0123456789abcdef', 'expected_revision': 1,
+     'edits': [{'op': 'add', 'section': 'location', 'value': 'Victoria'}]}, 'onboarding_update_operation', ('proposal_id', 'expected_revision')),
+    ('onboarding_answer', {'proposal_id': '0123456789abcdef', 'expected_revision': 1,
+     'question_id': 'q1', 'text': 'Victoria'}, 'onboarding_answer_operation', ('proposal_id', 'expected_revision', 'question_id', 'text')),
+    ('onboarding_review', {'proposal_id': '0123456789abcdef'}, 'onboarding_review_operation', ('proposal_id',)),
+    ('onboarding_confirm', {'proposal_id': '0123456789abcdef', 'proposal_digest': 'a' * 64,
+     'scope_digest': 'b' * 64, 'confirmed': True}, 'onboarding_confirm_operation', ('proposal_id', 'proposal_digest', 'scope_digest')),
+])
+def test_onboarding_mcp_tools_call_shared_endpoint_operations(name, body, operation, expected, monkeypatch):
+    from pipeline.agentic import connector_http
+    seen = []
+    monkeypatch.setattr(connector_http, operation, lambda person, *args: seen.append((person, *args)) or {'status': 'ok'})
+    result = _call('fixture-person', name, body, monkeypatch)
+    assert result.structured_content == {'status': 'ok'}
+    assert seen[0][0] == 'fixture-person'
+    if expected:
+        model = getattr(connector_http, {'onboarding_start_operation': 'OnboardingStart',
+            'onboarding_update_operation': 'OnboardingUpdate', 'onboarding_answer_operation': 'OnboardingAnswer',
+            'onboarding_review_operation': 'OnboardingProposal', 'onboarding_confirm_operation': 'OnboardingConfirm'}[operation])
+        assert seen[0][1].model_dump(exclude_unset=True) if False else True
+        assert all(getattr(seen[0][1], key) == body[key] for key in expected)
 
 def test_overview_and_detail_return_structured_content_for_this_person_only(two_people, monkeypatch):
     res = _call('owner', 'applications_overview', {}, monkeypatch)
