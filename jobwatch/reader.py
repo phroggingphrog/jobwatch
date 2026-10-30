@@ -1372,7 +1372,7 @@ def _jsonld_hosts(config) -> set[str]:
 
 def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = None, fetcher=None,
                    posting_ids: list[int] | None = None, printer=None, redo: bool = False,
-                   max_seconds: float | None = None, refetch: bool = False) -> dict:
+                   max_seconds: float | None = None, refetch: bool = False, fetch_only: bool = False) -> dict:
     """Review matched postings that have no current review. Returns counts. Never raises for one bad ad.
 
     max_seconds: stop starting new work (page fetches, model calls) after this many seconds; the rest stays pending
@@ -1410,7 +1410,7 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
             text, _ = adtext.local_text(conn, row)
             if content_hash(row, text, cfg['model'], profile, settings_block()) != row['old_hash']:
                 rows.append(row)
-    stats = {"pending": len(rows), "reviewed": 0, "reused": 0, "skipped_same": 0, "fetched": 0, "model_failed": 0,
+    stats = {"pending": len(rows), "reviewed": 0, "reused": 0, "text_ready": 0, "skipped_same": 0, "fetched": 0, "model_failed": 0,
              "shown": 0, "hidden": 0, "review": 0, "teaser": 0, "partial": 0, "cost_usd": 0.0, "stopped": None,
              "errors": 0, "time_limit": None}
     work: list[tuple] = []
@@ -1480,6 +1480,9 @@ def review_pending(conn, config, *, limit: int | None = None, llm: LLM | None = 
                     stats[{"show": "shown", "hide": "hidden"}.get(cached["verdict"], "review")] += 1
                     used += stats["fetched"] > fetched_before
                     continue
+            if fetch_only:                          # fill the ad text now, so a later read costs one call not two
+                stats["text_ready"] += 1
+                continue
             work.append((row, text, kind, chash, sponsored))
             used += 1
         except Exception as exc:                # one bad ad must not abort the batch
@@ -1648,7 +1651,7 @@ def _takes(fn, name: str) -> bool:
     return name in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
-def after_collect(conn, config, printer=None, max_seconds: float | None = None) -> dict:
+def after_collect(conn, config, printer=None, max_seconds: float | None = None, fetch_only: bool = False) -> dict:
     """Pipeline hook: AI recall for new postings, then read the ads of matches without a current review.
     A model outage or a bad page never fails the collection run. Only one review/recall run at a time (review.lock
     next to the database: a second one skips with a note) and no more than reader.max_seconds (default 480, 0 = no
@@ -1690,7 +1693,7 @@ def after_collect(conn, config, printer=None, max_seconds: float | None = None) 
                 return out
             try:
                 out["review"] = review_pending(conn, config, limit=cfg["per_run"], printer=printer,
-                                               max_seconds=remaining)
+                                               max_seconds=remaining, fetch_only=fetch_only)
             except Exception as exc:                           # noqa: BLE001
                 log.exception("reader: review failed")
                 out["review_error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
