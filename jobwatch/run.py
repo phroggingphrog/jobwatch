@@ -206,8 +206,9 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                 mode = effective_mode(config)
                 from . import users
                 from .candidate import intake
-                if intake.discovery_scope(users.current()) is None:    # no tier assesses without a confirmed scope
-                    ai = {'skipped': 'no_confirmed_profile'}
+                scope, why = intake.scope_state(users.current())
+                if scope is None:                    # no tier assesses without a confirmed scope
+                    ai = {'skipped': why}
                 elif mode == 'agentic':
                     ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
                         collector_run_id=run_id, deadline=deadline, run_id=discovery_run_id)}

@@ -57,7 +57,9 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
          "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words",
-         "gateway_not_allowed", "model_not_allowed", "model_unavailable", "parse_timeout")
+         "gateway_not_allowed", "model_not_allowed", "model_unavailable", "parse_timeout",
+         "profile_path_outside", "profile_file_unreadable", "no_profile_version", "no_confirmed_scope",
+         "scope_without_basis", "profile_unreadable", "ok")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
 # Absent in the documents, these decide what we may search for or say, so each becomes an unknown + a question.
@@ -932,15 +934,30 @@ def _finish(person: str, cur: Proposal, pdir: Path, files: dict[str, str]) -> No
                 save_proposal(person, o.model_copy(update={"status": "superseded"}))
 
 
+def _read_profile_file(pdir: Path, name: str) -> bytes:
+    """Read one profile file, following a symlink only when it stays inside the profile directory.
+
+    People keep `cv.md -> master_resume.md`, and refusing that made a normal layout look like a hand edit. The
+    containment check keeps the security property that mattered: a profile file may not resolve outside its own
+    directory.
+    """
+    root = pdir.resolve()
+    real = Path(os.path.realpath(pdir / name))
+    if real.parent != root:
+        raise IntakeError("profile_path_outside")
+    return read_regular_file(real, MAX_JSON_BYTES)
+
 def _refuse_hand_edits(pdir: Path, recorded: dict) -> None:
     """Live profile/ files must still match the hashes the current version recorded."""
     for name, sha in recorded.items():
         try:
-            live = hashlib.sha256(read_regular_file(pdir / name, MAX_JSON_BYTES)).hexdigest()
+            live = hashlib.sha256(_read_profile_file(pdir, name)).hexdigest()
         except FileNotFoundError:
             continue                                       # removed: nothing of the person's to overwrite
+        except IntakeError:
+            raise
         except (OSError, ValueError):
-            raise IntakeError("profile_edited_by_hand") from None
+            raise IntakeError("profile_file_unreadable") from None
         if live != sha:
             raise IntakeError("profile_edited_by_hand")    # an unapproved hand edit: never silently overwritten
 
@@ -1057,19 +1074,21 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
     if actor != "person":
         raise IntakeError("person_required")
     with users.use(person), _locked(person, "versions.lock"):
-        if _numbers(person):
-            raise IntakeError("already_adopted")
+        # Adopting again is allowed on purpose: a person repairs their files and adopts the repair as the next
+        # version. History and overwrite protection are the point, and refusing stranded anyone whose first
+        # adoption captured a bad state. Every earlier version stays readable.
+        version = (max(_numbers(person)) if _numbers(person) else 0) + 1
         pdir = apaths.profile_dir()
         found = {}
         for name in dict.fromkeys(_ALLOWED + _PROJECTED):
             if os.path.lexists(pdir / name):
                 try:
-                    found[name] = read_regular_file(pdir / name, MAX_JSON_BYTES)
+                    found[name] = _read_profile_file(pdir, name)
                 except (OSError, ValueError):
                     raise IntakeError("unreadable_document") from None   # a symlink or oversized file is not adopted
         if not found:
             raise IntakeError("nothing_to_adopt")
-        approved = {"schema": 1, "version": 1, "proposal_id": None, "actor": "person", "adopted_from_files": True,
+        approved = {"schema": 1, "version": version, "proposal_id": None, "actor": "person", "adopted_from_files": True,
                     "adopted_files": sorted(found), "file_sha256": {k: hashlib.sha256(v).hexdigest() for k, v in sorted(found.items())},
                     "uploads": [], "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "facts": [], "open_questions": []}
@@ -1104,27 +1123,41 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
                     if stale.exists():
                         stale.unlink()
             _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
-            os.rename(stage, root / "1")
+            os.rename(stage, root / str(version))
         except BaseException:
             shutil.rmtree(stage, ignore_errors=True)
             raise
-    return 1
+    return version
 
+
+def scope_state(person: str) -> tuple[SearchScope | None, str]:
+    """The confirmed scope and "ok", or None and the specific reason it is not usable.
+
+    One reason per cause. Collapsing them into None made every failure read "confirm the profile and its scope
+    first", which sent a person to re-confirm a profile that was already confirmed and correct.
+    """
+    try:
+        cur = current_version(person)
+        if not cur:
+            return None, "no_profile_version"
+        if not cur.get("scope") or not cur.get("scope_digest"):
+            return None, "no_confirmed_scope"
+        scope = SearchScope.model_validate(cur["scope"], strict=False)
+        if not scope.basis:
+            return None, "scope_without_basis"
+        if _scope_digest(scope) != cur["scope_digest"]:
+            return None, "scope_changed"
+        with users.use(person):                            # profile/ is the person's own, whoever asks
+            _refuse_hand_edits(apaths.profile_dir(), cur.get("file_sha256") or {})
+        return scope, "ok"
+    except IntakeError as exc:
+        return None, (exc.args[0] if exc.args else "profile_invalid")
+    except (OSError, ValueError, KeyError, TypeError):
+        return None, "profile_unreadable"
 
 def _confirmed_scope(person: str) -> SearchScope | None:
     """Read and validate the unchanged, originally confirmed scope and live profile files."""
-    try:
-        cur = current_version(person)
-        if not cur or not cur.get("scope") or not cur.get("scope_digest"):
-            return None
-        scope = SearchScope.model_validate(cur["scope"], strict=False)
-        if not scope.basis or _scope_digest(scope) != cur["scope_digest"]:
-            return None
-        with users.use(person):                            # profile/ is the person's own, whoever asks
-            _refuse_hand_edits(apaths.profile_dir(), cur.get("file_sha256") or {})
-        return scope
-    except (OSError, ValueError, KeyError, TypeError):     # includes IntakeError(profile_edited_by_hand)
-        return None
+    return scope_state(person)[0]
 
 
 def discovery_scope(person: str) -> SearchScope | None:
