@@ -350,6 +350,11 @@ def create_server(*, token: str | None = None, person: str | None = None, access
 
     chatgpt_connector.register(server, lambda: _person_from_request())
 
+    @server.tool(name='discovery_status', title='Read discovery status', annotations=read_only)
+    def discovery_status() -> dict:
+        """Read discovery status for the authenticated person. No writes or model calls."""
+        return connector_http.discovery_status_operation(_person_from_request())
+
     @server.tool(name='onboarding_status', title='Read onboarding status')
     def onboarding_status() -> dict:
         """Read the authenticated person's onboarding status."""
