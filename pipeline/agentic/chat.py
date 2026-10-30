@@ -229,7 +229,8 @@ def _approval_binding(name, args, config):
         from jobwatch.apply.paths import profile_dir
         with job_connection(config) as jobs:
             jobs.row_factory = sqlite3.Row
-            bundle = snapshot_evidence(profile_dir())
+            from pipeline.agentic.service import _approved_evidence
+            bundle = _approved_evidence(users.current())
             if name == 'draft_followup':
                 from jobwatch.followup.drafts import capture
                 _, _, identity = capture(jobs, args['application_id'], bundle)
@@ -516,9 +517,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
     @tool
     def read_evidence(name: str, start_line: int = 1) -> dict:
         """Read a paginated canonical evidence source, or name='inventory' to list sources. No host paths."""
-        from jobwatch.candidate.evidence import snapshot_evidence
-        from jobwatch.apply.paths import profile_dir
-        bundle = snapshot_evidence(profile_dir())
+        from pipeline.agentic.service import _approved_evidence
+        bundle = _approved_evidence(users.current())
         if name == 'inventory':
             return {'sources': dict(bundle.sources)}
         if name not in bundle.contents or type(start_line) is not int or start_line < 1:

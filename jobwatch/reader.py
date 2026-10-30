@@ -343,11 +343,17 @@ _PROFILE_FALLBACK = (
 
 # ---------------------------------------------------------------------------------- the person's own settings
 def _interests() -> dict:
-    """The person's interests_and_criteria.yaml (target_roles, locations, constraints...); {} when they have none."""
+    """The confirmed version's derived interests and criteria."""
     try:
         import yaml
-        return yaml.safe_load((apaths.profile_dir() / "interests_and_criteria.yaml").read_text(encoding="utf-8")) or {}
-    except Exception:  # noqa: BLE001 - no file yet: no exclusions, nothing assumed
+        from . import users
+        from .candidate import intake
+        approved = intake.current_version(users.current())
+        if not approved:
+            return {}
+        path = intake._versions_root(users.current()) / str(approved['version']) / 'interests_and_criteria.yaml'
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
         return {}
 
 

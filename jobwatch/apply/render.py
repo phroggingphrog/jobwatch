@@ -30,7 +30,13 @@ def _candidate() -> dict:
     try:
         import yaml
         from .paths import profile_dir
-        return (yaml.safe_load((profile_dir() / "profile.yaml").read_text(encoding="utf-8")) or {}).get("candidate") or {}
+        from jobwatch import users
+        from jobwatch.candidate import intake
+        person = users.current()
+        approved = intake.current_version(person)
+        path = (intake._versions_root(person) / str(approved['version']) / 'profile.yaml'
+                if approved else profile_dir() / 'profile.yaml')
+        return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("candidate") or {}
     except Exception:  # noqa: BLE001 - no profile yet: the CV simply leaves these lines out
         return {}
 

@@ -41,7 +41,7 @@ def _focus_hypotheses(approved, fields):
 def _pin(conn, config, *, preparation=False):
     """Cheap exact-input fence: no occupational analysis, fetching or schema writes."""
     approved = intake.current_version(users.current())
-    bundle = service.snapshot_evidence(service.profile_dir())
+    bundle = service._approved_evidence(users.current())
     service.verify_evidence_snapshot(bundle)
     cfg = service._config(config)
     from jobwatch.candidate.analysis import STRUCTURAL_VERSION
@@ -251,8 +251,9 @@ def build_shortlist(conn, config):
 
 
 def load_latest(conn, *, config, label=None, limit=20, offset=0):
-    if intake.discovery_scope(users.current()) is None:
-        return _empty('no_confirmed_profile')
+    _, scope_reason = intake.scope_state(users.current())
+    if scope_reason != 'ok':
+        return _empty('no_confirmed_profile' if scope_reason == 'no_profile_version' else scope_reason)
     row=_latest(conn)
     if row is None:
         return _empty('not_built')

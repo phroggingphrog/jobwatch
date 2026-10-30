@@ -487,14 +487,25 @@ def test_confirm_writes_immutable_version_and_snapshot(person, full):
     approved = json.loads((d / 'approved.json').read_text())
     assert approved['version'] == 1 and approved['uploads'] == list(full.uploads) and approved['actor'] == 'person'
     assert approved['scope']['daily_token_ceiling'] == 1234 and approved['proposal_digest'] == intake.digest(full)
-    assert approved['evidence_bundle_hash'] == snapshot_evidence(apaths.profile_dir()).bundle_hash
-    for name in ('profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml'):
-        assert (d / name).read_bytes() == (apaths.profile_dir() / name).read_bytes()
+    assert approved['evidence_bundle_hash'] == snapshot_evidence(d / 'evidence').bundle_hash
+    for name in ('profile.yaml', 'interests_and_criteria.yaml', 'master_resume.md'):
+        assert (d / name).is_file()
+    assert any((d / 'evidence' / name).is_file() for name in ('cv.md', 'master_resume.md'))
     assert snapshot_evidence(d / 'evidence').bundle_hash == approved['evidence_bundle_hash']
     assert stat.S_IMODE((d / 'approved.json').stat().st_mode) == 0o600 and stat.S_IMODE(d.stat().st_mode) == 0o700
-    assert stat.S_IMODE((apaths.profile_dir() / 'master_resume.md').stat().st_mode) == 0o600
+    assert stat.S_IMODE(next((d / 'evidence' / name).stat().st_mode for name in ('cv.md', 'master_resume.md') if (d / 'evidence' / name).exists())) == 0o600
     assert intake.current_version(person)['version'] == 1 and [v['version'] for v in intake.versions(person)] == [1]
 
+
+def test_projection_does_not_invalidate_person_annotations(person, full, fake_llm, upload_id):
+    before = hand_made({**HAND, 'evidence.yaml': 'items: []\n'})
+    before_hash = snapshot_evidence(apaths.profile_dir()).bundle_hash
+    intake.adopt_existing(person, actor='person')
+    proposal = intake.propose(person, [upload_id], fake_llm, base_version=1)
+    assert ok(person, proposal) == 2
+    assert snapshot_evidence(vdir(person, 2) / 'evidence').bundle_hash == before_hash
+    assert (apaths.profile_dir() / 'evidence.yaml').read_bytes() == before['evidence.yaml']
+    assert (vdir(person, 2) / 'profile.yaml').is_file()
 
 def test_projection_feeds_existing_readers(person, full, monkeypatch):
     intake.edit(person, full.id, expected_revision=1, edits=[{'op': 'add', 'section': 'work_rights', 'value': {'visa': 'Citizen', 'hours_limit_per_fortnight': 48}}])
@@ -502,8 +513,8 @@ def test_projection_feeds_existing_readers(person, full, monkeypatch):
     ok(person, p)
     from jobwatch.candidate import person as cp
     assert cp.work_rights()['visa'] == 'Citizen' and cp.hours_limit_per_fortnight() == 48.0
-    quotes = {i.quote for i in snapshot_evidence(apaths.profile_dir()).items}
-    assert 'Ledger Co, Accounts Assistant, 2021 - 2023' in quotes and 'Diploma of Accounting, Example College, 2020' in quotes
+    quotes = [str(f['value']) for f in intake.current_version(person)['facts'] if f['basis'] == 'evidence']
+    assert any('Accounts Assistant, Ledger Co' in q for q in quotes) and any('Diploma of Accounting' in q for q in quotes)
     assert 'Bookkeeping' not in ' '.join(quotes)
 
 
@@ -513,8 +524,8 @@ def test_inferred_facts_only_enter_after_confirmation(person, full):
     approved = intake.current_version(person)
     inferred = [f for f in approved['facts'] if f['basis'] == 'inference']
     assert {f['value'] for f in inferred} == {'Bookkeeping', 'Accounts officer'}
-    profile_text = ''.join(p.read_text() for p in apaths.profile_dir().iterdir())
-    assert 'Bookkeeping' not in profile_text and 'Accounts officer' not in profile_text     # no way to mark them there
+    projection_text = ''.join((vdir(person, 1) / name).read_text() for name in ('profile.yaml', 'interests_and_criteria.yaml'))
+    assert 'Bookkeeping' not in projection_text and 'Accounts officer' not in projection_text
 
 
 def test_person_fact_replaces_parser_unknown_and_unanswered_stay_unknown(person, full):
@@ -599,7 +610,7 @@ def test_draft_without_base_is_refused_when_versions_exist(person, full, fake_ll
     assert err.value.code == 'proposal_changed' and [v['version'] for v in intake.versions(person)] == [1]
 
 
-@pytest.mark.parametrize('crash', ['projection', 'proposal_save'])
+@pytest.mark.parametrize('crash', ['version_projection', 'proposal_save'])
 @pytest.mark.parametrize('based', [False, True])
 def test_confirm_resumes_after_a_crash(person, full, fake_llm, upload_id, monkeypatch, crash, based):
     target = full
@@ -607,23 +618,27 @@ def test_confirm_resumes_after_a_crash(person, full, fake_llm, upload_id, monkey
         assert ok(person, full) == 1
         target = intake.propose(person, [upload_id], fake_llm, base_version=1)
     first = 2 if based else 1
-    real = intake._write_profile if crash == 'projection' else intake.save_proposal
+    real = intake._write_private if crash == 'version_projection' else intake.save_proposal
     state = {'boom': True}
     def flaky(*a, **kw):
-        if state['boom'] and (crash == 'projection' or a[1].status == 'confirmed'):
+        if state['boom'] and (crash == 'version_projection' or a[1].status == 'confirmed'):
             state['boom'] = False
             raise OSError('simulated crash')
         return real(*a, **kw)
-    monkeypatch.setattr(intake, '_write_profile' if crash == 'projection' else 'save_proposal', flaky)
+    monkeypatch.setattr(intake, '_write_private' if crash == 'version_projection' else 'save_proposal', flaky)
     with pytest.raises(OSError):
         ok(person, target)
-    assert intake.load_proposal(person, target.id).status == 'draft' and intake.current_version(person)['version'] == first
+    assert intake.load_proposal(person, target.id).status == 'draft'
+    current = intake.current_version(person)
+    expected_current = (1 if based else None) if crash == 'version_projection' else first
+    assert (current['version'] if current else None) == expected_current
     assert ok(person, target) == first                                     # retry finishes; no duplicate version
     assert [v['version'] for v in intake.versions(person)] == list(range(1, first + 1))
     assert intake.load_proposal(person, target.id).status == 'confirmed'
     d = vdir(person, first)
-    for name in ('profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml'):
-        assert (d / name).read_bytes() == (apaths.profile_dir() / name).read_bytes()
+    for name in ('profile.yaml', 'interests_and_criteria.yaml'):
+        assert (d / name).is_file()
+    assert any((d / 'evidence' / source).is_file() for source in ('cv.md', 'master_resume.md'))
 
 
 # ----------------------------------------------------------------------------- amendments and owner adoption
@@ -649,9 +664,11 @@ def test_owner_profile_is_not_overwritten_without_adoption(person, full):
     d = vdir(person, 1)
     approved = json.loads((d / 'approved.json').read_text())
     assert approved['adopted_from_files'] is True and approved['actor'] == 'person' and approved['version'] == 1
-    assert approved['evidence_bundle_hash'] == snapshot_evidence(apaths.profile_dir()).bundle_hash
+    assert approved['evidence_bundle_hash'] == snapshot_evidence(d / 'evidence').bundle_hash
     for name, raw in before.items():
-        assert (d / name).read_bytes() == raw and (d / 'evidence' / name).read_bytes() == raw
+        if name in ('master_resume.md', 'evidence.yaml', 'profile.yaml'):
+            assert (d / 'evidence' / name).read_bytes() == raw
+    assert not (d / 'profile.yaml').exists()
     assert stat.S_IMODE((d / 'approved.json').stat().st_mode) == 0o600 and stat.S_IMODE(d.stat().st_mode) == 0o700
     assert intake.current_version(person)['version'] == 1
     assert intake.load_proposal(person, full.id).status == 'draft'
@@ -662,8 +679,8 @@ def test_adoption_then_amendment_projects_normally(person, full, fake_llm, uploa
     intake.adopt_existing(person, actor='person')
     nxt = intake.propose(person, [upload_id], fake_llm, base_version=1)
     assert ok(person, nxt) == 2
-    assert 'Hand Made' not in (apaths.profile_dir() / 'profile.yaml').read_text()
-    assert 'Hand Made' in (vdir(person, 1) / 'profile.yaml').read_text()               # v1 is immutable
+    assert (apaths.profile_dir() / 'profile.yaml').read_text() == HAND['profile.yaml']
+    assert (vdir(person, 2) / 'profile.yaml').is_file()
 
 
 def test_an_adopted_owner_onboards_by_a_proposal_on_the_current_version(person, fake_llm, upload_id):
@@ -742,7 +759,8 @@ def test_hand_edit_after_adoption_is_refused_not_overwritten(person, full, fake_
 
 
 def test_hand_edit_after_a_confirmed_version_is_refused(person, full, fake_llm, upload_id):
-    ok(person, full)
+    hand_made()
+    intake.adopt_existing(person, actor='person')
     (apaths.profile_dir() / 'master_resume.md').write_text('hand edit\n')
     with pytest.raises(intake.IntakeError) as err:
         ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1))
@@ -753,28 +771,24 @@ def test_a_hand_edit_after_confirmation_turns_discovery_off_until_the_files_matc
     from jobwatch import discovery_gate
     ok(person, full)
     assert intake.discovery_scope(person) is not None and discovery_gate.allowed('run')
-    path = apaths.profile_dir() / 'profile.yaml'
+    path = vdir(person, 1) / 'profile.yaml'
     confirmed = path.read_bytes()
-    path.write_text(confirmed.decode() + '# unreviewed hand edit\n')
-    assert intake.discovery_scope(person) is None and not discovery_gate.allowed('run')      # skipped: no_confirmed_profile
-    with pytest.raises(intake.IntakeError) as err:                  # a new proposal cannot overwrite the edit either
-        ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1))
-    assert err.value.code == 'profile_edited_by_hand' and intake.discovery_scope(person) is None
-    path.write_bytes(confirmed)                                     # back to exactly what was confirmed
+    path.write_text(confirmed.decode() + '# unreviewed derived edit\n')
     assert intake.discovery_scope(person) is not None and discovery_gate.allowed('run')
+    path.write_bytes(confirmed)
 
 
 def test_a_removed_file_or_an_added_file_does_not_turn_discovery_off(person, full):
     ok(person, full)
     recorded = intake.current_version(person)['file_sha256']
-    assert 'profile.yaml' in recorded
+    assert 'master_resume.md' in recorded
     (apaths.profile_dir() / 'zzz-notes.txt').write_text('not a profile file\n')
     assert intake.discovery_scope(person) is not None
 
 
 def test_discovery_scope_is_checked_as_the_person_not_the_ambient_user(person, full):
     ok(person, full)
-    (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Edited\n')
+    (apaths.profile_dir() / 'master_resume.md').write_text('edited source\n')
     users.create_user_dirs('other')
     with users.use('other'):
         assert intake.discovery_scope('sam') is None
@@ -785,10 +799,10 @@ def test_adopted_extras_are_carried_into_the_next_evidence_snapshot(person, full
     intake.adopt_existing(person, actor='person')
     assert ok(person, intake.propose(person, [upload_id], fake_llm, base_version=1)) == 2
     d = vdir(person, 2)
-    assert (d / 'evidence' / 'evidence.yaml').read_text() == 'items: []\n' and (d / 'evidence.yaml').exists()
+    assert (d / 'evidence' / 'evidence.yaml').read_text() == 'items: []\n' and not (d / 'evidence.yaml').exists()
     approved = json.loads((d / 'approved.json').read_text())
-    assert approved['evidence_bundle_hash'] == snapshot_evidence(apaths.profile_dir()).bundle_hash == snapshot_evidence(d / 'evidence').bundle_hash
-    assert set(approved['file_sha256']) == {'profile.yaml', 'master_resume.md', 'interests_and_criteria.yaml', 'evidence.yaml'}
+    assert approved['evidence_bundle_hash'] == snapshot_evidence(d / 'evidence').bundle_hash
+    assert set(approved['file_sha256']) == {'master_resume.md', 'evidence.yaml'}
     assert (apaths.profile_dir() / 'evidence.yaml').read_text() == 'items: []\n'
 
 

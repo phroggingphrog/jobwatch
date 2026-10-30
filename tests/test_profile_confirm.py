@@ -146,7 +146,7 @@ def test_adopting_again_records_the_next_version(monkeypatch, tmp_path, capsys):
     assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 0
     assert "version 2" in capsys.readouterr().out
     assert intake.current_version(users.current())["version"] == 2
-    assert (tmp_path / "profile-versions" / "1").is_dir()               # history kept
+    assert (tmp_path / "profile-versions" / "1").is_dir()
 
 
 def test_a_hand_edit_reports_itself_rather_than_looking_unconfirmed(monkeypatch, tmp_path):
@@ -182,4 +182,5 @@ def test_confirm_never_rewrites_the_resume_or_drops_evidence(monkeypatch, tmp_pa
 
     assert (pdir / "master_resume.md").read_text() == cv      # the person's own words survive
     assert evidence.exists() and evidence.read_text().strip()  # annotations are never deleted
-    assert intake.scope_state(person)[1] == "ok"              # and discovery still opens
+    assert intake.scope_state(person)[1] == "ok"  # unchanged adopted inputs retain discovery scope
+    assert intake.current_version(person)["file_sha256"].get("evidence.yaml")

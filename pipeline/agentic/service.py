@@ -264,7 +264,7 @@ def snapshot_inventory(conn, config, *, posting_ids=None, limit=20, evidence_bun
     if type(limit) is not int or not 1 <= limit <= 20:
         raise AgenticError('invalid_limit')
     cfg, pol = _config(config), policy or default_policy()
-    bundle = evidence_bundle or snapshot_evidence(profile_dir())
+    bundle = evidence_bundle or _approved_evidence(users.current())
     verify_evidence_snapshot(bundle)
     if posting_ids is not None:
         ids = list(dict.fromkeys(posting_ids))
@@ -456,7 +456,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     invocation_id = batch.batch_id if batch is not None else 'agentic-' + uuid.uuid4().hex
     if _invocation_deadline is None:
         _invocation_deadline = batch.deadline if batch is not None else time.time() + cfg['batch_seconds']
-    bundle = evidence_bundle or snapshot_evidence(profile_dir())
+    bundle = evidence_bundle or _approved_evidence(users.current())
     verify_evidence_snapshot(bundle)
     captured = _capture(conn, posting_id)
     if captured is None:
@@ -801,23 +801,11 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
 
 
 def _approved_evidence(person: str):
-    """The evidence snapshot the confirmed version was built from, falling back to the live profile directory.
-
-    Assessment used to re-snapshot profile/ on every batch. A person's annotations legitimately drift from the
-    text a later projection wrote, and that drift then failed the whole batch with annotation_invalid before a
-    single model call. The approved version already holds a clean snapshot, so read that.
-    """
-    from jobwatch import users
+    """Read annotations and source documents from the approved immutable version."""
     from jobwatch.candidate import intake
-    try:
-        versions = intake._versions_root(person)
-        numbers = sorted(int(p.name) for p in versions.iterdir()
-                         if p.name.isdigit() and (p / "evidence").is_dir())
-    except (OSError, ValueError):
-        numbers = []
-    if numbers:
-        return snapshot_evidence(versions / str(numbers[-1]) / "evidence")
-    return snapshot_evidence(profile_dir())
+    approved = intake.current_version(person)
+    return snapshot_evidence(intake._versions_root(person) / str(approved['version']) / 'evidence'
+                             if approved else profile_dir())
 
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
                       run_id=None, token_allowance=None, token_allowance_reason='daily_budget',
@@ -1002,7 +990,7 @@ def _without_completed(conn, config, pending):
     """Load shared inputs once; uncertainty about reuse always keeps work queued."""
     try:
         cfg,policy = _config(config),default_policy()
-        bundle = snapshot_evidence(profile_dir())
+        bundle = _approved_evidence(users.current())
         verify_evidence_snapshot(bundle)
         inputs = load_inputs(bundle,cfg)
         structural = analyse_candidate(bundle,*inputs,policy)
@@ -1065,9 +1053,9 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         return {'skipped': 'disabled'}
     from jobwatch import users
     from jobwatch.candidate import intake
-    scope = intake.discovery_scope(users.current())     # discovery runs only on a profile confirmed with its scope shown
+    scope, scope_reason = intake.scope_state(users.current())
     if scope is None:
-        return {'skipped': 'no_confirmed_profile'}
+        return {'skipped': 'no_confirmed_profile' if scope_reason == 'no_profile_version' else scope_reason}
     # The scope's daily limits (jobs evaluated, tokens charged since the person's local midnight) are checked before
     # any work, so a spent day does no ad fetching either. Deferred jobs are left untouched and stay queued.
     cfg = _config(config)
@@ -1115,7 +1103,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         if cfg.get('autonomous_evaluation', False):
             from jobwatch.occupations.embeddings import discovery_budget
             from pipeline.agentic.candidate_digest import current_digest, ensure_digest
-            bundle, target = snapshot_evidence(profile_dir()), default_policy()
+            bundle, target = _approved_evidence(users.current()), default_policy()
             structural = analyse_candidate(bundle, *load_inputs(bundle, cfg), target)
             ready = current_digest(conn, bundle=bundle, policy=target, cfg=cfg, structural=structural)
             if ready is None:

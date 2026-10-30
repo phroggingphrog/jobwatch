@@ -15,7 +15,18 @@ def _yaml(name: str) -> dict:
     try:
         import yaml
         from jobwatch.apply.paths import profile_dir
-        data = yaml.safe_load((profile_dir() / name).read_text(encoding="utf-8"))
+        from jobwatch import users
+        from . import intake
+        person = users.current()
+        approved = intake.current_version(person)
+        root = intake._versions_root(person) / str(approved['version']) if approved else profile_dir()
+        if approved and name in intake._PROJECTED:
+            data = yaml.safe_load((root / name).read_text(encoding="utf-8"))
+        elif approved and name == "profile.yaml" and approved.get("profile_inputs_hash"):
+            data = yaml.safe_load((root / name).read_text(encoding="utf-8"))
+        else:
+            source = root / 'evidence' / name if approved else root / name
+            data = yaml.safe_load(source.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except OSError:                   # no profile yet: neutral behaviour
         return {}
