@@ -596,3 +596,14 @@ def test_reader_workers_keep_calling_person_identity_and_confirmed_policy(world,
     assert len(observed) == 1 and observed[0][0] == 'synthetic-review'
     assert 'CALLER_ONLY_EMPLOYER' in observed[0][1]
     assert 'OWNER_ONLY_EMPLOYER' not in observed[0][1]
+
+
+def test_fetch_only_fills_the_ad_text_and_calls_no_model(world):
+    """A run without a confirmed scope still does useful work: the ad text is fetched, nothing is judged."""
+    config, conn, add = world
+    good = add("Accounts Clerk", desc="x " * 500)
+    gw = FakeGateway()
+    stats = reader.review_pending(conn, config, llm=make_llm(gw), limit=10, fetch_only=True)
+    assert gw.calls == []                                    # no model call at all
+    assert stats["text_ready"] >= 1 and stats["reviewed"] == 0
+    assert conn.execute("SELECT COUNT(*) FROM ad_reviews").fetchone()[0] == 0   # no verdict was invented
