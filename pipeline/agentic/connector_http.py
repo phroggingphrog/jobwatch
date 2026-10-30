@@ -154,6 +154,25 @@ def _public_origin(url: str | None) -> str | None:
     return f'{parsed.scheme}://{parsed.netloc}'
 
 
+def onboarding_status_operation(who: str):
+    return onboarding.status(who)
+
+def onboarding_start_operation(who: str, body: OnboardingStart):
+    return onboarding.start(who, body.upload_ids, body.base_version)
+
+def onboarding_update_operation(who: str, body: OnboardingUpdate):
+    return onboarding.update(who, body.proposal_id, body.expected_revision,
+                             [edit.model_dump() for edit in body.edits])
+
+def onboarding_answer_operation(who: str, body: OnboardingAnswer):
+    return onboarding.answer(who, body.proposal_id, body.expected_revision, body.question_id, body.text)
+
+def onboarding_review_operation(who: str, body: OnboardingProposal):
+    return onboarding.review(who, body.proposal_id)
+
+def onboarding_confirm_operation(who: str, body: OnboardingConfirm):
+    return onboarding.confirm(who, body.proposal_id, body.proposal_digest, body.scope_digest)
+
 def create_app(*, token: str | None = None, person: str | None = None, oauth: bool | None = None,
                public_url: str | None = None, passphrase: str | None = None,
                oauth_state: str | Path | None = None) -> FastAPI:
@@ -266,7 +285,7 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
 
     @app.get('/connector/onboarding/status')
     def onboarding_status(who: str = Depends(authed)):
-        return onboarding.status(who)
+        return onboarding_status_operation(who)
 
     @app.get('/connector/discovery/status')
     def discovery_status(who: str = Depends(authed)):
@@ -305,24 +324,23 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
 
     @app.post('/connector/onboarding/start')
     def onboarding_start(body: OnboardingStart, who: str = Depends(authed)):
-        return onboarding.start(who, body.upload_ids, body.base_version)
+        return onboarding_start_operation(who, body)
 
     @app.post('/connector/onboarding/update')
     def onboarding_update(body: OnboardingUpdate, who: str = Depends(authed)):
-        return onboarding.update(who, body.proposal_id, body.expected_revision,
-                                 [edit.model_dump() for edit in body.edits])
+        return onboarding_update_operation(who, body)
 
     @app.post('/connector/onboarding/answer')
     def onboarding_answer(body: OnboardingAnswer, who: str = Depends(authed)):
-        return onboarding.answer(who, body.proposal_id, body.expected_revision, body.question_id, body.text)
+        return onboarding_answer_operation(who, body)
 
     @app.post('/connector/onboarding/review')
     def onboarding_review(body: OnboardingProposal, who: str = Depends(authed)):
-        return onboarding.review(who, body.proposal_id)
+        return onboarding_review_operation(who, body)
 
     @app.post('/connector/onboarding/confirm')
     def onboarding_confirm(body: OnboardingConfirm, who: str = Depends(authed)):
-        return onboarding.confirm(who, body.proposal_id, body.proposal_digest, body.scope_digest)
+        return onboarding_confirm_operation(who, body)
 
     if provider is not None:
         _mount_oauth(app, provider, token, person)
