@@ -37,10 +37,13 @@ final URL, or the ad/page shares a significant word with the posting title). Cha
 """
 from __future__ import annotations
 
+import os
+
 import contextlib
 import contextvars
 import ipaddress
 import json
+import urllib.request
 import logging
 import re
 import sqlite3
@@ -927,6 +930,55 @@ def is_host_failure(status: str | None) -> bool:
     return bool(status) and status.split(":", 1)[0] in HOST_FAILURES
 
 
+# -- last-resort fetch through TinyFish -------------------------------------------------------------------------
+# Used only when the direct request is refused or returns a bot wall. The key never lives in config or the repo;
+# the file is read at run time. A per-process cap keeps a broken day from spending a credit budget unattended.
+_TINYFISH_URL = "https://api.fetch.tinyfish.ai"
+_TINYFISH_KEY = "~/.config/jobwatch/tinyfish.key"
+_tinyfish_used = 0
+
+
+def tinyfish_cap() -> int:
+    try:
+        return max(0, int(os.environ.get("JOBWATCH_TINYFISH_PER_RUN", "10")))
+    except ValueError:
+        return 10
+
+
+def _tinyfish_key() -> str:
+    try:
+        return Path(_TINYFISH_KEY).expanduser().read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def tinyfish_text(url: str, *, timeout: float = 25.0) -> str:
+    """One page through TinyFish, or "" when it is not configured, capped, refused or empty."""
+    global _tinyfish_used
+    if _tinyfish_used >= tinyfish_cap():
+        return ""
+    key = _tinyfish_key()
+    if not key:
+        return ""
+    body = json.dumps({"urls": [url]}).encode("utf-8")
+    request = urllib.request.Request(_TINYFISH_URL, data=body, method="POST",
+                                     headers={"Content-Type": "application/json", "X-API-Key": key})
+    _tinyfish_used += 1
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read())
+    except Exception as exc:                              # noqa: BLE001 - a fallback never fails the read
+        log.warning("adtext: tinyfish failed for %s: %s", urlsplit(url).hostname, type(exc).__name__)
+        return ""
+    if not payload.get("results"):
+        # TinyFish reports a refusal inside a 200 body: {"results":[],"errors":[{"error":"bot_blocked"}]}
+        why = ((payload.get("errors") or [{}])[0] or {}).get("error") or "empty"
+        log.warning("adtext: tinyfish refused %s: %s", urlsplit(url).hostname, why)
+        return ""
+    item = (payload.get("results") or [payload.get("result") or payload])[0]
+    text = (item or {}).get("content") or (item or {}).get("markdown") or (item or {}).get("text") or ""
+    return str(text).strip()
+
 def ensure_text(conn, posting, fetcher=None, *, allow_fetch: bool = True, now: datetime | None = None,
                 force: bool = False, deadline: float | None = None) -> tuple[str, str]:
     """(text, kind) for one posting row, kind = 'full' | 'partial' | 'teaser'. May fetch (one request) when allow_fetch,
@@ -948,9 +1000,14 @@ def ensure_text(conn, posting, fetcher=None, *, allow_fetch: bool = True, now: d
     try:
         got = (fetcher(posting["source_id"]) if fetcher else spec.run(ref)) or ""
     except Blocked as exc:
-        _note(f"blocked: {exc}")
-        _record_fetch(conn, posting["id"], last_status())
-        raise
+        # The site said stop. One fallback request through TinyFish can still return the ad, and it is capped.
+        got = "" if fetcher else tinyfish_text(posting["url"])
+        if got:
+            _note("fallback: tinyfish")
+        else:
+            _note(f"blocked: {exc}")
+            _record_fetch(conn, posting["id"], last_status())
+            raise
     except Exception as exc:
         _note(f"error: {type(exc).__name__}")
         _record_fetch(conn, posting["id"], f"error: {type(exc).__name__}: {str(exc)[:60]}")

@@ -607,3 +607,14 @@ def test_fetch_only_fills_the_ad_text_and_calls_no_model(world):
     assert gw.calls == []                                    # no model call at all
     assert stats["text_ready"] >= 1 and stats["reviewed"] == 0
     assert conn.execute("SELECT COUNT(*) FROM ad_reviews").fetchone()[0] == 0   # no verdict was invented
+
+
+def test_tinyfish_is_off_without_a_key_and_capped(monkeypatch, tmp_path):
+    from jobwatch.util import adtext
+    monkeypatch.setattr(adtext, "_TINYFISH_KEY", str(tmp_path / "absent.key"))
+    monkeypatch.setattr(adtext, "_tinyfish_used", 0)
+    assert adtext.tinyfish_text("https://example.test/job") == ""
+    monkeypatch.setenv("JOBWATCH_TINYFISH_PER_RUN", "0")
+    monkeypatch.setattr(adtext, "_TINYFISH_KEY", str(tmp_path / "k"))
+    (tmp_path / "k").write_text("key\n")
+    assert adtext.tinyfish_text("https://example.test/job") == ""   # cap 0 means never
