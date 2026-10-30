@@ -9,7 +9,7 @@ from contextlib import nullcontext
 from jobwatch import users
 from jobwatch.candidate import intake
 from pipeline.agentic.api_store import APIStore, Conflict
-from pipeline.agentic.chat import job_connection, skill_version
+from pipeline.agentic.chat import job_connection, job_database, skill_version
 from pipeline.agentic import incidents, service
 from pipeline.agentic import discovery_settings
 
@@ -26,10 +26,9 @@ def _context(conn, config, posting_id):
 
 
 def status(person, config):
-    with users.use(person), job_connection(config, write=True) as conn:
-        service.AgenticStore(conn).ensure()
-        incidents.ensure(conn)
-        items = incidents.list_incidents(conn)
+    with users.use(person), (job_connection(config) if job_database(config).exists() else nullcontext(None)) as conn:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} if conn else set()
+        items = incidents.list_incidents(conn) if conn else []
         for item in items:
             item['next_action'] = 'retry_assessment' if item.get('posting_id') else 'inspect_run_then_start_discovery'
             if item.get('posting_id'):
@@ -37,19 +36,26 @@ def status(person, config):
                     item['retry_context'] = _context(conn, config, item['posting_id'])
                 except Conflict:
                     item['retry_context'] = None
-        postings = conn.execute('SELECT COUNT(*) FROM postings').fetchone()[0]
-        spent = service._spent_today(conn, service._local_midnight(service._now()))
+        postings = conn.execute('SELECT COUNT(*) FROM postings').fetchone()[0] if 'postings' in tables else 0
+        midnight = service._local_midnight(service._now())
+        if {'agentic_activity', 'agentic_batches'} <= tables:
+            spent = service._spent_today(conn, midnight)
+        else:
+            from jobwatch.occupations.embeddings import discovery_tokens_since
+            spent = (0, discovery_tokens_since(conn, midnight) if conn else 0)
         scope = intake.discovery_scope(person)
         invocations = []
-        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='agentic_invocations'").fetchone():
+        if 'agentic_invocations' in tables:
             rows = conn.execute('SELECT run_id,unit,phase,posting_id,state,started_at,updated_at,last_successful_phase '
                                 'FROM agentic_invocations ORDER BY updated_at DESC LIMIT 20')
             names = [column[0] for column in rows.description]
             invocations = [dict(zip(names, row)) for row in rows]
-    with APIStore(person) as store:
-        row = store.conn.execute("SELECT id FROM api_runs WHERE json_extract(input_json,'$.discovery')=1 "
-                                 'ORDER BY created DESC LIMIT 1').fetchone()
-        latest = store.public_run(row[0]) if row else None
+    latest = None
+    if (users.user_dir(person) / 'career-chat' / 'state.sqlite').exists():
+        with APIStore(person, readonly=True) as store:
+            row = store.conn.execute("SELECT id FROM api_runs WHERE json_extract(input_json,'$.discovery')=1 "
+                                     'ORDER BY created DESC LIMIT 1').fetchone()
+            latest = store.public_run(row[0]) if row else None
     return {'enabled': scope is not None, 'postings': postings, 'assessments_today': spent[0],
             'charged_tokens_today': spent[1], 'scope': scope.model_dump(mode='json') if scope else None,
             'incidents': items, 'invocations': invocations, 'latest_run': latest}

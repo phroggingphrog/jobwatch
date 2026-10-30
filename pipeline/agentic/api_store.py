@@ -28,11 +28,17 @@ def fingerprint(value):
 
 
 class APIStore:
-    def __init__(self, person):
+    def __init__(self, person, *, readonly=False):
         if not users.valid_name(person):
             raise ValueError('invalid_person')
-        root = ensure_dir(users.user_dir(person) / 'career-chat')
+        root = users.user_dir(person) / 'career-chat'
         path = root / 'state.sqlite'
+        if readonly:
+            self.conn = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True)
+            self.conn.row_factory = sqlite3.Row
+            self.conn.execute('PRAGMA query_only=ON')
+            return
+        ensure_dir(root)
         self.conn = private_connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute('PRAGMA foreign_keys=ON')
