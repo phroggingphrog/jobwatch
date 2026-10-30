@@ -3253,3 +3253,7 @@ Local imports: `jobwatch`, `jobwatch.apply`, `jobwatch.config`, `jobwatch.web`, 
 ### [tools/build_occupation_reference.py](../../tools/build_occupation_reference.py)
 
 Symbols: `sheet` (L18), `family` (L34), `build` (L46).
+
+## Source plugins
+
+The static collector registry includes `source_plugins`, which loads source definitions from the active user config folder. It supports declarative RSS, Atom, JSON, and HTML mappings, and trusted Python plugins. GradConnection is a built-in plugin. Plugins return validated `Posting` records through the shared HTTP fetcher. See [source plugin design](source-plugins.md) and [user guide](../source-plugins.md). Existing La Trobe and Cardinia collectors remain unchanged.

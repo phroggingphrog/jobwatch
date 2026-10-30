@@ -16,6 +16,8 @@ COLLECTORS = [
 
 
 def get(name: str):
+    if name == "source_plugins":
+        return import_module(f"{__name__}.source_plugins")
     if name not in COLLECTORS:
         raise KeyError(f"unknown collector {name!r}; known: {', '.join(COLLECTORS)}")
     return import_module(f"{__name__}.{name}")

@@ -27,7 +27,7 @@ def tier_collectors(config: Config, tier: str, only: str | None) -> list[str]:
         return [only]
     tiers = config.settings["tiers"]
     names = tiers["fast"] + tiers["slow"] if tier == "all" else tiers[tier]
-    return [n for n in dict.fromkeys(names) if n in registry.COLLECTORS]   # a collector may sit in both tiers
+    return [n for n in dict.fromkeys(names) if n in registry.COLLECTORS or n == "source_plugins"]   # a collector may sit in both tiers
 
 
 def _alert_status(conn, posting, seeded: bool, max_age_h: float, now) -> str:
