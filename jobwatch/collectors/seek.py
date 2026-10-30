@@ -15,6 +15,11 @@ from .base import CollectorContext, rotate
 
 NAME = "seek"
 API = "https://www.seek.com.au/api/jobsearch/v5/search"
+# Seek's edge (Cloudflare) answers 403 to a Linux platform token and 200 to the same request from a Windows
+# token. Measured 2026-10-30: Chrome/141 on X11 -> 403, Chrome/129 on Windows -> 200. Only this collector sends
+# it; every other source keeps the shared agent.
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/141.0.0.0 Safari/537.36")
 
 
 def to_posting(job: dict, keyword: str = "") -> Posting | None:
@@ -77,7 +82,7 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
                 if conf.get("respect_robots") and not cfg.http.allowed(API):
                     cfg.error("seek", "robots.txt disallows /api/jobsearch/ (seek.respect_robots: true)")
                     return results
-                data = cfg.http.get_json(API, params=params)
+                data = cfg.http.get_json(API, params=params, user_agent=BROWSER_UA)
             except HttpError as exc:
                 cfg.error(f"seek '{keyword}' p{page}", exc)
                 if exc.status in (0, 403, 429) or exc.status >= 500:

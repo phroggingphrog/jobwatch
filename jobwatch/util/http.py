@@ -93,8 +93,11 @@ class Fetcher:
         return self._check(url, response)
 
     # -- helpers used by collectors -----------------------------------------
-    def get_json(self, url: str, params: dict | None = None, **kw: Any) -> Any:
-        r = self.request("GET", url, params=params, headers={"Accept": "application/json"}, **kw)
+    def get_json(self, url: str, params: dict | None = None, *, user_agent: str | None = None, **kw: Any) -> Any:
+        headers = {"Accept": "application/json"}
+        if user_agent:
+            headers["User-Agent"] = user_agent      # one source may need a different identity; the rest share the default
+        r = self.request("GET", url, params=params, headers=headers, **kw)
         try:
             return r.json()
         except ValueError as exc:
