@@ -1081,10 +1081,28 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
                 _write_private(stage / name, raw)
                 if name in _ALLOWED:
                     _write_private(stage / "evidence" / name, raw)
-            bundle = snapshot_evidence(stage / "evidence")
-            approved["evidence_bundle_hash"] = bundle.bundle_hash
-            for name, raw in bundle.contents.items():
-                _write_private(stage / "evidence" / name, raw)
+            try:
+                bundle = snapshot_evidence(stage / "evidence")
+                approved["evidence_bundle_hash"] = bundle.bundle_hash
+                for name, raw in bundle.contents.items():
+                    _write_private(stage / "evidence" / name, raw)
+            except CandidateError as exc:
+                # Drifted annotations must not block adoption. The person's files are never rewritten: the snapshot
+                # keeps the primary documents, the annotation file stays on disk untouched, and approved.json says
+                # which file was left out and why, so a later version can adopt it once the data agrees again.
+                if str(exc) != "annotation_invalid":
+                    raise
+                approved["evidence_bundle_hash"] = None
+                approved["evidence_excluded"] = {
+                    "files": [n for n in ("evidence.yaml", "transferable_skills_taxonomy.yaml")
+                              if (stage / "evidence" / n).exists()],
+                    "reason": "annotation_invalid",
+                    "note": "the annotated items do not match the current documents; primary documents were kept",
+                }
+                for name in ("evidence.yaml", "transferable_skills_taxonomy.yaml"):
+                    stale = stage / "evidence" / name
+                    if stale.exists():
+                        stale.unlink()
             _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
             os.rename(stage, root / "1")
         except BaseException:

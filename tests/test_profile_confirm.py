@@ -75,3 +75,26 @@ def test_confirm_without_an_id_prints_usage(monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
     assert profile_cmd.handle(_args(None, True)) == 1
     assert "usage: jobwatch profile confirm" in capsys.readouterr().err
+
+
+def test_drifted_annotations_do_not_block_adoption(monkeypatch, tmp_path):
+    """A person's curated annotations must never block adoption, and their file is never rewritten."""
+    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
+    pdir = tmp_path / "profile"
+    pdir.mkdir()
+    (pdir / "master_resume.md").write_text("Synthetic CV. Reconciled ledgers with MYOB.")
+    (pdir / "cv.md").write_text("Synthetic CV. Reconciled ledgers with MYOB.")
+    (pdir / "profile.yaml").write_text("candidate: {}\n")
+    drifted = pdir / "evidence.yaml"
+    drifted.write_text('schema_version: 1\nitems:\n  - id: deadbeefdeadbeef\n')
+    before = drifted.read_bytes()
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(pdir))
+    person = users.current()
+
+    assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 0
+
+    approved = intake.current_version(person)
+    assert approved["version"] == 1
+    assert approved["evidence_excluded"]["reason"] == "annotation_invalid"
+    assert approved["evidence_bundle_hash"] is None
+    assert drifted.read_bytes() == before                   # the person's file is untouched
