@@ -163,17 +163,8 @@ def confirm(config, proposal_id, *, rule_digest, actor):
             shutil.copytree(source,stage)
             for projection_name in intake._PROJECTED:
                 (stage / projection_name).unlink(missing_ok=True)
-            name = 'interests_and_criteria.yaml'
-            try:
-                prior = yaml.safe_load(read_regular_file(source/name,intake.MAX_JSON_BYTES)) or {}
-            except FileNotFoundError:
-                prior = {}
-            projected = yaml.safe_load(projection.project(approved)[name])
-            prior.setdefault('target_roles',{}).update({k:projected['target_roles'][k] for k in ('not_wanted','excluded_families')})
-            data = projection._dump(prior).encode()
-            intake._write_private(stage/name,data)
-            if name != 'master_resume.md':
-                approved['file_sha256'][name] = hashlib.sha256(data).hexdigest()
+            for name, text in projection.project(approved).items():
+                intake._write_private(stage / name, text.encode('utf-8'))
             approved['rule_amendment'] = {**proposal, 'digest': rule_digest}
             # The amendment digest makes publication idempotent. This is the complete staged version.
             approved['publication_state'] = 'published'

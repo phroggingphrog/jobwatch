@@ -20,6 +20,11 @@ def test_add_withdraw_retry_and_immutable_history(world):
     assert digest(current) != digest(original)
     assert current['evidence_bundle_hash'] == original['evidence_bundle_hash']
     assert current['scope'] == original['scope']
+    from jobwatch.candidate.approved import settings
+    from pipeline.agentic.service import _approved_evidence
+    assert settings(person, 'profile.yaml')
+    assert 'Example Employer' in settings(person, 'interests_and_criteria.yaml')['target_roles']['not_wanted']
+    assert _approved_evidence(person).bundle_hash == original['evidence_bundle_hash']
     assert intake._approved(person, original['version']) == original
     assert rules.confirm(config, shown['id'], rule_digest=shown['digest'], actor='person') == result
     rule = next(r for r in policy_for(person).exclusions if r.value == 'Example Employer')
