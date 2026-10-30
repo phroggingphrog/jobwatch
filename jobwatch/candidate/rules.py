@@ -7,19 +7,15 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 import re
 import secrets
 import shutil
 
-import yaml
-
 from jobwatch import users
 from jobwatch.apply.paths import ensure_dir, profile_dir
 from . import intake, projection
-from ._private_io import read_regular_file
 from .contracts import digest
 from .policy import policy_for, rules_from_fact
 
