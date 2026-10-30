@@ -60,7 +60,7 @@ adzuna:
 
 jobspy:
   enabled: true
-  sites: [linkedin, indeed, google]
+  sites: [linkedin, indeed]          # google returns 429 from this host; removed 2026-10-30
   location: "Melbourne, VIC"
   hours_old: 6             # slow tier runs every 2 h; 6 h gives overlap
   results_wanted: 20       # per site per search (hard max 25)
