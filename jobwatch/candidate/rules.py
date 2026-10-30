@@ -107,18 +107,10 @@ def carry_facts(approved, facts):
 
 
 def _finish(person, proposal, approved, vdir):
-    name = 'interests_and_criteria.yaml'
-    expected = dict(approved.get('file_sha256',{}))
-    expected.pop(name,None)
-    intake._refuse_hand_edits(profile_dir(),expected)
-    try:
-        live = hashlib.sha256(read_regular_file(profile_dir()/name,intake.MAX_JSON_BYTES)).hexdigest()
-    except FileNotFoundError:
-        live = None
-    before = intake._approved(person,proposal['base_version']).get('file_sha256',{}).get(name)
-    if live is not None and live not in (before,approved['file_sha256'][name]):
-        raise RuleError('profile_edited_by_hand')
-    intake._write_profile(profile_dir(), {name: read_regular_file(vdir / name, intake.MAX_JSON_BYTES).decode()})
+    current = intake._approved(person, approved['version'])
+    if current.get('rule_amendment', {}).get('digest') != proposal.get('digest'):
+        return dict(proposal_id=proposal['id'],version=approved['version'], profile_hash=digest(approved),
+                    status='confirmed',assessments='stale_until_reprocessed')
     return dict(proposal_id=proposal['id'],version=approved['version'],
                 profile_hash=digest(approved),status='confirmed',assessments='stale_until_reprocessed')
 
@@ -139,14 +131,21 @@ def confirm(config, proposal_id, *, rule_digest, actor):
             previous = intake._approved(person, n)
             if previous.get('rule_amendment',{}).get('digest') == rule_digest:
                 if n == nums[-1]:
-                    return _finish(person,proposal,previous,intake._versions_root(person)/str(n))
+                    version_dir = intake._versions_root(person) / str(n)
+                    if previous.get('publication_state') == 'published':
+                        return _finish(person, proposal, previous, version_dir)
+                    # The version directory lacks a complete approval record.
+                    raise RuleError('amendment_publication_incomplete')
                 return dict(proposal_id=proposal_id,version=n,profile_hash=digest(previous),
                             status='confirmed',assessments='stale_until_reprocessed')
         if not last or digest(last) != proposal['base_hash']:
             raise RuleError('profile_changed')
-        if intake.discovery_scope(person) is None:
-            raise RuleError('profile_not_ready')
-        intake._refuse_hand_edits(profile_dir(),last.get('file_sha256',{}))
+        scope, scope_reason = intake.scope_state(person)
+        if scope is None:
+            raise RuleError(scope_reason)
+        input_hashes = {name: sha for name, sha in last.get('file_sha256',{}).items() if name not in intake._PROJECTED}
+        with users.use(person):
+            intake._refuse_hand_edits(profile_dir(),input_hashes)
         approved = copy.deepcopy(last)
         payload = proposal['payload']
         facts = approved['facts']
@@ -162,16 +161,28 @@ def confirm(config, proposal_id, *, rule_digest, actor):
         stage = root / ('.staging-'+secrets.token_hex(8))
         try:
             shutil.copytree(source,stage)
+            for projection_name in intake._PROJECTED:
+                (stage / projection_name).unlink(missing_ok=True)
             name = 'interests_and_criteria.yaml'
-            prior = yaml.safe_load(read_regular_file(source/name,intake.MAX_JSON_BYTES)) or {}
+            try:
+                prior = yaml.safe_load(read_regular_file(source/name,intake.MAX_JSON_BYTES)) or {}
+            except FileNotFoundError:
+                prior = {}
             projected = yaml.safe_load(projection.project(approved)[name])
             prior.setdefault('target_roles',{}).update({k:projected['target_roles'][k] for k in ('not_wanted','excluded_families')})
             data = projection._dump(prior).encode()
             intake._write_private(stage/name,data)
-            approved['file_sha256'][name] = hashlib.sha256(data).hexdigest()
+            if name != 'master_resume.md':
+                approved['file_sha256'][name] = hashlib.sha256(data).hexdigest()
+            approved['rule_amendment'] = {**proposal, 'digest': rule_digest}
+            # The amendment digest makes publication idempotent. This is the complete staged version.
+            approved['publication_state'] = 'published'
             intake._write_private(stage/'approved.json',json.dumps(approved,sort_keys=True,ensure_ascii=False,indent=1).encode())
             dest = root/str(approved['version'])
             os.rename(stage,dest)
+            if not (dest / 'approved.json').is_file():
+                raise OSError('version_publication_incomplete')
+
         except BaseException:
             shutil.rmtree(stage,ignore_errors=True)
             raise

@@ -73,13 +73,17 @@ def test_confirmation_recovers_projection_without_minting_another_version(world,
     _, config, _, _ = world
     person = users.current()
     shown = rules.propose(config,kind='employer',value='Example',request_id='crash',actor='person')
-    write = intake._write_profile
-    def crash(*args):
-        raise OSError('synthetic crash after immutable publication')
-    monkeypatch.setattr(intake,'_write_profile',crash)
+    rename = intake.os.rename
+    state = {'failed': False}
+    def publish_then_crash(source, dest):
+        rename(source, dest)
+        if not state['failed']:
+            state['failed'] = True
+            raise OSError('synthetic crash after version publication')
+    monkeypatch.setattr(intake.os, 'rename', publish_then_crash)
     with pytest.raises(OSError):
         rules.confirm(config,shown['id'],rule_digest=shown['digest'],actor='person')
     version = intake.current_version(person)['version']
-    monkeypatch.setattr(intake,'_write_profile',write)
+    monkeypatch.setattr(intake.os, 'rename', rename)
     assert rules.confirm(config,shown['id'],rule_digest=shown['digest'],actor='person')['version'] == version
     assert intake.discovery_scope(person) is not None
