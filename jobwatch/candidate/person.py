@@ -12,29 +12,13 @@ log = logging.getLogger(__name__)
 
 
 def _yaml(name: str) -> dict:
-    try:
-        import yaml
-        from jobwatch.apply.paths import profile_dir
-        from jobwatch import users
-        from . import intake
-        person = users.current()
-        approved = intake.current_version(person)
-        root = intake._versions_root(person) / str(approved['version']) if approved else profile_dir()
-        if approved and name in intake._PROJECTED:
-            data = yaml.safe_load((root / name).read_text(encoding="utf-8"))
-        elif approved and name == "profile.yaml" and approved.get("profile_inputs_hash"):
-            data = yaml.safe_load((root / name).read_text(encoding="utf-8"))
-        else:
-            source = root / 'evidence' / name if approved else root / name
-            data = yaml.safe_load(source.read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except OSError:                   # no profile yet: neutral behaviour
+    from jobwatch import users
+    from . import intake
+    from .approved import settings
+    # Vocabulary imports can run before onboarding. Assessment still requires approved evidence.
+    if intake.current_version(users.current()) is None:
         return {}
-    except Exception as exc:  # noqa: BLE001 - a broken file also means neutral, but not silently: limits would vanish unseen
-        log.warning("%s could not be read (%s): work-rights limits and exclusions are NOT applied until it is fixed",
-                    name, type(exc).__name__)
-        return {}
-
+    return settings(users.current(), name)
 
 def work_rights() -> dict:
     """profile.yaml candidate.work_rights, always a dict; a legacy string (old onboarding) is a statement with no limits."""

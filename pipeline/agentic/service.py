@@ -802,10 +802,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
 
 def _approved_evidence(person: str):
     """Read annotations and source documents from the approved immutable version."""
-    from jobwatch.candidate import intake
-    approved = intake.current_version(person)
-    return snapshot_evidence(intake._versions_root(person) / str(approved['version']) / 'evidence'
-                             if approved else profile_dir())
+    from jobwatch.candidate.approved import evidence
+    return evidence(person)
 
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
                       run_id=None, token_allowance=None, token_allowance_reason='daily_budget',

@@ -344,18 +344,9 @@ _PROFILE_FALLBACK = (
 # ---------------------------------------------------------------------------------- the person's own settings
 def _interests() -> dict:
     """The confirmed version's derived interests and criteria."""
-    try:
-        import yaml
-        from . import users
-        from .candidate import intake
-        approved = intake.current_version(users.current())
-        if not approved:
-            return {}
-        path = intake._versions_root(users.current()) / str(approved['version']) / 'interests_and_criteria.yaml'
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
-
+    from . import users
+    from .candidate.approved import settings
+    return settings(users.current(), 'interests_and_criteria.yaml')
 
 def person_prefs() -> dict:
     """Only confirmed evidence facts may describe a person's preferences."""
