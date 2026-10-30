@@ -69,9 +69,7 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-# ---------------------------------------------------------------------------
 # URLs
-# ---------------------------------------------------------------------------
 def canonical_url(url: str) -> str:
     """Lower-case scheme/host, drop fragment and tracking params, sort the rest."""
     url = (url or "").strip()
@@ -93,9 +91,7 @@ def url_hash(url: str) -> str:
     return hashlib.sha256(canonical_url(url).encode()).hexdigest()[:32]
 
 
-# ---------------------------------------------------------------------------
 # Text
-# ---------------------------------------------------------------------------
 _TAG = re.compile(r"<[^>]+>")
 _BLOCK = re.compile(r"</?(p|br|li|div|h[1-6]|tr|ul|ol)[^>]*>", re.I)
 _SCRIPT = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.I | re.S)
@@ -129,9 +125,7 @@ def fold(text: str) -> str:
     return re.sub(r"[̀-ͯ]", "", norm).lower()
 
 
-# ---------------------------------------------------------------------------
 # Dates
-# ---------------------------------------------------------------------------
 def parse_date(value: Any) -> datetime | None:
     """ISO strings, RFC-822 strings, epoch seconds/ms -> aware UTC datetime."""
     if value is None or value == "":
@@ -192,9 +186,7 @@ def relative_posted(text: str, now: datetime | None = None) -> datetime | None:
     return now - timedelta(days=30 * n)
 
 
-# ---------------------------------------------------------------------------
 # Location: AU gate and state detection
-# ---------------------------------------------------------------------------
 AU_CITIES = (
     "Melbourne|Sydney|Brisbane|Perth|Adelaide|Canberra|Darwin|Hobart|Gold Coast|Geelong|"
     "Newcastle|Wollongong|Townsville|Cairns|Ballarat|Bendigo|Launceston|Toowoomba|"
@@ -253,9 +245,7 @@ def is_australian(country: Any = None, *texts: Any) -> bool:
     return bool(_AU_TEXT.search(blob) or _AU_STATE_CODE.search(blob))
 
 
-# ---------------------------------------------------------------------------
 # Work type and salary
-# ---------------------------------------------------------------------------
 def work_type_of(*values: Any) -> str | None:
     text = " ".join(str(v) for v in values if v).lower().replace("_", " ")
     if not text:
