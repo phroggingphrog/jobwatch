@@ -64,7 +64,7 @@ def fetch_keys(team_domain: str, *, timeout: float = 8.0, opener=None) -> dict:
         raise AccessError("access_keys_unavailable") from None
 
 
-def verify_access_jwt(token: str, *, keys: dict, audience: str, issuer: str,
+def verify_access_jwt(token: str, *, keys: dict, audience: str | None, issuer: str,
                       now: float | None = None, leeway: int = 60) -> AccessIdentity:
     """Verify one Access assertion and return the identity it proves."""
     import jwt
@@ -77,8 +77,12 @@ def verify_access_jwt(token: str, *, keys: dict, audience: str, issuer: str,
     if key is None:
         raise AccessError("access_key_unknown")
     try:
-        claims = jwt.decode(token, key=key, algorithms=["RS256"], audience=audience, issuer=issuer,
-                            leeway=leeway, options={"require": ["exp", "iat", "aud", "iss"]})
+        # An empty audience is an explicit operator choice (JOBWATCH_MCP_ACCESS_ANY_AUD): the signature and the
+        # issuer still prove Cloudflare minted it for this team. See README of this module for the trade-off.
+        options = {"require": ["exp", "iat", "iss"] + (["aud"] if audience else []),
+                   "verify_aud": bool(audience)}
+        claims = jwt.decode(token, key=key, algorithms=["RS256"], audience=audience or None, issuer=issuer,
+                            leeway=leeway, options=options)
     except jwt.ExpiredSignatureError:
         raise AccessError("access_token_expired") from None
     except jwt.InvalidAudienceError:
@@ -121,10 +125,12 @@ class AccessSettings:
     mapping: dict
     keys: dict
     fetched_at: float
+    any_audience: bool = False
 
     @property
     def enabled(self) -> bool:
-        return self.mode in ("auto", "jwt") and bool(self.audience and self.team_domain)
+        return (self.mode in ("auto", "jwt") and bool(self.team_domain)
+                and bool(self.audience or self.any_audience))
 
     @property
     def issuer(self) -> str:
@@ -142,11 +148,12 @@ def settings_from_env(environ=None, *, fetch= True, opener=None) -> AccessSettin
     team = (environ.get("JOBWATCH_MCP_ACCESS_TEAM") or "").strip()
     audience = (environ.get("JOBWATCH_MCP_ACCESS_AUD") or "").strip()
     mapping = _mapping(environ.get("JOBWATCH_MCP_EMAIL_MAP") or "")
+    any_audience = (environ.get("JOBWATCH_MCP_ACCESS_ANY_AUD") or "").strip() in ("1", "true", "yes")
     keys, fetched = {}, 0.0
     settings = AccessSettings(mode=mode, team_domain=team, audience=audience, mapping=mapping,
-                              keys=keys, fetched_at=fetched)
+                              keys=keys, fetched_at=fetched, any_audience=any_audience)
     if settings.enabled and fetch:
         keys = fetch_keys(team, opener=opener)
         settings = AccessSettings(mode=mode, team_domain=team, audience=audience, mapping=mapping,
-                                  keys=keys, fetched_at=time.time())
+                                  keys=keys, fetched_at=time.time(), any_audience=any_audience)
     return settings

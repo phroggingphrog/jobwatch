@@ -126,3 +126,27 @@ def test_jwt_only_mode_refuses_the_static_token(signing):
     verifier = mcp_server._JobwatchTokenVerifier(None, "owner", settings)
     assert asyncio.run(verifier.verify_token("anything")) is None
     assert asyncio.run(verifier.verify_token(_token(key))).subject == "owner"
+
+
+def test_any_audience_is_opt_in_and_still_checks_signature_and_issuer(signing):
+    """The AUD tag is dashboard-only. An operator may waive it explicitly; the rest still holds."""
+    team = TEAM
+    off = mcp_access.settings_from_env({"JOBWATCH_MCP_ACCESS": "auto", "JOBWATCH_MCP_ACCESS_TEAM": team}, fetch=False)
+    assert off.enabled is False                       # default is still closed
+    on = mcp_access.settings_from_env({"JOBWATCH_MCP_ACCESS": "auto", "JOBWATCH_MCP_ACCESS_TEAM": team,
+                                       "JOBWATCH_MCP_ACCESS_ANY_AUD": "1"}, fetch=False)
+    assert on.enabled is True and on.any_audience is True
+
+    key, jwks = signing
+    keys = mcp_access.keys_from_jwks(jwks)
+    identity = mcp_access.verify_access_jwt(_token(key, aud="some-other-app"),
+                                            keys=keys, audience=None, issuer=ISSUER)
+    assert identity.email == "owner@example.com"
+    # Signature and issuer are still enforced with the audience waived.
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    with pytest.raises(mcp_access.AccessError):
+        mcp_access.verify_access_jwt(_token(other), keys=keys, audience=None, issuer=ISSUER)
+    with pytest.raises(mcp_access.AccessError) as caught:
+        mcp_access.verify_access_jwt(_token(key, iss="https://evil.cloudflareaccess.com"),
+                                     keys=keys, audience=None, issuer=ISSUER)
+    assert caught.value.code == "access_issuer_invalid"
