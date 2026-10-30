@@ -137,5 +137,6 @@ def project(approved: dict) -> dict[str, str]:
                    ["Availability: " + _text(f["value"]) for f in _facts(approved, "availability")])
     if limits:
         interests["constraints"] = limits
-    return {"profile.yaml": _dump(profile), "master_resume.md": _resume(approved),
-            "interests_and_criteria.yaml": _dump(interests)}
+    # A resume is the person's source document. It is never projected: replacing their own words with what a
+    # parser captured loses anything the parser missed, and that text is the foundation of every later analysis.
+    return {"profile.yaml": _dump(profile), "interests_and_criteria.yaml": _dump(interests)}

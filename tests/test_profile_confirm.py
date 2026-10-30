@@ -162,3 +162,24 @@ def test_a_hand_edit_reports_itself_rather_than_looking_unconfirmed(monkeypatch,
     assert intake.scope_state(person)[1] == "ok"
     (pdir / "master_resume.md").write_text("edited by hand after confirmation")
     assert intake.scope_state(person) == (None, "profile_edited_by_hand")
+
+
+def test_confirm_never_rewrites_the_resume_or_drops_evidence(monkeypatch, tmp_path):
+    """The profile is the gold data: confirming a target change may derive files, never replace source documents."""
+    person, proposal = _proposal(monkeypatch, tmp_path)
+    pdir = tmp_path / "profile"
+    cv = "Synthetic CV written by the person, with detail a parser may miss."
+    (pdir / "master_resume.md").write_text(cv)
+    evidence = pdir / "evidence.yaml"
+    evidence.write_text("schema_version: 1\nitems: []\n")
+    profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt"))
+
+    live = intake.current_version(person)
+    proposal = intake.Proposal(id=proposal.id, revision=1, base_version=live["version"], uploads=(),
+                               facts=proposal.facts, questions=(), status="draft")
+    intake.save_proposal(person, proposal)
+    assert profile_cmd.handle(_args(proposal.id, True)) == 0
+
+    assert (pdir / "master_resume.md").read_text() == cv      # the person's own words survive
+    assert evidence.exists() and evidence.read_text().strip()  # annotations are never deleted
+    assert intake.scope_state(person)[1] == "ok"              # and discovery still opens

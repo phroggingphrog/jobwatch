@@ -916,8 +916,10 @@ def _write_profile(pdir: Path, files: dict[str, str]) -> None:
                 pass
 
 
-_PROJECTED = ("profile.yaml", "master_resume.md", "interests_and_criteria.yaml")
-_EVIDENCE = ("profile.yaml", "master_resume.md")           # the projected files the evidence snapshot reads
+# Only files this module derives may be rewritten from a parse. A resume is a SOURCE document: projecting it
+# replaced the person's own words with whatever the parser captured, which is data loss dressed as a projection.
+_PROJECTED = ("profile.yaml", "interests_and_criteria.yaml")
+_EVIDENCE = ("profile.yaml",)          # the projected files the evidence snapshot reads (the resume is the person's own)
 _STALE_ANNOTATIONS = ("evidence.yaml",)    # annotations of the exact text they were made from: a rewritten
 #                                             profile.yaml or resume cannot keep them (snapshot: annotation_invalid)
 
@@ -1041,8 +1043,9 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                 if str(exc) != "annotation_invalid" or not stale:      # CandidateError carries its code as its message
                     raise
                 for name in stale:
-                    carried.pop(name)
-                    (stage / name).unlink(missing_ok=True)
+                    # Keep the person's annotations on disk and in the version. They are marked stale, so no
+                    # reader trusts them, but nothing is destroyed: they are the gold data, and a later resume or
+                    # a repaired parser can use them again.
                     (stage / "evidence" / name).unlink(missing_ok=True)
                 dropped_annotations = tuple(stale)
                 bundle = snapshot_evidence(stage / "evidence")
@@ -1057,11 +1060,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
             shutil.rmtree(stage, ignore_errors=True)
             raise
         _finish(person, cur, pdir, files)
-        for name in dropped_annotations:            # the version keeps a copy; a live one would answer from old text
-            try:
-                (pdir / name).unlink()
-            except FileNotFoundError:
-                pass
+        # Stale annotations stay on disk. They are the person's own gold data and the snapshot no longer reads
+        # them, so deleting them bought nothing and destroyed the only copy of months of curated evidence.
     return n
 
 
