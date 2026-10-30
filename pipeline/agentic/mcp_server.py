@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 from contextlib import contextmanager
@@ -25,22 +26,40 @@ from jobwatch import users
 from pipeline.agentic.chat import _career_ops_skill, dispatch
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
+log = logging.getLogger(__name__)
+
 _MAX_QUESTION = 4000
 _READ_PARSE = frozenset({'evaluation', 'model_insights', 'company_research'})
 
 
 class _JobwatchTokenVerifier(TokenVerifier):
-    """One configured bearer token, scoped to one configured Jobwatch account."""
+    """Two proofs: a Cloudflare Access assertion, or the configured static token.
 
-    def __init__(self, token: str, person: str):
+    The static token is the local path (stdio, a loopback client). The Access assertion is the public path and is
+    verified against the team key set; the person comes from the verified email claim, never from a guess.
+    """
+
+    def __init__(self, token: str | None, person: str, access=None):
         super().__init__(required_scopes=['jobwatch'])
-        self._token, self._person = token, person
+        self._token, self._person, self._access = token, person, access
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        if not hmac.compare_digest(token, self._token):
-            return None
-        return AccessToken(token=token, client_id='jobwatch-chat', scopes=['jobwatch'],
-                           subject=self._person, claims={'sub': self._person})
+        if self._token and token and hmac.compare_digest(token, self._token):
+            return AccessToken(token=token, client_id='jobwatch-chat', scopes=['jobwatch'],
+                               subject=self._person, claims={'sub': self._person})
+        if self._access is not None and self._access.enabled:
+            from pipeline.agentic import mcp_access
+            try:
+                identity = mcp_access.verify_access_jwt(token, keys=self._access.keys,
+                                                        audience=self._access.audience,
+                                                        issuer=self._access.issuer)
+                person = mcp_access.person_for_email(identity.email, self._access.mapping)
+            except mcp_access.AccessError as exc:
+                log.warning('mcp: access refused: %s', exc.code)
+                return None
+            return AccessToken(token=token, client_id='cloudflare-access', scopes=['jobwatch'],
+                               subject=person, claims={'sub': person, 'email': identity.email})
+        return None
 
 
 def _person_from_request() -> str:
@@ -214,14 +233,23 @@ def _turn(*, person: str, operation: str, message: str, ctx: Context,
     return answer
 
 
-def create_server(*, token: str | None = None, person: str | None = None) -> FastMCP:
+def create_server(*, token: str | None = None, person: str | None = None, access=None) -> FastMCP:
     """Create an authenticated MCP server. No unauthenticated mode is provided."""
+    if access is None:
+        from pipeline.agentic import mcp_access
+        try:
+            access = mcp_access.settings_from_env()
+        except mcp_access.AccessError as exc:
+            log.warning('mcp: access key set unavailable (%s); falling back to the static token', exc.code)
+            access = mcp_access.settings_from_env({'JOBWATCH_MCP_ACCESS': 'off'}, fetch=False)
     token = token if token is not None else os.environ.get('JOBWATCH_MCP_TOKEN')
     person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.DEFAULT_USER)
-    if not token or len(token) < 32 or not users.valid_name(person):
+    # A static token stays mandatory unless Access is the front door; without either, no server starts.
+    if not users.valid_name(person) or (not access.enabled and (not token or len(token) < 32)) \
+            or (access.enabled and not access.requires_jwt and token and len(token) < 32):
         raise RuntimeErrorSafe('mcp_configuration_required')
 
-    auth = _JobwatchTokenVerifier(token, person)
+    auth = _JobwatchTokenVerifier(token, person, access)
     oauth = None
     if os.environ.get('JOBWATCH_MCP_OAUTH') == '1':        # off by default; the bearer verifier stays valid either way
         from fastmcp.server.auth import MultiAuth
