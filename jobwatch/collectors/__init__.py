@@ -6,7 +6,7 @@ the employer registry, a per-run limit, an error list, and a title pre-check.
 from importlib import import_module
 
 COLLECTORS = [
-    "jobspy_src", "seek", "jora",
+    "jobspy_src", "seek", "jora", "adzuna",
     "ats_greenhouse", "ats_lever", "ats_ashby", "ats_workable", "ats_smartrecruiters",
     "ats_workday", "ats_pageup", "ats_employmenthero", "ats_scouttalent",
     "ats_oracle", "ats_successfactors", "ats_phenom", "ats_atlassian", "careers_vic",

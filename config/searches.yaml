@@ -37,6 +37,27 @@ seek:
     - finance internship
     - data analyst internship
 
+# Adzuna AU: a sanctioned aggregator with a documented API, no bot wall and no browser fingerprint.
+# It carries the LinkedIn/Indeed-class volume without risking a LinkedIn account. Get a free key at
+# developer.adzuna.com, then write the id and key into the two files below and set enabled: true.
+adzuna:
+  enabled: false                       # flip true once both key files exist
+  app_id_file: ~/.config/jobwatch/adzuna-app-id
+  app_key_file: ~/.config/jobwatch/adzuna-app-key
+  where: "Melbourne, VIC"
+  results_per_page: 25
+  pages: 1
+  max_days_old: 2                      # slow tier runs every 2 h
+  searches_per_run: 3
+  searches:
+    - accounts officer
+    - bookkeeper
+    - payroll officer
+    - administration officer
+    - data entry
+    - graduate accountant
+    - junior data analyst
+
 jobspy:
   enabled: true
   sites: [linkedin, indeed, google]
