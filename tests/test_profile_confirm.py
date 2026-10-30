@@ -98,3 +98,67 @@ def test_drifted_annotations_do_not_block_adoption(monkeypatch, tmp_path):
     assert approved["evidence_excluded"]["reason"] == "annotation_invalid"
     assert approved["evidence_bundle_hash"] is None
     assert drifted.read_bytes() == before                   # the person's file is untouched
+
+
+def _profile(tmp_path, monkeypatch, *, cv_text="Synthetic CV", symlink=None):
+    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
+    pdir = tmp_path / "profile"
+    pdir.mkdir()
+    (pdir / "master_resume.md").write_text(cv_text)
+    (pdir / "profile.yaml").write_text("candidate: {}\n")
+    if symlink is not None:
+        (pdir / "cv.md").symlink_to(symlink)
+    else:
+        (pdir / "cv.md").write_text(cv_text)
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(pdir))
+    return pdir
+
+
+def test_scope_state_names_the_reason_instead_of_returning_none(monkeypatch, tmp_path):
+    _profile(tmp_path, monkeypatch)
+    person = users.current()
+    assert intake.scope_state(person) == (None, "no_profile_version")
+    assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 0
+    assert intake.scope_state(person) == (None, "no_confirmed_scope")   # adopted, still not authorised
+
+
+def test_a_symlink_inside_the_profile_is_adopted(monkeypatch, tmp_path):
+    """cv.md -> master_resume.md is a normal layout, not a hand edit."""
+    pdir = _profile(tmp_path, monkeypatch, symlink="master_resume.md")
+    assert (pdir / "cv.md").is_symlink()
+    assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 0
+    assert intake.current_version(users.current())["adopted_files"]
+
+
+def test_a_symlink_leaving_the_profile_is_refused(monkeypatch, tmp_path):
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("not mine to adopt")
+    pdir = _profile(tmp_path, monkeypatch, symlink=str(outside))
+    assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 1
+    assert intake.current_version(users.current()) is None
+
+
+def test_adopting_again_records_the_next_version(monkeypatch, tmp_path, capsys):
+    """A repair must not be stranded: adopt twice, keep both versions."""
+    pdir = _profile(tmp_path, monkeypatch)
+    assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 0
+    (pdir / "master_resume.md").write_text("Synthetic CV, repaired")
+    assert profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt")) == 0
+    assert "version 2" in capsys.readouterr().out
+    assert intake.current_version(users.current())["version"] == 2
+    assert (tmp_path / "profile-versions" / "1").is_dir()               # history kept
+
+
+def test_a_hand_edit_reports_itself_rather_than_looking_unconfirmed(monkeypatch, tmp_path):
+    """Once a scope exists, a hand edit must name itself instead of masquerading as an unconfirmed profile."""
+    person, proposal = _proposal(monkeypatch, tmp_path)
+    pdir = tmp_path / "profile"
+    (pdir / "master_resume.md").write_text("Synthetic CV")
+    profile_cmd.handle(types.SimpleNamespace(cmd="profile", action="adopt"))
+    proposal = intake.Proposal(id=proposal.id, revision=1, base_version=1, uploads=(),
+                               facts=proposal.facts, questions=(), status="draft")
+    intake.save_proposal(person, proposal)
+    assert profile_cmd.handle(_args(proposal.id, True)) == 0
+    assert intake.scope_state(person)[1] == "ok"
+    (pdir / "master_resume.md").write_text("edited by hand after confirmation")
+    assert intake.scope_state(person) == (None, "profile_edited_by_hand")
