@@ -150,3 +150,28 @@ def test_any_audience_is_opt_in_and_still_checks_signature_and_issuer(signing):
         mcp_access.verify_access_jwt(_token(key, iss="https://evil.cloudflareaccess.com"),
                                      keys=keys, audience=None, issuer=ISSUER)
     assert caught.value.code == "access_issuer_invalid"
+
+
+def test_the_access_header_becomes_the_bearer_the_verifier_checks():
+    """Cloudflare proves identity; the origin only moves that proof to where it already verifies it."""
+    import asyncio
+    from pipeline.agentic.mcp_server import _AccessHeaderMiddleware
+
+    seen = {}
+
+    async def app(scope, receive, send):
+        seen["headers"] = dict(scope["headers"])
+
+    scope = {"type": "http", "headers": [(b"host", b"x"), (b"cf-access-jwt-assertion", b"THE-JWT")]}
+    asyncio.run(_AccessHeaderMiddleware(app)(scope, None, None))
+    assert seen["headers"][b"authorization"] == b"Bearer THE-JWT"
+
+    # A client-supplied Authorization is replaced, never duplicated: the edge proof wins.
+    scope = {"type": "http", "headers": [(b"authorization", b"Bearer mine"), (b"cf-access-jwt-assertion", b"EDGE")]}
+    asyncio.run(_AccessHeaderMiddleware(app)(scope, None, None))
+    assert seen["headers"][b"authorization"] == b"Bearer EDGE"
+
+    # No forwarded assertion: untouched, so an ordinary bearer still works.
+    scope = {"type": "http", "headers": [(b"authorization", b"Bearer mine")]}
+    asyncio.run(_AccessHeaderMiddleware(app)(scope, None, None))
+    assert seen["headers"][b"authorization"] == b"Bearer mine"
