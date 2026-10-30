@@ -800,6 +800,25 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     return stage
 
 
+def _approved_evidence(person: str):
+    """The evidence snapshot the confirmed version was built from, falling back to the live profile directory.
+
+    Assessment used to re-snapshot profile/ on every batch. A person's annotations legitimately drift from the
+    text a later projection wrote, and that drift then failed the whole batch with annotation_invalid before a
+    single model call. The approved version already holds a clean snapshot, so read that.
+    """
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    try:
+        versions = intake._versions_root(person)
+        numbers = sorted(int(p.name) for p in versions.iterdir()
+                         if p.name.isdigit() and (p / "evidence").is_dir())
+    except (OSError, ValueError):
+        numbers = []
+    if numbers:
+        return snapshot_evidence(versions / str(numbers[-1]) / "evidence")
+    return snapshot_evidence(profile_dir())
+
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
                       run_id=None, token_allowance=None, token_allowance_reason='daily_budget',
                       expected_run_keys=None, **kwargs):
@@ -848,7 +867,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
     previous_charges = dict(conn.execute('SELECT batch_id,charged FROM agentic_batches'))
     batch = _make_batch(store, cfg, seconds=max(0, invocation_deadline-time.time()), batch_id=batch_id)
     batches = {batch.batch_id: batch}
-    bundle = kwargs.pop('evidence_bundle', None) or snapshot_evidence(profile_dir())
+    bundle = kwargs.pop('evidence_bundle', None) or _approved_evidence(users.current())
     cache = {}
     todo = list(dict.fromkeys(snapshot_ids))[:20]
     for n, pid in enumerate(todo):
