@@ -233,6 +233,28 @@ def _turn(*, person: str, operation: str, message: str, ctx: Context,
     return answer
 
 
+class _AccessHeaderMiddleware:
+    """Promote Cloudflare's forwarded assertion to the bearer the verifier already understands.
+
+    Cloudflare adds `Cf-Access-Jwt-Assertion` to every request that passed the Access application. A browser login
+    therefore already proves identity, and the client need not obtain a token of its own. Nothing is trusted here:
+    the assertion is only moved into the Authorization header, where verify_access_jwt checks its signature, issuer
+    and expiry exactly as before.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http":
+            forwarded = next((v for k, v in scope.get("headers", [])
+                              if k.lower() == b"cf-access-jwt-assertion"), None)
+            if forwarded:                          # only an edge-authenticated request is rewritten
+                headers = [(k, v) for k, v in scope.get("headers", []) if k.lower() != b"authorization"]
+                headers.append((b"authorization", b"Bearer " + forwarded))
+                scope = dict(scope, headers=headers)
+        await self.app(scope, receive, send)
+
 def create_server(*, token: str | None = None, person: str | None = None, access=None) -> FastMCP:
     """Create an authenticated MCP server. No unauthenticated mode is provided."""
     if access is None:
@@ -347,5 +369,7 @@ def main(argv=None) -> int:
         server = create_server()
     except RuntimeErrorSafe as exc:
         raise SystemExit(f'Jobwatch MCP not started: {exc.code}') from None
-    server.run(transport='http', host=args.host, port=args.port)
+    import uvicorn
+    app = server.http_app(path='/mcp')
+    uvicorn.run(_AccessHeaderMiddleware(app), host=args.host, port=args.port, log_level='info')
     return 0
