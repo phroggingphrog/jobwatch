@@ -12,7 +12,7 @@ tiers:
   # stopping at already-seen ids).
   fast: [ats_greenhouse, ats_lever, ats_ashby, ats_workable, ats_smartrecruiters, ats_workday,
          ats_pageup, ats_employmenthero, ats_scouttalent, ats_oracle, careers_vic,
-         ats_pulse, ats_recruitmenthub, ats_jobs_search, ats_elmo, ats_techone, rss, reddit]
+         ats_pulse, ats_recruitmenthub, ats_jobs_search, ats_elmo, ats_techone, rss, reddit, source_plugins]
   slow: [jobspy_src, seek, jora, careers_vic, ats_successfactors, ats_phenom, ats_atlassian, jsonld_pages]
 reader:
   # 7 Oct 2026: every timer run now does AI recall on new Melbourne-area ads (title + first 400 characters, judged by
