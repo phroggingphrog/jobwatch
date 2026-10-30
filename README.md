@@ -36,7 +36,7 @@ local storage does not mean all processing is offline.
 - [Application and reader workflows](docs/application-workflows.md)
 - [Detailed setup](SETUP.md)
 - [Glossary](GLOSSARY.md) and [architecture decisions](docs/adr/)
-- [Profile-preference audit and evidence limits](docs/audits/2026-10-22-profile-preferences.md)
+- [Profile-preference audit and evidence limits](docs/archive/audits/2026-10-22-profile-preferences.md)
 
 No package move or source change activates services or authorizes a deployment.
 Use synthetic fixtures for local checks and verify the owner's actual deployment
