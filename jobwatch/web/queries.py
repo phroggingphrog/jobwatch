@@ -24,12 +24,15 @@ def _tz() -> ZoneInfo:
     """The signed-in person's timezone (place.person_timezone), cached per person + profile.yaml version: absolute()
     runs once per board row and the lookup reads the profile."""
     from jobwatch import users
-    from jobwatch.apply.paths import profile_dir
+    from jobwatch.candidate import intake
+    approved = intake.current_version(users.current())
+    path = (intake._versions_root(users.current()) / str(approved['version']) / 'profile.yaml'
+            if approved else None)
     try:
-        mtime = (profile_dir() / "profile.yaml").stat().st_mtime_ns
+        mtime = path.stat().st_mtime_ns if path else 0
     except OSError:
         mtime = 0
-    return _tz_for(users.current(), str(profile_dir()), mtime)
+    return _tz_for(users.current(), str(path or ''), mtime)
 
 
 @functools.lru_cache(maxsize=64)

@@ -163,9 +163,12 @@ def _home_for(person: str, profile: str, mtime_ns: int) -> str:
 def _profile_home() -> str:
     """Home suburb of the current person; cached per person + profile file version (a process serves many people)."""
     from jobwatch import users
+    from jobwatch.candidate import intake
     from jobwatch.apply.paths import profile_dir
     try:
-        path = profile_dir() / 'profile.yaml'
+        approved = intake.current_version(users.current())
+        path = (intake._versions_root(users.current()) / str(approved['version']) / 'profile.yaml'
+                if approved else profile_dir() / 'profile.yaml')
         mtime = path.stat().st_mtime_ns
     except Exception:  # noqa: BLE001 - no profile: home_place gives ''
         path, mtime = '', 0
@@ -178,8 +181,12 @@ def home_place(profile_location: str | None = None) -> str:
     if profile_location is None:
         try:
             import yaml
-            from jobwatch.apply.paths import profile_dir
-            cand = (yaml.safe_load((profile_dir() / 'profile.yaml').read_text(encoding='utf-8')) or {}).get('candidate') or {}
+            from jobwatch import users
+            from jobwatch.candidate import intake
+            approved = intake.current_version(users.current())
+            path = (intake._versions_root(users.current()) / str(approved['version']) / 'profile.yaml'
+                    if approved else __import__('jobwatch.apply.paths', fromlist=['profile_dir']).profile_dir() / 'profile.yaml')
+            cand = (yaml.safe_load(path.read_text(encoding='utf-8')) or {}).get('candidate') or {}
             profile_location = str(cand.get('location') or '')
         except Exception:
             profile_location = ''

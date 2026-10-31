@@ -6,9 +6,6 @@ from .mapping import validate_mappings
 from .policy import default_policy
 from .analysis import analyse_candidate, analysis_metadata
 from .contracts import (
-    DEFAULT_ALLOWED_FAMILIES,
-    EXCLUDED_FAMILIES,
-    MINIMUM_EXCLUDED_CODES,
     AnalysisResult,
     ArchetypeProposal,
     CandidateError,
@@ -28,6 +25,13 @@ from .contracts import (
     content_hash,
     digest,
 )
+
+def __getattr__(name):
+    if name in ('DEFAULT_ALLOWED_FAMILIES', 'EXCLUDED_FAMILIES', 'MINIMUM_EXCLUDED_CODES'):
+        from . import contracts
+        return getattr(contracts, name)
+    raise AttributeError(name)
+
 
 __all__ = [
     "DEFAULT_ALLOWED_FAMILIES",

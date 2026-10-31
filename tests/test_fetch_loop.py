@@ -952,5 +952,5 @@ def test_pipeline_gate_skips_every_tier_without_a_confirmed_profile(tmp_path, mo
         monkeypatch.setattr(mod, "after_collect", lambda *a, **k: called.append(1) or {})
     for mode in ("agentic", "pipeline", "reader"):
         monkeypatch.setattr(execution_mode, "effective_mode", lambda cfg, m=mode: m)
-        assert pipeline.run(config, "fast")["ai"] == {"skipped": "no_confirmed_profile", "execution_mode": mode}
+        assert pipeline.run(config, "fast")["ai"] == {"skipped": "no_profile_version", "execution_mode": mode, "text_only": {}}
     assert called == []

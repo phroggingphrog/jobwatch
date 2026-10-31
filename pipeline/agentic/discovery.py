@@ -61,9 +61,13 @@ def field_hypotheses(*args, **kwargs):
 
 def refresh(person, config, *, llm=None, conn=None, seconds=240.0):
     with users.use(person):
-        scope, policy = intake.discovery_scope(person), policy_for(person)
+        scope, reason = intake.scope_state(person)
         if scope is None:
-            raise DiscoveryError('no_confirmed_profile')
+            raise DiscoveryError('no_confirmed_profile' if reason == 'no_profile_version' else reason)
+        scope = intake.discovery_scope(person)
+        if scope is None:
+            raise DiscoveryError('profile_changed_during_discovery')
+        policy = policy_for(person)
         if policy is None:
             raise DiscoveryError('no_policy')
         hypotheses = field_hypotheses(person, llm=llm, config=config, policy=policy, conn=conn, seconds=seconds)

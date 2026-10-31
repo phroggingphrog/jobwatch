@@ -435,9 +435,9 @@ def _current(person: str) -> dict | None:
     from . import intake
     try:
         return intake.current_version(person)
-    except Exception as exc:
-        log.warning("approved profile unreadable (%s)", type(exc).__name__)
-        return None
+    except Exception:
+        from .contracts import CandidateError
+        raise CandidateError('approved_profile_invalid') from None
 
 
 def _policy_from(approved) -> DecisionPolicy | None:
