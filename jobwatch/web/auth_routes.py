@@ -101,6 +101,10 @@ def read_cookie(value: str | None) -> str | None:
 # -- pages + middleware ------------------------------------------------------------------------
 def install_auth(app: FastAPI) -> None:
     templates = Jinja2Templates(directory=str(HERE / "templates"))
+    mode = os.environ.get("JOBWATCH_WEB_AUTH_MODE", "").strip().lower()
+    if mode not in {"", "single_user"}:
+        raise RuntimeError("invalid_jobwatch_web_auth_mode")
+    single_user = mode == "single_user"
 
     def page(request: Request, name: str, error: str = "", status: int = 200, **ctx):
         return templates.TemplateResponse(request, name, {"error": error, **ctx}, status_code=status)
@@ -157,6 +161,12 @@ def install_auth(app: FastAPI) -> None:
 
     @app.middleware("http")
     async def auth(request, call_next):
+        if single_user:
+            if request.url.path in {"/login", "/signup", "/logout"}:
+                return RedirectResponse("/", status_code=303)
+            # Use only the configured stable owner. Never map client headers or cookies to a person.
+            with users.use(users.DEFAULT_USER):
+                return await call_next(request)
         if not _secret():                                   # auth off: exactly as before
             return await call_next(request)
         path = request.url.path

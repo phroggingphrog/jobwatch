@@ -24,6 +24,57 @@ def _client():
     return TestClient(app, base_url="http://127.0.0.1:8960")
 
 
+def test_single_user_mode_uses_stable_owner_for_all_routes_and_ignores_spoofed_identity(home, monkeypatch):
+    monkeypatch.setenv("JOBWATCH_DEFAULT_USER", "owner")
+    monkeypatch.setenv("JOBWATCH_WEB_AUTH_MODE", "single_user")
+    monkeypatch.setenv("JOBWATCH_SESSION_SECRET", "configured-session-secret")
+    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(home / "data"))
+    app = FastAPI()
+    auth_routes.install_auth(app)
+    @app.get("/profile")
+    def profile():
+        return {"person": users.current(), "data_dir": str(users.user_dir())}
+
+    client = TestClient(app, base_url="http://127.0.0.1:8960", follow_redirects=False)
+    for headers in (
+        {},
+        {"X-Forwarded-User": "friend", "X-Jobwatch-Person": "friend"},
+        {"Cookie": f"{auth_routes.COOKIE}={auth_routes.make_cookie('friend')}"},
+    ):
+        response = client.get("/profile", headers=headers)
+        assert response.status_code == 200, response.headers.get("location")
+        assert response.json() == {"person": "owner", "data_dir": str(home / "data")}
+    assert client.get("/login").status_code == 303
+    assert client.get("/signup").status_code == 303
+    assert client.post("/logout", headers={"Origin": "http://127.0.0.1:8960"}).status_code == 303
+
+
+def test_single_user_mode_keeps_csrf_and_origin_guard_in_web_app(home, monkeypatch):
+    from jobwatch.origin_guard import OriginRejected, check_web_post
+    monkeypatch.setenv("JOBWATCH_DEFAULT_USER", "owner")
+    monkeypatch.setenv("JOBWATCH_WEB_AUTH_MODE", "single_user")
+    with pytest.raises(OriginRejected, match="cross-origin"):
+        check_web_post({"host": "jobs.phroggingphrog.com", "origin": "https://evil.example"})
+    with pytest.raises(OriginRejected, match="missing Origin/Referer"):
+        check_web_post({"host": "jobs.phroggingphrog.com"})
+
+
+def test_invalid_web_auth_mode_fails_closed(home, monkeypatch):
+    monkeypatch.setenv("JOBWATCH_WEB_AUTH_MODE", "unexpected")
+    with pytest.raises(RuntimeError, match="invalid_jobwatch_web_auth_mode"):
+        auth_routes.install_auth(FastAPI())
+
+
+def test_disabled_single_user_mode_preserves_existing_auth_behavior(home, monkeypatch):
+    monkeypatch.delenv("JOBWATCH_WEB_AUTH_MODE", raising=False)
+    monkeypatch.setenv("JOBWATCH_SESSION_SECRET", "s")
+    app = FastAPI()
+    auth_routes.install_auth(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8960", follow_redirects=False)
+    response = client.get("/private")
+    assert response.status_code == 303 and response.headers["location"] == "/login"
+
+
 def test_login_links_to_signup_even_when_closed(home, monkeypatch):
     monkeypatch.setenv("JOBWATCH_SESSION_SECRET", "s")
     monkeypatch.setenv("JOBWATCH_INVITE_CODE", "")
