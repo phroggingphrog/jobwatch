@@ -68,11 +68,13 @@ Independent review found live-input reads in interview, follow-up, preference, c
 
 Verification evidence:
 
+- `/tmp/jobwatch-release-integrated-final.log`: 1,239 passed in 120.74 seconds on committed release source `8b2db12`. This covers candidate intake, policy, recovery, approved readers, all reader rules, discovery gates, profile API, and registered MCP status.
+
 - `/tmp/jobwatch-release-boundary-stable.log`: 27 passed. This checks reader delegation, approved corruption refusal, and MCP discovery status.
 - `/tmp/jobwatch-release-gate-final.log`: 100 passed. Historical policy tests retain their assertions and use explicit synthetic settings. The commute test uses per-person approved settings.
 - `/tmp/jobwatch-release-web-gate-final.log`: 147 passed in 38.85 seconds. This includes candidate onboarding absence, local statistics, approved readers, and historical admission.
 - `/tmp/jobwatch-release-discovery-final.log`: 27 passed in 12.33 seconds. Synthetic fixtures use `profile_inputs_hash` and mock the current `scope_state` interface.
-- `/tmp/jobwatch-release-impacted-final.log`: 92 passed and 2 fixture failures. Focused reruns passed both corrected fixtures. They now inject approved evidence and preserve publication-drift assertions.
+- `/tmp/jobwatch-release-impacted-final.log`: 92 passed and 2 fixture failures. Focused reruns passed both corrected fixtures. They now inject approved evidence and preserve publication-drift assertions. `/tmp/jobwatch-release-drift-final.log` independently reports 3 passed in 4.31 seconds.
 - `/tmp/jobwatch-release-core-final.log`: 152 passed in 88.13 seconds. The command reached its 90-second limit after the summary. Process termination remains a limitation.
 - `/tmp/jobwatch-release-baseline-gate-adtext.log`: clean current main reports 333 passed and 3 pre-existing `adtext` failures for HTTP 403, 429, and 502 handling.
 
