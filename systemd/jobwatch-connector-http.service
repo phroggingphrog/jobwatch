@@ -1,0 +1,20 @@
+[Unit]
+Description=Jobwatch ChatGPT connector OAuth backend
+After=jobwatch-agent.service
+Requires=jobwatch-agent.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/apps/jobwatch-release
+EnvironmentFile=%h/.config/jobwatch-native/agent.env
+EnvironmentFile=%h/.config/jobwatch-native/mcp-use.env
+Environment=PYTHONPATH=%h/apps/jobwatch-release
+ExecStart=%h/apps/jobwatch-release/.venv/bin/python -m pipeline.agentic.connector_http --port 18940
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

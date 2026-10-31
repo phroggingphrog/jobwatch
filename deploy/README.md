@@ -13,4 +13,8 @@ Install the two drop-ins in `systemd/` as
 `~/.config/systemd/user/jobwatch-native-{fast,slow}.service.d/60-release-copy.conf`, then
 `systemctl --user daemon-reload`. Do not restart a running unit.
 
+The ChatGPT connector runs from the release copy too: install `systemd/jobwatch-connector-http.service` as
+`~/.config/systemd/user/jobwatch-connector-http.service`, `daemon-reload`, then restart that one unit (it is a
+long-running server, so it only picks up a new release on restart).
+
 Old checkouts stay for as long as you keep them: `git -C ~/apps/jobwatch-native worktree remove ~/projects/.worktrees/jobwatch-release-<shortsha>`.
