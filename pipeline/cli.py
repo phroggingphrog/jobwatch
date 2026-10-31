@@ -3,6 +3,7 @@
   jobwatch pipeline run [--limit N] [--no-ingest] [--posting ID]   one run: admit new (or named) jobs, move every job forward
   jobwatch pipeline status                          jobs per stage, open dead letters
   jobwatch pipeline dlq [--retry ID]                list the dead letter queue, or put one job back
+  jobwatch pipeline dropped [--days N]              postings the early title check skipped, one JSON line each (default 7 days)
   jobwatch pipeline sort [--limit N]                name why each archived "not a target role" job is not one (BUI-96)
 """
 from __future__ import annotations
@@ -12,10 +13,11 @@ import json
 
 def register(sub) -> None:
     p = sub.add_parser("pipeline", help="deterministic state pipeline: ingest -> extract -> score -> gate -> draft -> form map")
-    p.add_argument("action", choices=["run", "status", "dlq", "sort"])
+    p.add_argument("action", choices=["run", "status", "dlq", "sort", "dropped"])
     p.add_argument("--limit", type=int, default=None, help="max unfinished jobs to move this run")
     p.add_argument("--no-ingest", action="store_true", help="skip node 1 (only move jobs already admitted)")
     p.add_argument("--posting", type=int, action="append", help="admit these posting ids in node 1 (repeatable)")
+    p.add_argument("--days", type=int, default=7, help="with dropped: how many days back")
     p.add_argument("--retry", type=int, default=None, help="with dlq: put this DLQ entry's job back in its stage")
 
 
@@ -33,6 +35,11 @@ def handle(args) -> int | None:
     if args.action == "status":
         dlq = conn.execute("SELECT COUNT(*) FROM pipeline_dlq WHERE resolved_at IS NULL").fetchone()[0]
         print(json.dumps({"stages": store.counts(conn), "dlq_open": dlq}))
+        return 0
+    if args.action == "dropped":
+        from jobwatch.web.queries import dropped_by_title
+        for row in dropped_by_title(conn, args.days):
+            print(json.dumps(row))
         return 0
     if args.action == "dlq":
         if args.retry is not None:

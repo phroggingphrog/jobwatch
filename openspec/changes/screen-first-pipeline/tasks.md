@@ -56,11 +56,11 @@ Never run against `~/.local/share/jobwatch-native` until step 7. Never POST or c
 - [x] 6.2 Check: test with three DLQ rows (transport 7 h old, transport 1 h old, validation 7 h old) → only the first re-queued.
 
 ## 7. Dropped-by-title view
-- [ ] 7.1 `pipeline/cli.py`: add action `dropped` with `--days` (default 7) printing JSON lines
+- [x] 7.1 `pipeline/cli.py`: add action `dropped` with `--days` (default 7) printing JSON lines
       `{posting_id,title,company,reason,decided_at}` from `prescreen_decisions` (stage `metadata`, outcome `skip`) joined to `postings`.
-- [ ] 7.2 `jobwatch/web/queries.py`: add `dropped_by_title(conn, days=7)` returning the same rows; render a read-only
+- [x] 7.2 `jobwatch/web/queries.py`: add `dropped_by_title(conn, days=7)` returning the same rows; render a read-only
       table on the page that already uses prescreen data in that file (follow its existing template pattern). No buttons.
-- [ ] 7.3 Check: CLI on a DB copy: `cp ~/.local/share/jobwatch-native/jobwatch.db /tmp/jw-copy.db` then
+- [x] 7.3 Check: CLI on a DB copy: `cp ~/.local/share/jobwatch-native/jobwatch.db /tmp/jw-copy.db` then
       `JOBWATCH_DATA_DIR=<dir of copy> uv run jobwatch pipeline dropped --days 7 | head`. Web: serve the copy on port 8971
       and take a server-side screenshot of the page.
 

@@ -79,6 +79,7 @@ HIDE_REASONS = [("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real
 NOT_TARGET_KEYS = frozenset(k for k, _ in HIDE_REASONS[HIDE_REASONS.index(("low_fit", "Not a fit")) + 1:])
 HIDE_LABEL = {**dict(HIDE_REASONS), "not_target": "Not a target role (not sorted yet)", "other": "Other reason",
               "duplicate": "Same ad as another job", "prescreened": "Skipped by an early check (the reason is on the job)",
+              "posting_closed": "The ad is closed",
               "hard_gate": "Ruled out by a hard requirement (work rights, level or years)"}
 # the same reasons in running text where the label alone would read badly ("Hidden: full-time only: not possible...")
 HIDE_SENTENCE = {"full_time_only": "full-time only, which does not fit your hours",
@@ -697,10 +698,10 @@ def ai_from_row(r: dict) -> dict | None:
 # The deterministic pipeline (pipeline/, BUI-97/98) judges a job at its gate. Its verdict is shown in the same slots as
 # the reader's: passed the gate = Good, archived = Hidden with the gate's reason, dead-lettered = held back. A job the
 # pipeline has not judged yet (ingested / extracted / scored) keeps the reader's review, or waits.
-PL_SHOW = ("draft_queued", "drafted", "ready")
+PL_SHOW = ("shortlisted", "draft_queued", "drafted", "ready")
 PL_HIDE_REASON = {"not_a_real_job": "not_a_real_job", "sponsored_ad": "sponsored_ad", "too_senior": "too_senior",
                   "not_relevant": "not_relevant", "excluded_by_rule": "excluded_by_rule", "prescreened": "prescreened",
-                  "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
+                  "posting_closed": "posting_closed", "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
                   "work_rights:citizen_or_pr": "needs_citizen_or_pr", "work_rights:citizen_only": "needs_citizen_or_pr",
                   "work_rights:clearance": "needs_citizen_or_pr",
                   "work_rights:unrestricted_work_rights": "needs_unrestricted_rights",
@@ -911,12 +912,23 @@ def rec_key(r: dict) -> str:
     return "hold" if r.get("ai_state") == "review" and rec in ("apply", "consider") else rec if rec in REC_TEXT else ""
 
 
+def dropped_by_title(conn, days: int = 7) -> list[dict]:
+    """Postings the metadata prescreen skipped in the last `days` days (newest decision per posting, newest first)."""
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    rows = conn.execute(
+        "SELECT p.id AS posting_id, p.title, p.company, d.reason, d.at AS decided_at FROM prescreen_decisions d "
+        "JOIN postings p ON p.id = d.posting_id WHERE d.stage = 'metadata' AND d.outcome = 'skip' AND d.at >= ? "
+        "AND d.id = (SELECT MAX(id) FROM prescreen_decisions WHERE posting_id = d.posting_id AND stage = 'metadata') "
+        "ORDER BY d.at DESC, d.id DESC", (since,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def ai_progress(conn) -> dict:
     """How far the reader has got: matches read / all matches (the reader only reads matched postings)."""
     total = conn.execute("SELECT COUNT(DISTINCT posting_id) FROM matches").fetchone()[0]
     read = conn.execute("SELECT COUNT(DISTINCT m.posting_id) FROM matches m WHERE m.posting_id IN "
                         "(SELECT posting_id FROM ad_reviews UNION SELECT posting_id FROM pipeline_state "
-                        "WHERE stage IN ('draft_queued','drafted','ready','archived','dlq'))").fetchone()[0]
+                        "WHERE stage IN ('shortlisted','draft_queued','drafted','ready','archived','dlq'))").fetchone()[0]
     return {"read": read, "total": total, "left": max(0, total - read)}
 
 

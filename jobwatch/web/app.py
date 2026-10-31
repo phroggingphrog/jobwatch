@@ -270,7 +270,12 @@ def create_app(config: Config | None = None) -> FastAPI:
     def discovery_status_page(request: Request):
         from pipeline.agentic import discovery_ops
         result = discovery_ops.status(users.current(), config)
-        return render(request, 'discovery_status.html', None, discovery_status=result)
+        conn = conn_()
+        try:
+            dropped = q.dropped_by_title(conn)
+        finally:
+            conn.close()
+        return render(request, 'discovery_status.html', None, discovery_status=result, dropped=dropped)
 
     @app.get('/api/discovery/status')
     def discovery_status_json():

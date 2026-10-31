@@ -23,6 +23,14 @@
     {% for invocation in discovery_status.invocations %}<div class="wk-panel wk-pad"><p>{{ invocation.state|replace('_', ' ') }}: {{ invocation.phase|replace('_', ' ') }}{% if invocation.posting_id %}, job #{{ invocation.posting_id }}{% endif %}.</p></div>
     {% else %}<p class="wk-sub">No discovery invocation has been recorded yet.</p>{% endfor %}
   </div>
+  <div class="wk-sec"><h2 class="wk-h2">Dropped by title (last 7 days)</h2>
+    <p class="wk-sub">Skipped by the early check before any ad was fetched. Read only.</p>
+    {% if dropped %}<div class="wk-panel wk-tablewrap"><table class="wk-table">
+      <thead><tr><th scope="col">Title</th><th scope="col">Company</th><th scope="col">Rule</th><th scope="col">Decided</th></tr></thead>
+      <tbody>{% for d in dropped[:200] %}<tr><td>{{ d.title }}</td><td>{{ d.company }}</td><td>{{ d.reason }}</td><td>{{ d.decided_at }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<div class="wk-panel"><div class="wk-empty"><b>Nothing dropped by title</b><span>Skipped postings from the last 7 days appear here.</span></div></div>{% endif %}
+  </div>
   {% if discovery_status.latest_run %}<div class="wk-sec"><h2 class="wk-h2">Latest requested run</h2>
     <div class="wk-panel wk-pad"><p>{{ discovery_status.latest_run.state|replace('_', ' ') }}{% if discovery_status.latest_run.error %}: {{ discovery_status.latest_run.error|replace('_', ' ') }}{% endif %}.</p></div>
     {% set result = discovery_status.latest_run.result %}
