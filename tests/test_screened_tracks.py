@@ -43,3 +43,26 @@ def test_program_is_not_hidden_for_hours(monkeypatch):
     assert route == "draft" and dec.reason == "eligible_check_hours"
     route, _ = gate.decide(facts, _score(), "full-time 38 hours per week", "Analyst", posting={"track": "primary"})
     assert route == "archive"
+
+
+def test_graph_gets_all_time_when_nothing_is_shortlisted(monkeypatch, tmp_path):
+    import sqlite3
+    from pipeline import screened, store
+    conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
+    store.ensure(conn)
+    got = {}
+
+    class G:
+        def __init__(self, **k): pass
+        async def run(self, max_seconds=None):
+            got["graph"] = max_seconds
+            return {}
+    monkeypatch.setattr(screened, "ScreenedGraph", G)
+    monkeypatch.setattr(screened.graph.Settings, "from_config", staticmethod(lambda c: None))
+    monkeypatch.setattr(screened, "promote", lambda *a, **k: {})
+    monkeypatch.setattr(screened, "retry_transport", lambda c: 0)
+    cfg = SimpleNamespace(settings={}, db_path=tmp_path / "x.db")
+    from jobwatch.util import adtext
+    monkeypatch.setattr(adtext, "lock_path", lambda c: tmp_path / "lock")
+    screened.after_collect(conn, cfg, max_seconds=400)
+    assert got["graph"] == 400

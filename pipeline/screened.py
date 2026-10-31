@@ -102,7 +102,10 @@ def after_collect(conn, config, max_seconds=None, deadline=None) -> dict:
             return {"skipped": "busy"}
         store.ensure(conn)
         out = {"retried": retry_transport(conn)}
-        half = max_seconds / 2 if max_seconds else None
+        # Hold half the time back for the agent only when shortlisted jobs are already waiting; otherwise scoring
+        # gets it all (live runs 277-279 spent the half on ad fetches and never reached scoring).
+        waiting = conn.execute("SELECT 1 FROM pipeline_state WHERE stage=? LIMIT 1", (str(Stage.SHORTLISTED),)).fetchone()
+        half = (max_seconds / 2 if waiting else max_seconds) if max_seconds else None
         g = ScreenedGraph(conn=conn, db_path=str(config.db_path), config=config,
                           settings=graph.Settings.from_config(config))
         out["graph"] = asyncio.run(g.run(max_seconds=half))
