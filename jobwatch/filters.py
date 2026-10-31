@@ -240,6 +240,9 @@ class Rules:
     def evaluate(self, p: Posting) -> Decision:
         if self.profile_policy is not None:
             if self.digest_pending:
+                from .discovery_gate import profile_location_rule
+                if profile_location_rule(p, self.profile_policy) is None:
+                    return Decision(False, 'location', rules={'location': 'profile_outside'})
                 return Decision(True, arm='profile_discovery', arm_tier='core', arms=['profile_discovery'],
                                 rules={'candidate_digest': 'pending'}, flags=[*p.flags, 'candidate_digest_pending'])
             from .candidate.policy import exclusion_hit

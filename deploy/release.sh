@@ -13,11 +13,11 @@ link="$HOME/apps/jobwatch-release"
 if [ ! -d "$target" ]; then
   git -C "$repo" worktree add --detach "$target" "$revision"
 fi
-(cd "$target" && uv sync --frozen --quiet)
+(cd "$target" && uv sync --frozen --extra browser --extra mcp --quiet)
 
 # Smoke the built copy before anything points at it: a release that cannot import must never become the target.
 # From inside the target: `python -c` also puts the caller's directory on sys.path.
-(cd "$target" && .venv/bin/python -c "import jobwatch.cli, jobwatch.run, pipeline.agentic.service")
+(cd "$target" && .venv/bin/python -c "import jobwatch.cli, jobwatch.run, pipeline.agentic.service, pipeline.agentic.connector_http, playwright.sync_api")
 (cd "$target" && .venv/bin/jobwatch --help >/dev/null)
 
 previous=$([ -L "$link" ] && readlink -f "$link" || true)
