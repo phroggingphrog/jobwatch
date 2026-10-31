@@ -1070,7 +1070,10 @@ def test_adopted_profile_alone_authorises_no_discovery(world, monkeypatch):
     _reset_profile(users)
     intake.adopt_existing(users.current(), actor='person')
     assert intake.discovery_scope(users.current()) is None
-    assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_profile'}
+    # A profile exists but nobody confirmed what it may search for. The skip reason must name that cause, not a
+    # missing profile: one reason per cause is what sends a person to the right page (intake.scope_state).
+    assert intake.scope_state(users.current()) == (None, 'no_confirmed_scope')
+    assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_scope'}
 
 
 def test_daily_assessment_cap_from_scope(world, monkeypatch):
