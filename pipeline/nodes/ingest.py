@@ -41,6 +41,9 @@ def posting_of(r) -> Posting:
                    remote=bool(r["remote"]), description=r["description"] or "", origin=r["origin"] or "")
 
 
+UNREADABLE_TRIES = 2
+
+
 def candidates(conn, posting_ids: list[int] | None = None):
     if posting_ids:                             # named jobs (maintainer / shadow runs), still through every check below
         ids = [int(i) for i in posting_ids]
@@ -65,7 +68,11 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
     from pipeline import tracks
     screened_mode = isinstance(getattr(config, "settings", None), dict) and effective_mode(config) == "screened"
     track_cfg = tracks.settings(config) if screened_mode else {}
-    for r in candidates(conn, posting_ids):
+    rows = candidates(conn, posting_ids)
+    if screened_mode:                              # best title match first, like career-ops; stable, so oldest first within a track
+        rank = {"undergraduate": 0, "primary": 1, None: 2}
+        rows = sorted(rows, key=lambda r: rank.get(tracks.classify(r["title"] or "", track_cfg), 3))
+    for r in rows:
         if deadline is not None and time.time() >= deadline:
             stats['deferred'] = 'batch_deadline'
             break
@@ -123,6 +130,13 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
             conn.commit()
             continue
         if kind != "full":
+            tried = adtext.fetch_state(conn, r["id"])
+            if screened_mode and not can_fetch and tried is not None and (tried["tries"] or 0) >= UNREADABLE_TRIES:
+                # two failed reads: archive instead of re-checking it every run (1,030 waited on 2026-11-01)
+                store.admit(conn, r["id"], f"unreadable:{r['id']}", {"track": track}, Stage.ARCHIVED, "ad_unreadable")
+                stats["unreadable"] = stats.get("unreadable", 0) + 1
+                conn.commit()
+                continue
             stats["waiting_text"] += 1
             continue
         h = content_hash(r["company"] or "", text)
