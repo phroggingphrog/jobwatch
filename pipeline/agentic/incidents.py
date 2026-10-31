@@ -168,6 +168,26 @@ def release(conn, incident_id, posting_id, *, expected_run_id=None):
     return _get(conn, incident_id)
 
 
+def resolve_run_level(conn, *, unit, now=None):
+    """Release paused discovery-run incidents for a unit after that unit's next clean run.
+
+    A run-level row has no posting, so no job retry can ever clear it; the unit running again without an exception
+    is the evidence that the cause (a missing module, a stale deploy) is gone (34 rows sat paused, 2026-10-31)."""
+    if not unit or not _exists(conn, 'agentic_incidents') or not _exists(conn, 'agentic_invocations'):
+        return 0
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        cur = conn.execute(
+            "UPDATE agentic_incidents SET state='released',resolved_at=? "
+            "WHERE state='paused' AND posting_id IS NULL AND run_id IN "
+            "(SELECT run_id FROM agentic_invocations WHERE unit=?)",
+            (time.time() if now is None else now, unit))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    return cur.rowcount
+
 def _digest(rows):
     """One line for the whole window: counts per reason, each job once per reason, retry hint once."""
     groups = {}

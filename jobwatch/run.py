@@ -6,6 +6,7 @@ import logging
 import contextvars
 import time
 from datetime import timedelta
+from pathlib import Path
 
 from . import collectors as registry
 from . import db as dbm
@@ -19,6 +20,31 @@ from .models import canonical_url, now_utc, parse_date
 from jobwatch.util.place import person_state
 
 log = logging.getLogger("jobwatch")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+def _error_detail(exc: BaseException) -> dict:
+    """Where a crashed run died, for the run row: missing module, last repository frame and a short message.
+
+    The class name alone left the 34 ModuleNotFoundError incidents without the module that was missing (2026-10-31).
+    No locals and no payload: a message is the most this row may carry."""
+    frame, last, cursor = None, None, exc.__traceback__
+    while cursor is not None:
+        last, cursor = cursor, cursor.tb_next
+        try:
+            Path(last.tb_frame.f_code.co_filename).resolve().relative_to(REPO_ROOT)
+            frame = last
+        except ValueError:
+            continue
+    frame = frame or last
+    where = None
+    if frame is not None:
+        name = frame.tb_frame.f_code.co_filename
+        try:
+            name = str(Path(name).resolve().relative_to(REPO_ROOT))
+        except ValueError:
+            pass
+        where = f"{name}:{frame.tb_lineno}"
+    return {"module": getattr(exc, "name", None), "where": where, "message": str(exc)[:200]}
 
 
 def tier_collectors(config: Config, tier: str, only: str | None) -> list[str]:
@@ -172,6 +198,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
     ai: dict = {}
     http = None
     error = None
+    error_detail = None
     try:
         from pipeline.agentic import discovery
         # The scope projection is read-only and unpaid, including dry runs.
@@ -229,13 +256,15 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                 except Exception:  # noqa: BLE001
                     pass
     except BaseException as exc:                # recorded, then raised again: a crashed run must not look like an empty one
-        error = type(exc).__name__              # the class only: a message could hold anything
+        error = type(exc).__name__              # the class only, so the fixed run row stays free of private text
+        error_detail = _error_detail(exc)       # module, frame and a short message: say what broke, not the payload
         raise
     finally:
         summary = {"run_id": run_id, "collectors": [{k: v for k, v in r.items() if k != "health"} for r in results],
                    "alerts": note, "ai": ai, "pruned": pruned, "requests": http.requests_made if http else 0}
         if error:
             summary["error"] = error
+            summary["error_detail"] = error_detail
         try:
             dbm.finish_run(conn, run_id, summary)
         finally:
