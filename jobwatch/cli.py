@@ -222,12 +222,15 @@ def _main(argv: list[str], *, deadline=None) -> int:
         import os
         conn = dbm.connect(config.db_path)
         run_id = 'collector-' + uuid.uuid4().hex
-        incidents.begin_run(conn, run_id, unit=os.environ.get('JOBWATCH_SERVICE_UNIT', 'manual'))
+        unit = os.environ.get('JOBWATCH_SERVICE_UNIT', 'manual')
+        incidents.begin_run(conn, run_id, unit=unit)
         state = 'completed'
         try:
             incidents.mark_phase(conn, run_id, 'collection')
             summary = run(config, args.tier, dry_run=args.dry_run, only=args.only, limit=args.limit,
                 assess=not args.collect_only, deadline=deadline, run_id=run_id)
+            # No posting will ever retry a run-level incident: this unit's clean run is what clears it.
+            incidents.resolve_run_level(conn, unit=unit)
         except Exception as exc:
             state = 'failed'
             incidents.report(conn, run_id=run_id, reason=getattr(exc,'code','execution_failed'), phase='collection')

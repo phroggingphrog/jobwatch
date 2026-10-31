@@ -26,6 +26,8 @@ UNLIMITED_JOB_TOKENS = 10 ** 12
 CALL_SECONDS, CALL_SECONDS_REASONING = 180, 600
 # Model replies a job may get wrong (bad format, failed check) before it is held; 3 ran out on real drafts.
 MAX_FAILED_ATTEMPTS = 6
+# Smallest answer worth asking for when the remaining budget is short: below this, do not shrink, stop as before.
+MIN_OUTPUT_TOKENS = 1024
 
 
 class RuntimeErrorSafe(AgenticError):
@@ -232,15 +234,22 @@ class JobBudget:
         state = self.batch._state
         with state.lock:
             self.ensure_live()
-            charge = input_tokens + output_tokens
             from pipeline.agentic.execution import current
             scope = current()
             if scope is not None:
                 scope.check()
                 if scope.calls >= scope.max_calls:
                     raise RuntimeErrorSafe("invocation_call_limit")
-                if scope.charged_tokens + charge > scope.token_ceiling:
-                    raise RuntimeErrorSafe("invocation_budget_exhausted")
+            # Holding back a whole job because the request for a long answer did not fit spent nothing and
+            # discovered nothing (23 x invocation_budget_exhausted at turn 0). Ask for what still fits instead.
+            remaining = min(self._job_ceiling - self._job_charged, state.token_ceiling - state.charged_tokens)
+            if scope is not None:
+                remaining = min(remaining, scope.token_ceiling - scope.charged_tokens)
+            if input_tokens + output_tokens > remaining and remaining - input_tokens >= MIN_OUTPUT_TOKENS:
+                output_tokens = remaining - input_tokens
+            charge = input_tokens + output_tokens
+            if scope is not None and scope.charged_tokens + charge > scope.token_ceiling:
+                raise RuntimeErrorSafe("invocation_budget_exhausted")
             if self._job_charged + charge > self._job_ceiling or state.charged_tokens + charge > state.token_ceiling:
                 raise RuntimeErrorSafe("token_limit")
             rid = uuid.uuid4().hex
@@ -256,6 +265,11 @@ class JobBudget:
                 # Keep the maximum charged in local memory; dispatch is forbidden.
                 raise
             return rid
+
+    def requested_output(self, reservation_id: str) -> int:
+        """The output budget this reservation holds, after the reserve shrank it to fit."""
+        with self.batch._state.lock:
+            return self._reservations[reservation_id].requested_output_tokens
 
     def dispatched(self, reservation_id: str):
         with self.batch._state.lock:

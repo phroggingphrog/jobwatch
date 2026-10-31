@@ -184,7 +184,7 @@ def replay(baseline_id, *, partition='development', allow_holdout=False, limit=5
                 # Store only fixed safe codes, never nested validation messages or model text.
                 code=getattr(exc,'code','invalid_frozen_case')
                 code=code if code in ('deadline_exceeded','invocation_budget_exhausted','budget_exhausted',
-                    'batch_budget_exhausted','job_budget_exhausted','token_limit','frozen_candidate_unavailable',
+                    'batch_budget_exhausted','job_budget_exhausted','token_limit','step_limit','frozen_candidate_unavailable',
                     'credential_unavailable','model_not_allowed','gateway_not_allowed') else 'replay_unavailable'
                 after=ex.usage()
                 current=dict(status='deferred',route=None,reason=None,label=None,rank=None,coverage={},

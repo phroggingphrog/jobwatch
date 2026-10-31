@@ -38,7 +38,8 @@ def test_observed_search_and_wrong_filename_sequence_completes_canonically(tmp_p
 def test_exhausted_skill_correction_survives_private_checkpoint_restart(tmp_path):
     bundle, ad, key, roles = build_case(tmp_path / 'evidence')
     wrong = {'tool': 'read_file', 'arguments': {'file_path': 'master_resume.md'}}
-    llm, requests = transport([native_choices(roles)[0], wrong, wrong], reasoning=True)
+    # Two corrections are allowed per tool: the third wrong path exhausts the persisted boundary.
+    llm, requests = transport([native_choices(roles)[0], wrong, wrong, wrong], reasoning=True)
     args = dict(posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
     path = tmp_path / 'checkpoint.sqlite'
     b = budget(key)
@@ -46,4 +47,4 @@ def test_exhausted_skill_correction_survives_private_checkpoint_restart(tmp_path
         with sqlite3.connect(path, check_same_thread=False) as conn:
             with pytest.raises(RuntimeErrorSafe, match='skill_path_not_allowed'):
                 evaluate_autonomous(key, ad, b, llm, conn=conn, **args)
-    assert len(requests) == 3
+    assert len(requests) == 4

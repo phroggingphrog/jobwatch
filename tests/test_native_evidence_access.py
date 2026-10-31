@@ -50,13 +50,14 @@ def test_batch_search_then_read_does_not_repeat_primary_payload(tmp_path):
 def test_unknown_evidence_correction_remains_bounded_and_cannot_grant_access(tmp_path):
     bundle, ad, key, roles = build_case(tmp_path / 'evidence')
     bad = {'tool': 'read_candidate_evidence', 'arguments': {'evidence_ids': ['invented-id']}}
-    llm, seen = transport([native_choices(roles)[0], bad, bad])
+    # Two corrections are allowed per tool: the third invented id exhausts the persisted boundary.
+    llm, seen = transport([native_choices(roles)[0], bad, bad, bad])
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         with pytest.raises(RuntimeErrorSafe, match='unknown_evidence'):
             evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
                 screen={'outcome': 'admit'}, evidence_bundle=bundle, model='claude/sonnet')
         assert not conn.execute("SELECT 1 FROM autonomous_results WHERE identity LIKE '%:evaluation'").fetchone()
-    assert len(seen) == 3
+    assert len(seen) == 4
 
 
 def test_candidate_filename_cannot_be_read_as_skill_and_gets_canonical_guidance(tmp_path):
