@@ -33,16 +33,16 @@ openrouter_extras:
   embed_model: openrouter/qwen/qwen3-embedding-8b  # through OmniRoute (owner 2026-10-12); Jev stays direct
 pipeline:
   # One effective AI mode. Collection is independent. Rollback: set reader or pipeline; off disables AI work.
-  execution_mode: agentic
+  execution_mode: screened  # main path since 2026-10-31; agentic runs only on promoted shortlisted jobs
   # Legacy flags below are read only when execution_mode is absent.
   enabled: true
   threshold: 3.8          # historical config compatibility; eligibility uses confirmed policy, scores are advisory
-  ingest_limit: 200       # node 1: new jobs admitted per run
+  ingest_limit: 20        # node 1: new jobs admitted per run (200 spent the whole budget on fetching, 2026-10-31)
   fetch_budget: 25        # node 1: ad pages fetched per run
   drafts_per_run: 3       # node 5: cost cap; the rest wait for the next run
   drafts_per_day: 10      # node 5: cost cap over 24 h across all runs (about $17/day at $1.70 a draft)
   concurrency: 6
-  screened:               # used only when execution_mode is screened
+  screened:               # the main path
     promote_per_run: 3    # shortlisted jobs sent to the agentic evaluator per run
     promote_per_day: 10   # same, over 24 h
     min_score: 3.0        # technical default, not an owner number

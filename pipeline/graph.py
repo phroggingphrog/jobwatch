@@ -55,7 +55,7 @@ class Settings:
     form_model: str = DEFAULT_MODEL
     threshold: float = gate.THRESHOLD
     concurrency: int = 6
-    ingest_limit: int = 200
+    ingest_limit: int = 20
     fetch_budget: int = 25
     drafts_per_run: int = 3
     drafts_per_day: int = 10            # cost guard across runs (an Opus-written draft costs about $1.70)
