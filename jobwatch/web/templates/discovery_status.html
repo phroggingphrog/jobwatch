@@ -23,6 +23,14 @@
     {% for invocation in discovery_status.invocations %}<div class="wk-panel wk-pad"><p>{{ invocation.state|replace('_', ' ') }}: {{ invocation.phase|replace('_', ' ') }}{% if invocation.posting_id %}, job #{{ invocation.posting_id }}{% endif %}.</p></div>
     {% else %}<p class="wk-sub">No discovery invocation has been recorded yet.</p>{% endfor %}
   </div>
+  <div class="wk-sec"><h2 class="wk-h2">Easy money (side jobs, last 14 days)</h2>
+    <p class="wk-sub">Side jobs for income. Not scored as a career fit and never sent to the agent.</p>
+    {% if side %}<div class="wk-panel wk-tablewrap"><table class="wk-table">
+      <thead><tr><th scope="col">Title</th><th scope="col">Company</th><th scope="col">Location</th></tr></thead>
+      <tbody>{% for j in side[:200] %}<tr><td>{% if j.url %}<a href="{{ j.url }}" rel="noopener noreferrer" target="_blank">{{ j.title }}</a>{% else %}{{ j.title }}{% endif %}</td><td>{{ j.company }}</td><td>{{ j.location }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<div class="wk-panel"><div class="wk-empty"><b>No side jobs yet</b><span>Side jobs found in the last 14 days appear here.</span></div></div>{% endif %}
+  </div>
   <div class="wk-sec"><h2 class="wk-h2">Dropped by title (last 7 days)</h2>
     <p class="wk-sub">Skipped by the early check before any ad was fetched. Read only.</p>
     {% if dropped %}<div class="wk-panel wk-tablewrap"><table class="wk-table">

@@ -21,7 +21,8 @@ class Stage(StrEnum):
     INGESTED = "ingested"          # node 1 admitted it (full ad text, in area, not a duplicate)
     EXTRACTED = "extracted"        # node 2 produced JobFacts
     SCORED = "scored"              # node 3 produced MatchScore
-    SHORTLISTED = "shortlisted"    # screened mode: passed the gate, waits for promotion to the agentic evaluator
+    SHORTLISTED = "shortlisted"         # screened mode: passed the gate, waits for promotion to the agentic evaluator
+    SIDE = "side"                       # screened mode: a side job for income, listed only
     DRAFT_QUEUED = "draft_queued"  # node 4 passed it (score >= threshold, no hard rule hit)
     DRAFTED = "drafted"            # node 5 produced a verified ApplicationPackage
     READY = "ready"                # node 6 produced the form map; waiting for the owner to submit by hand

@@ -61,6 +61,10 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
              "fetched": 0}
     blocked: set[str] = set()
     per_host: dict[str, int] = {}
+    from jobwatch.execution_mode import effective_mode
+    from pipeline import tracks
+    screened_mode = isinstance(getattr(config, "settings", None), dict) and effective_mode(config) == "screened"
+    track_cfg = tracks.settings(config) if screened_mode else {}
     for r in candidates(conn, posting_ids):
         if deadline is not None and time.time() >= deadline:
             stats['deferred'] = 'batch_deadline'
@@ -78,6 +82,15 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
             stats["prescreened"] = stats.get("prescreened", 0) + 1
             conn.commit()
             continue
+        track = None
+        if screened_mode:                          # title track before any fetch (pipeline/tracks.py)
+            track = tracks.classify(r["title"] or "", track_cfg)
+            if track in ("drop", "secondary"):
+                stage, why = (Stage.ARCHIVED, "title_not_target") if track == "drop" else (Stage.SIDE, None)
+                store.admit(conn, r["id"], f"{track}:{r['id']}", {"track": track}, stage, why)
+                stats[track] = stats.get(track, 0) + 1
+                conn.commit()
+                continue
         host = adtext.fetch_host(r["source"])
         can_fetch = bool(fetcher) or (host and fetch_budget > 0 and host not in blocked
                                       and per_host.get(host, 0) < PER_HOST_FETCHES and adtext.wants_fetch(conn, r))
@@ -129,13 +142,13 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         if discovery_settings(config)['dedupe'] == 'semantic':
             dup = None
         if dup:
-            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), **extra}, Stage.ARCHIVED, f"duplicate_of:{dup[0]}")
+            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), "track": track, **extra}, Stage.ARCHIVED, f"duplicate_of:{dup[0]}")
             stats["duplicate"] += 1
         elif is_sponsored(r["raw_json"]):
-            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), **extra}, Stage.ARCHIVED, "sponsored_ad")
+            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), "track": track, **extra}, Stage.ARCHIVED, "sponsored_ad")
             stats["sponsored"] += 1
         else:
-            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), **extra})
+            store.admit(conn, r["id"], h, {"ingest": ad.model_dump(), "track": track, **extra})
             stats["admitted"] += 1
         conn.commit()
     return stats

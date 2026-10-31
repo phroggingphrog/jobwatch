@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 SCREENED_EDGES = {st: e for st, e in graph.EDGES.items() if st not in (Stage.DRAFT_QUEUED, Stage.DRAFTED)}
 SCREENED_EDGES[Stage.SCORED] = graph.Edge("gate", frozenset({Stage.SHORTLISTED, Stage.ARCHIVED}))
 GATE_ROUTE = {"draft": Stage.SHORTLISTED, "archive": Stage.ARCHIVED, "review": Stage.DLQ}
-TERMINAL = graph.TERMINAL | {Stage.SHORTLISTED}
+TERMINAL = graph.TERMINAL | {Stage.SHORTLISTED, Stage.SIDE}
 DEFAULTS = {"promote_per_run": 3, "promote_per_day": 10, "min_score": 3.0}
 TRANSPORT_ERRORS = ("Connection", "Timeout", "timed out", "502", "503", "504")
 
@@ -29,6 +29,14 @@ class ScreenedGraph(graph.Graph):
     EDGES = SCREENED_EDGES
     TERMINAL = TERMINAL
     GATE_ROUTE = GATE_ROUTE
+
+    def _move(self, pid, cur, nxt, output, reason=None, attempts=1):
+        # A gate pass is only a shortlist when the one-read score reaches min_score; below it the job is a weak fit.
+        if cur is Stage.SCORED and nxt is Stage.SHORTLISTED:
+            score = (output or {}).get("score")
+            if score is not None and float(score) < screened_settings(self.config)["min_score"]:
+                nxt, reason = Stage.ARCHIVED, "low_fit"
+        return super()._move(pid, cur, nxt, output, reason=reason, attempts=attempts)
 
 
 def screened_settings(config) -> dict:
@@ -70,7 +78,9 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
         "SELECT posting_id, CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) AS score FROM pipeline_state "
         "WHERE stage=? AND json_extract(data_json, '$.evaluate.overall') IS NOT NULL "
         "AND CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) >= ? "
-        "ORDER BY score DESC, posting_id DESC LIMIT ?", (str(Stage.SHORTLISTED), cfg["min_score"], allowance)).fetchall()
+        "AND COALESCE(json_extract(data_json, '$.track'), '') <> 'secondary' "
+        "ORDER BY CASE json_extract(data_json, '$.track') WHEN 'undergraduate' THEN 0 WHEN 'primary' THEN 1 ELSE 2 END, "
+        "score DESC, posting_id DESC LIMIT ?", (str(Stage.SHORTLISTED), cfg["min_score"], allowance)).fetchall()
     ids = [r["posting_id"] for r in rows]
     if not ids:
         return out

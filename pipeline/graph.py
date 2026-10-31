@@ -145,7 +145,7 @@ class Graph:
                 score = MatchScore.model_validate({k: v for k, v in data["evaluate"].items()
                                                    if k in MatchScore.model_fields})
                 route, dec = gate.decide(facts, score, text, ad.title, self.settings.threshold,
-                                         posting={"company": ad.company, "location": ad.location})
+                                         posting={"company": ad.company, "location": ad.location, "track": data.get("track")})
                 nxt = self.GATE_ROUTE[route]
                 if nxt is Stage.DLQ:
                     return self._dead(pid, cur, f"needs review: {dec.reason}", 1)

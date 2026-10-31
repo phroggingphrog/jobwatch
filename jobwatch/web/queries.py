@@ -79,7 +79,7 @@ HIDE_REASONS = [("sponsored_ad", "Sponsored ad"), ("not_a_real_job", "Not a real
 NOT_TARGET_KEYS = frozenset(k for k, _ in HIDE_REASONS[HIDE_REASONS.index(("low_fit", "Not a fit")) + 1:])
 HIDE_LABEL = {**dict(HIDE_REASONS), "not_target": "Not a target role (not sorted yet)", "other": "Other reason",
               "duplicate": "Same ad as another job", "prescreened": "Skipped by an early check (the reason is on the job)",
-              "posting_closed": "The ad is closed",
+              "posting_closed": "The ad is closed", "title_not_target": "Not a target role (from the title)",
               "hard_gate": "Ruled out by a hard requirement (work rights, level or years)"}
 # the same reasons in running text where the label alone would read badly ("Hidden: full-time only: not possible...")
 HIDE_SENTENCE = {"full_time_only": "full-time only, which does not fit your hours",
@@ -701,7 +701,7 @@ def ai_from_row(r: dict) -> dict | None:
 PL_SHOW = ("shortlisted", "draft_queued", "drafted", "ready")
 PL_HIDE_REASON = {"not_a_real_job": "not_a_real_job", "sponsored_ad": "sponsored_ad", "too_senior": "too_senior",
                   "not_relevant": "not_relevant", "excluded_by_rule": "excluded_by_rule", "prescreened": "prescreened",
-                  "posting_closed": "posting_closed", "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
+                  "posting_closed": "posting_closed", "title_not_target": "title_not_target", "full_time_only": "full_time_only", "low_score": "low_fit", "not_target": "not_target",
                   "work_rights:citizen_or_pr": "needs_citizen_or_pr", "work_rights:citizen_only": "needs_citizen_or_pr",
                   "work_rights:clearance": "needs_citizen_or_pr",
                   "work_rights:unrestricted_work_rights": "needs_unrestricted_rights",
@@ -920,6 +920,16 @@ def dropped_by_title(conn, days: int = 7) -> list[dict]:
         "JOIN postings p ON p.id = d.posting_id WHERE d.stage = 'metadata' AND d.outcome = 'skip' AND d.at >= ? "
         "AND d.id = (SELECT MAX(id) FROM prescreen_decisions WHERE posting_id = d.posting_id AND stage = 'metadata') "
         "ORDER BY d.at DESC, d.id DESC", (since,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def side_jobs(conn, days: int = 14) -> list[dict]:
+    """Side jobs for income (screened track 'secondary'), newest first. Listed only: no score, no agent."""
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    rows = conn.execute(
+        "SELECT p.id AS posting_id, p.title, p.company, p.location, p.url, s.updated_at FROM pipeline_state s "
+        "JOIN postings p ON p.id = s.posting_id WHERE s.stage = 'side' AND s.updated_at >= ? "
+        "ORDER BY s.updated_at DESC, p.id DESC", (since,)).fetchall()
     return [dict(r) for r in rows]
 
 
