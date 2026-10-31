@@ -259,6 +259,27 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
                                       'location_reference': LOCATION_REFERENCE_HASH, 'posting': posting}))
 
 
+
+def _in_profile_region(conn, ids):
+    """Postings whose stored location the confirmed profile admits today. A match made under an older rule is
+    re-checked here, so an interstate posting never reaches a paid read (16 NSW/QLD were read by 2026-10-31)."""
+    from types import SimpleNamespace
+    from jobwatch.candidate import intake
+    from jobwatch.discovery_gate import profile_location_rule
+    approved = intake.current_version(users.current())
+    if not approved:
+        return list(ids)
+    policy = policy_for(users.current(), approved=approved)
+    kept = []
+    for pid in ids:
+        row = conn.execute('SELECT location,state,remote FROM postings WHERE id=?', (pid,)).fetchone()
+        if row is None:
+            continue
+        if profile_location_rule(SimpleNamespace(location=row[0] or '', state=row[1], remote=bool(row[2])), policy):
+            kept.append(pid)
+    return kept
+
+
 def snapshot_inventory(conn, config, *, posting_ids=None, limit=20, evidence_bundle=None, policy=None):
     """Read-only inventory: no schema creation, profile writes, gateway, or fetching."""
     if type(limit) is not int or not 1 <= limit <= 20:
@@ -274,8 +295,9 @@ def snapshot_inventory(conn, config, *, posting_ids=None, limit=20, evidence_bun
         # never retried and the posting was stranded: 874 of them by 2026-10-13, while a re-read of a
         # sampled few now succeeds. This does not relax any gate; it only gives them another read.
         retry = max(1, limit // 4)
-        newest = [r[0] for r in conn.execute(
-            'SELECT id FROM postings ORDER BY last_seen_at DESC,id DESC LIMIT ?', (limit - retry,))]
+        newest = _in_profile_region(conn, [r[0] for r in conn.execute(
+            'SELECT p.id FROM postings p JOIN matches m ON m.posting_id=p.id '
+            'ORDER BY p.last_seen_at DESC,p.id DESC LIMIT ?', ((limit - retry) * 10,))])[:limit - retry]
         stale = []
         # The inventory must not assume the pipeline's own tables exist yet (a fresh database has none).
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentic_runs'").fetchone():
@@ -1179,6 +1201,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         AgenticStore(conn).ensure()
         pending = [pid for pid in unseen[:25] + pending if not incidents.is_paused(conn, pid)
                    and not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
+        pending = _in_profile_region(conn, pending)
         if pending:
             pending = _without_completed(conn,config,pending)[:200]
         if discovery_cfg['ordering'] == 'legacy':
