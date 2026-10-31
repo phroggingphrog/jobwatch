@@ -23,10 +23,10 @@ log = logging.getLogger("jobwatch")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 def _error_detail(exc: BaseException) -> dict:
-    """Where a crashed run died, for the run row: missing module, last repository frame and a short message.
+    """Where a crashed run died, for the run row: the missing module and the last frame inside this repository.
 
     The class name alone left the 34 ModuleNotFoundError incidents without the module that was missing (2026-10-31).
-    No locals and no payload: a message is the most this row may carry."""
+    Fixed codes plus a path and a line, never exception text: the run row must stay free of private text."""
     frame, last, cursor = None, None, exc.__traceback__
     while cursor is not None:
         last, cursor = cursor, cursor.tb_next
@@ -44,7 +44,7 @@ def _error_detail(exc: BaseException) -> dict:
         except ValueError:
             pass
         where = f"{name}:{frame.tb_lineno}"
-    return {"module": getattr(exc, "name", None), "where": where, "message": str(exc)[:200]}
+    return {"module": getattr(exc, "name", None), "where": where}
 
 
 def tier_collectors(config: Config, tier: str, only: str | None) -> list[str]:
@@ -257,7 +257,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                     pass
     except BaseException as exc:                # recorded, then raised again: a crashed run must not look like an empty one
         error = type(exc).__name__              # the class only, so the fixed run row stays free of private text
-        error_detail = _error_detail(exc)       # module, frame and a short message: say what broke, not the payload
+        error_detail = _error_detail(exc)       # module and frame: say where it broke, never the exception text
         raise
     finally:
         summary = {"run_id": run_id, "collectors": [{k: v for k, v in r.items() if k != "health"} for r in results],

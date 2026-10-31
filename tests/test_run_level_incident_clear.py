@@ -48,7 +48,7 @@ def test_crashed_collection_records_the_missing_module_and_its_frame(tmp_path, m
     detail = stats['error_detail']
     assert detail['module'] == 'jobwatch.synthetic_missing'
     assert detail['where'].startswith('tests/test_run_level_incident_clear.py:')
-    assert detail['message'].startswith('No module named')
+    assert 'message' not in detail
 
 def test_cli_clears_the_incident_only_after_its_unit_runs_clean(tmp_path, monkeypatch):
     from conftest import make_config
