@@ -130,8 +130,8 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
             conn.commit()
             continue
         if kind != "full":
-            tried = adtext.fetch_state(conn, r["id"])
-            if screened_mode and not can_fetch and tried is not None and (tried["tries"] or 0) >= UNREADABLE_TRIES:
+            tried = adtext.fetch_state(conn, r["id"]) if screened_mode and not can_fetch else None
+            if tried is not None and (tried["tries"] or 0) >= UNREADABLE_TRIES:
                 # two failed reads: archive instead of re-checking it every run (1,030 waited on 2026-11-01)
                 store.admit(conn, r["id"], f"unreadable:{r['id']}", {"track": track}, Stage.ARCHIVED, "ad_unreadable")
                 stats["unreadable"] = stats.get("unreadable", 0) + 1
