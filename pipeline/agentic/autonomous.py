@@ -118,10 +118,15 @@ class CompletionBoundary(AgentMiddleware):
 
 
 class CompletionError(AgenticError):
-    def __init__(self, code, field):
+    def __init__(self, code, field, violations=()):
         super().__init__(code)
         self.fields = (field,) if isinstance(field, str) else tuple(field)
         self.field = self.fields[0]
+        # Every broken rule from one validation pass, as (code, fields): one correction can fix them all.
+        self.violations = tuple(violations)
+
+
+MAX_TOOL_CORRECTIONS = 2
 
 
 class CachedEmbeddings:
@@ -345,42 +350,53 @@ class Slice:
 
 
 def validate_evaluation(value, *, key, extraction, bundle, search, model, commute_km):
-    """Canonical output plus the matcher's primary-source/access invariants."""
+    """Canonical output plus the matcher's primary-source/access invariants.
+
+    Every broken rule is reported together in one correction: raising on the first one made each paid retry
+    discover a single remaining error (posting 4602, 2026-10-31)."""
     if value.requirements_hash != extraction.requirements.requirement_hash:
+        # Stale input, not a model mistake: the caller must rebuild, so this one still stops at once.
         raise AgenticError('requirements_changed')
     requirements = {r.id: r for r in extraction.requirements.requirements}
-    missing_risk = []
+    broken: dict[str, list[str]] = {}
+    def violation(code, *fields):
+        entries = broken.setdefault(code, [])
+        entries.extend(field for field in fields if field not in entries)
     for index, match in enumerate(value.matches):
-        requirement = requirements.get(match.requirement_id)
-        if requirement and (requirement.blocker or requirement.importance in {'critical', 'high'}) and match.match in {'partial', 'missing'}:
-            missing_risk.extend(f'matches.{index}.{field}' for field in ('risk', 'mitigation') if not getattr(match, field).strip())
-    if missing_risk:
-        raise CompletionError('invalid_evaluation', missing_risk)
-    for match in value.matches:
         requirement = requirements.get(match.requirement_id)
         judgment = match.judgment
         if requirement is None or judgment is None:
-            raise AgenticError('invalid_evaluation')
+            violation('invalid_evaluation', f'matches.{index}')
+            continue
         essential = requirement.blocker or requirement.importance in {'critical', 'high'}
         if essential and match.match == 'not_applicable':
-            raise AgenticError('contradictory_match')
-        if essential and match.match in {'partial', 'missing'} and (not match.risk.strip() or not match.mitigation.strip()):
-            raise AgenticError('invalid_evaluation')
+            violation('contradictory_match', f'matches.{index}.match')
+        if essential and match.match in {'partial', 'missing'}:
+            for field in ('risk', 'mitigation'):
+                if not getattr(match, field).strip():
+                    violation('invalid_evaluation', f'matches.{index}.{field}')
         if not set(judgment.reviewed_evidence_ids) <= search.accessed:
-            raise AgenticError('unretrieved_evidence')
+            violation('unretrieved_evidence', f'matches.{index}.judgment.reviewed_evidence_ids')
         if bundle.items and not judgment.reviewed_evidence_ids and judgment.status != 'not_applicable':
-            raise AgenticError('unretrieved_evidence')
+            violation('unretrieved_evidence', f'matches.{index}.judgment.reviewed_evidence_ids')
         citations = (*match.evidence, *judgment.contradiction_evidence)
-        verify_candidate_citations(citations, bundle)
+        try:
+            verify_candidate_citations(citations, bundle)
+        except AgenticError as exc:
+            violation(exc.code, f'matches.{index}.evidence')
         reviewed = [item for item in bundle.items if item.id in judgment.reviewed_evidence_ids]
         if any(not any(item.source_file == cite.source_id and item.source_hash == cite.content_hash
                        and cite.quote in item.quote for item in reviewed) for cite in citations):
-            raise AgenticError('invalid_candidate_citation')
+            violation('invalid_candidate_citation', f'matches.{index}.evidence')
     report = dict(value.report)
     if extraction.uncertainties:
         report['E'] += '\nUnresolved ad facts: ' + '; '.join(extraction.uncertainties)
     if len(report.get('E', '')) > 4000:
-        raise CompletionError('invalid_evaluation', 'report.E')
+        violation('invalid_evaluation', 'report.E')
+    if broken:
+        fields = tuple(field for entries in broken.values() for field in entries)
+        raise CompletionError('invalid_evaluation', fields,
+                              violations=tuple((code, tuple(entries)) for code, entries in broken.items()))
     return AgenticEvaluation(run_key=key, requirements=extraction.requirements, matches=value.matches,
         archetype=value.archetype, global_score=value.global_score, dimensions=value.dimensions,
         facts=extraction.facts, location_fit=extraction.location_fit, location_evidence=extraction.location_evidence,
@@ -527,32 +543,36 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
         return result
 
     def tool(name, schema, handler, terminal=False):
-        def feedback(code, fields, journal_key, paths=()):
+        def action_for(code):
+            if code == 'skill_path_not_allowed':
+                return ('read_file reads packaged stage skills only: ' + ', '.join(skill_files()) + '. '
+                        'For candidate source records use read_candidate_evidence with IDs from '
+                        'the supplied inventory, or search_candidate_evidence_batch for unresolved requirements. '
+                        'Primary records already returned remain in earlier tool messages. '
+                        'No candidate or host file was opened. Correct this operation once.')
+            if code == 'invalid_tool_arguments_json':
+                return ('The tool arguments are malformed JSON. No part of this operation was executed. '
+                        'Resubmit the complete arguments as one valid JSON object with all required '
+                        'schema fields and no trailing data. Correct the syntax once; do not invent facts.')
+            return ('Correct only the identified fields using supplied source text and the tool schema. '
+                    'Evidence IDs must come from the supplied inventory or search results. '
+                    'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
+                    'Report sections must each be at most 4000 characters. Retry this operation once.')
+
+        def feedback(code, fields, journal_key, paths=(), violations=()):
             prior = run.load(journal_key)
             if prior is not None:
                 return prior
-            boundary = 'corrections:' + name + ':' + code
+            # Per tool, not per tool and code: a new code used to buy another paid correction each time.
+            boundary = 'corrections:' + name
             count = run.load(boundary) or 0
-            if count >= 1:
+            if count >= MAX_TOOL_CORRECTIONS:
                 raise RuntimeErrorSafe(code)
-            if code == 'skill_path_not_allowed':
-                answer = {'error': code, 'fields': fields,
-                    'action': 'read_file reads packaged stage skills only: ' + ', '.join(skill_files()) + '. '
-                              'For candidate source records use read_candidate_evidence with IDs from '
-                              'the supplied inventory, or search_candidate_evidence_batch for unresolved requirements. '
-                              'Primary records already returned remain in earlier tool messages. '
-                              'No candidate or host file was opened. Correct this operation once.'}
-            elif code == 'invalid_tool_arguments_json':
-                answer = {'error': code, 'fields': fields,
-                    'action': 'The tool arguments are malformed JSON. No part of this operation was executed. '
-                              'Resubmit the complete arguments as one valid JSON object with all required '
-                              'schema fields and no trailing data. Correct the syntax once; do not invent facts.'}
-            else:
-                answer = {'error': code, 'fields': fields,
-                    'action': 'Correct only the identified fields using supplied source text and the tool schema. '
-                              'Evidence IDs must come from the supplied inventory or search results. '
-                              'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
-                              'Report sections must each be at most 4000 characters. Retry this operation once.'}
+            answer = {'error': code, 'fields': fields, 'action': action_for(code)}
+            if violations:
+                # One answer carries every rule the submission broke, with the hint for each code.
+                answer['violations'] = [{'error': other, 'fields': list(other_fields),
+                                         'action': action_for(other)} for other, other_fields in violations]
             if code == 'invalid_citation' and name in {
                     'complete_requirement_set', 'complete_ad_facts', 'complete_requirements'}:
                 answer['expected_ad_source'] = {'source_id': 'ad', 'content_hash': key.ad_hash}
@@ -595,8 +615,8 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                 prior_feedback = run.load(journal_key)
                 if prior_feedback is not None:
                     return prior_feedback
-                def respond(code, fields, paths=()):
-                    return feedback(code, fields, journal_key, paths)
+                def respond(code, fields, paths=(), violations=()):
+                    return feedback(code, fields, journal_key, paths, violations)
                 if runtime.tool_call_id in message.additional_kwargs.get('jobwatch_argument_errors', {}):
                     return respond('invalid_tool_arguments_json', ['arguments'])
                 if name in schemas:
@@ -622,7 +642,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                             return respond('invalid_model_payload', oversized)
                     return handler(validate_model_payload(schema, args))
                 except CompletionError as exc:
-                    return respond(exc.code, list(exc.fields))
+                    return respond(exc.code, list(exc.fields), violations=exc.violations)
                 except (AgenticError, RuntimeErrorSafe) as exc:
                     if exc.code not in {'invalid_model_payload', 'invalid_evaluation', 'invalid_citation',
                                         'invalid_candidate_citation', 'contradictory_match', 'unretrieved_evidence',
