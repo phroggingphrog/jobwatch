@@ -69,14 +69,23 @@ def test_unknown_dispatch_is_not_automatically_retried_and_charge_survives_recov
     assert after['checkpoint']['reservations'][0]==value['checkpoint']['reservations'][0]
 
 
-def test_changed_profile_during_generation_prevents_publication(world):
-    from jobwatch.apply.paths import profile_dir
+def test_changed_approved_evidence_during_generation_prevents_publication(world, monkeypatch, tmp_path):
     conn,bundle,config=world
+    from jobwatch.interview import prep
+    from jobwatch.candidate.evidence import snapshot_evidence
+    changed_root = tmp_path / 'changed-approved-evidence'
+    changed_root.mkdir()
+    (changed_root / 'cv.md').write_text('# Synthetic\n\n## Skills\n- Prepared reports.\n')
+    changed_bundle = snapshot_evidence(changed_root)
+    calls = []
+    def approved_evidence(person):
+        calls.append(person)
+        return bundle if len(calls) == 1 else changed_bundle
+    monkeypatch.setattr(prep.approved, 'evidence', approved_evidence)
     class Changed(Writer):
         base_url = model_choice.SERVER_URL
         def chat_once(self,*a,**kw):
             result=super().chat_once(*a,**kw)
-            if len(self.calls)==2:(profile_dir()/'cv.md').write_text('# Synthetic\n\n## Skills\n- Prepared reports.\n')
             return result
     assert generate(conn,1,config,writer=Changed(bundle,payload=proposal(bundle,AD)),reviewer=Reviewer())['status']=='held'
     assert load_report(conn,1,config)['status']=='missing'
@@ -107,6 +116,8 @@ def test_late_worker_cannot_settle_or_publish_after_takeover(world):
 def test_auto_trigger_requires_interview_current_evaluation_and_no_attempt(world,monkeypatch):
     from jobwatch.interview.prep import should_prepare_after_interview
     conn,bundle,config=world
+    from jobwatch.interview import prep
+    monkeypatch.setattr(prep.approved, 'evidence', lambda person: bundle)
     context={'application':{'status':'interview'},'evaluation':{'global_score':4.0}}
     monkeypatch.setattr('jobwatch.interview.prep.capture',lambda *a:(context,AD,'a'*64))
     assert should_prepare_after_interview(conn,1,config)
@@ -132,9 +143,11 @@ def test_stricter_batch_limit_prevents_dispatch(world):
     assert result['status']=='held' and not writer.calls
 
 
-def test_queued_request_is_durable_and_only_undispatched_work_recovers(world):
+def test_queued_request_is_durable_and_only_undispatched_work_recovers(world, monkeypatch):
     from jobwatch.interview.prep import enqueue, queued_posting_ids, is_queued
     conn,bundle,config=world
+    from jobwatch.interview import prep
+    monkeypatch.setattr(prep.approved, 'evidence', lambda person: bundle)
     assert enqueue(conn,1,config) and is_queued(conn,1,config)
     before=ledger.snapshot(conn);ledger.reindex(conn)
     assert ledger.snapshot(conn)==before and queued_posting_ids(conn,config)==(1,)
@@ -144,9 +157,11 @@ def test_queued_request_is_durable_and_only_undispatched_work_recovers(world):
     assert not is_queued(conn,1,config)
 
 
-def test_source_change_before_worker_never_dispatches_unrequested_snapshot(world):
+def test_source_change_before_worker_never_dispatches_unrequested_snapshot(world, monkeypatch):
     from jobwatch.interview.prep import enqueue, queued_posting_ids
     conn,bundle,config=world
+    from jobwatch.interview import prep
+    monkeypatch.setattr(prep.approved, 'evidence', lambda person: bundle)
     enqueue(conn,1,config)
     save_inputs(conn,1,InterviewInputs(invite='Changed before dispatch'),expected_revision=0)
     writer=writer_for(bundle)
@@ -162,6 +177,8 @@ def test_committed_interview_transition_is_recovered_without_repeating_after_inp
     context={'application':{'status':'interview','interview_event_id':7},'evaluation':{'global_score':4.0}}
     identity=['a'*64]
     monkeypatch.setattr('jobwatch.interview.prep.capture',lambda *a:(context,AD,identity[0]))
+    from jobwatch.interview import prep
+    monkeypatch.setattr(prep.approved, 'evidence', lambda person: bundle)
     assert queued_posting_ids(conn,config)==(1,)
     row=conn.execute('select * from interview_runs').fetchone()
     value=json.loads(row['detail_json']);assert value['trigger_event_id']==7

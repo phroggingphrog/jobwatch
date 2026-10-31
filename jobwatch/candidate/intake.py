@@ -58,7 +58,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
          "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words",
          "gateway_not_allowed", "model_not_allowed", "model_unavailable", "parse_timeout",
-         "profile_path_outside", "profile_file_unreadable", "no_profile_version", "no_confirmed_scope",
+         "profile_path_outside", "profile_file_unreadable", "profile_file_missing", "no_profile_version", "no_confirmed_scope",
          "scope_without_basis", "profile_unreadable", "ok")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
@@ -1186,12 +1186,21 @@ def scope_state(person: str) -> tuple[SearchScope | None, str]:
                 input_hashes.pop("profile.yaml", None)
             _refuse_hand_edits(live_dir, input_hashes)
         for name, sha in (cur.get("file_sha256") or {}).items():
+            if name not in _ALLOWED:
+                continue  # Legacy records also hash generated projections, not source evidence.
             try:
                 expected = read_regular_file(_versions_root(person) / str(cur["version"]) / "evidence" / name, MAX_JSON_BYTES)
+            except FileNotFoundError:
+                raise IntakeError("profile_file_missing") from None
+            if hashlib.sha256(expected).hexdigest() != sha:
+                raise IntakeError("profile_edited_by_hand")
+            try:
                 live = _read_profile_file(live_dir, name)
             except FileNotFoundError:
-                continue
-            if hashlib.sha256(expected).hexdigest() != sha or live != expected:
+                if cur.get("adopted_from_files"):
+                    raise IntakeError("profile_file_missing") from None
+                continue  # Uploaded evidence has no live profile counterpart.
+            if live != expected:
                 raise IntakeError("profile_edited_by_hand")
         return scope, "ok"
     except IntakeError as exc:

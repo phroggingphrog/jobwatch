@@ -438,7 +438,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     def followup_draft_start(request: Request, posting_id: int, background_tasks: BackgroundTasks, channel: str = Form("email"), retry: bool = Form(False)):
         from jobwatch.followup.drafts import capture, generate
         if channel not in {'email','linkedin'}: raise HTTPException(status_code=422)
-        from jobwatch.candidate.evidence import snapshot_evidence
         from pipeline.agentic.service import enabled
         from pipeline.agentic.contracts import AgenticError
         from jobwatch.followup.events import FollowupEventError
@@ -450,7 +449,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             row=conn.execute('SELECT id FROM applications WHERE posting_id=?',(posting_id,)).fetchone()
             if row is None:raise HTTPException(status_code=404)
             application_id=row['id']
-            try: capture(conn,application_id,snapshot_evidence(apaths.profile_dir()),channel=channel)
+            try: capture(conn,application_id,None,channel=channel)
             except (AgenticError,FollowupEventError,CandidateError):
                 raise HTTPException(status_code=409,detail='Confirm the application dates, current job ad and profile before drafting.') from None
         finally:conn.close()
@@ -563,7 +562,6 @@ def create_app(config: Config | None = None) -> FastAPI:
     @app.post('/jobs/{posting_id}/interview-prep')
     def interview_start(posting_id: int, background_tasks: BackgroundTasks, retry: bool = Form(False)):
         from jobwatch.interview.prep import capture, generate
-        from jobwatch.candidate.evidence import snapshot_evidence
         from jobwatch.candidate.contracts import CandidateError
         from pipeline.agentic.contracts import AgenticError
         from pipeline.agentic.service import enabled
@@ -571,7 +569,7 @@ def create_app(config: Config | None = None) -> FastAPI:
         conn = conn_()
         try:
             interview_job(conn, posting_id)
-            try: capture(conn, posting_id, snapshot_evidence(apaths.profile_dir()), config)
+            try: capture(conn, posting_id, None, config)
             except (AgenticError, CandidateError):
                 raise HTTPException(status_code=409, detail='Check the full job ad, current profile and private interview notes before preparing.') from None
         finally: conn.close()

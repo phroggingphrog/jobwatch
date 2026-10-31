@@ -1281,10 +1281,10 @@ def _target_first(conn, config, pending):
         captured = _capture(conn, pid)
         if captured and captured[1]:
             items[pid] = (content_hash(captured[1].encode()), captured[1])
-    try:
-        profile_md = (profile_dir() / 'career_ops_profile.md').read_text(encoding='utf-8')
-    except OSError:
-        profile_md = ''
+    from jobwatch import users
+    from jobwatch.candidate import approved
+    bundle = approved.evidence(users.current())
+    profile_md = bundle.contents.get('career_ops_profile.md', b'').decode('utf-8', 'strict')
     scores = rank_by_target(conn, items, profile_md, config) if items else None
     if not scores:
         return pending[:20]

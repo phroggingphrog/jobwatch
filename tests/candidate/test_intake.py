@@ -786,6 +786,19 @@ def test_a_removed_file_or_an_added_file_does_not_turn_discovery_off(person, ful
     assert intake.discovery_scope(person) is not None
 
 
+@pytest.mark.parametrize('missing', ['live', 'approved'])
+def test_missing_recorded_evidence_closes_discovery(person, full, missing):
+    ok(person, full)
+    if missing == 'live':
+        approved_path = vdir(person, 1) / 'approved.json'
+        approved = json.loads(approved_path.read_text())
+        approved['adopted_from_files'] = True
+        approved_path.write_text(json.dumps(approved))
+    root = apaths.profile_dir() if missing == 'live' else vdir(person, 1) / 'evidence'
+    (root / 'master_resume.md').unlink(missing_ok=missing == 'live')
+    assert intake.scope_state(person) == (None, 'profile_file_missing')
+
+
 def test_discovery_scope_is_checked_as_the_person_not_the_ambient_user(person, full):
     ok(person, full)
     (apaths.profile_dir() / 'master_resume.md').write_text('edited source\n')

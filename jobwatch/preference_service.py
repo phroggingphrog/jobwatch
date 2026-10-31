@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from hashlib import sha256
 from pipeline.agentic import service
+from jobwatch.candidate import approved as approved_reader
 from pipeline.agentic.contracts import AgenticEvaluation
 from pipeline.agentic.runtime import validate_model_payload
 from pipeline.agentic.persistence import latest_result
@@ -48,8 +49,7 @@ def current_runs(conn, config):
     approved_hash = digest(approved) if approved else None
     cfg, policy = service._config(config), service.default_policy()
     dp = policy_for(users.current(), approved=approved) if approved else None
-    bundle = service.snapshot_evidence(service.profile_dir())
-    service.verify_evidence_snapshot(bundle)
+    bundle = approved_reader.evidence(users.current())
     inputs = service.load_inputs(bundle, cfg)
     structural = service.analyse_candidate(bundle, *inputs, policy)
     identity = preference_context(bundle=bundle, policy=policy, cfg=cfg, structural=structural)
