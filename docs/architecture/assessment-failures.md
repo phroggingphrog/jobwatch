@@ -430,3 +430,105 @@ that corrected requirements complete normally with zero-call completed reuse.
 
 The paid attempt remains held and its journals and charges are retained. This
 source repair does not authorize a paid retry, deployment or service activation.
+
+## Historical incident verification: 2026-10-31 (TASK-415)
+
+The investigation used read-only SQLite connections and retained journals. It did
+not collect jobs, assess jobs, change incidents, enable timers, or call a provider.
+The running API process environment identifies the service database as
+`~/.local/share/jobwatch-native/jobwatch.db`. The checkout default is not the
+service database.
+
+The database contains 10,055 postings and 60 paused incidents: 34 collection
+`execution_failed`, 14 `deadline_exceeded`, 6 `turn_limit`, 4 `token_limit`,
+1 `invalid_evaluation`, and 1 `invalid_model_payload`. Released incidents are
+separate. The latest 20 collection invocations completed. Completion does not
+prove that every collector succeeded: recent run summaries include partial and
+error results.
+
+### Collection evidence
+
+The 34 failed collection invocations occurred on 2026-10-28, from 05:00:31 UTC
+to 14:20:38 UTC. Timestamp correlation maps them to runs 92–125. All 34 run
+summaries retain `ModuleNotFoundError`. Fast and slow runs overlap, so timestamp
+joins alone can produce multiple candidates. These summaries lack direct
+invocation linkage and call-site provenance.
+
+Revision `2b65652` moved utilities but retained incorrect relative imports.
+Revision `a7399b3` corrects those imports and adds real-import regression tests.
+The retained exception classes, incident window, and source history support this
+cause. The journal starts on 2026-10-29; it cannot prove the missing module for
+each earlier incident. Do not claim that all 34 have individual traceback proof.
+
+Two retained `CollectionDeadline` tracebacks on 2026-10-29 at 17:07 and 17:14 UTC
+come from Reddit HTTP pacing. They describe later deadline exhaustion, not the
+34 import failures. Revision `a64c5f7` adds cooperative collection budgets.
+Current source retains a 780-second fast shared budget and a 2,100-second slow
+shared budget. Assessment receives only the remaining time. No budget changed
+in this repair.
+
+### Assessment evidence
+
+The 14 paused deadline records refer to historical activity. Incident creation
+can occur during reconciliation, after the original failure. Checkpoint deadlines
+remain authoritative; an incident timestamp is not the original execution time.
+
+The 6 turn-limit checkpoints show evaluator counts of 21–23. Counts can span
+roles or restored work; they are not proof that the current native graph exceeds
+its configured limit. The historical multi-role path differs from the current
+native graph. No new turn-limit defect was established.
+
+The 4 paused token-limit checkpoints have a 1,500,000-token job ceiling, but batch
+ceilings of 156,776 or 51,012. Charged usage is below those ceilings. A conservative
+reservation can fail before charged usage reaches a ceiling. Therefore these
+records do not establish that the job limit was exhausted. Current reservation
+code checks both job and batch ceilings and preserves checkpoint accounting.
+
+The retained posting 2143 summary has report B length 4,971. Canonical validation
+permits 4,000. This independently confirms the earlier terminal-schema mismatch.
+Current native completion advertises and checks the section limit before
+canonical assembly. The existing synthetic 4,971-character regression covers it.
+No paid recovery of this posting was performed.
+
+Posting 4602 has separate historical failures. Its latest paused attempt ended
+`invalid_model_payload` on 2026-10-30 at 00:25:58 UTC. The retained native journal
+has two `complete_requirements` responses. Local schema validation rejects both
+at `requirements.requirements.9`. The feedback incorrectly described the entire
+requirements container. Revision `2c7b57c` corrects this feedback to identify the
+entry path. Current source contains that repair. This proves a feedback repair,
+not that a provider will return valid output on another attempt.
+
+No assessment activity occurred today, using Australia/Melbourne midnight.
+The fast and slow service commands use `--collect-only`; the reader timer is
+disabled. These controls explain the missing automatic assessments. Operational
+settings explicitly contain `null` daily and per-job limits. That setting does
+not authorize spending, remove batch limits, or authorize timer changes.
+
+The service checkout is `4647ad1`. Its virtual environment uses an editable
+installation. Source inspection confirms the earlier repairs in that checkout.
+This evidence does not prove that a running API process reloaded every module.
+The proposed TASK-415 changes are not deployed.
+
+### Safe repair and recovery proposal
+
+Run summaries now retain the passed invocation ID, exception class, and deepest
+internal module/function. They exclude exception text, paths, and local values.
+This closes the observed historical correlation gap without changing budgets.
+Issue #51 records that gap. Issues #34–39 and #50 remain separate evidence.
+
+`python -m pipeline.agentic.recovery /absolute/path/to/jobwatch.db` opens SQLite
+read-only and enables `query_only`. It proposes per-cause evidence requirements.
+It never releases incidents, creates tables, or treats later success as recovery.
+The live dry run returned all 60 pauses with action `retain_pause` and evidence
+status `not_verified`. Its output stays outside Git.
+
+Collection recovery requires matched invocation evidence and an import regression.
+Deadline recovery requires a bounded checkpoint plan without deadline renewal.
+Turn recovery requires terminal progress within existing limits. Token recovery
+requires job, batch, and reservation reconciliation within existing limits.
+Invalid-output recovery requires a synthetic validation or protocol regression.
+Every live recovery still requires explicit authorization. No silent release,
+paid retry, reader activation, merge, or deployment forms part of this repair.
+
+Undo: revert the TASK-415 source commit. The repair performs no data migration.
+Full release testing and provider acceptance remain outside this bounded change.

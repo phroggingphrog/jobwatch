@@ -157,6 +157,18 @@ def ai_budget(started: float, config: Config | None = None, tier: str = "fast") 
     return min(left, own) if isinstance(own, (int, float)) and own > 0 else left
 
 
+def failure_provenance(exc: BaseException) -> dict:
+    """Keep the internal call site, never exception text, paths, or frame locals."""
+    result = {'exception_type': type(exc).__name__}
+    trace = exc.__traceback__
+    while trace is not None:
+        module = trace.tb_frame.f_globals.get('__name__', '')
+        if isinstance(module, str) and module.startswith(('jobwatch.', 'pipeline.')):
+            result.update(origin_module=module, origin_function=trace.tb_frame.f_code.co_name)
+        trace = trace.tb_next
+    return result
+
+
 def run(config: Config, tier: str, dry_run: bool = False, only: str | None = None,
         limit: int | None = None, printer=print, now=None, *, assess: bool = True,
         deadline: float | None = None, run_id: str | None = None) -> dict:
@@ -172,6 +184,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
     ai: dict = {}
     http = None
     error = None
+    provenance = None
     try:
         from pipeline.agentic import discovery
         # The scope projection is read-only and unpaid, including dry runs.
@@ -230,12 +243,16 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                     pass
     except BaseException as exc:                # recorded, then raised again: a crashed run must not look like an empty one
         error = type(exc).__name__              # the class only: a message could hold anything
+        provenance = failure_provenance(exc)
         raise
     finally:
         summary = {"run_id": run_id, "collectors": [{k: v for k, v in r.items() if k != "health"} for r in results],
                    "alerts": note, "ai": ai, "pruned": pruned, "requests": http.requests_made if http else 0}
+        if discovery_run_id is not None:
+            summary['invocation_id'] = discovery_run_id
         if error:
             summary["error"] = error
+            summary['failure_provenance'] = provenance
         try:
             dbm.finish_run(conn, run_id, summary)
         finally:
