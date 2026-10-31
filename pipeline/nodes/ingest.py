@@ -82,6 +82,7 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         can_fetch = bool(fetcher) or (host and fetch_budget > 0 and host not in blocked
                                       and per_host.get(host, 0) < PER_HOST_FETCHES and adtext.wants_fetch(conn, r))
         try:
+            adtext._note(None)                  # 'gone' below must come from this posting's fetch, not an earlier one
             text, kind = adtext.ensure_text(conn, r, fetcher, allow_fetch=bool(can_fetch), deadline=deadline)
         except adtext.Blocked as exc:           # the site said stop: no more requests to it this run
             blocked.add(host)
