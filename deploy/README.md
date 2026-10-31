@@ -9,9 +9,11 @@ nothing restarts by itself.
 
 Undo: `ln -sfn <previous target> ~/apps/jobwatch-release` (the script prints the exact command).
 
-Install the two drop-ins in `systemd/` as
-`~/.config/systemd/user/jobwatch-native-{fast,slow}.service.d/60-release-copy.conf`, then
-`systemctl --user daemon-reload`. Do not restart a running unit.
+Install the drop-ins in `systemd/` (`jobwatch-<unit>-release.conf`) as
+`~/.config/systemd/user/<unit>.service.d/60-release-copy.conf` for `jobwatch-native-fast`, `jobwatch-native-slow`,
+`jobwatch-native-web`, `jobwatch-agent` and `jobwatch-mcp-app`, then
+`systemctl --user daemon-reload`. Timers pick up a release on their next run; the long-running servers (web, agent,
+MCP app, connector) pick it up only when restarted.
 
 The ChatGPT connector runs from the release copy too: install `systemd/jobwatch-connector-http.service` as
 `~/.config/systemd/user/jobwatch-connector-http.service`, `daemon-reload`, then restart that one unit (it is a
