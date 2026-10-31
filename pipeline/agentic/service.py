@@ -86,7 +86,8 @@ def agentic_settings(config) -> dict:
 
 def enabled(config) -> bool:
     from jobwatch.execution_mode import effective_mode
-    return effective_mode(config) == 'agentic'
+    # 'screened' keeps the agentic evaluator, but reaches it only through pipeline.screened.promote
+    return effective_mode(config) in ('agentic', 'screened')
 
 
 def _config(config):

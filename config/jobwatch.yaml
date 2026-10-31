@@ -42,6 +42,10 @@ pipeline:
   drafts_per_run: 3       # node 5: cost cap; the rest wait for the next run
   drafts_per_day: 10      # node 5: cost cap over 24 h across all runs (about $17/day at $1.70 a draft)
   concurrency: 6
+  screened:               # used only when execution_mode is screened
+    promote_per_run: 3    # shortlisted jobs sent to the agentic evaluator per run
+    promote_per_day: 10   # same, over 24 h
+    min_score: 3.0        # technical default, not an owner number
   agentic:
     # Live since a58b444 (owner-enabled).
     # Legacy flag; use pipeline.execution_mode for dispatch and rollback.

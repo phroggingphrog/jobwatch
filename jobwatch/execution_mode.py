@@ -7,7 +7,7 @@ def effective_mode(config) -> str:
     pipeline = root.get('pipeline', root)
     mode = pipeline.get('execution_mode')
     if mode is not None:
-        if mode not in ('off', 'reader', 'pipeline', 'agentic'):
+        if mode not in ('off', 'reader', 'pipeline', 'agentic', 'screened'):
             raise ValueError('invalid_execution_mode')
         return mode
     # Preserve the old precedence. An explicit mode supersedes both old flags.

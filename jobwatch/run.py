@@ -242,6 +242,10 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                         collector_run_id=run_id, deadline=deadline, run_id=discovery_run_id)}
                 elif mode == 'pipeline':
                     ai = {"pipeline": graph.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))}
+                elif mode == 'screened':
+                    from pipeline import screened
+                    ai = {"screened": screened.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
+                        deadline=deadline)}
                 elif mode == 'reader':
                     ai = reader.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))
                 else:

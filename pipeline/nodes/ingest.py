@@ -103,6 +103,11 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
                 adtext.pace()
             elif deadline > time.time():
                 adtext.pace(min(2.5, deadline-time.time()))
+        if kind != "full" and can_fetch and adtext.last_status() == "gone":     # the ad is closed: no model, never asked again
+            store.admit(conn, r["id"], f"closed:{r['id']}", {}, Stage.ARCHIVED, "posting_closed")
+            stats["closed"] = stats.get("closed", 0) + 1
+            conn.commit()
+            continue
         if kind != "full":
             stats["waiting_text"] += 1
             continue
