@@ -52,7 +52,7 @@ def reconsider(conn, policy, *, limit: int = 500) -> int:
         if store.is_current(conn, pid, engine.rules_hash):
             continue
         row = _row(conn, pid)
-        if row is None or row["closed_at"] if "closed_at" in row.keys() else False:
+        if row is None or ("closed_at" in row.keys() and row["closed_at"]):
             continue
         out = engine.screen(conn, pid, fields_of_row(row, _ad_text(conn, row)), stage="full")
         if not out.skip and store.readmit(conn, pid, "prescreen_reconsider"):

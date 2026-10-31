@@ -419,6 +419,17 @@ def test_disabling_a_term_readmits_through_reconsider(conn, tmp_path, pinned):
     store.set_term_enabled(conn, store.latest_decision(conn, 1)['term_id'], False)
     assert lifecycle.reconsider(conn, accountant()) == 1
 
+def test_reconsider_skips_a_deleted_prescreened_posting(conn, monkeypatch):
+    from types import SimpleNamespace
+    from pipeline import store as pipeline_store
+    pipeline_store.ensure(conn)
+    conn.execute("PRAGMA foreign_keys=OFF")
+    conn.execute("INSERT INTO pipeline_state(posting_id,stage,content_hash,data_json,reason,updated_at) "
+                 "VALUES(404,'archived','missing','{}','prescreened','2026-01-01')")
+    conn.execute("PRAGMA foreign_keys=ON")
+    monkeypatch.setattr(lifecycle, 'Engine', SimpleNamespace(load=lambda *a: SimpleNamespace(rules_hash='current')))
+    assert lifecycle.reconsider(conn, accountant()) == 0
+
 
 def test_screen_ingested_archives_a_queued_mismatch(conn):
     from pipeline import store as pstore
