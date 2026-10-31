@@ -15,15 +15,19 @@ def _profile(folder, hours):
     return folder
 
 
-def test_pin_redirects_the_person_readers(tmp_path, monkeypatch):
+def test_pin_cannot_redirect_approved_person_readers(tmp_path, monkeypatch):
+    from jobwatch.candidate import approved, intake
     live = _profile(tmp_path / "live", 48)
     frozen = _profile(tmp_path / "frozen", 20)
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(live))
+    monkeypatch.setattr(intake, 'current_version', lambda person: {'version': 1})
+    monkeypatch.setattr(approved, 'settings', lambda person, name: {
+        'candidate': {'work_rights': {'hours_limit_per_fortnight': 48}}})
     assert person.hours_limit_per_fortnight() == 48
     with paths.pin_profile_dir(frozen):
         assert paths.profile_dir() == frozen
-        assert person.hours_limit_per_fortnight() == 20
+        assert person.hours_limit_per_fortnight() == 48
     assert paths.profile_dir() == live
     assert person.hours_limit_per_fortnight() == 48
 

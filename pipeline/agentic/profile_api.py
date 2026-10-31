@@ -17,6 +17,8 @@ UPLOAD_PATH = PREFIX + '/uploads'
 UPLOAD_BODY_CAP = intake.MAX_UPLOAD_BYTES + 64 * 1024     # file cap plus multipart framing; the exact file cap is intake's
 STATUS = {'proposal_in_progress': 409, 'proposal_parsing': 409, 'parse_interrupted': 409, 'not_person_words': 422, 'proposal_changed': 409, 'scope_changed': 409, 'adopt_first': 409, 'proposal_not_draft': 409,
           'already_adopted': 409, 'profile_incomplete': 409, 'profile_edited_by_hand': 409,
+          'profile_path_outside': 409, 'profile_file_unreadable': 409, 'profile_file_missing': 409, 'profile_unreadable': 409,
+          'no_profile_version': 409, 'no_confirmed_scope': 409, 'scope_without_basis': 409, 'ok': 200,
           'too_large': 413, 'unsupported_type': 415,
           'no_extractable_text': 422, 'invalid_edit': 422, 'parse_failed': 422, 'unreadable_document': 422,
           'nothing_to_adopt': 422,

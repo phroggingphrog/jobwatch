@@ -197,7 +197,8 @@ def current_policy_digest(conn, policy):
     if current_policy is None or current_policy != policy:
         return None
     config = load_config()
-    cfg, bundle, target = runtime_config(config), snapshot_evidence(profile_dir()), default_policy()
+    from pipeline.agentic.service import _approved_evidence
+    cfg, bundle, target = runtime_config(config), _approved_evidence(users.current()), default_policy()
     structural = analyse_candidate(bundle, *load_inputs(bundle, cfg), target)
     return current_digest(conn, bundle=bundle, policy=target, cfg=cfg, structural=structural,
                           approved_profile=approved)

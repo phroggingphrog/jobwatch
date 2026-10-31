@@ -208,13 +208,8 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                 from .candidate import intake
                 scope, why = intake.scope_state(users.current())
                 if scope is None:
-                    # No tier assesses without a confirmed scope, but the run is not wasted: the ad text a later
-                    # read needs is fetched now, with no model call. Skipping everything was all-or-nothing and it
-                    # left a confirmed profile paying for the fetch later.
-                    from . import reader as reader_mod
-                    fetched = reader_mod.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
-                                                       fetch_only=True)
-                    ai = {'skipped': why, 'text_only': fetched.get('review', {})}
+                    # Collection remains independent, but no reader or pipeline tier may run without confirmed scope.
+                    ai = {'skipped': why, 'text_only': {}}
                 elif mode == 'agentic':
                     ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
                         collector_run_id=run_id, deadline=deadline, run_id=discovery_run_id)}

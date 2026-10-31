@@ -58,7 +58,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
          "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words",
          "gateway_not_allowed", "model_not_allowed", "model_unavailable", "parse_timeout",
-         "profile_path_outside", "profile_file_unreadable", "no_profile_version", "no_confirmed_scope",
+         "profile_path_outside", "profile_file_unreadable", "profile_file_missing", "no_profile_version", "no_confirmed_scope",
          "scope_without_basis", "profile_unreadable", "ok")
 SECTIONS = ("experience", "education", "skill", "transferable_skill", "employment_status", "availability",
             "preference", "constraint", "exclusion", "work_rights", "location", "career_focus")
@@ -449,20 +449,21 @@ def _add_unknowns(facts: list[ProfileFact], questions: list[Question], sections)
 
 
 # One parse per person at a time, across the chat tools, the API and the sync entry (in-process, like the API's old set).
-_inflight: set[str] = set()
+_inflight: dict[str, str] = {}
 _inflight_lock = threading.Lock()
 
 
-def _claim(person: str) -> None:
+def _claim(person: str, owner: str = "profile intake") -> None:
     with _inflight_lock:
-        if person in _inflight:
+        current = _inflight.get(person)
+        if current:
             raise IntakeError("proposal_in_progress")
-        _inflight.add(person)
+        _inflight[person] = owner
 
 
 def _release(person: str) -> None:
     with _inflight_lock:
-        _inflight.discard(person)
+        _inflight.pop(person, None)
 
 
 def propose(person: str, upload_ids: list[str], llm: LLM, *, base_version: int | None = None,
@@ -889,45 +890,29 @@ def versions(person: str) -> list[dict]:
 
 
 def _write_profile(pdir: Path, files: dict[str, str]) -> None:
-    """Project into profile/ (the one sanctioned writer: guard_write forbids code writes there): stage every file
-    next to its target, then swap them in, so a failure part-way leaves no half-written file."""
-    missing = []
-    cur = pdir
-    while not cur.exists():
-        missing.append(cur)
-        cur = cur.parent
-    for d in reversed(missing):
-        d.mkdir(mode=0o700, exist_ok=True)
-    staged = []
-    try:
-        for name, text in files.items():
-            fd, tmp = tempfile.mkstemp(dir=pdir, prefix=".tmp-")
-            staged.append((tmp, pdir / name))
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(text.encode("utf-8"))
-            os.chmod(tmp, 0o600)
-        for tmp, dest in staged:
-            os.replace(tmp, dest)
-    finally:
-        for tmp, _ in staged:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
+    """Write projections only inside an immutable version directory."""
+    if pdir.resolve() == apaths.profile_dir().resolve():
+        raise IntakeError("profile_read_only")
+    for name, text in files.items():
+        _write_private(pdir / name, text.encode("utf-8"))
+
+
+def _publish_projections(pdir: Path, files: dict[str, str]) -> None:
+    """Publish version projections while retaining the crash-recovery hook."""
+    if pdir.resolve() == apaths.profile_dir().resolve():
+        raise IntakeError("profile_read_only")
+    _write_private(pdir / "profile.yaml", files["profile.yaml"].encode("utf-8"))
 
 
 # Only files this module derives may be rewritten from a parse. A resume is a SOURCE document: projecting it
 # replaced the person's own words with whatever the parser captured, which is data loss dressed as a projection.
-_PROJECTED = ("profile.yaml", "interests_and_criteria.yaml")
-_EVIDENCE = ("profile.yaml",)          # the projected files the evidence snapshot reads (the resume is the person's own)
-_STALE_ANNOTATIONS = ("evidence.yaml",)    # annotations of the exact text they were made from: a rewritten
-#                                             profile.yaml or resume cannot keep them (snapshot: annotation_invalid)
+_PROJECTED = ("profile.yaml", "interests_and_criteria.yaml", "master_resume.md")
+_EVIDENCE = ()
 
 
 def _finish(person: str, cur: Proposal, pdir: Path, files: dict[str, str]) -> None:
     """The steps after the version exists; each is idempotent, so a retry after a crash completes them.
-    Order: projection, proposal confirmed, other drafts superseded."""
-    _write_profile(pdir, files)
+    The published version is immutable; only proposal states remain to be updated."""
     save_proposal(person, cur.model_copy(update={"status": "confirmed"}))
     for other in (p.stem for p in (_root(person) / "proposals").glob("*.json") if p.stem != cur.id and _ID.match(p.stem)):
         with _locked(person, other + ".lock", "proposals"):          # versions.lock is outermost: no lock cycle
@@ -950,18 +935,18 @@ def _read_profile_file(pdir: Path, name: str) -> bytes:
     return read_regular_file(real, MAX_JSON_BYTES)
 
 def _refuse_hand_edits(pdir: Path, recorded: dict) -> None:
-    """Live profile/ files must still match the hashes the current version recorded."""
+    """Live person input files must still match the hashes recorded at adoption."""
     for name, sha in recorded.items():
         try:
             live = hashlib.sha256(_read_profile_file(pdir, name)).hexdigest()
         except FileNotFoundError:
-            continue                                       # removed: nothing of the person's to overwrite
+            continue
         except IntakeError:
             raise
         except (OSError, ValueError):
             raise IntakeError("profile_file_unreadable") from None
         if live != sha:
-            raise IntakeError("profile_edited_by_hand")    # an unapproved hand edit: never silently overwritten
+            raise IntakeError("profile_edited_by_hand")
 
 
 def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest: str,
@@ -969,8 +954,8 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
     """Approve the draft the person was shown. Returns the new version number.
 
     Under the proposal's own lock (the one edit/answer use) it re-checks status, digest and scope; then writes
-    profile-versions/<n>/ (approved.json, projected files, evidence snapshot), projects into profile/ and marks
-    the proposal confirmed. Nothing is written if any check fails."""
+    profile-versions/<n>/ (approved.json, projections, evidence snapshot) and marks the proposal confirmed.
+    It does not write to the person's profile/ directory."""
     if actor != "person":
         raise IntakeError("person_required")           # model text or an agent is never approval
     load_proposal(person, proposal_id)                 # validates the id before it names a lock file
@@ -988,23 +973,33 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         if not scope.basis:
             raise IntakeError("profile_incomplete")        # nothing to search for: discovery cannot be turned on from this
         nums = _numbers(person)
-        pdir = apaths.profile_dir()
+        with users.use(person):
+            pdir = apaths.profile_dir()
         last = _approved(person, nums[-1]) if nums else {}
         if nums:
             if last.get("proposal_id") == cur.id and last.get("proposal_digest") == proposal_digest \
                     and last.get("scope_digest") == scope_digest:
                 # an earlier call died after writing this version: finish the remaining steps, never mint another
-                vdir = _versions_root(person) / str(nums[-1])
-                files = {k: read_regular_file(vdir / k, MAX_JSON_BYTES).decode("utf-8") for k in _PROJECTED}
-                _finish(person, cur, pdir, files)
+                _finish(person, cur, _versions_root(person) / str(nums[-1]), {})
                 return nums[-1]
         if cur.base_version != (nums[-1] if nums else None):
             raise IntakeError("proposal_changed")      # built on no version or an old one: not on the current version
-        # hand-made files would change the evidence snapshot or be overwritten; adopt_existing brings them in
-        recorded = last.get("file_sha256") or {}              # what the last version left in profile/, by hash
-        mine = (_PROJECTED + tuple(recorded)) if nums else ()
-        _refuse_hand_edits(pdir, recorded)
-        if any(os.path.lexists(pdir / name) for name in dict.fromkeys(_ALLOWED + _PROJECTED) if name not in mine):
+        recorded = last.get("file_sha256") or {}
+        with users.use(person):
+            pdir = apaths.profile_dir()
+            input_hashes = recorded
+            _refuse_hand_edits(pdir, input_hashes)
+        if nums and any(os.path.lexists(pdir / name) and name not in recorded for name in _ALLOWED):
+            raise IntakeError("adopt_first")
+        for name in _ALLOWED:
+            if name in _PROJECTED and name != "master_resume.md":
+                continue
+            if name in recorded and os.path.lexists(pdir / name):
+                with users.use(person):
+                    pdir = apaths.profile_dir()
+                    if hashlib.sha256(_read_profile_file(pdir, name)).hexdigest() != recorded[name]:
+                        raise IntakeError("profile_edited_by_hand")
+        if not nums and any(os.path.lexists(pdir / name) for name in _ALLOWED + _PROJECTED):
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
         facts, open_questions = _reconciled(cur)
@@ -1012,46 +1007,73 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         facts = carry_facts(last, facts)
         approved = {"schema": 1, "version": n, "proposal_id": cur.id, "proposal_digest": proposal_digest, "revision": cur.revision,
                     "base_version": cur.base_version, "actor": "person", "uploads": list(cur.uploads),
+                    **({"adopted_from_files": True,
+                        "file_sha256": {k: v for k, v in last.get("file_sha256", {}).items() if k not in _PROJECTED},
+                        "profile_inputs_hash": last.get("profile_inputs_hash")} if last.get("adopted_from_files") else {}),
                     "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "scope": scope.model_dump(mode="json"), "scope_digest": scope_digest,
                     "facts": [f.model_dump(mode="json") for f in facts],
                     "open_questions": [q.model_dump(mode="json") for q in open_questions]}
         files = projection.project(approved)
-        dropped_annotations = ()
+        cur_upload_shas = set(cur.uploads)
+        meta = None
+        original_bytes = b""
+        if cur_upload_shas:
+            try:
+                upload_index = _read_json(_root(person) / "uploads.json", {})
+                meta = next((item for item in upload_index.values() if item.get("sha256") in cur_upload_shas), None)
+                if meta is None:
+                    raise FileNotFoundError
+                original_bytes = read_regular_file(_root(person) / "uploads" / (meta["sha256"] + meta["ext"]), MAX_UPLOAD_BYTES)
+            except (OSError, ValueError, KeyError):
+                raise IntakeError("unreadable_document") from None
         root = ensure_dir(_versions_root(person))
         stage = root / (".staging-" + secrets.token_hex(8))
         try:
             ensure_dir(stage)
             for name, text in files.items():
                 _write_private(stage / name, text.encode("utf-8"))
-                if name in _EVIDENCE:
-                    _write_private(stage / "evidence" / name, text.encode("utf-8"))
             carried = {}                                       # unchanged files the projection does not write (adopted extras)
             for name in recorded:
-                if name not in files and name in _ALLOWED + _PROJECTED and os.path.lexists(pdir / name):
-                    carried[name] = read_regular_file(_versions_root(person) / str(nums[-1]) / name, MAX_JSON_BYTES)
-                    _write_private(stage / name, carried[name])
+                if name not in files and name in _ALLOWED + _PROJECTED and nums:
+                    if name in _PROJECTED:
+                        continue
+                    source = _versions_root(person) / str(nums[-1]) / Path("evidence") / name
+                    try:
+                        carried[name] = read_regular_file(source, MAX_JSON_BYTES)
+                    except FileNotFoundError:
+                        continue
                     if name in _ALLOWED:
                         _write_private(stage / "evidence" / name, carried[name])
-            try:
-                bundle = snapshot_evidence(stage / "evidence")
-            except CandidateError as exc:
-                # A recorded annotation set describes the exact text it was made from. Once the projection rewrites that
-                # text the mixed bundle is invalid (annotation_invalid), so those annotations are replaced instead of
-                # failing the confirmation: a rewritten profile cannot be annotated by the old one.
-                stale = [name for name in carried if name in _STALE_ANNOTATIONS]
-                if str(exc) != "annotation_invalid" or not stale:      # CandidateError carries its code as its message
-                    raise
-                for name in stale:
-                    # Keep the person's annotations on disk and in the version. They are marked stale, so no
-                    # reader trusts them, but nothing is destroyed: they are the gold data, and a later resume or
-                    # a repaired parser can use them again.
-                    (stage / "evidence" / name).unlink(missing_ok=True)
-                dropped_annotations = tuple(stale)
-                bundle = snapshot_evidence(stage / "evidence")
+            if nums:
+                shutil.copytree(_versions_root(person) / str(nums[-1]) / "evidence", stage / "evidence",
+                                dirs_exist_ok=True, ignore=shutil.ignore_patterns(".tmp-*"))
+            else:
+                with users.use(person):
+                    pdir = apaths.profile_dir()
+                    if pdir.is_dir():
+                        shutil.copytree(pdir, stage / "evidence", dirs_exist_ok=True,
+                                        ignore=shutil.ignore_patterns(".tmp-*", "interests_and_criteria.yaml"))
+            if meta and not any((stage / "evidence" / name).exists() for name in ("cv.md", "master_resume.md")):
+                name = "cv.md" if meta["ext"] in (".md", ".txt") else "master_resume.md"
+                _write_private(stage / "evidence" / name, original_bytes)
+                if name == "cv.md":
+                    (stage / "evidence" / "cv.md").rename(stage / "evidence" / "master_resume.md")
+            bundle = snapshot_evidence(stage / "evidence")
             approved["evidence_bundle_hash"] = bundle.bundle_hash
             approved["file_sha256"] = {k: hashlib.sha256(v).hexdigest() for k, v in sorted(
-                {**{k: t.encode("utf-8") for k, t in files.items()}, **carried}.items())}
+                {**carried, **{name: raw for name, raw in bundle.contents.items()}}.items())}
+            if last.get("adopted_from_files"):
+                approved["adopted_from_files"] = True
+                approved["file_sha256"] = dict(recorded)
+                if last.get("profile_inputs_hash"):
+                    approved["profile_inputs_hash"] = last["profile_inputs_hash"]
+            if last.get("profile_inputs_hash") and not last.get("adopted_from_files"):
+                approved["profile_inputs_hash"] = last["profile_inputs_hash"]
+                approved["file_sha256"].pop("profile.yaml", None)
+            elif nums and "profile.yaml" in last.get("file_sha256", {}):
+                approved["profile_inputs_hash"] = last["file_sha256"]["profile.yaml"]
+                approved["file_sha256"].pop("profile.yaml", None)
             for name, raw in bundle.contents.items():
                 _write_private(stage / "evidence" / name, raw)
             _write_private(stage / "approved.json", json.dumps(approved, sort_keys=True, ensure_ascii=False, indent=1).encode("utf-8"))
@@ -1059,37 +1081,38 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         except BaseException:
             shutil.rmtree(stage, ignore_errors=True)
             raise
-        _finish(person, cur, pdir, files)
-        # Stale annotations stay on disk. They are the person's own gold data and the snapshot no longer reads
-        # them, so deleting them bought nothing and destroyed the only copy of months of curated evidence.
+        _finish(person, cur, root / str(n), files)
     return n
 
 
 def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
-    """Make the person's hand-made profile/ files version 1 without rewriting them (no projection).
+    """Make the person's hand-made profile/ files version 1 without rewriting them.
 
-    The files are copied into profile-versions/1/ (and its evidence snapshot) as they are; approved.json records
-    adopted_from_files and file_sha256 (a later confirm refuses if a file changed since). The version holds no facts, so
-    an amendment against it carries no 'replaces' notes. Refused once any version exists, or when there is nothing to adopt."""
+    Person inputs and evidence annotations are copied into the evidence directory. Derived settings remain version files."""
     if actor != "person":
         raise IntakeError("person_required")
     with users.use(person), _locked(person, "versions.lock"):
-        # Adopting again is allowed on purpose: a person repairs their files and adopts the repair as the next
-        # version. History and overwrite protection are the point, and refusing stranded anyone whose first
-        # adoption captured a bad state. Every earlier version stays readable.
         version = (max(_numbers(person)) if _numbers(person) else 0) + 1
         pdir = apaths.profile_dir()
         found = {}
-        for name in dict.fromkeys(_ALLOWED + _PROJECTED):
+        for name in _ALLOWED:
             if os.path.lexists(pdir / name):
                 try:
                     found[name] = _read_profile_file(pdir, name)
                 except (OSError, ValueError):
                     raise IntakeError("unreadable_document") from None   # a symlink or oversized file is not adopted
         if not found:
+            if _numbers(person):
+                raise IntakeError("already_adopted")
             raise IntakeError("nothing_to_adopt")
+        if version > 1:
+            previous = _approved(person, version - 1)
+            hashes = {name: hashlib.sha256(raw).hexdigest() for name, raw in found.items()}
+            if not previous.get("adopted_from_files") or hashes == previous.get("file_sha256"):
+                raise IntakeError("already_adopted")
         approved = {"schema": 1, "version": version, "proposal_id": None, "actor": "person", "adopted_from_files": True,
                     "adopted_files": sorted(found), "file_sha256": {k: hashlib.sha256(v).hexdigest() for k, v in sorted(found.items())},
+                    "profile_inputs_hash": hashlib.sha256(found.get("profile.yaml", b"")).hexdigest() if "profile.yaml" in found else None,
                     "uploads": [], "confirmed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "facts": [], "open_questions": []}
         root = ensure_dir(_versions_root(person))
@@ -1097,9 +1120,11 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
         try:
             ensure_dir(stage)
             for name, raw in found.items():
-                _write_private(stage / name, raw)
                 if name in _ALLOWED:
                     _write_private(stage / "evidence" / name, raw)
+                elif name == "profile.yaml":
+                    _write_private(stage / name, raw)
+            # Keep the person's input copy only in the evidence snapshot.
             try:
                 bundle = snapshot_evidence(stage / "evidence")
                 approved["evidence_bundle_hash"] = bundle.bundle_hash
@@ -1147,8 +1172,36 @@ def scope_state(person: str) -> tuple[SearchScope | None, str]:
             return None, "scope_without_basis"
         if _scope_digest(scope) != cur["scope_digest"]:
             return None, "scope_changed"
-        with users.use(person):                            # profile/ is the person's own, whoever asks
-            _refuse_hand_edits(apaths.profile_dir(), cur.get("file_sha256") or {})
+        if cur.get("profile_inputs_hash"):
+            with users.use(person):
+                profile_file = apaths.profile_dir() / "profile.yaml"
+                if cur.get("adopted_from_files") and not profile_file.is_file():
+                    return None, "profile_edited_by_hand"
+                if profile_file.is_file() and hashlib.sha256(read_regular_file(profile_file, MAX_JSON_BYTES)).hexdigest() != cur["profile_inputs_hash"]:
+                    return None, "profile_edited_by_hand"
+        with users.use(person):
+            live_dir = apaths.profile_dir()
+            input_hashes = dict(cur.get("file_sha256") or {})
+            if cur.get("profile_inputs_hash"):
+                input_hashes.pop("profile.yaml", None)
+            _refuse_hand_edits(live_dir, input_hashes)
+        for name, sha in (cur.get("file_sha256") or {}).items():
+            if name not in _ALLOWED:
+                continue  # Legacy records also hash generated projections, not source evidence.
+            try:
+                expected = read_regular_file(_versions_root(person) / str(cur["version"]) / "evidence" / name, MAX_JSON_BYTES)
+            except FileNotFoundError:
+                raise IntakeError("profile_file_missing") from None
+            if hashlib.sha256(expected).hexdigest() != sha:
+                raise IntakeError("profile_edited_by_hand")
+            try:
+                live = _read_profile_file(live_dir, name)
+            except FileNotFoundError:
+                if cur.get("adopted_from_files"):
+                    raise IntakeError("profile_file_missing") from None
+                continue  # Uploaded evidence has no live profile counterpart.
+            if live != expected:
+                raise IntakeError("profile_edited_by_hand")
         return scope, "ok"
     except IntakeError as exc:
         return None, (exc.args[0] if exc.args else "profile_invalid")

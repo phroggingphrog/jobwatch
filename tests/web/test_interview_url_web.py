@@ -47,7 +47,9 @@ def test_closed_url_paste_recovery_and_origin(prep_client,monkeypatch):
 
 
 def test_saved_description_survives_missing_profile_and_validation_error(prep_client):
-    c=prep_client;(c.profile/'cv.md').unlink()
+    from jobwatch import users
+    from jobwatch.candidate import intake
+    c=prep_client;(intake._versions_root(users.current())/'1'/'approved.json').unlink()
     response=c.post('/interview-prep/open',data={'url':'https://example.test/unmatched','title':'Analyst','pasted_jd':AD})
     assert '/interview-prep/subjects/' in str(response.url) and 'Check interview readiness' in response.text
     failed=c.post('/interview-prep/open',data={'url':'https://example.test/missing-title','pasted_jd':AD})

@@ -14,6 +14,9 @@ from importlib.resources import files
 import json
 import re
 
+from jobwatch import users
+from jobwatch.candidate import approved
+
 _REFERENCE_BYTES = files('pipeline.agentic').joinpath('data/metro-localities.json').read_bytes()
 LOCATION_REFERENCE_HASH = hashlib.sha256(_REFERENCE_BYTES).hexdigest()
 _REFERENCE = json.loads(_REFERENCE_BYTES)
@@ -162,14 +165,12 @@ def _home_for(person: str, profile: str, mtime_ns: int) -> str:
 
 def _profile_home() -> str:
     """Home suburb of the current person; cached per person + profile file version (a process serves many people)."""
-    from jobwatch import users
-    from jobwatch.apply.paths import profile_dir
     try:
-        path = profile_dir() / 'profile.yaml'
-        mtime = path.stat().st_mtime_ns
-    except Exception:  # noqa: BLE001 - no profile: home_place gives ''
-        path, mtime = '', 0
-    return _home_for(users.current(), str(path), mtime)
+        profile = approved.settings(users.current(), 'profile.yaml')
+        location = str((profile.get('candidate') or {}).get('location') or '')
+    except Exception:  # noqa: BLE001 - no approved profile: home_place gives ''
+        location = ''
+    return home_place(location)
 
 
 def home_place(profile_location: str | None = None) -> str:
@@ -177,9 +178,10 @@ def home_place(profile_location: str | None = None) -> str:
         profile_location = None
     if profile_location is None:
         try:
-            import yaml
-            from jobwatch.apply.paths import profile_dir
-            cand = (yaml.safe_load((profile_dir() / 'profile.yaml').read_text(encoding='utf-8')) or {}).get('candidate') or {}
+            from jobwatch import users
+            from jobwatch.candidate import approved
+            profile = approved.settings(users.current(), 'profile.yaml')
+            cand = profile.get('candidate') or {}
             profile_location = str(cand.get('location') or '')
         except Exception:
             profile_location = ''

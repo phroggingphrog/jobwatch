@@ -1,6 +1,6 @@
-"""The person's own settings, read from their profile dir (profile.yaml, interests_and_criteria.yaml).
+"""Read settings from the server-bound person's approved version.
 
-Nothing here knows any one person: a missing file or key means neutral behaviour (no hours limit, nothing excluded).
+A person without approval has no settings. Invalid approved files raise an integrity error.
 """
 from __future__ import annotations
 
@@ -12,18 +12,13 @@ log = logging.getLogger(__name__)
 
 
 def _yaml(name: str) -> dict:
-    try:
-        import yaml
-        from jobwatch.apply.paths import profile_dir
-        data = yaml.safe_load((profile_dir() / name).read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except OSError:                   # no profile yet: neutral behaviour
+    from jobwatch import users
+    from . import intake
+    from .approved import settings
+    # Vocabulary imports can run before onboarding. Assessment still requires approved evidence.
+    if intake.current_version(users.current()) is None:
         return {}
-    except Exception as exc:  # noqa: BLE001 - a broken file also means neutral, but not silently: limits would vanish unseen
-        log.warning("%s could not be read (%s): work-rights limits and exclusions are NOT applied until it is fixed",
-                    name, type(exc).__name__)
-        return {}
-
+    return settings(users.current(), name)
 
 def work_rights() -> dict:
     """profile.yaml candidate.work_rights, always a dict; a legacy string (old onboarding) is a statement with no limits."""
