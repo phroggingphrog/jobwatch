@@ -424,11 +424,15 @@ def test_validation_correction_cannot_renew_turn_limit():
     assert len(seen)==1 and b.failed_attempts==1
 
 
-def test_validation_correction_retains_failed_reservation_when_budget_runs_out():
+def test_validation_correction_retains_failed_reservation_and_shrinks_the_retry():
     llm,seen=transport_llm([choice(answer=123),choice()]);b=budget(token_ceiling=20_000)
-    assert_safe_failure('token_limit',lambda:run_role(replace(role(),validation_corrections=1),{},b,llm))
-    assert len(seen)==1 and b.failed_attempts==1
-    assert len(b.snapshot().reservations)==1 and b.snapshot().reservations[0].actual_usage is None
+    assert run_role(replace(role(),validation_corrections=1),{},b,llm).output.answer=='complete'
+    assert len(seen)==2 and b.failed_attempts==1
+    reservations=b.snapshot().reservations
+    assert len(reservations)==2 and reservations[0].actual_usage is None
+    # The rejected attempt keeps its maximum charge, so the retry asks for only what is left.
+    assert seen[1][1]['max_tokens']==b.requested_output(reservations[1].reservation_id)<seen[0][1]['max_tokens']
+    assert b.charged_tokens<=20_000
 
 
 def test_validation_correction_cannot_renew_deadline():

@@ -236,6 +236,7 @@ class NativeModel(BaseChatModel):
                 output = max(12000, model_choice.gateway_profile(self.selected)['min_output_tokens'] or 0)
                 charged_before = self.budget.charged_tokens
                 rid = self.budget.reserve('evaluator', _json_bytes([transcript, self.schemas]), output)
+                output = self.budget.requested_output(rid)
                 self.journal.save('attempts', attempts + 1)
                 self.budget.dispatched(rid)
                 self.counts['calls'] += 1

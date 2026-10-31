@@ -21,7 +21,7 @@ FAILURE_REASONS = frozenset({
     'invalid_checkpoint', 'unknown_batch', 'batch_conflict', 'invalid_transition', 'candidate_hash_mismatch',
     'service_timeout', 'service_terminated', 'worker_interrupted',
     'chat_execution_failed', 'invalid_model_response',
-    'token_limit', 'turn_limit', 'failed_attempt_limit', 'missing_terminal', 'tool_failed',
+    'token_limit', 'turn_limit', 'step_limit', 'failed_attempt_limit', 'missing_terminal', 'tool_failed',
     'unknown_tool', 'invalid_registry', 'invalid_reservation', 'invalid_model_payload',
     'invalid_research_operation', 'terminal_already_selected',
     'model_deadline', 'model_rate_limited', 'model_transient',

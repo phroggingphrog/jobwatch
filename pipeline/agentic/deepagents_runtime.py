@@ -183,6 +183,8 @@ class GatewayChatModel(BaseChatModel):
         # A reasoning model spends part of max_tokens thinking; below its floor the reply can come back empty.
         max_tokens = max(execution.max_output_tokens, profile["min_output_tokens"] or 0)
         reservation = budget.reserve(execution.role.name, _json_bytes(transcript) + 512, max_tokens)
+        # The reserve may have shrunk the answer to fit the remaining budget; ask for that, not the original.
+        max_tokens = budget.requested_output(reservation)
         budget.dispatched(reservation)
         execution.failure_recorded = False
         execution.calls += 1
@@ -355,18 +357,18 @@ def run_deepagents_role(role, context, budget, llm, *, max_turns=None, max_outpu
         error = exc.code
         last_exc = traceback.format_exc()
     except GraphRecursionError:
-        error = "turn_limit"
+        error = "step_limit"
         last_exc = traceback.format_exc()
     except Exception:
         error = "invalid_model_response"
         last_exc = traceback.format_exc()
     if error is not None:
-        if not execution.failure_recorded or error in {"turn_limit", "missing_terminal"}:
+        if not execution.failure_recorded or error in {"turn_limit", "step_limit", "missing_terminal"}:
             _log_failure(execution, error, None, last_exc)
         # Raise outside handlers so raw framework/validation errors and private
         # exception payloads are absent even from exception.__context__.
         if error not in {"token_limit", "invocation_budget_exhausted", "invocation_call_limit", "cancelled",
-                         "turn_limit", "deadline_exceeded", "batch_paused",
+                         "turn_limit", "step_limit", "deadline_exceeded", "batch_paused",
                          "checkpoint_unavailable", "failed_attempt_limit", "invalid_request",
                          "tracing_not_allowed", "model_not_allowed", "gateway_not_allowed"}:
             execution.fail(error)
