@@ -78,7 +78,25 @@ Verification evidence:
 - `/tmp/jobwatch-release-core-final.log`: 152 passed in 88.13 seconds. The command reached its 90-second limit after the summary. Process termination remains a limitation.
 - `/tmp/jobwatch-release-baseline-gate-adtext.log`: clean current main reports 333 passed and 3 pre-existing `adtext` failures for HTTP 403, 429, and 502 handling.
 
-The complete suite contains 4,496 tests at initial collection. Bounded batch execution and baseline comparison remain in progress. Do not treat unrun or timed-out tests as passing.
+The complete suite contained 4,496 tests at initial collection. A later collection contained 4,508 tests. All 27 bounded batches ran. Do not treat unrun or timed-out tests as passing.
+
+| Batch | Initial result |
+|---|---|
+| 1–7 | 133, 180, 156, 124, 170, 169, and 68 passed; batch 7 skipped 2 |
+| 8–11 | 233 passed / 3 baseline failures; 110 passed; 169 passed / 8 fixture failures; 150 passed |
+| 12–13 | Each reached 240 seconds without a complete summary |
+| 14–17 | 137 passed; 176 passed / 4 fixture failures; 150 passed; 177 passed / 1 baseline failure |
+| 18–20 | 164, 174, and 146 passed |
+| 21–24 | 116 passed / 1 fixture failure; 142 passed / 1 fixture failure; 89 and 655 passed |
+| 25–27 | 167 passed / 1 fixture failure; 154 passed / 3 fixture failures; 53 passed / 1 fixture failure |
+
+Completed initial summaries total 4,162 passed, 23 failed, and 2 skipped. Four fetch failures reproduce on clean current main and remain in issue #50. Focused reruns passed all 19 repaired synthetic fixture failures. Runtime safety source did not change after `8b2db12`.
+
+Residual evidence includes 48 browser tests and 48 non-service batch-12 tests passing. The baseline module passed 62 tests before a 90-second limit. An agentic-service residual run reached a 120-second limit after 19 progress marks. Exact complete node coverage for batches 12 and 13 remains unavailable. The full suite has not passed on final source.
+
+The final interview and follow-up web modules passed 29 tests in 28.04 seconds. These fixtures publish separate approved evidence for each person. Missing-approval tests remove approved versions, not person input. Publication-drift assertions remain intact.
+
+OpenSpec verification records all attempted batches and limitations. It does not claim full-suite success.
 
 Read-only live-data preflight checks passed for both approved profiles. Evidence, restriction settings, and confirmed scope remained valid. Three other users had no approved version. Candidate onboarding reported `confirmed`. No person input changed.
 
