@@ -156,8 +156,7 @@ def test_run_chain_passes_only_own_samples(tmp_path, monkeypatch):
 
 def test_legacy_string_work_rights_reads_as_unknown(tmp_path, monkeypatch):
     from jobwatch.candidate import person
-    (tmp_path / "profile.yaml").write_text(yaml.safe_dump({"candidate": {"work_rights": "Australian citizen"}}))
-    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(tmp_path))
+    monkeypatch.setattr(person, '_yaml', lambda name: {'candidate': {'work_rights': 'Australian citizen'}})
     assert person.work_rights() == {"statement": "Australian citizen"}
     assert person.hours_limit_per_fortnight() is None
 
