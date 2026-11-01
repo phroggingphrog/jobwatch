@@ -62,6 +62,7 @@ def test_graph_gets_all_time_when_nothing_is_shortlisted(monkeypatch, tmp_path):
     monkeypatch.setattr(screened, "promote", lambda *a, **k: {})
     monkeypatch.setattr(screened, "retry_transport", lambda c: 0)
     monkeypatch.setattr(screened, "_title_triage", lambda *a: {})
+    monkeypatch.setattr(screened, "sort_untracked", lambda *a: {})
     cfg = SimpleNamespace(settings={}, db_path=tmp_path / "x.db")
     from jobwatch.util import adtext
     monkeypatch.setattr(adtext, "lock_path", lambda c: tmp_path / "lock")
@@ -89,6 +90,7 @@ def test_waiting_shortlist_is_promoted_before_scoring(monkeypatch, tmp_path):
     monkeypatch.setattr(screened, "promote", lambda c, cfg, max_seconds=None, deadline=None: order.append(("promote", max_seconds)) or {})
     monkeypatch.setattr(screened, "retry_transport", lambda c: 0)
     monkeypatch.setattr(screened, "_title_triage", lambda *a: {})
+    monkeypatch.setattr(screened, "sort_untracked", lambda *a: {})
     cfg = SimpleNamespace(settings={}, db_path=tmp_path / "x.db")
     from jobwatch.util import adtext
     monkeypatch.setattr(adtext, "lock_path", lambda c: tmp_path / "lock")
@@ -123,3 +125,20 @@ def test_unlisted_drop_setting():
     from pipeline import tracks
     on = SimpleNamespace(settings={"pipeline": {"screened": {"unlisted": "drop"}}})
     assert tracks.unlisted_drop(on) and not tracks.unlisted_drop(SimpleNamespace(settings={}))
+
+
+def test_untracked_jobs_get_a_track_before_promotion():
+    import sqlite3
+    from pipeline import screened, store
+    from pipeline.schemas import Stage
+    conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
+    store.ensure(conn)
+    conn.execute("CREATE TABLE postings (id INTEGER PRIMARY KEY, title TEXT)")
+    for pid, title in [(1, "Retail Assistant - Mildura"), (2, "Graduate Accountant"), (3, "Casual Crew")]:
+        conn.execute("INSERT INTO postings VALUES (?, ?)", (pid, title))
+        store.admit(conn, pid, f"h{pid}", {}, Stage.SHORTLISTED)
+    cfg = SimpleNamespace(settings={"pipeline": {"screened": {"unlisted": "drop",
+                                                              "tracks": {"secondary": ["retail"]}}}})
+    assert screened.sort_untracked(conn, cfg) == {"secondary": 1, "undergraduate": 1, "drop": 1}
+    stages = {r[0]: r[1] for r in conn.execute("SELECT posting_id, stage FROM pipeline_state")}
+    assert stages == {1: "side", 2: "shortlisted", 3: "archived"}
