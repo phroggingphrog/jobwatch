@@ -15,7 +15,7 @@ def settings(config) -> CategorySnapshot:
 
 def unlisted_drop(config) -> bool:
     own = (((getattr(config, "settings", None) or {}).get("pipeline") or {}).get("screened") or {})
-    return own.get("unlisted_action") == "archive"
+    return bool(settings(config).categories) and own.get("unlisted_action") == "archive"
 
 
 def classify(title: str, snapshot: CategorySnapshot) -> str | None:

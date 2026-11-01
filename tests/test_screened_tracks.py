@@ -10,7 +10,15 @@ LEGACY_WORDS = ["graduate", "grad program", "internship", "intern", "vacation", 
                 "undergraduate", "undergrad", "student", "trainee", "traineeship"]
 
 def migrated_config(screened):
-    migrated = migrate_legacy(screened, legacy_program_phrases=LEGACY_WORDS)["migrated"]
+    policy = [dict(id=name, label=name, priority=i, action=action, promote=promote, hours=hours)
+              for i, (name, action, promote, hours) in enumerate([
+                  ('undergraduate', 'admit', True, 'allow_hours_only'),
+                  ('primary', 'admit', True, 'standard'),
+                  ('secondary', 'side', False, 'standard'),
+                  ('drop', 'archive', False, 'standard')])]
+    migrated = migrate_legacy(screened, legacy_program_phrases=LEGACY_WORDS,
+        legacy_policy=policy, program_category='undergraduate',
+        id_mapping={p['id']: p['id'] for p in policy})["migrated"]
     return SimpleNamespace(settings={"pipeline": {"screened": migrated}})
 
 CFG = migrated_config({"tracks": {"primary": ["accounts payable"], "secondary": ["barista", "chef"], "drop": ["registered nurse"]}})

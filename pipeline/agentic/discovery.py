@@ -85,7 +85,7 @@ def _current_plan(person):
     return policy, plan
 
 
-def prepare_run(conn, config):
+def prepare_run(conn, config, *, research=False):
     try:
         scope = intake.discovery_scope(users.current())
         if scope is None:
@@ -100,9 +100,12 @@ def prepare_run(conn, config):
             from types import SimpleNamespace
             hypotheses = tuple(SimpleNamespace(id=f'scope:{i}', title=value) for i, value in enumerate(scope.basis))
             plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
-        return replace(config, searches=searches_overlay(plan, config.searches, policy),
-                       feeds=feeds_overlay(plan, config.feeds, policy),
-                       extra={**config.extra, 'search_plan': plan})
+        projected = replace(config, searches=searches_overlay(plan, config.searches, policy),
+                            feeds=feeds_overlay(plan, config.feeds, policy),
+                            extra={**config.extra, 'search_plan': plan, 'discovery_goals': tuple(scope.basis)})
+        if not research: return projected
+        from pipeline.vocabulary_research import prepare
+        return prepare(conn, projected, users.current(), scope.basis)
     except Exception as exc:
         log.info('discovery prepare: %s', type(exc).__name__)
         # Never fall back to another person's shared search settings after a
@@ -318,10 +321,9 @@ def screen_step(conn, config, *, person=None, llm=None, context=None, seconds=30
                     _store_judgment(conn, result, cfg['relevance'])
                     out['judged'] += 1
                     out['uncertain'] += result.relevant == 'uncertain'
-                if cfg['relevance'] == 'on' and result.relevant == 'no':
-                    store.move(conn, pid, 'relevance', Stage.INGESTED, Stage.ARCHIVED,
-                               output=result.model_dump(mode='json'), reason='not_relevant')
-                    out['archived'] += 1
+                # A goal-relative mismatch is advisory evidence, not an
+                # explicitly confirmed exclusion. Keep the judgment for ranking
+                # and audit, but never archive a job from this judgment alone.
                 conn.commit()
         if context is not None:
             screen(context)

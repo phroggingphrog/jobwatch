@@ -404,12 +404,14 @@ def build_policy(approved: dict) -> DecisionPolicy:
                     work_rights['hours_limit_per_fortnight'] = min(amount, work_rights.get('hours_limit_per_fortnight', amount))
 
     levels: set[str] = set()
-    for f in _evidence(facts, "preference", "career_focus", "constraint"):
+    for f in _evidence(facts, "preference", "constraint"):
         v = f["value"]
-        if isinstance(v, dict) and v.get("seniority"):
+        if isinstance(v, dict):
+            if v.get("exclusive") is not True or not v.get("seniority"):
+                continue
             s = v["seniority"]
             levels |= _levels_in(" ".join(_text(x) for x in (s if isinstance(s, (list, tuple)) else [s])))
-        else:
+        elif re.fullmatch(r'\s*(?:only|exclusively)\s+(?:entry(?:[- ]level)?|graduate|internship|trainee|junior|mid(?:[- ]level)?|senior)(?:\s+(?:roles|jobs|positions))?\s*[.!]?\s*', _text(v), re.I):
             levels |= _levels_in(_text(v))
     seniority = tuple(x for x in _LADDER if x in levels)
 

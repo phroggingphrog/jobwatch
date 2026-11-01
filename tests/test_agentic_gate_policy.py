@@ -227,7 +227,7 @@ def rights(**value):
 
 def stated(*levels):
     words = ["mid-level" if level == "mid" else level for level in levels]
-    return policy_of(fact("preference", {"seniority": words})) if levels else policy_of(PLAIN)
+    return policy_of(fact("preference", {"seniority": words, "exclusive": True})) if levels else policy_of(PLAIN)
 
 
 def job(evaluation, ad, *, quote="Melbourne", **facts):

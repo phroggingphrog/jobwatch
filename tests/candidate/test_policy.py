@@ -72,7 +72,8 @@ def test_citizen_or_pr_detection(text, expect):
     assert policy_of(fact('work_rights', text)).work_rights.get('citizen_or_pr') is expect
 
 def test_seniority_from_stated_levels_ignores_negated_ones():
-    assert policy_of(fact('preference', 'Looking for graduate and junior roles')).seniority == ('entry', 'junior')
+    assert policy_of(fact('preference', 'Looking for graduate and junior roles')).seniority == ()
+    assert policy_of(fact('preference', {'seniority': ['graduate', 'junior'], 'exclusive': True})).seniority == ('entry', 'junior')
     assert policy_of(fact('preference', 'no senior roles please')).seniority == ()
     assert policy_of(fact('experience', 'Senior Accountant, Ledger Co')).seniority == ()
 
@@ -258,7 +259,7 @@ def test_decimal_and_sentence_distances(text, km):
 
 def test_a_contracted_negation_ignores_the_level():
     assert policy_of(fact('preference', "I don't want senior roles")).seniority == ()
-    assert policy_of(fact('preference', "I don’t want senior roles, junior is fine")).seniority == ('junior',)
+    assert policy_of(fact('preference', "I don’t want senior roles, junior is fine")).seniority == ()
 
 
 def test_a_non_dict_fact_does_not_void_the_policy():

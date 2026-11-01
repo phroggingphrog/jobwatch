@@ -18,7 +18,7 @@ from tests.candidate.policy_fixtures import fact, policy_of
 def accountant():
     """A graduate accountant: entry/junior roles in Victoria, no citizenship, a 48 hour fortnight, programs may be full time."""
     return policy_of(
-        fact('location', 'Melbourne VIC'), fact('preference', {'seniority': ['entry', 'junior']}),
+        fact('location', 'Melbourne VIC'), fact('preference', {'seniority': ['entry', 'junior'], 'exclusive': True}),
         fact('exclusion', {'kind': 'family', 'value': 'hospitality'}, fid='x1'),
         fact('exclusion', {'kind': 'family', 'value': 'customer_service'}, fid='x2'),
         fact('work_rights', {'citizen_or_pr': False, 'hours_limit_per_fortnight': 48, 'full_time_programs_ok': True}))
@@ -27,7 +27,7 @@ def accountant():
 def nurse():
     """A mid-level nurse: mid-level roles in New South Wales, a citizen, no casual work, not accounting or IT."""
     return policy_of(
-        fact('location', 'Sydney NSW'), fact('preference', {'seniority': ['mid-level']}),
+        fact('location', 'Sydney NSW'), fact('preference', {'seniority': ['mid-level'], 'exclusive': True}),
         fact('exclusion', {'kind': 'family', 'value': 'accounting'}, fid='x1'),
         fact('exclusion', {'kind': 'family', 'value': 'it'}, fid='x2'),
         fact('exclusion', {'kind': 'work_type', 'value': 'casual'}, fid='x3'),
@@ -406,7 +406,7 @@ def test_a_profile_change_makes_old_skips_stale_and_reconsider_readmits(conn, tm
     _posting(conn, 1, 'Senior Accountant')
     ingest.run(conn, make_config(tmp_path=tmp_path))
     assert lifecycle.reconsider(conn, accountant()) == 0            # nothing changed: stays skipped
-    senior = policy_of(fact('location', 'Melbourne VIC'), fact('preference', {'seniority': ['senior']}), version=3)
+    senior = policy_of(fact('location', 'Melbourne VIC'), fact('preference', {'seniority': ['senior'], 'exclusive': True}), version=3)
     assert lifecycle.reconsider(conn, senior) == 1                  # the person now wants senior roles
     assert conn.execute('SELECT COUNT(*) FROM pipeline_state WHERE posting_id=1').fetchone()[0] == 0
 
@@ -462,7 +462,7 @@ def test_without_a_confirmed_profile_the_legacy_rules_are_unchanged():
 
 
 def test_an_entry_only_profile_still_reads_junior_roles(conn):
-    eng = engine(conn, policy_of(fact('preference', {'seniority': ['entry-level']})))
+    eng = engine(conn, policy_of(fact('preference', {'seniority': ['entry-level'], 'exclusive': True})))
     assert not run(eng, 'Junior Analyst').skip and not run(eng, 'Graduate Analyst').skip
     assert run(eng, 'Senior Analyst').skip and run(eng, 'Mid-level Analyst').skip
 

@@ -45,7 +45,7 @@ class Suggestion(BaseModel):
 
 
 def ensure(conn):
-    conn.executescript("""
+    schema = """
     CREATE TABLE IF NOT EXISTS discovery_goals (
         person TEXT PRIMARY KEY, goal TEXT NOT NULL, goal_version INTEGER NOT NULL,
         active_version INTEGER, error TEXT
@@ -60,11 +60,26 @@ def ensure(conn):
         decision TEXT NOT NULL CHECK(decision IN ('include', 'exclude')),
         PRIMARY KEY(person, source, term)
     );
-    """)
+    """
+    for statement in schema.split(';'):
+        if statement.strip(): conn.execute(statement)
+
+
+def status(conn, person):
+    ensure(conn)
+    row = conn.execute("SELECT goal_version, active_version, error FROM discovery_goals WHERE person=?", (person,)).fetchone()
+    if row is None: return dict(goal_version=None, active_version=None, active_goal_version=None, error=None)
+    active = conn.execute("SELECT goal_version FROM discovery_vocabulary_versions WHERE person=? AND version=?", (person, row[1])).fetchone()
+    return dict(goal_version=row[0], active_version=row[1], active_goal_version=active[0] if active else None, error=row[2])
+
+
+def record_error(conn, person, goal_version, error):
+    ensure(conn)
+    conn.execute("UPDATE discovery_goals SET error=? WHERE person=? AND goal_version=?", (error, person, goal_version))
 
 
 def set_goal(conn, person, goal):
-    if not isinstance(goal, str) or not goal.strip() or len(goal) > 500:
+    if not isinstance(goal, str) or not goal.strip() or len(goal) > 4096:
         raise ValueError("invalid goal")
     ensure(conn)
     row = conn.execute("SELECT goal, goal_version FROM discovery_goals WHERE person=?", (person,)).fetchone()

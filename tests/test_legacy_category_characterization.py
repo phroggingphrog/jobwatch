@@ -7,7 +7,14 @@ from pipeline.category_migration import migrate_legacy
 
 def config(tracks_config=None, **screened):
     old = {"tracks": tracks_config or {}, **screened}
-    migrated = migrate_legacy(old, legacy_program_phrases=["graduate", "trainee"])["migrated"]
+    policy = [dict(id=name,label=name,priority=i,action=action,promote=promote,hours=hours)
+        for i,(name,action,promote,hours) in enumerate([
+            ('undergraduate','admit',True,'allow_hours_only'),
+            ('primary','admit',True,'standard'),('secondary','side',False,'standard'),
+            ('drop','archive',False,'standard')])]
+    migrated = migrate_legacy(old, legacy_program_phrases=["graduate", "trainee"],
+        legacy_policy=policy, program_category='undergraduate',
+        id_mapping={p['id']:p['id'] for p in policy})["migrated"]
     return SimpleNamespace(settings={"pipeline": {"screened": migrated}})
 
 
