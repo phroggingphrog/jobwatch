@@ -324,9 +324,12 @@ def main() -> int:
     parser.add_argument('--authorize-transmission', action='store_true',
                         help='specific permission to send these answers/documents to this application, including autosave')
     parser.add_argument('--cdp', default='http://127.0.0.1:9222')
-    parser.add_argument('--answers', type=Path, default=Path.home() / 'brain/data/jobwatch/profile/answers.yaml')
+    parser.add_argument('--answers', type=Path, help='default: answers.yaml in the configured profile folder')
     parser.add_argument('--document', action='append', default=[], metavar='FIELD=PATH')
     args = parser.parse_args()
+    if args.answers is None:
+        from jobwatch.apply.paths import profile_dir
+        args.answers = profile_dir() / 'answers.yaml'
     if args.command == 'manifest-hash':
         try:
             _, _, metadata = file_snapshot(args.answers, parse_documents(args.document))
