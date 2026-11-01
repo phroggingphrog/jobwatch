@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 SEEN_WITHIN_DAYS = 3
 # One site may use at most this many of a run's fetches (2026-10-12: SmartRecruiters and Workday, being older rows,
 # took the whole budget every run, so Seek and LinkedIn ads never got their text and never reached the AI).
-PER_HOST_FETCHES = 8
+PER_HOST_FETCHES = 20
 
 
 def content_hash(company: str, text: str) -> str:
