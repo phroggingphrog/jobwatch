@@ -6,7 +6,7 @@ import pytest
 from jobwatch.candidate.contracts import TargetPolicy
 from pipeline.agentic import gate
 from pipeline.agentic.contracts import AgenticError, AgenticEvaluation, RequirementSet
-from pipeline.agentic.gate import decide
+from pipeline.agentic.gate import assessment_audit, decide
 from tests.candidate.policy_fixtures import fact, policy_of
 from tests.test_agentic_gate import evaluation, policy  # noqa: F401  (shared synthetic fixtures)
 from tests.test_agentic_gate import AD
@@ -19,8 +19,10 @@ BOTH_AD = ("Graduate accounting analyst based in Melbourne VIC or Sydney NSW. "
            "Sydney office attendance is required." + RIGHTS)
 SYDNEY_ONSITE_AD = "Graduate accounting analyst. Sydney office attendance required." + RIGHTS
 
-VIC = fact("location", "Melbourne, VIC")
-NSW = fact("location", "Sydney, NSW")
+VIC = fact("location", {"regions": ["Melbourne, VIC"], "exclusive": True})
+NSW = fact("location", {"regions": ["Sydney, NSW"], "exclusive": True})
+VIC_PREFERENCE = fact("location", "Melbourne, VIC")
+NSW_PREFERENCE = fact("location", "Sydney, NSW")
 
 
 def retarget(evaluation, ad, quote, **changes):
@@ -40,6 +42,15 @@ def outcome(ev, ad, policy, dp, **kwargs):
     return result.route, result.reason
 
 
+def assert_advisory(ev, ad, policy, dp, gap, **kwargs):
+    decision = decide(ev, ad_text=ad, policy=policy, decision_policy=dp, **kwargs)
+    assert (decision.route, decision.reason) == ('draft', 'eligible')
+    audit = assessment_audit(ev, ad_text=ad, decision=decision, decision_policy=dp, **kwargs)
+    assert gap in audit.unknowns
+    assert audit.recommendation == 'needs_clarification'
+    assert audit.completeness == 'partial'
+
+
 def test_nsw_person_is_not_archived_for_a_sydney_job(evaluation, policy):
     ev = retarget(evaluation, SYDNEY_AD, "Sydney NSW")   # the stored legacy label stays 'melbourne' and is ignored
     assert ev.location_fit == "melbourne"
@@ -49,6 +60,7 @@ def test_nsw_person_is_not_archived_for_a_sydney_job(evaluation, policy):
 def test_nsw_person_archives_a_melbourne_job(evaluation, policy):
     ev = retarget(evaluation, MELBOURNE_AD, "Melbourne VIC")
     assert outcome(ev, MELBOURNE_AD, policy, policy_of(NSW)) == ("archive", "hard_gate")
+    assert outcome(ev, MELBOURNE_AD, policy, policy_of(NSW_PREFERENCE)) == ("draft", "eligible")
 
 
 def test_stored_outside_label_is_ignored(evaluation, policy):
@@ -60,6 +72,7 @@ def test_interstate_onsite_rule_follows_the_persons_regions(evaluation, policy):
     ev = retarget(evaluation, BOTH_AD, "Melbourne VIC or Sydney NSW")
     # A Victorian person is open to the listed Melbourne office, but Sydney attendance is an interstate on-site demand.
     assert outcome(ev, BOTH_AD, policy, policy_of(VIC)) == ("archive", "hard_gate")
+    assert outcome(ev, BOTH_AD, policy, policy_of(VIC_PREFERENCE)) == ("draft", "eligible")
     # The same ad for a NSW person: Sydney is their region, and the Melbourne alternative is not on-site.
     assert outcome(ev, BOTH_AD, policy, policy_of(NSW)) == ("draft", "eligible")
     # No regions: no area filter at all.
@@ -81,18 +94,18 @@ def test_no_location_policy_never_blocks_on_location(evaluation, policy):
 def test_unknown_location_with_regions_holds(evaluation, policy):
     ad = "Graduate accounting analyst. Level 3, 1 Example St." + RIGHTS
     ev = retarget(evaluation, ad, "Level 3, 1 Example St", location_fit="unknown")
-    assert outcome(ev, ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    assert_advisory(ev, ad, policy, policy_of(VIC), 'eligibility_location')
 
 
 def test_missing_location_evidence_with_regions_holds(evaluation, policy):
     ev = evaluation.model_copy(update={"location_evidence": None})
-    assert outcome(ev, AD, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    assert_advisory(ev, AD, policy, policy_of(VIC), 'location_citation_unverified')
 
 
 def test_nominate_your_office_program_keeps_unresolved_location_open(evaluation, policy):
     ad = "Graduate program. Nominate your office location when you apply." + RIGHTS
     ev = retarget(evaluation, ad, "Nominate your office location when you apply", location_fit="unknown")
-    assert outcome(ev, ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    assert_advisory(ev, ad, policy, policy_of(VIC), 'eligibility_location')
 
 
 def test_non_australia_only_ads_are_archived(evaluation, policy):
@@ -106,7 +119,7 @@ def test_commute_limit_comes_only_from_the_policy(evaluation, policy):
     dp_none = policy_of(VIC)
     assert outcome(evaluation, AD, policy, dp30, commute_km=40) == ("archive", "hard_gate")
     assert outcome(evaluation, AD, policy, dp30, commute_km=25) == ("draft", "eligible")
-    assert outcome(evaluation, AD, policy, dp30) == ("hold", "insufficient_evidence")   # material distance stays unresolved
+    assert_advisory(evaluation, AD, policy, dp30, 'eligibility_commute_distance')
     assert outcome(evaluation, AD, policy, dp_none, commute_km=500) == ("draft", "eligible")
     remote = retarget(evaluation, REMOTE_AD, "remote within Australia", location_fit="remote_accessible")
     assert outcome(remote, REMOTE_AD, policy, dp30, commute_km=40) == ("draft", "eligible")
@@ -120,7 +133,7 @@ def test_remote_ad_is_not_archived_on_distance(evaluation, policy):
     named = retarget(evaluation, ad, "Remote, Melbourne VIC", location_fit="remote_accessible")
     assert outcome(named, ad, policy, policy_of(limit, VIC), commute_km=40) == ("draft", "eligible")
     # The person rules remote work out: distance applies again.
-    assert outcome(named, ad, policy, policy_of(limit, VIC, fact("preference", "no remote")),
+    assert outcome(named, ad, policy, policy_of(limit, VIC, fact("preference", {"remote_ok": False, "exclusive": True})),
                    commute_km=40) == ("archive", "hard_gate")
     # A job that is not remote keeps the distance rule.
     assert outcome(evaluation, AD, policy, policy_of(limit, VIC), commute_km=40) == ("archive", "hard_gate")
@@ -129,10 +142,10 @@ def test_remote_ad_is_not_archived_on_distance(evaluation, policy):
 def test_remote_ad_must_establish_australia(evaluation, policy):
     europe_ad = "Graduate accounting analyst. Remote - Europe." + RIGHTS
     europe = retarget(evaluation, europe_ad, "Remote - Europe", location_fit="remote_accessible")
-    assert outcome(europe, europe_ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    assert_advisory(europe, europe_ad, policy, policy_of(VIC), 'eligibility_remote_work_location')
     anywhere_ad = "Graduate accounting analyst. Remote - anywhere in Europe." + RIGHTS
     anywhere = retarget(evaluation, anywhere_ad, "Remote - anywhere in Europe", location_fit="remote_accessible")
-    assert outcome(anywhere, anywhere_ad, policy, policy_of(VIC)) == ("hold", "insufficient_evidence")
+    assert_advisory(anywhere, anywhere_ad, policy, policy_of(VIC), 'eligibility_remote_work_location')
     in_au_ad = "Graduate accounting analyst. Remote - anywhere in Australia." + RIGHTS
     in_au = retarget(evaluation, in_au_ad, "Remote - anywhere in Australia", location_fit="remote_accessible")
     assert outcome(in_au, in_au_ad, policy, policy_of(VIC)) == ("draft", "eligible")
@@ -182,7 +195,7 @@ def test_unemployment_does_not_override_exclusion(evaluation, policy):
 
 def test_a_family_rule_holds_an_ad_the_evaluator_could_not_place(evaluation, policy):
     ev = evaluation.model_copy(update={"facts": evaluation.facts.model_copy(update={"role_family": "unknown"})})
-    assert outcome(ev, AD, policy, policy_of(_rule("family", "accounting"))) == ("hold", "insufficient_evidence")
+    assert_advisory(ev, AD, policy, policy_of(_rule('family', 'accounting')), 'eligibility_role_family')
     assert outcome(ev, AD, policy, policy_of(VIC)) == ("draft", "eligible")   # no family rule: nothing to hold for
 
 
@@ -227,7 +240,7 @@ def rights(**value):
 
 def stated(*levels):
     words = ["mid-level" if level == "mid" else level for level in levels]
-    return policy_of(fact("preference", {"seniority": words})) if levels else policy_of(PLAIN)
+    return policy_of(fact("preference", {"seniority": words, "exclusive": True})) if levels else policy_of(PLAIN)
 
 
 def job(evaluation, ad, *, quote="Melbourne", **facts):
@@ -280,7 +293,7 @@ def test_material_missing_hours_stay_unknown_even_for_a_wanted_program(evaluatio
     if program_preference is not None:
         values['full_time_programs_ok'] = program_preference
     ev = job(evaluation, ad, hours='full_time_only', program=program)
-    assert outcome(ev, ad, policy, policy_of(rights(**values)), title=title) == ('hold', 'insufficient_evidence')
+    assert_advisory(ev, ad, policy, policy_of(rights(**values)), 'eligibility_advertised_hours', title=title)
 
 
 @pytest.mark.parametrize('levels,level,years,expected', [
@@ -306,7 +319,7 @@ def test_years_wording_has_no_shared_junior_ceiling(evaluation, policy, wording)
 
 def test_material_requirement_gaps_still_hold_independently_of_high_scores(evaluation, policy):
     ev = with_blocker(job(evaluation, AD), 'certification', 'Accounting certification', 'accounting')
-    assert outcome(ev, AD, policy, policy_of(PLAIN)) == ('hold','insufficient_evidence')
+    assert_advisory(ev, AD, policy, policy_of(PLAIN), 'candidate_evidence_incomplete')
 
 
 CITIZENS_AD = 'Graduate accounting analyst based in Melbourne VIC. Australian citizens and permanent residents only.'
@@ -322,7 +335,11 @@ CITIZENS_AD = 'Graduate accounting analyst based in Melbourne VIC. Australian ci
 def test_citizen_or_pr_requirement_preserves_known_and_unknown_statuses(evaluation, policy, approved, expected):
     ev = job(evaluation, CITIZENS_AD, work_rights={'requirement':'citizen_or_pr',
         'quote':'Australian citizens and permanent residents only'})
-    assert outcome(ev, CITIZENS_AD, policy, policy_of(rights(**approved)) if approved else policy_of(PLAIN)) == expected
+    dp = policy_of(rights(**approved)) if approved else policy_of(PLAIN)
+    if expected[0] == 'hold':
+        assert_advisory(ev, CITIZENS_AD, policy, dp, 'eligibility_citizen_or_pr')
+    else:
+        assert outcome(ev, CITIZENS_AD, policy, dp) == expected
 
 
 @pytest.mark.parametrize('approved,expected', [
@@ -335,13 +352,17 @@ def test_citizen_or_pr_requirement_preserves_known_and_unknown_statuses(evaluati
 def test_permanent_residency_never_establishes_citizenship(evaluation, policy, approved, expected):
     ad = 'Graduate accounting analyst based in Melbourne VIC. Australian citizens only.'
     ev = job(evaluation, ad, work_rights={'requirement':'citizen_only','quote':'Australian citizens only'})
-    assert outcome(ev, ad, policy, policy_of(rights(**approved)) if approved else policy_of(PLAIN)) == expected
+    dp = policy_of(rights(**approved)) if approved else policy_of(PLAIN)
+    if expected[0] == 'hold':
+        assert_advisory(ev, ad, policy, dp, 'eligibility_citizen_only')
+    else:
+        assert outcome(ev, ad, policy, dp) == expected
 
 
 def test_an_unsupported_model_rights_label_does_not_become_a_fact(evaluation, policy):
     ad = 'Graduate accounting analyst based in Melbourne VIC. Eligibility to work is required.'
     ev = job(evaluation, ad, work_rights={'requirement':'citizen_only','quote':'Eligibility to work is required'})
-    assert outcome(ev, ad, policy, policy_of(rights(citizen=True))) == ('hold','verification_required')
+    assert_advisory(ev, ad, policy, policy_of(rights(citizen=True)), 'eligibility_work_rights_quote')
 
 
 @pytest.mark.parametrize('sentence', [
@@ -352,7 +373,7 @@ def test_an_unsupported_model_rights_label_does_not_become_a_fact(evaluation, po
 def test_actual_clearance_requirements_hold_unknowns_and_respect_confirmed_absence(evaluation, policy, sentence):
     ad = f'Graduate accounting analyst based in Melbourne VIC. {sentence}'
     ev = job(evaluation, ad, work_rights={'requirement':'none_stated','quote':''})
-    assert outcome(ev, ad, policy, policy_of(rights(citizen=True))) == ('hold','insufficient_evidence')
+    assert_advisory(ev, ad, policy, policy_of(rights(citizen=True)), 'eligibility_clearance')
     assert outcome(ev, ad, policy, policy_of(rights(citizen=True, clearances=[]))) == ('archive','hard_gate')
 
 
@@ -370,7 +391,10 @@ def test_clearance_terms_without_a_requirement_add_no_personal_blocker(evaluatio
 def test_clearance_and_citizenship_demands_are_independent(evaluation, policy):
     ad = 'Graduate accounting analyst based in Melbourne VIC. Australian citizens only. Baseline security clearance required.'
     ev = job(evaluation, ad, work_rights={'requirement':'citizen_only','quote':'Australian citizens only'})
-    assert outcome(ev, ad, policy, policy_of(rights(citizen=True))) == ('hold','insufficient_evidence')
+    dp = policy_of(rights(citizen=True))
+    decision = decide(ev, ad_text=ad, policy=policy, decision_policy=dp)
+    assert (decision.route, decision.reason) == ('draft', 'eligible')
+    assert 'eligibility_clearance' in assessment_audit(ev, ad_text=ad, decision=decision, decision_policy=dp).unknowns
     assert outcome(ev, ad, policy, policy_of(rights(citizen=True, clearances=['BASELINE']))) == ('draft','eligible')
     assert outcome(ev, ad, policy, policy_of(rights(citizen=False, clearances=['BASELINE']))) == ('archive','hard_gate')
 

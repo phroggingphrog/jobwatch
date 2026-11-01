@@ -119,8 +119,10 @@ def test_screen_stores_once_shadow_does_not_archive_and_on_reuses_judgment(env, 
     assert discovery.latest_judgment(conn,1).relevant == 'no'
     assert discovery.screen_step(conn,{},context=ctx)['judged'] == 0
     out = discovery.screen_step(conn, {'agentic':{'relevance':'on'}}, context=ctx)
-    assert out['archived'] == 1
-    assert discovery.restore_archived(conn) == 1
+    assert out['archived'] == 0
+    assert conn.execute('SELECT stage FROM pipeline_state').fetchone()[0] == 'ingested'
+    assert discovery.latest_judgment(conn,1).relevant == 'no'
+    assert discovery.restore_archived(conn) == 0
     assert conn.execute('SELECT COUNT(*) FROM applications').fetchone()[0] == 0
 
 

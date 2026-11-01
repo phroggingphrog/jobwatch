@@ -61,6 +61,64 @@ def _logistics(requirement, hours_exempt: bool = False) -> bool:
     return hours_exempt and bool(re.search(r"full[ _-]?time|hours|availability|start[ _-]date|intake", text, re.I))
 
 
+def assessment_audit(evaluation: AgenticEvaluation, *, ad_text: str,
+                     captured_complete: bool = True, evidence_bundle=None,
+                     decision: AgenticGateDecision | None = None, title: str = '',
+                     company: str = '', decision_policy=None, commute_km=None):
+    """Describe unresolved evidence without changing the admission wire contract."""
+    from pipeline.decision import build_decision
+
+    unknowns = []
+    ad_hash = hashlib.sha256(ad_text.encode('utf-8')).hexdigest()
+    if not captured_complete or not ad_text:
+        unknowns.append('incomplete_capture')
+    if ad_hash != evaluation.run_key.ad_hash or ad_hash != evaluation.requirements.ad_hash:
+        unknowns.append('ad_provenance_mismatch')
+    if any(r.jd_signal is None or not _verified(r.jd_signal, ad_text, ad_hash)
+           for r in evaluation.requirements.requirements):
+        unknowns.append('requirement_citation_unverified')
+    if not _verified(evaluation.location_evidence, ad_text, ad_hash):
+        unknowns.append('location_citation_unverified')
+    if any(m.match != 'strong' or not m.evidence for m in evaluation.matches):
+        unknowns.append('candidate_evidence_incomplete')
+    if evidence_bundle is not None:
+        try:
+            from jobwatch.candidate.assessment import verify_candidate_citations
+            for match in evaluation.matches:
+                verify_candidate_citations(match.evidence, evidence_bundle)
+                if match.judgment is not None:
+                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
+                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
+                        raise ValueError
+        except Exception:
+            unknowns.append('candidate_citation_unverified')
+    elif any(m.evidence for m in evaluation.matches):
+        unknowns.append('candidate_citation_unverified')
+    from jobwatch.candidate.eligibility import evaluate_eligibility
+    location = evaluation.location_evidence.quote if _verified(evaluation.location_evidence, ad_text, ad_hash) else ''
+    remote = evaluation.location_fit == 'remote_accessible' and bool(re.search(r'\bremote\b|work from home', location, re.I))
+    facts = evaluation.facts.model_dump(mode='json')
+    eligibility = evaluate_eligibility({**facts, 'title': title, 'company': company,
+        'location': location, 'remote': remote}, policy=decision_policy, ad_text=ad_text, commute_km=commute_km)
+    if eligibility.reason == 'verification_required':
+        unknowns.extend('eligibility_' + question for question in eligibility.questions)
+        eligibility = evaluate_eligibility({**facts, 'work_rights': {}, 'title': title,
+            'company': company, 'location': location, 'remote': remote},
+            policy=decision_policy, ad_text=ad_text, commute_km=commute_km)
+    if eligibility.status == 'held':
+        unknowns.extend('eligibility_' + question for question in eligibility.questions)
+        if not eligibility.questions:
+            unknowns.append('eligibility_' + eligibility.reason)
+    for uncertainty in (evaluation.matching_diagnostics or {}).get('ad_uncertainties', ()):
+        unknowns.append('ad_uncertainty: ' + str(uncertainty))
+    unknowns.extend((evaluation.matching_diagnostics or {}).get('citation_warnings', ()))
+    if evaluation.legitimacy != 'verified':
+        unknowns.append('employer_legitimacy_' + evaluation.legitimacy)
+    conflicts = (decision.reason,) if decision and decision.route == 'archive' else ()
+    if decision and decision.route == 'hold':
+        unknowns.append(decision.reason)
+    return build_decision(fit_score=evaluation.global_score, explicit_conflicts=conflicts, unknowns=unknowns)
+
 def decide(
     evaluation: AgenticEvaluation,
     *,
@@ -104,62 +162,25 @@ def decide(
     if not valid:
         raise AgenticError("invalid_gate_input") from None
 
-    if not captured_complete or not ad_text:
-        return _hold(evaluation, "insufficient_evidence")
-
     ad_hash = hashlib.sha256(ad_text.encode("utf-8")).hexdigest()
-    if ad_hash != evaluation.run_key.ad_hash or ad_hash != evaluation.requirements.ad_hash:
-        return _hold(evaluation, "verification_required")
     if expected_run_key is not None and expected_run_key != evaluation.run_key:
         return _hold(evaluation, "verification_required")
-
-    for requirement in evaluation.requirements.requirements:
-        if requirement.jd_signal and not _verified(requirement.jd_signal, ad_text, ad_hash):
-            return _hold(evaluation, "verification_required")
-    requirements = {r.id: r for r in evaluation.requirements.requirements}
-    unverified_blocker = False
-    for match in evaluation.matches:
-        if any(c.source_id not in {"master_resume.md", "cv.md", "profile.yaml"} for c in match.evidence):
-            return _hold(evaluation, "verification_required")
-        if match.match == "partial" and not match.evidence:
-            return _hold(evaluation, "verification_required")
-        if match.match in {"missing", "not_applicable"} and match.evidence:
-            return _hold(evaluation, "verification_required")
-        if match.match == "not_applicable" and requirements[match.requirement_id].importance in {"critical", "high"}:
-            return _hold(evaluation, "verification_required")
-        if requirements[match.requirement_id].blocker and match.match != "strong":
-            # "missing" means not demonstrated, not proven incompatible.
-            # Preserve confirmed policy exclusions below before holding unknowns.
-            if _logistics(requirements[match.requirement_id]):
-                # Documents, location and hours have dedicated operations/checks.
-                continue
-            unverified_blocker = True
-    missing_candidate_evidence = bool(evaluation.matches) and not any(
-        m.match in {"strong", "partial"} and m.evidence for m in evaluation.matches
-    )
     if evidence_bundle is not None:
         try:
             from jobwatch.candidate.evidence import verify_evidence_snapshot
-            from jobwatch.candidate.assessment import verify_candidate_citations
             verify_evidence_snapshot(evidence_bundle)
             if evidence_bundle.bundle_hash != evaluation.run_key.evidence_hash:
                 raise ValueError
-            for match in evaluation.matches:
-                verify_candidate_citations(match.evidence, evidence_bundle)
-                if match.judgment is not None:
-                    verify_candidate_citations(match.judgment.contradiction_evidence, evidence_bundle)
-                    if not set(match.judgment.reviewed_evidence_ids) <= {item.id for item in evidence_bundle.items}:
-                        raise ValueError
         except Exception:
             return _hold(evaluation, "verification_required")
 
     if not evaluation.facts.real_job:
-        return _archive(evaluation, 'hard_gate')
+        return _hold(evaluation, 'verification_required')
     verified_location = _verified(evaluation.location_evidence, ad_text, ad_hash)
     location = evaluation.location_evidence.quote if verified_location else ''
     remote_claimed = evaluation.location_fit == 'remote_accessible'
     if remote_claimed and not (verified_location and re.search(r'\bremote\b|work from home', location, re.I)):
-        return _hold(evaluation, 'verification_required')
+        remote_claimed = False
     from jobwatch.candidate.eligibility import evaluate_eligibility
     facts = evaluation.facts.model_dump(mode='json')
     if any('seniority unknown' in str(u).casefold() for u in (evaluation.matching_diagnostics or {}).get('ad_uncertainties', ())):
@@ -168,13 +189,13 @@ def decide(
         'title': title, 'company': company, 'location': location,
         'remote': remote_claimed},
         policy=decision_policy, ad_text=ad_text, commute_km=commute_km)
+    if eligibility.reason == 'verification_required':
+        # A bad model quote cannot hide a conflict stated in the actual ad.
+        eligibility = evaluate_eligibility({**facts, 'work_rights': {}, 'title': title,
+            'company': company, 'location': location, 'remote': remote_claimed},
+            policy=decision_policy, ad_text=ad_text, commute_km=commute_km)
     if eligibility.status == 'excluded':
         return _archive(evaluation, 'policy_excluded' if eligibility.reason == 'policy_excluded' else 'hard_gate')
-    if eligibility.status == 'held':
-        return _hold(evaluation, 'verification_required' if eligibility.reason == 'verification_required' else 'insufficient_evidence')
-
-    if unverified_blocker or missing_candidate_evidence:
-        return _hold(evaluation, "insufficient_evidence")
 
     # Owner 2026-10-19: an employer the AI could not verify is shown with an "employer not verified" note, not held.
     if evaluation.legitimacy == "suspicious":

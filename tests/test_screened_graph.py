@@ -30,4 +30,6 @@ def test_gate_pass_goes_to_shortlisted_and_never_to_drafting(world):
 def test_screened_edges_have_no_drafting_stages():
     assert Stage.DRAFT_QUEUED not in screened.SCREENED_EDGES and Stage.DRAFTED not in screened.SCREENED_EDGES
     assert Stage.SHORTLISTED in screened.TERMINAL
-    assert graph.EDGES[Stage.SCORED].to == {Stage.DRAFT_QUEUED, Stage.ARCHIVED}      # the old graph is untouched
+    assert graph.EDGES[Stage.SCORED].to == {Stage.DRAFT_QUEUED, Stage.ARCHIVED, Stage.SHORTLISTED}
+    assert graph.GATE_ROUTE['review'] == Stage.SHORTLISTED
+    assert Stage.SHORTLISTED in graph.TERMINAL

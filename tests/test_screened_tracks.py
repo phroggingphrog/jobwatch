@@ -4,8 +4,24 @@ from pipeline import tracks
 from pipeline.nodes import gate
 from pipeline.schemas import JobFacts, MatchScore
 
-CFG = SimpleNamespace(settings={"pipeline": {"screened": {"tracks": {
-    "primary": ["accounts payable"], "secondary": ["barista", "chef"], "drop": ["registered nurse"]}}}})
+from pipeline.category_migration import migrate_legacy
+
+LEGACY_WORDS = ["graduate", "grad program", "internship", "intern", "vacation", "summer clerk", "cadet", "cadetship",
+                "undergraduate", "undergrad", "student", "trainee", "traineeship"]
+
+def migrated_config(screened):
+    policy = [dict(id=name, label=name, priority=i, action=action, promote=promote, hours=hours)
+              for i, (name, action, promote, hours) in enumerate([
+                  ('undergraduate', 'admit', True, 'allow_hours_only'),
+                  ('primary', 'admit', True, 'standard'),
+                  ('secondary', 'side', False, 'standard'),
+                  ('drop', 'archive', False, 'standard')])]
+    migrated = migrate_legacy(screened, legacy_program_phrases=LEGACY_WORDS,
+        legacy_policy=policy, program_category='undergraduate',
+        id_mapping={p['id']: p['id'] for p in policy})["migrated"]
+    return SimpleNamespace(settings={"pipeline": {"screened": migrated}})
+
+CFG = migrated_config({"tracks": {"primary": ["accounts payable"], "secondary": ["barista", "chef"], "drop": ["registered nurse"]}})
 
 
 def test_classify_order_and_defaults():
@@ -22,7 +38,7 @@ def test_classify_order_and_defaults():
 def test_no_private_lists_means_only_programs():
     t = tracks.settings(SimpleNamespace(settings={}))
     assert tracks.classify("Chef", t) is None
-    assert tracks.classify("Graduate Analyst", t) == "undergraduate"
+    assert tracks.classify("Graduate Analyst", t) is None
 
 
 def _score():
@@ -32,15 +48,15 @@ def _score():
                                       "wanted": "core", "justification": "a plain justification"})
 
 
-def test_program_is_not_hidden_for_hours(monkeypatch):
+def test_program_category_does_not_override_confirmed_hours(monkeypatch):
     from jobwatch.candidate import eligibility
     monkeypatch.setattr(eligibility, "evaluate_eligibility",
                         lambda job, ad_text="": eligibility._result("excluded", "hours_exceeded"))
     facts = JobFacts.model_construct(real_job=True)
     monkeypatch.setattr(JobFacts, "model_dump", lambda self, **k: {})
     route, dec = gate.decide(facts, _score(), "full-time 38 hours per week", "Graduate Analyst",
-                             posting={"track": "undergraduate"})
-    assert route == "draft" and dec.reason == "eligible_check_hours"
+                             posting={"track": "undergraduate"}, hours_policy="allow_hours_only")
+    assert route == "archive" and dec.reason == "hours_exceeded"
     route, _ = gate.decide(facts, _score(), "full-time 38 hours per week", "Analyst", posting={"track": "primary"})
     assert route == "archive"
 
@@ -50,6 +66,7 @@ def test_graph_gets_all_time_when_nothing_is_shortlisted(monkeypatch, tmp_path):
     from pipeline import screened, store
     conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
     store.ensure(conn)
+    conn.execute("CREATE TABLE postings (id INTEGER PRIMARY KEY, title TEXT, closed_at TEXT)")
     got = {}
 
     class G:
@@ -76,6 +93,8 @@ def test_waiting_shortlist_is_promoted_before_scoring(monkeypatch, tmp_path):
     from pipeline.schemas import Stage
     conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
     store.ensure(conn)
+    conn.execute("CREATE TABLE postings (id INTEGER PRIMARY KEY, title TEXT, closed_at TEXT)")
+    conn.execute("INSERT INTO postings VALUES (1, 'Job', NULL)")
     conn.execute("INSERT INTO pipeline_state (posting_id, stage, content_hash, data_json, updated_at) VALUES (1, ?, 'h', '{}', 'x')",
                  (str(Stage.SHORTLISTED),))
     order = []
@@ -113,17 +132,17 @@ def test_title_triage_drops_and_keeps_unsure(monkeypatch):
         seen["user"] = user
         return schema(items=[{"id": 1, "track": "drop"}, {"id": 2, "track": "unsure"}]), 1
     monkeypatch.setattr(title_triage, "call", fake)
-    cfg = SimpleNamespace(settings={"pipeline": {"screened": {"tracks": {"primary": ["accountant"]}}}})
+    cfg = migrated_config({"tracks": {"primary": ["accountant"]}})
     out = title_triage.run(conn, cfg, None, "m")
     assert out["asked"] == 2 and out["drop"] == 1 and out["unsure"] == 1
     assert "Accountant" not in seen["user"]            # a listed title is never sent
-    assert title_triage.known(conn) == {1: "drop", 2: "unsure"}
+    assert title_triage.known(conn, tracks.settings(cfg)) == {1: "drop", 2: "unsure"}
     assert title_triage.run(conn, cfg, None, "m")["asked"] == 0   # asked once only
 
 
 def test_unlisted_drop_setting():
     from pipeline import tracks
-    on = SimpleNamespace(settings={"pipeline": {"screened": {"unlisted": "drop"}}})
+    on = migrated_config({"unlisted": "drop"})
     assert tracks.unlisted_drop(on) and not tracks.unlisted_drop(SimpleNamespace(settings={}))
 
 
@@ -137,8 +156,8 @@ def test_untracked_jobs_get_a_track_before_promotion():
     for pid, title in [(1, "Retail Assistant - Mildura"), (2, "Graduate Accountant"), (3, "Casual Crew")]:
         conn.execute("INSERT INTO postings VALUES (?, ?)", (pid, title))
         store.admit(conn, pid, f"h{pid}", {}, Stage.SHORTLISTED)
-    cfg = SimpleNamespace(settings={"pipeline": {"screened": {"unlisted": "drop",
-                                                              "tracks": {"secondary": ["retail"]}}}})
-    assert screened.sort_untracked(conn, cfg) == {"secondary": 1, "undergraduate": 1, "drop": 1}
+    cfg = migrated_config({"unlisted": "drop", "tracks": {"secondary": ["retail"]}})
+    assert screened.sort_untracked(conn, cfg) == {"secondary": 1, "undergraduate": 1}
     stages = {r[0]: r[1] for r in conn.execute("SELECT posting_id, stage FROM pipeline_state")}
-    assert stages == {1: "side", 2: "shortlisted", 3: "archived"}
+    assert stages == {1: "side", 2: "shortlisted", 3: "shortlisted"}
+    assert store.get(conn, 3)["data"].get("track") is None

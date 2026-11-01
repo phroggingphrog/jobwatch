@@ -203,6 +203,11 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         from pipeline.agentic import discovery
         # The scope projection is read-only and unpaid, including dry runs.
         config = discovery.prepare_run(conn, config)
+        goals = config.extra.get('discovery_goals', ())
+        if not dry_run and goals:
+            from pipeline.vocabulary_research import prepare
+            from jobwatch import users as people
+            config = prepare(conn, config, people.current(), goals)
         rules = Rules(config.rules, config.employers, conn=conn)
         collection_deadline = time.monotonic() + max(0, deadline - time.time())
         http_conf = config.settings.get("http") or {}

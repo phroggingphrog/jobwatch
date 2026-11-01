@@ -29,7 +29,7 @@ from pipeline.schemas import Stage
 from pipeline.agentic.contracts import (AgenticError, AgenticEvaluation, AgenticGateDecision, DraftProposal,
                                         PackageManifest, ReviewVerdict, RunKey)
 from pipeline.agentic.evaluator import evaluate_job
-from pipeline.agentic.gate import decide
+from pipeline.agentic.gate import assessment_audit, decide
 from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, km_from_home
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
 from pipeline.agentic import decision_log, discovery_settings, jev_skills, incidents
@@ -635,7 +635,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         # hold the job; a requirement the ad states that the owner cannot meet archives it (owner, 2026-10-12).
         # None means Jev was not reached; the job then runs exactly as before.
         with deadline_scope(_invocation_deadline):
-            if cfg.get('autonomous_evaluation', False) and text_kind == 'full' and saved_package is None:
+            if cfg.get('autonomous_evaluation', False) and ad_text.strip() and saved_package is None:
                 prior_screen = adapter.load_artifact(key.value, 'public_screening')
                 if prior_screen is None:
                     screen = jev_screen(ad_text, config, budget=budget)
@@ -643,12 +643,12 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 else:
                     screen = prior_screen['result']
             else:
-                screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
+                screen = jev_screen(ad_text, config) if ad_text.strip() and saved_package is None else None
         extras = extras_settings(config)
         applicable = applicable_knockouts(dp)
         knockout = next((KNOCKOUT_REASONS[q] for q, at in extras['knockout_at'].items()
                          if q in applicable and screen is not None and screen.get(q, 0) >= float(at)), None)
-        if text_kind != 'full':
+        if not ad_text.strip():
             reason = 'insufficient_evidence'
         elif screen is not None and screen['injection'] >= float(extras['jev_hold_at']):
             reason = 'ad_has_ai_instructions'
@@ -726,12 +726,20 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 if _capture(conn, posting_id) != captured or _run_key(
                         posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn).value != key.value:
                     raise AgenticError('snapshot_changed')
+            if evaluation.run_key != key:
+                raise AgenticError('snapshot_changed')
             decision = gate_current(evaluation, posting=posting, ad_text=ad_text, decision_policy=dp, policy=pol,
                                     captured_complete=text_kind == 'full', expected_run_key=key,
                                     evidence_bundle=bundle)
             if dp is not None:
                 decision_log.record(conn, key.value, dp, decision)
             adapter.save_artifact(claim, 'evaluation', evaluation.model_dump(mode='json'))
+            if adapter.load_artifact(key.value, 'assessment_audit') is None:
+                audit = assessment_audit(evaluation, ad_text=ad_text, captured_complete=text_kind == 'full',
+                    evidence_bundle=bundle, decision=decision, title=posting['title'],
+                    company=str(posting.get('company') or ''), decision_policy=dp,
+                    commute_km=commute_km_of(dp, posting.get('location')))
+                adapter.save_artifact(claim, 'assessment_audit', audit.model_dump())
             completed_phase = 'evaluation'
             incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
             # Jev skills (owner 2026-10-12, career facts only): a second-opinion fit score and a requirement map
@@ -800,6 +808,15 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         code = getattr(exc, 'code', None)
         reason = code if isinstance(exc, AgenticError) and type(code) is str and code.replace('_', '').isalnum() else 'execution_failed'
         reason = _runtime_stop_reason(exc, scope) or reason
+        if reason in {'model_invalid_response', 'model_truncated_response', 'invalid_requirements',
+                      'invalid_evaluation', 'invalid_citation', 'invalid_candidate_citation',
+                      'contradictory_match', 'requirements_changed'}:
+            # A separate artifact cannot be mistaken for a validated evaluation.
+            from pipeline.decision import build_decision
+            partial = {'assessment_decision': build_decision(errors=(reason,)).model_dump(),
+                       'posting_id': posting_id, 'run_key': key.value}
+            if adapter.load_artifact(key.value, 'partial_assessment') is None:
+                adapter.save_artifact(claim, 'partial_assessment', partial)
         if isinstance(exc, RuntimeErrorSafe) and reason == 'cancelled':
             raise  # release the claim below, then preserve the active posting for the caller
 

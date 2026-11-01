@@ -113,8 +113,10 @@ def _no_live_model(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_tinyfish_fallback(monkeypatch):
-    """No test may reach the paid TinyFish fallback: a key file on the machine made blocked-fetch tests fetch a real
-    page instead of raising. A test that covers the fallback sets the key itself."""
+    """A local key must not authorize paid fallback calls in synthetic tests.
+
+    Tests that exercise fallback behavior supply an explicit mocked key and transport.
+    """
     from jobwatch.util import adtext
     monkeypatch.setattr(adtext, "_tinyfish_key", lambda: "")
 
