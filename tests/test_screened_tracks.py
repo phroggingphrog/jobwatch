@@ -117,3 +117,9 @@ def test_title_triage_drops_and_keeps_unsure(monkeypatch):
     assert "Accountant" not in seen["user"]            # a listed title is never sent
     assert title_triage.known(conn) == {1: "drop", 2: "unsure"}
     assert title_triage.run(conn, cfg, None, "m")["asked"] == 0   # asked once only
+
+
+def test_unlisted_drop_setting():
+    from pipeline import tracks
+    on = SimpleNamespace(settings={"pipeline": {"screened": {"unlisted": "drop"}}})
+    assert tracks.unlisted_drop(on) and not tracks.unlisted_drop(SimpleNamespace(settings={}))

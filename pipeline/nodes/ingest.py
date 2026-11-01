@@ -70,6 +70,7 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
     track_cfg = tracks.settings(config) if screened_mode else {}
     rows = candidates(conn, posting_ids)
     ai_track = {}
+    unlisted_drop = screened_mode and tracks.unlisted_drop(config)
     if screened_mode:                              # best title match first, like career-ops; stable, so oldest first within a track
         from pipeline import title_triage
         ai_track = {k: v for k, v in title_triage.known(conn).items() if v != "unsure"}
@@ -95,6 +96,8 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         track = None
         if screened_mode:                          # title track before any fetch (pipeline/tracks.py)
             track = tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"])   # list first, then the AI title check
+            if track is None and unlisted_drop:    # owner 2026-11-01: drop titles not in the target lists, like career-ops
+                track = "drop"
             if track in ("drop", "secondary"):
                 stage, why = (Stage.ARCHIVED, "title_not_target") if track == "drop" else (Stage.SIDE, None)
                 store.admit(conn, r["id"], f"{track}:{r['id']}", {"track": track}, stage, why)

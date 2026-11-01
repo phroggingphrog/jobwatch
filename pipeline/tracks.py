@@ -27,6 +27,12 @@ def settings(config) -> dict[str, tuple[str, ...]]:
     return out
 
 
+def unlisted_drop(config) -> bool:
+    """pipeline.screened.unlisted: "drop" archives any title no list names (no ad read, no model); "keep" reads it."""
+    own = (((getattr(config, "settings", None) or {}).get("pipeline") or {}).get("screened") or {})
+    return str(own.get("unlisted", "keep")).casefold() == "drop"
+
+
 def _hit(title: str, phrases) -> bool:
     return any(re.search(rf"(?<![a-z0-9]){re.escape(p)}(?![a-z0-9])", title) for p in phrases)
 

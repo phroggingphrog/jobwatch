@@ -95,7 +95,9 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
 
 def _title_triage(conn, config, started, max_seconds) -> dict:
     """Sort unlisted titles by AI before ingest reads ads; at most a quarter of what is left."""
-    from . import title_triage
+    from . import title_triage, tracks
+    if tracks.unlisted_drop(config):                # the keyword step drops them all: nothing left to ask about
+        return {"skipped": "unlisted_drop"}
     left = max_seconds - (time.monotonic() - started) if max_seconds else None
     settings = graph.Settings.from_config(config)
     try:
