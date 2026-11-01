@@ -144,8 +144,11 @@ class Graph:
                 facts = JobFacts.model_validate(data["extract"])
                 score = MatchScore.model_validate({k: v for k, v in data["evaluate"].items()
                                                    if k in MatchScore.model_fields})
+                from . import tracks
+                category = tracks.settings(self.config).get(data.get("track"))
                 route, dec = gate.decide(facts, score, text, ad.title, self.settings.threshold,
-                                         posting={"company": ad.company, "location": ad.location, "track": data.get("track")})
+                                         posting={"company": ad.company, "location": ad.location, "track": data.get("track")},
+                                         hours_policy=category.hours if category else "standard")
                 nxt = self.GATE_ROUTE[route]
                 if nxt is Stage.DLQ:
                     return self._dead(pid, cur, f"needs review: {dec.reason}", 1)

@@ -58,18 +58,21 @@ def sort_untracked(conn, config) -> dict:
                         [str(s) for s in ACTIVE]).fetchall()
     out = {}
     for r in rows:
-        track = tracks.classify(r["title"] or "", cfg) or ("drop" if drop_unlisted else None)
-        if track is None:
+        track = tracks.classify(r["title"] or "", cfg)
+        category = cfg.get(track)
+        action = category.action if category else ("archive" if drop_unlisted else "admit")
+        if track is None and action == "admit":
             continue
         cur = Stage(r["stage"])
-        if track == "drop":
+        if action == "archive":
             store.move(conn, r["posting_id"], "track", cur, Stage.ARCHIVED, output=track, reason="title_not_target")
-        elif track == "secondary":
+        elif action == "side":
             store.move(conn, r["posting_id"], "track", cur, Stage.SIDE, output=track)
         else:
             conn.execute("UPDATE pipeline_state SET data_json=json_set(data_json, '$.track', ?) WHERE posting_id=?",
                          (track, r["posting_id"]))
-        out[track] = out.get(track, 0) + 1
+        key = track if track is not None else "unassigned"
+        out[key] = out.get(key, 0) + 1
     conn.commit()
     return out
 
@@ -104,14 +107,18 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
     out = {"promoted": 0, "allowance": allowance}
     if allowance <= 0:
         return out
+    from . import tracks
+    snapshot = tracks.settings(config)
     rows = conn.execute(
-        "SELECT posting_id, CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) AS score FROM pipeline_state "
+        "SELECT posting_id, json_extract(data_json, '$.track') AS track, "
+        "CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) AS score FROM pipeline_state "
         "WHERE stage=? AND json_extract(data_json, '$.evaluate.overall') IS NOT NULL "
-        "AND CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) >= ? "
-        "AND COALESCE(json_extract(data_json, '$.track'), '') <> 'secondary' "
-        "ORDER BY CASE json_extract(data_json, '$.track') WHEN 'undergraduate' THEN 0 WHEN 'primary' THEN 1 ELSE 2 END, "
-        "score DESC, posting_id DESC LIMIT ?", (str(Stage.SHORTLISTED), cfg["min_score"], allowance)).fetchall()
-    ids = [r["posting_id"] for r in rows]
+        "AND CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) >= ?",
+        (str(Stage.SHORTLISTED), cfg["min_score"])).fetchall()
+    rows = [row for row in rows if snapshot.get(row['track']) is None or snapshot.get(row['track']).promote]
+    rows.sort(key=lambda row: (snapshot.get(row['track']).priority if snapshot.get(row['track']) else float('inf'),
+                               -row['score'], -row['posting_id']))
+    ids = [r["posting_id"] for r in rows[:allowance]]
     if not ids:
         return out
     from pipeline.agentic.service import agentic_batch_run

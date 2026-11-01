@@ -15,16 +15,17 @@ Route = Literal['draft', 'archive', 'review']
 
 
 def decide(facts: JobFacts, score: MatchScore, text: str, title: str = '',
-           threshold: float = THRESHOLD, *, posting: dict | None = None) -> tuple[Route, GateDecision]:
+           threshold: float = THRESHOLD, *, posting: dict | None = None,
+           hours_policy: str = 'standard') -> tuple[Route, GateDecision]:
     if not facts.real_job:
         return 'archive', GateDecision(passed=False, reason='not_a_real_job', score=score.overall)
     from jobwatch.candidate.eligibility import evaluate_eligibility
     job = {**dict(posting or {}), **facts.model_dump(), 'title': title}
     result = evaluate_eligibility(job, ad_text=text)
-    if (posting or {}).get('track') == 'undergraduate' and result.status != 'eligible':
-        # Programs may be full-time: hours alone never hide one. Shown with a note to check visa hours.
+    if hours_policy == 'allow_hours_only' and result.status != 'eligible':
         from pipeline.tracks import HOURS_REASONS
         hours_only = result.reason in HOURS_REASONS or (result.reason == 'eligibility_unknown'
+                                                         and bool(result.questions)
                                                          and set(result.questions) <= HOURS_REASONS)
         if hours_only:
             return 'draft', GateDecision(passed=True, reason='eligible_check_hours', score=score.overall)

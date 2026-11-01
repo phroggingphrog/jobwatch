@@ -73,9 +73,9 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
     unlisted_drop = screened_mode and tracks.unlisted_drop(config)
     if screened_mode:                              # best title match first, like career-ops; stable, so oldest first within a track
         from pipeline import title_triage
-        ai_track = {k: v for k, v in title_triage.known(conn).items() if v != "unsure"}
-        rank = {"undergraduate": 0, "primary": 1, None: 2}
-        rows = sorted(rows, key=lambda r: rank.get(tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"]), 3))
+        ai_track = {k: v for k, v in title_triage.known(conn, track_cfg).items() if track_cfg.get(v) is not None}
+        rank = {category.id: category.priority for category in track_cfg.ordered()}
+        rows = sorted(rows, key=lambda r: rank.get(tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"]), float("inf")))
     for r in rows:
         if deadline is not None and time.time() >= deadline:
             stats['deferred'] = 'batch_deadline'
@@ -96,12 +96,12 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         track = None
         if screened_mode:                          # title track before any fetch (pipeline/tracks.py)
             track = tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"])   # list first, then the AI title check
-            if track is None and unlisted_drop:    # owner 2026-11-01: drop titles not in the target lists, like career-ops
-                track = "drop"
-            if track in ("drop", "secondary"):
-                stage, why = (Stage.ARCHIVED, "title_not_target") if track == "drop" else (Stage.SIDE, None)
-                store.admit(conn, r["id"], f"{track}:{r['id']}", {"track": track}, stage, why)
-                stats[track] = stats.get(track, 0) + 1
+            category = track_cfg.get(track)
+            action = category.action if category else ("archive" if track is None and unlisted_drop else "admit")
+            if action in ("archive", "side"):
+                stage, why = (Stage.ARCHIVED, "title_not_target") if action == "archive" else (Stage.SIDE, None)
+                store.admit(conn, r["id"], f"{action}:{r['id']}", {"track": track}, stage, why)
+                stats[action] = stats.get(action, 0) + 1
                 conn.commit()
                 continue
         host = adtext.fetch_host(r["source"])
