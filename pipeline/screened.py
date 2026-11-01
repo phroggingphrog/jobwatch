@@ -102,13 +102,17 @@ def after_collect(conn, config, max_seconds=None, deadline=None) -> dict:
             return {"skipped": "busy"}
         store.ensure(conn)
         out = {"retried": retry_transport(conn)}
-        # Hold half the time back for the agent only when shortlisted jobs are already waiting; otherwise scoring
-        # gets it all (live runs 277-279 spent the half on ad fetches and never reached scoring).
+        # Shortlisted jobs already waiting go to the agent FIRST, with at most half the time; scoring gets the rest.
+        # (Run 327, 2026-11-01: promoted after scoring, the agent had under its 120 s start margin left and skipped.)
         waiting = conn.execute("SELECT 1 FROM pipeline_state WHERE stage=? LIMIT 1", (str(Stage.SHORTLISTED),)).fetchone()
-        half = (max_seconds / 2 if waiting else max_seconds) if max_seconds else None
+        if waiting:
+            out["promote"] = promote(conn, config, max_seconds=max_seconds / 2 if max_seconds else None,
+                                     deadline=deadline)
+        left = max_seconds - (time.monotonic() - started) if max_seconds else None
         g = ScreenedGraph(conn=conn, db_path=str(config.db_path), config=config,
                           settings=graph.Settings.from_config(config))
-        out["graph"] = asyncio.run(g.run(max_seconds=half))
-        left = max_seconds - (time.monotonic() - started) if max_seconds else None
-        out["promote"] = promote(conn, config, max_seconds=left, deadline=deadline)
+        out["graph"] = asyncio.run(g.run(max_seconds=left))
+        if not waiting:                         # newly shortlisted: the agent gets whatever is left
+            left = max_seconds - (time.monotonic() - started) if max_seconds else None
+            out["promote"] = promote(conn, config, max_seconds=left, deadline=deadline)
         return out
