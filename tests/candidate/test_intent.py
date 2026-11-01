@@ -27,6 +27,23 @@ def test_preferred_location_and_hours_do_not_exclude():
     assert result.status == 'eligible'
 
 
+def test_absent_intent_hash_variants_and_real_intent_tampering():
+    import pytest
+    from jobwatch.candidate.contracts import digest
+    policy = policy_of(fact('preference', 'Administrative roles'))
+    absent = policy.model_dump(mode='json')
+    absent['intent'] = None
+    absent['policy_hash'] = digest({k:v for k,v in absent.items() if k != 'policy_hash'})
+    assert DecisionPolicy.model_validate(absent).intent is None
+    legacy = {k:v for k,v in absent.items() if k != 'intent'}
+    legacy['policy_hash'] = digest({k:v for k,v in legacy.items() if k != 'policy_hash'})
+    assert DecisionPolicy.model_validate(legacy).intent is None
+    tampered = policy.model_dump(mode='json')
+    tampered['intent']['preferences'] = []
+    with pytest.raises(ValueError, match='policy_hash_mismatch'):
+        DecisionPolicy.model_validate(tampered)
+
+
 def test_exclusive_location_and_hours_exclude():
     assert decision(fact('location', {'regions': ['VIC'], 'exclusive': True}), location='Sydney NSW').status == 'excluded'
     assert decision(fact('constraint', {'max_hours_per_week': 24, 'exclusive': True})).reason == 'hours_exceeded'

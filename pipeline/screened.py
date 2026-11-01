@@ -21,6 +21,8 @@ SCREENED_EDGES = {st: e for st, e in graph.EDGES.items() if st not in (Stage.DRA
 SCREENED_EDGES[Stage.SCORED] = graph.Edge("gate", frozenset({Stage.SHORTLISTED, Stage.ARCHIVED}))
 GATE_ROUTE = {"draft": Stage.SHORTLISTED, "archive": Stage.ARCHIVED, "review": Stage.SHORTLISTED}
 TERMINAL = graph.TERMINAL | {Stage.SHORTLISTED, Stage.SIDE}
+# min_score remains readable for old configurations; it is no longer a hard
+# admission or promotion cutoff. Score orders work within category priority.
 DEFAULTS = {"promote_per_run": 3, "promote_per_day": 10, "min_score": 3.0}
 TRANSPORT_ERRORS = ("Connection", "Timeout", "timed out", "502", "503", "504")
 

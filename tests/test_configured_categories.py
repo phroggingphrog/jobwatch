@@ -41,7 +41,7 @@ def test_dynamic_schema_rejects_other_ids():
         schema(items=[{"id": 1, "track": "primary"}])
 
 
-def test_hours_exception_is_policy_not_id(monkeypatch):
+def test_hours_limit_cannot_be_bypassed_by_category_or_policy(monkeypatch):
     from jobwatch.candidate import eligibility
     monkeypatch.setattr(eligibility, "evaluate_eligibility", lambda job, ad_text="": eligibility._result("excluded", "hours_exceeded"))
     monkeypatch.setattr(JobFacts, "model_dump", lambda self, **k: {})
@@ -49,5 +49,8 @@ def test_hours_exception_is_policy_not_id(monkeypatch):
     score = MatchScore.model_validate({"technical_skills": {"score": 4, "evidence": "evidence text"},
         "experience": {"score": 4, "evidence": "evidence text"}, "domain": {"score": 4, "evidence": "evidence text"},
         "wanted": "core", "justification": "a plain justification"})
-    assert gate.decide(facts, score, "text", posting={"track": "undergraduate"})[0] == "archive"
-    assert gate.decide(facts, score, "text", posting={"track": "custom"}, hours_policy="allow_hours_only")[0] == "draft"
+    for track, policy in [("undergraduate", "standard"), ("custom", "allow_hours_only")]:
+        route, decision = gate.decide(facts, score, "text", posting={"track": track}, hours_policy=policy)
+        assert route == "archive"
+        assert decision.passed is False
+        assert decision.reason == "hours_exceeded"

@@ -18,7 +18,7 @@ from tests.candidate.policy_fixtures import fact, policy_of
 def accountant():
     """A graduate accountant: entry/junior roles in Victoria, no citizenship, a 48 hour fortnight, programs may be full time."""
     return policy_of(
-        fact('location', 'Melbourne VIC'), fact('preference', {'seniority': ['entry', 'junior'], 'exclusive': True}),
+        fact('location', {'regions': ['Melbourne VIC'], 'exclusive': True}), fact('preference', {'seniority': ['entry', 'junior'], 'exclusive': True}),
         fact('exclusion', {'kind': 'family', 'value': 'hospitality'}, fid='x1'),
         fact('exclusion', {'kind': 'family', 'value': 'customer_service'}, fid='x2'),
         fact('work_rights', {'citizen_or_pr': False, 'hours_limit_per_fortnight': 48, 'full_time_programs_ok': True}))
@@ -27,7 +27,7 @@ def accountant():
 def nurse():
     """A mid-level nurse: mid-level roles in New South Wales, a citizen, no casual work, not accounting or IT."""
     return policy_of(
-        fact('location', 'Sydney NSW'), fact('preference', {'seniority': ['mid-level'], 'exclusive': True}),
+        fact('location', {'regions': ['Sydney NSW'], 'exclusive': True}), fact('preference', {'seniority': ['mid-level'], 'exclusive': True}),
         fact('exclusion', {'kind': 'family', 'value': 'accounting'}, fid='x1'),
         fact('exclusion', {'kind': 'family', 'value': 'it'}, fid='x2'),
         fact('exclusion', {'kind': 'work_type', 'value': 'casual'}, fid='x3'),
@@ -239,7 +239,7 @@ def test_rules_defer_until_current_digest_then_screen_without_paid_calls(conn, p
     monkeypatch.setattr(candidate_digest, 'current_policy_digest', current)
     monkeypatch.setattr(candidate_digest, 'ensure_digest', lambda *a, **kw: pytest.fail('paid candidate work from filter'))
     p = Posting(source='synthetic', source_id='1', url='https://example.invalid/1',
-                title='Senior Accountant', location='Perth WA')
+                title='Senior Accountant', location='Melbourne VIC')
     rules = Rules(cfg.rules, conn=conn)
     assert rules.evaluate(p).matched
     assert rules.evaluate(p).flags == ['candidate_digest_pending']
@@ -248,6 +248,7 @@ def test_rules_defer_until_current_digest_then_screen_without_paid_calls(conn, p
     ready = SimpleNamespace(policy_hash=pol.policy_hash)
     assert not Rules(cfg.rules, conn=conn).evaluate(p).matched
     pinned(nurse())
+    p.location = 'Sydney NSW'
     assert Rules(cfg.rules, conn=conn).evaluate(p).rules == {'candidate_digest': 'pending'}
     assert len(lookups) == 3
     from pipeline.agentic.contracts import AgenticError
@@ -294,9 +295,14 @@ def test_location_stage(conn):
     assert run(nur, 'Registered Nurse', 'Melbourne VIC').skip and not run(nur, 'Registered Nurse', 'Sydney NSW').skip
     assert run(acc, 'Accounts Officer', 'Remote - United States', remote=True).skip   # a remote ad abroad
     assert not run(acc, 'Accounts Officer', 'Sydney NSW', remote=True).skip           # remote inside Australia (remote_ok not refused)
-    no_remote = policy_of(fact('location', 'Melbourne VIC'), fact('preference', {'remote_ok': False}))
+    no_remote = policy_of(fact('location', {'regions': ['Melbourne VIC'], 'remote_ok': False, 'exclusive': True}))
     assert run(engine(conn, no_remote), 'Accounts Officer', 'Sydney NSW', remote=True).skip
 
+
+def test_location_preference_does_not_exclude_other_regions(conn):
+    eng = engine(conn, policy_of(fact('location', 'Melbourne VIC')))
+    assert not run(eng, 'Accounts Officer', 'Sydney NSW').skip
+    assert not run(eng, 'Accounts Officer', 'Perth WA').skip
 
 def test_off_target_follows_the_profile_exclusions_only(conn):
     acc, nur = engine(conn, accountant()), engine(conn, nurse())
@@ -502,8 +508,10 @@ def test_cli_words_rules_test_and_override(conn, capsys):
     ('Australia-wide|NSW – Sydney Metro Area', False, False),
 ])
 def test_specific_state_is_not_masked_by_country_metadata(conn, location, remote, skip):
-    eng = engine(conn, policy_of(fact('location', 'Melbourne VIC')))
+    eng = engine(conn, policy_of(fact('location', {'regions': ['Melbourne VIC'], 'exclusive': True})))
     out = run(eng, 'Analyst', location, remote=remote)
     assert out.skip is skip
     if skip:
         assert out.category == 'location_outside'
+    preferred = engine(conn, policy_of(fact('location', 'Melbourne VIC')))
+    assert not run(preferred, 'Analyst', location, remote=remote).skip

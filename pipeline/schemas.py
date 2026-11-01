@@ -1,8 +1,8 @@
 """Typed contracts for the deterministic pipeline (owner spec 2026-10-08).
 
-Every model output is parsed into one of these with Pydantic in strict mode (no type coercion, unknown keys
-rejected). A reply that does not validate is never "fixed up" by guessing: the node retries (max 3) and then the
-job goes to the dead letter queue. The overall score is computed by code from the rubric, never by the model.
+Model outputs use validated Pydantic contracts. Compatible extra fields and type coercion are permitted.
+Unusable output retries at most 3 times, then records a technical failure. Missing audit proof remains
+advisory and does not imply unsuitable work. The overall rubric score is computed by code.
 """
 from __future__ import annotations
 

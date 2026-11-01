@@ -65,8 +65,14 @@ class DecisionPolicy(StrictFrozen):
 
     @model_validator(mode="after")
     def _hash_matches(self):
-        excluded = {"policy_hash"} | ({"intent"} if self.intent is None else set())
-        if self.policy_hash != digest(self.model_dump(mode="json", exclude=excluded)):
+        payload = self.model_dump(mode="json", exclude={"policy_hash"})
+        hashes = {digest(payload)}
+        if self.intent is None:
+            # Legacy snapshots omit intent; generic constructors can serialize
+            # its default null. Both bind identical absent intent, not different
+            # constraints. Non-null intent always participates in the hash.
+            hashes.add(digest({k: v for k, v in payload.items() if k != 'intent'}))
+        if self.policy_hash not in hashes:
             raise ValueError("policy_hash_mismatch")
         return self
 

@@ -4,8 +4,8 @@ Collectors (jobwatch.run.run) keep scraping and normalising postings into `posti
 posting still listed, in the person's own state / remote-Australia (filters.location_rule), with the WHOLE ad text
 (fetched here when the source allows it). No title word lists: what the job is gets judged by meaning in node 2-3.
 Same ad text as a job already in the pipeline -> archived as a duplicate (sha256 of the normalised text).
-Paid placements (sponsored ads) are archived. Ads whose full text cannot be had yet are not admitted (asked again
-next run, within the fetch log's limits).
+Paid placements (sponsored ads) are archived. Nonempty partial ads enter assessment with an explicit
+completeness warning. Empty pages and challenge pages wait for a later bounded fetch.
 """
 from __future__ import annotations
 
