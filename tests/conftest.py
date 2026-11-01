@@ -113,10 +113,12 @@ def _no_live_model(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _no_tinyfish_fallback(monkeypatch):
-    """A local key must never make a synthetic test call the paid fallback."""
-    from jobwatch.util import adtext
-    monkeypatch.setattr(adtext, "tinyfish_text", lambda url: "")
+    """A local key must not authorize paid fallback calls in synthetic tests.
 
+    Tests that exercise fallback behavior supply an explicit mocked key and transport.
+    """
+    from jobwatch.util import adtext
+    monkeypatch.setattr(adtext, "_tinyfish_key", lambda: "")
 
 @pytest.fixture(autouse=True)
 def _cv_printer_without_browser(monkeypatch, request):

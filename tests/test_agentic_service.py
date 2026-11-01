@@ -1070,6 +1070,8 @@ def test_adopted_profile_alone_authorises_no_discovery(world, monkeypatch):
     _reset_profile(users)
     intake.adopt_existing(users.current(), actor='person')
     assert intake.discovery_scope(users.current()) is None
+    # An adopted profile alone does not authorize discovery without confirmed scope.
+    assert intake.scope_state(users.current()) == (None, 'no_confirmed_scope')
     assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_scope'}
 
 

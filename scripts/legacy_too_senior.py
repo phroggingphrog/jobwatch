@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import sqlite3
 
+from jobwatch.users import base_dir
 from jobwatch.web import queries as q
 
 EXPECTED = 4
@@ -164,7 +165,7 @@ def main():
     args = parser.parse_args()
     path = args.db.resolve(strict=True)
     # Defense in depth: refuse the canonical data tree even with an offline attestation.
-    live_tree = (Path.home() / 'brain/stores/jobwatch').resolve()
+    live_tree = base_dir().resolve()
     if path == live_tree or live_tree in path.parents:
         parser.error('Live data tree refused; use an offline copy')
     if args.action != 'dry-run' and args.backup is None:
