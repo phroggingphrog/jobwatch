@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from jobwatch.apply import jev_forms
 from jobwatch.web import ask_cards
 
-SRC = Path.home() / "brain/data/jobwatch/profile"
+SRC = Path.home() / "brain/stores/jobwatch/profile"
 ANSWERS = '''version: 1
 availability:
   earliest_start_date: ""  # YYYY-MM-DD
