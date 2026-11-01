@@ -69,9 +69,12 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
     screened_mode = isinstance(getattr(config, "settings", None), dict) and effective_mode(config) == "screened"
     track_cfg = tracks.settings(config) if screened_mode else {}
     rows = candidates(conn, posting_ids)
+    ai_track = {}
     if screened_mode:                              # best title match first, like career-ops; stable, so oldest first within a track
+        from pipeline import title_triage
+        ai_track = {k: v for k, v in title_triage.known(conn).items() if v != "unsure"}
         rank = {"undergraduate": 0, "primary": 1, None: 2}
-        rows = sorted(rows, key=lambda r: rank.get(tracks.classify(r["title"] or "", track_cfg), 3))
+        rows = sorted(rows, key=lambda r: rank.get(tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"]), 3))
     for r in rows:
         if deadline is not None and time.time() >= deadline:
             stats['deferred'] = 'batch_deadline'
@@ -91,7 +94,7 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
             continue
         track = None
         if screened_mode:                          # title track before any fetch (pipeline/tracks.py)
-            track = tracks.classify(r["title"] or "", track_cfg)
+            track = tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"])   # list first, then the AI title check
             if track in ("drop", "secondary"):
                 stage, why = (Stage.ARCHIVED, "title_not_target") if track == "drop" else (Stage.SIDE, None)
                 store.admit(conn, r["id"], f"{track}:{r['id']}", {"track": track}, stage, why)

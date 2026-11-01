@@ -61,6 +61,7 @@ def test_graph_gets_all_time_when_nothing_is_shortlisted(monkeypatch, tmp_path):
     monkeypatch.setattr(screened.graph.Settings, "from_config", staticmethod(lambda c: None))
     monkeypatch.setattr(screened, "promote", lambda *a, **k: {})
     monkeypatch.setattr(screened, "retry_transport", lambda c: 0)
+    monkeypatch.setattr(screened, "_title_triage", lambda *a: {})
     cfg = SimpleNamespace(settings={}, db_path=tmp_path / "x.db")
     from jobwatch.util import adtext
     monkeypatch.setattr(adtext, "lock_path", lambda c: tmp_path / "lock")
@@ -87,8 +88,32 @@ def test_waiting_shortlist_is_promoted_before_scoring(monkeypatch, tmp_path):
     monkeypatch.setattr(screened.graph.Settings, "from_config", staticmethod(lambda c: None))
     monkeypatch.setattr(screened, "promote", lambda c, cfg, max_seconds=None, deadline=None: order.append(("promote", max_seconds)) or {})
     monkeypatch.setattr(screened, "retry_transport", lambda c: 0)
+    monkeypatch.setattr(screened, "_title_triage", lambda *a: {})
     cfg = SimpleNamespace(settings={}, db_path=tmp_path / "x.db")
     from jobwatch.util import adtext
     monkeypatch.setattr(adtext, "lock_path", lambda c: tmp_path / "lock")
     screened.after_collect(conn, cfg, max_seconds=400)
     assert [n for n, _ in order] == ["promote", "graph"] and order[0][1] == 200 and order[1][1] > 390
+
+
+def test_title_triage_drops_and_keeps_unsure(monkeypatch):
+    import sqlite3
+    from pipeline import store, title_triage
+    from pipeline.nodes import ingest
+    conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
+    store.ensure(conn)
+    rows = [{"id": 1, "title": "Specialist Anaesthetist"}, {"id": 2, "title": "Planning and Performance Analyst"},
+            {"id": 3, "title": "Accountant"}]
+    monkeypatch.setattr(ingest, "candidates", lambda c, ids=None: rows)
+    seen = {}
+
+    def fake(llm, model, system, user, schema, **k):
+        seen["user"] = user
+        return schema(items=[{"id": 1, "track": "drop"}, {"id": 2, "track": "unsure"}]), 1
+    monkeypatch.setattr(title_triage, "call", fake)
+    cfg = SimpleNamespace(settings={"pipeline": {"screened": {"tracks": {"primary": ["accountant"]}}}})
+    out = title_triage.run(conn, cfg, None, "m")
+    assert out["asked"] == 2 and out["drop"] == 1 and out["unsure"] == 1
+    assert "Accountant" not in seen["user"]            # a listed title is never sent
+    assert title_triage.known(conn) == {1: "drop", 2: "unsure"}
+    assert title_triage.run(conn, cfg, None, "m")["asked"] == 0   # asked once only

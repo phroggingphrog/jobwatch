@@ -93,6 +93,20 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
     return out
 
 
+def _title_triage(conn, config, started, max_seconds) -> dict:
+    """Sort unlisted titles by AI before ingest reads ads; at most a quarter of what is left."""
+    from . import title_triage
+    left = max_seconds - (time.monotonic() - started) if max_seconds else None
+    settings = graph.Settings.from_config(config)
+    try:
+        from jobwatch.util.llm import LLM
+        return title_triage.run(conn, config, LLM(), settings.sort_model,
+                                deadline=time.monotonic() + left / 4 if left else None)
+    except Exception as exc:                        # noqa: BLE001 - never blocks the run: titles stay unlisted
+        log.warning("screened: title triage failed: %s", type(exc).__name__)
+        return {"error": type(exc).__name__}
+
+
 def after_collect(conn, config, max_seconds=None, deadline=None) -> dict:
     """Timer hook (jobwatch.run.run): retry transport failures, run the screened graph, then promote."""
     from jobwatch.util import adtext
@@ -108,6 +122,7 @@ def after_collect(conn, config, max_seconds=None, deadline=None) -> dict:
         if waiting:
             out["promote"] = promote(conn, config, max_seconds=max_seconds / 2 if max_seconds else None,
                                      deadline=deadline)
+        out["title_triage"] = _title_triage(conn, config, started, max_seconds)
         left = max_seconds - (time.monotonic() - started) if max_seconds else None
         g = ScreenedGraph(conn=conn, db_path=str(config.db_path), config=config,
                           settings=graph.Settings.from_config(config))
