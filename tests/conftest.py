@@ -112,6 +112,13 @@ def _no_live_model(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_tinyfish_fallback(monkeypatch):
+    """No test may reach the paid TinyFish fallback: a key file on the machine made blocked-fetch tests fetch a real
+    page instead of raising. A test that covers the fallback sets the key itself."""
+    from jobwatch.util import adtext
+    monkeypatch.setattr(adtext, "_tinyfish_key", lambda: "")
+
+@pytest.fixture(autouse=True)
 def _cv_printer_without_browser(monkeypatch, request):
     """Drafts print the CV through career-ops' template in Chromium; tests keep the old in-process printer
     (the draft module's render_pdf, which many tests replace) unless marked real_cv_printer."""

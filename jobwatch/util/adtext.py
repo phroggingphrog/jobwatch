@@ -997,7 +997,8 @@ def ensure_text(conn, posting, fetcher=None, *, allow_fetch: bool = True, now: d
         got = (fetcher(posting["source_id"]) if fetcher else spec.run(ref)) or ""
     except Blocked as exc:
         # The site said stop. One fallback request through TinyFish can still return the ad, and it is capped.
-        got = "" if fetcher else tinyfish_text(posting["url"])
+        # reader._BASE_SQL does not select p.url, so the address comes from the ref, not from the row.
+        got = "" if fetcher or not ref.url else tinyfish_text(ref.url)
         if got:
             _note("fallback: tinyfish")
         else:
