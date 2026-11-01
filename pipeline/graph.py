@@ -2,7 +2,8 @@
 
     INGESTED --extract--> EXTRACTED --evaluate--> SCORED --gate--> DRAFT_QUEUED --draft--> DRAFTED --form_map--> READY
                                                            \\--gate--> ARCHIVED
-    any non-terminal stage --(node failed 3x, or the gate needs a person)--> DLQ
+    any non-terminal stage --(node failed 3x)--> DLQ
+    SCORED --(needs clarification)--> SHORTLISTED
 
 Rules the code enforces:
 - EDGES is the whole control flow. A node returns its output; the runner, not the model, picks the next stage, and a
@@ -40,12 +41,12 @@ class Edge:
 EDGES: dict[Stage, Edge] = {
     Stage.INGESTED: Edge("extract", frozenset({Stage.EXTRACTED})),
     Stage.EXTRACTED: Edge("evaluate", frozenset({Stage.SCORED})),
-    Stage.SCORED: Edge("gate", frozenset({Stage.DRAFT_QUEUED, Stage.ARCHIVED})),
+    Stage.SCORED: Edge("gate", frozenset({Stage.DRAFT_QUEUED, Stage.ARCHIVED, Stage.SHORTLISTED})),
     Stage.DRAFT_QUEUED: Edge("draft", frozenset({Stage.DRAFTED})),
     Stage.DRAFTED: Edge("form_map", frozenset({Stage.READY})),
 }
-TERMINAL = frozenset({Stage.READY, Stage.ARCHIVED, Stage.DLQ})
-GATE_ROUTE = {"draft": Stage.DRAFT_QUEUED, "archive": Stage.ARCHIVED, "review": Stage.DLQ}
+TERMINAL = frozenset({Stage.READY, Stage.ARCHIVED, Stage.DLQ, Stage.SHORTLISTED})
+GATE_ROUTE = {"draft": Stage.DRAFT_QUEUED, "archive": Stage.ARCHIVED, "review": Stage.SHORTLISTED}
 
 
 @dataclass
@@ -149,10 +150,18 @@ class Graph:
                 route, dec = gate.decide(facts, score, text, ad.title, self.settings.threshold,
                                          posting={"company": ad.company, "location": ad.location, "track": data.get("track")},
                                          hours_policy=category.hours if category else "standard")
-                nxt = self.GATE_ROUTE[route]
-                if nxt is Stage.DLQ:
-                    return self._dead(pid, cur, f"needs review: {dec.reason}", 1)
-                return self._move(pid, cur, nxt, dec.model_dump(), reason=None if dec.passed else dec.reason)
+                from .decision import build_decision
+                unknowns = tuple(data.get('audit_unknowns') or ())
+                if route == 'review':
+                    unknowns += (dec.reason,)
+                assessment = build_decision(fit_score=score.overall,
+                    explicit_conflicts=(dec.reason,) if route == 'archive' else (), unknowns=unknowns)
+                if route == 'draft' and unknowns:
+                    route = 'review'
+                output = {**dec.model_dump(), 'assessment': assessment.model_dump()}
+                return self._move(pid, cur, self.GATE_ROUTE[route], output,
+                                  reason=dec.reason if route == 'archive' or not dec.passed else
+                                         (unknowns[0] if unknowns else None))
             if cur is Stage.DRAFT_QUEUED:
                 if self._drafts_left <= 0:
                     return cur                              # waits for the next run (cost cap), not a failure

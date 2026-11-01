@@ -112,6 +112,13 @@ def _no_live_model(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_tinyfish_fallback(monkeypatch):
+    """A local key must never make a synthetic test call the paid fallback."""
+    from jobwatch.util import adtext
+    monkeypatch.setattr(adtext, "tinyfish_text", lambda url: "")
+
+
+@pytest.fixture(autouse=True)
 def _cv_printer_without_browser(monkeypatch, request):
     """Drafts print the CV through career-ops' template in Chromium; tests keep the old in-process printer
     (the draft module's render_pdf, which many tests replace) unless marked real_cv_printer."""

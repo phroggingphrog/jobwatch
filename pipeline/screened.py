@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 SCREENED_EDGES = {st: e for st, e in graph.EDGES.items() if st not in (Stage.DRAFT_QUEUED, Stage.DRAFTED)}
 SCREENED_EDGES[Stage.SCORED] = graph.Edge("gate", frozenset({Stage.SHORTLISTED, Stage.ARCHIVED}))
-GATE_ROUTE = {"draft": Stage.SHORTLISTED, "archive": Stage.ARCHIVED, "review": Stage.DLQ}
+GATE_ROUTE = {"draft": Stage.SHORTLISTED, "archive": Stage.ARCHIVED, "review": Stage.SHORTLISTED}
 TERMINAL = graph.TERMINAL | {Stage.SHORTLISTED, Stage.SIDE}
 DEFAULTS = {"promote_per_run": 3, "promote_per_day": 10, "min_score": 3.0}
 TRANSPORT_ERRORS = ("Connection", "Timeout", "timed out", "502", "503", "504")
@@ -29,14 +29,6 @@ class ScreenedGraph(graph.Graph):
     EDGES = SCREENED_EDGES
     TERMINAL = TERMINAL
     GATE_ROUTE = GATE_ROUTE
-
-    def _move(self, pid, cur, nxt, output, reason=None, attempts=1):
-        # A gate pass is only a shortlist when the one-read score reaches min_score; below it the job is a weak fit.
-        if cur is Stage.SCORED and nxt is Stage.SHORTLISTED:
-            score = (output or {}).get("score")
-            if score is not None and float(score) < screened_settings(self.config)["min_score"]:
-                nxt, reason = Stage.ARCHIVED, "low_fit"
-        return super()._move(pid, cur, nxt, output, reason=reason, attempts=attempts)
 
 
 def screened_settings(config) -> dict:
@@ -51,7 +43,7 @@ def sort_untracked(conn, config) -> dict:
     """Give a title track to in-flight jobs that have none (admitted before tracks existed) before any step runs.
     Run 337 (2026-11-01): 46 untracked retail and crew jobs scored 4.6-5.0 and were next in line for the agent."""
     from . import tracks
-    cfg, drop_unlisted = tracks.settings(config), tracks.unlisted_drop(config)
+    cfg = tracks.settings(config)
     marks = ",".join("?" * len(ACTIVE))
     rows = conn.execute(f"SELECT s.posting_id, s.stage, p.title FROM pipeline_state s JOIN postings p ON p.id = s.posting_id "
                         f"WHERE s.stage IN ({marks}) AND json_extract(s.data_json, '$.track') IS NULL",
@@ -60,7 +52,9 @@ def sort_untracked(conn, config) -> dict:
     for r in rows:
         track = tracks.classify(r["title"] or "", cfg)
         category = cfg.get(track)
-        action = category.action if category else ("archive" if drop_unlisted else "admit")
+        action = category.action if category else "admit"
+        if action == "archive" and not getattr(category, "exclusion_confirmed", False):
+            action = "admit"
         if track is None and action == "admit":
             continue
         cur = Stage(r["stage"])
@@ -112,9 +106,8 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
     rows = conn.execute(
         "SELECT posting_id, json_extract(data_json, '$.track') AS track, "
         "CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) AS score FROM pipeline_state "
-        "WHERE stage=? AND json_extract(data_json, '$.evaluate.overall') IS NOT NULL "
-        "AND CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) >= ?",
-        (str(Stage.SHORTLISTED), cfg["min_score"])).fetchall()
+        "WHERE stage=? AND json_extract(data_json, '$.evaluate.overall') IS NOT NULL",
+        (str(Stage.SHORTLISTED),)).fetchall()
     rows = [row for row in rows if snapshot.get(row['track']) is None or snapshot.get(row['track']).promote]
     rows.sort(key=lambda row: (snapshot.get(row['track']).priority if snapshot.get(row['track']) else float('inf'),
                                -row['score'], -row['posting_id']))
@@ -154,7 +147,10 @@ def after_collect(conn, config, max_seconds=None, deadline=None) -> dict:
         if not got:
             return {"skipped": "busy"}
         store.ensure(conn)
-        out = {"retried": retry_transport(conn), "sorted_untracked": sort_untracked(conn, config)}
+        from . import category_refresh
+        refreshed = category_refresh.refresh(conn, config)
+        out = {"category_refreshed": refreshed, "retried": retry_transport(conn),
+               "sorted_untracked": sort_untracked(conn, config)}
         # Shortlisted jobs already waiting go to the agent FIRST, with at most half the time; scoring gets the rest.
         # (Run 327, 2026-11-01: promoted after scoring, the agent had under its 120 s start margin left and skipped.)
         waiting = conn.execute("SELECT 1 FROM pipeline_state WHERE stage=? LIMIT 1", (str(Stage.SHORTLISTED),)).fetchone()

@@ -35,6 +35,16 @@ Each suggestion records the source ID, URL, retrieval time and goal version. `pi
 
 Dry runs project existing scope without research requests or vocabulary writes. Public research rejects credentials, local addresses and redirects; the connection pins a validated public IP and checks TLS against the source hostname. Requests have time and response-size bounds. A failed public source does not authorize exclusion.
 
+## Advisory assessment instead of proof gates
+
+Goals and preferences guide discovery and ranking. Only explicit confirmed constraints and factual work-rights limits authorize exclusion. Normalized intent retains its source fact and actor. Existing approvals rebuild their decision policy; new intent changes its policy hash and invalidates policy-bound caches.
+
+Low fit scores no longer archive jobs. Nonempty short ads enter extraction and scoring with a missing-full-ad warning. Known closed pages, challenge pages and sponsored placements retain separate handling. Unknown evidence is not a technical failure. Schema/model failures expose a safe partial assessment without invented scores or facts.
+
+The native and agentic assessment paths use `pipeline.decision`. The API result can include `assessment_audit` and `partial_assessment`. Citation and advertisement provenance gaps become warnings. Runtime run identity and evidence-bundle isolation still hold. Authentication, credential protection, injection protection, spending and application-submission approval remain security boundaries.
+
+Category `archive` actions require `exclusion_confirmed: true`; an admitting category can receive positive research terms but cannot invent exclusions. A category cannot override factual legal hours limits. Changed category decisions and old goal-relevance archives have bounded idempotent recovery that skips closed jobs and preserves event history. Recovery runs only when this branch is deployed; this PR does not edit live job data.
+
 ## Migration and rollback
 
 Do not load an old configuration into the new branch without migration. No migration runs automatically against production.

@@ -92,7 +92,15 @@ def overlay(conn, person, config):
         if source == 'jobspy' or 'searches' in section:
             existing = list(section.get('searches', []))
             known = {item.get('term', '').casefold() for item in existing}
-            section['searches'] = existing + [dict(term=term) for term in extra if term.casefold() not in known]
+            # Keep every approved location/site template. Adding an unscoped
+            # term would silently turn a regional search into Australia-wide.
+            templates = []
+            for item in existing:
+                template = {k: v for k, v in item.items() if k != 'term'}
+                if template not in templates: templates.append(template)
+            templates = templates or [{}]
+            section['searches'] = existing + [dict(template, term=term) for term in extra
+                if term.casefold() not in known for template in templates]
         else:
             section[key] = list(dict.fromkeys([*section.get(key, []), *extra]))
     settings = deepcopy(config.settings)

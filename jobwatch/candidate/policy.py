@@ -9,6 +9,7 @@ from typing import Iterable, Literal
 from pydantic import model_validator
 
 from .contracts import KNOWN_FAMILIES, StrictFrozen, TargetPolicy, canonicalize_family, default_allowed_families, digest
+from .intent import NormalizedIntent, is_confirmed_constraint, normalize_intent
 
 log = logging.getLogger(__name__)
 
@@ -60,10 +61,12 @@ class DecisionPolicy(StrictFrozen):
     open_questions: tuple[str, ...]
     policy_hash: str
     regions: tuple[str, ...] = ()
+    intent: NormalizedIntent | None = None
 
     @model_validator(mode="after")
     def _hash_matches(self):
-        if self.policy_hash != digest(self.model_dump(mode="json", exclude={"policy_hash"})):
+        excluded = {"policy_hash"} | ({"intent"} if self.intent is None else set())
+        if self.policy_hash != digest(self.model_dump(mode="json", exclude=excluded)):
             raise ValueError("policy_hash_mismatch")
         return self
 
@@ -278,6 +281,7 @@ def _fact_code(f: dict) -> str:
 def build_policy(approved: dict) -> DecisionPolicy:
     """The decision policy for one approved.json payload (pure)."""
     facts = [f for f in approved.get("facts", ()) if isinstance(f, dict)]
+    intent = normalize_intent(facts)
     strategy = strategy_for(facts)
     focus = tuple(dict.fromkeys(t[:_FOCUS_CHARS] for t in (_text(f["value"]) for f in _evidence(facts, "career_focus")) if t))
     focus = focus[:_FOCUS_MAX] if strategy == "career_focus" else ()
@@ -289,7 +293,8 @@ def build_policy(approved: dict) -> DecisionPolicy:
         if not rules:
             unresolved.append(_fact_code(f))
 
-    spatial = _evidence(facts, "location", "constraint", "preference")
+    spatial = [f for f in _evidence(facts, "location", "constraint", "preference")
+               if is_confirmed_constraint(f['section'], f['value'])]
     regions: set[str] = set()
     anywhere = remote_yes = remote_no = False
     ruled_out: list[str] = []
@@ -318,10 +323,18 @@ def build_policy(approved: dict) -> DecisionPolicy:
         regions = set()
     remote_ok = False if remote_no or explicit_remote is False else (True if remote_yes or explicit_remote else None)
     home = _home(_evidence(facts, "location"))
+    known_location = bool(home)
+    for f in _evidence(facts, 'location', 'preference', 'constraint'):
+        welcomed, wide, out = _places_in(_text(f['value']))
+        known_location |= bool(welcomed or wide)
+        if out:
+            ruled_out.append(_fact_code(f))
 
     kms = []
     for f in _evidence(facts, "constraint", "location"):
         v = f["value"]
+        if not is_confirmed_constraint(f['section'], v):
+            continue
         if isinstance(v, dict) and _number(v.get("max_commute_km")) is not None:
             kms.append(_number(v["max_commute_km"]))
             continue
@@ -395,14 +408,6 @@ def build_policy(approved: dict) -> DecisionPolicy:
         # conjunction nor fact order supplies authority to choose one statement.
         for key in ('citizen', 'permanent_resident', 'citizen_or_pr'):
             work_rights[key] = None
-    for f in _evidence(facts, 'constraint', 'preference'):
-        v = f['value']
-        if isinstance(v, dict):
-            for key in ('hours_limit_per_fortnight', 'max_hours_per_week'):
-                if _number(v.get(key)) is not None:
-                    amount = _number(v[key]) * (2 if key == 'max_hours_per_week' else 1)
-                    work_rights['hours_limit_per_fortnight'] = min(amount, work_rights.get('hours_limit_per_fortnight', amount))
-
     levels: set[str] = set()
     for f in _evidence(facts, "preference", "constraint"):
         v = f["value"]
@@ -420,15 +425,17 @@ def build_policy(approved: dict) -> DecisionPolicy:
         questions.append("employment_status")
     if not right_facts:
         questions.append("work_rights")
-    if not regions and home is None and not anywhere:
+    if not regions and not known_location and not anywhere:
         questions.append("location")
     if strategy == "balanced":
         questions.append("career_focus")
-    questions += [f"exclusion:{i}" for i in dict.fromkeys([*unresolved, *ruled_out])]    # a place the person rules out is asked, never dropped
+    ambiguous = [_fact_code(f) for f in _evidence(facts, 'constraint')
+                 if not is_confirmed_constraint(f['section'], f['value'])]
+    questions += [f"exclusion:{i}" for i in dict.fromkeys([*unresolved, *ruled_out, *ambiguous])]    # a place the person rules out is asked, never dropped
 
     fields = dict(profile_version=int(approved["version"]), strategy=strategy, focus=focus, exclusions=tuple(exclusions),
                   home=home, max_commute_km=max_commute_km, remote_ok=remote_ok, work_rights=work_rights,
-                  seniority=seniority, open_questions=tuple(questions), regions=tuple(sorted(regions)))
+                  seniority=seniority, open_questions=tuple(questions), regions=tuple(sorted(regions)), intent=intent)
     shown = DecisionPolicy.model_construct(**fields, policy_hash="").model_dump(mode="json", exclude={"policy_hash"})
     return DecisionPolicy(**fields, policy_hash=digest(shown))
 

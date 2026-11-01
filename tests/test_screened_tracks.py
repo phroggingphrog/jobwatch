@@ -48,7 +48,7 @@ def _score():
                                       "wanted": "core", "justification": "a plain justification"})
 
 
-def test_program_is_not_hidden_for_hours(monkeypatch):
+def test_program_category_does_not_override_confirmed_hours(monkeypatch):
     from jobwatch.candidate import eligibility
     monkeypatch.setattr(eligibility, "evaluate_eligibility",
                         lambda job, ad_text="": eligibility._result("excluded", "hours_exceeded"))
@@ -56,7 +56,7 @@ def test_program_is_not_hidden_for_hours(monkeypatch):
     monkeypatch.setattr(JobFacts, "model_dump", lambda self, **k: {})
     route, dec = gate.decide(facts, _score(), "full-time 38 hours per week", "Graduate Analyst",
                              posting={"track": "undergraduate"}, hours_policy="allow_hours_only")
-    assert route == "draft" and dec.reason == "eligible_check_hours"
+    assert route == "archive" and dec.reason == "hours_exceeded"
     route, _ = gate.decide(facts, _score(), "full-time 38 hours per week", "Analyst", posting={"track": "primary"})
     assert route == "archive"
 
@@ -66,6 +66,7 @@ def test_graph_gets_all_time_when_nothing_is_shortlisted(monkeypatch, tmp_path):
     from pipeline import screened, store
     conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
     store.ensure(conn)
+    conn.execute("CREATE TABLE postings (id INTEGER PRIMARY KEY, title TEXT, closed_at TEXT)")
     got = {}
 
     class G:
@@ -92,6 +93,8 @@ def test_waiting_shortlist_is_promoted_before_scoring(monkeypatch, tmp_path):
     from pipeline.schemas import Stage
     conn = sqlite3.connect(":memory:"); conn.row_factory = sqlite3.Row
     store.ensure(conn)
+    conn.execute("CREATE TABLE postings (id INTEGER PRIMARY KEY, title TEXT, closed_at TEXT)")
+    conn.execute("INSERT INTO postings VALUES (1, 'Job', NULL)")
     conn.execute("INSERT INTO pipeline_state (posting_id, stage, content_hash, data_json, updated_at) VALUES (1, ?, 'h', '{}', 'x')",
                  (str(Stage.SHORTLISTED),))
     order = []
@@ -154,6 +157,7 @@ def test_untracked_jobs_get_a_track_before_promotion():
         conn.execute("INSERT INTO postings VALUES (?, ?)", (pid, title))
         store.admit(conn, pid, f"h{pid}", {}, Stage.SHORTLISTED)
     cfg = migrated_config({"unlisted": "drop", "tracks": {"secondary": ["retail"]}})
-    assert screened.sort_untracked(conn, cfg) == {"secondary": 1, "undergraduate": 1, "unassigned": 1}
+    assert screened.sort_untracked(conn, cfg) == {"secondary": 1, "undergraduate": 1}
     stages = {r[0]: r[1] for r in conn.execute("SELECT posting_id, stage FROM pipeline_state")}
-    assert stages == {1: "side", 2: "shortlisted", 3: "archived"}
+    assert stages == {1: "side", 2: "shortlisted", 3: "shortlisted"}
+    assert store.get(conn, 3)["data"].get("track") is None

@@ -18,6 +18,7 @@ class Category(BaseModel):
     priority: int = Field(ge=0, strict=True)
     phrases: tuple[str, ...]
     action: Literal["admit", "side", "archive"]
+    exclusion_confirmed: bool = Field(default=False, strict=True)
     promote: bool = Field(strict=True)
     hours: Literal["standard", "allow_hours_only"]
 

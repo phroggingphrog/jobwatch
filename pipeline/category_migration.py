@@ -33,6 +33,9 @@ def migrate_legacy(screened: dict, *, legacy_program_phrases: list[str],
         if old_id == program_category:
             words = list(legacy_program_phrases) + words
         item["phrases"] = words
+        # Preservation is a reviewed migration operation, not inferred runtime
+        # intent. The caller explicitly supplies the legacy action policy.
+        item.setdefault("exclusion_confirmed", item.get("action") == "archive")
         categories.append(item)
     snapshot = CategorySnapshot.model_validate({"categories": categories})
     result = deepcopy(old)

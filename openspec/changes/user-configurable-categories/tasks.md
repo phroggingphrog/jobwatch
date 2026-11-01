@@ -2,7 +2,7 @@
 
 ## 1. Baseline and interface
 
-- [ ] 1.1 Characterize legacy ordering, vocabulary, triage, routing, promotion and gate decisions in sanitized tests, including unknown and in-flight jobs.
+- [x] 1.1 Characterize legacy ordering, vocabulary, triage, routing, promotion and gate decisions in sanitized tests, including unknown and in-flight jobs.
 - [x] 1.2 Define and validate the per-user category snapshot and opaque-ID interface; test invalid IDs, priority, action and missing configuration; share the interface with TASK-447 owner.
 
 ## 2. Goal research and configuration
@@ -21,4 +21,4 @@
 ## 4. Integration
 
 - [x] 4.1 Run focused integration tests for goals through research, config, source queries, triage and promotion, with mocked external calls and isolated users.
-- [ ] 4.2 Provide parent a rollout and undo plan, fixture results, interface contract and exact owner-entrypoint verification steps; do not deploy in this change.
+- [x] 4.2 Provide parent a rollout and undo plan, fixture results, interface contract and exact owner-entrypoint verification steps; do not deploy in this change.

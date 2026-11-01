@@ -39,7 +39,7 @@ class JobAd(Strict):
     location: str = Field(max_length=200)
     url: str = Field(max_length=2000)
     location_rule: str = Field(min_length=1, max_length=40)
-    text_kind: Literal["full"]
+    text_kind: Literal["full", "partial", "teaser"]
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

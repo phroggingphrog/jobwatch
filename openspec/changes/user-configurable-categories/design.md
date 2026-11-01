@@ -19,6 +19,14 @@ Non-goals: add or enable collectors, alter TASK-447, infer personal restrictions
 
 Alternatives rejected: category-name switches cannot support renaming; built-in generic words are hidden user-specific defaults; inferred exclusions can silently reject suitable jobs; changing collectors conflates research and collection authorization.
 
+## Advisory decision rewrite
+
+The owner approved a broader rewrite and removal of blocking product audit safeguards. Candidate intent separates goals/preferences, explicit constraints and factual work rights. A shared assessment record separates fit, conflicts, unknowns and technical errors. Low fit and goal relevance do not authorize archival. Category archival requires explicit confirmed exclusion authority.
+
+Short nonempty ads can enter evaluation with a completeness warning. Citation and advertisement provenance gaps become advisory findings. Expected runtime identity, evidence-bundle identity, injection protection, authentication, per-user isolation, spending and submission approval remain security boundaries. Invalid model output produces a separate safe partial record without invented facts or scores.
+
+Bounded reconsideration restores open goal-only archives and stale category-only decisions. It preserves history and explicit conflicts. Research expansion preserves approved location templates. Stable-revision regression and full-suite evidence precede release claims.
+
 ## Risks / Trade-offs
 
 - Research can be stale or fail: version sources, retain the last active snapshot, and surface failures.

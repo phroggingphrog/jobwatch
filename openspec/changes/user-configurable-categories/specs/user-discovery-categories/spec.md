@@ -6,6 +6,32 @@ Provide user-specific discovery vocabulary and configurable screening categories
 
 ## ADDED Requirements
 
+### Requirement: Advisory assessment and explicit authority
+The system SHALL distinguish goals, preferences, explicit confirmed constraints, factual work rights, unknowns and processing errors in a shared decision contract. A goal, preference, low fit score or occupational mismatch SHALL NOT authorize exclusion.
+
+#### Scenario: Partial assessment
+- **WHEN** a useful assessment has incomplete citations, short ad text or unavailable audit artifacts
+- **THEN** the system preserves the assessment with explicit uncertainty instead of imposing a universal proof-completeness gate
+
+#### Scenario: Explicit constraint conflict
+- **WHEN** verified job facts conflict with an explicitly confirmed restriction or factual work-rights limit
+- **THEN** the system records the conflict separately from fit, without a category-based legal-hours bypass
+
+### Requirement: Nonblocking product audit
+The system SHALL retain useful assessment and provenance records without requiring perfect audit citations, hashes, schemas or report artifacts before an assessment can exist. Authentication, per-user isolation, credential protection, bounded spending and submission approval remain mandatory.
+
+#### Scenario: Advisory failure and runtime failure
+- **WHEN** citation completeness is missing but useful assessment content exists
+- **THEN** the system returns a partial assessment and clarification items, separate from technical failure
+
+### Requirement: Reconsideration and spatial preservation
+The system SHALL reconsider stale goal-only and category-only routing decisions in bounded idempotent operations, preserve history, and retain approved location templates when expanding research queries.
+
+#### Scenario: Changed category or obsolete relevance archive
+- **WHEN** a category changes or an old job was archived solely for occupational relevance
+- **THEN** the system can return an open job for assessment without a new paid judgment and without restoring closed or explicitly excluded jobs
+
+
 ### Requirement: Configurable categories
 The system SHALL use each user's validated category IDs, labels, ordering, phrases and explicit action and promotion policies without branching on category names.
 

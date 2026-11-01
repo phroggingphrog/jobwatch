@@ -220,9 +220,12 @@ def test_a_rights_claim_the_ad_does_not_say_goes_to_review_not_to_a_guess(world)
     run(Gateway(extract={"Accounts Officer": facts(work_rights={"requirement": "citizen_only",
                                                                 "quote": "Australian citizens only"})}))
     row = store.get(conn, pid)
-    assert row["stage"] == "dlq"
-    dlq = conn.execute("SELECT * FROM pipeline_dlq WHERE posting_id=?", (pid,)).fetchone()
-    assert "verification_required" in dlq["error"]
+    assert row["stage"] == "shortlisted"
+    assert row["data"]["evaluate"]["overall"] > 0
+    assessment = row["data"]["gate"]["assessment"]
+    assert assessment["recommendation"] == "needs_clarification"
+    assert "verification_required" in assessment["unknowns"]
+    assert conn.execute("SELECT * FROM pipeline_dlq WHERE posting_id=?", (pid,)).fetchone() is None
 
 
 def test_a_visa_alternative_is_held_until_approved_facts_establish_the_branch():
@@ -301,29 +304,37 @@ def test_the_daily_drafting_cap_counts_drafts_from_earlier_runs(world):
     assert stage(conn, pid) == "ready" and store.drafted_since(conn) == 3
 
 
-def test_node_1_dedupes_by_ad_text_skips_other_states_and_archives_paid_ads(world):
+def test_node_1_dedupes_preserves_unexcluded_locations_and_archives_paid_ads(world):
     conn, add, run, _ = world
     a = add("Accounts Assistant")
     b = add("Accounts Assistant - Repost", company="Acme")
-    away = add("Accounts Assistant Sydney", location="Sydney NSW")
+    away = add("Accounts Assistant Sydney", location="Sydney NSW", desc=AD.replace("Accounts", "Sydney"))
     paid = add("Payables Officer", source="seek", raw={"displayType": "promoted"},
                desc=AD.replace("Accounts", "Payables"))
     run(Gateway())
     assert stage(conn, a) == "ready"
     assert store.get(conn, b)["reason"] == f"duplicate_of:{a}"
-    excluded = store.get(conn, away)
-    assert excluded['stage'] == 'archived' and excluded['reason'] == 'prescreened'
-    from jobwatch.prescreen.store import latest_decision
-    decision = latest_decision(conn, away)
-    assert decision['outcome'] == 'skip' and decision['category'] == 'location_outside'
+    location_job = store.get(conn, away)
+    assert location_job['stage'] == 'ready'
+    assert location_job['data']['evaluate']['overall'] > 0
+    assert location_job['data']['gate']['assessment']['recommendation'] == 'consider'
     assert store.get(conn, paid)["reason"] == "sponsored_ad"
 
 
-def test_a_short_teaser_is_not_admitted_until_the_whole_ad_is_there(world):
-    conn, add, run, _ = world
+def test_a_short_teaser_receives_a_partial_assessment(world):
+    conn, add, run, drafts = world
     pid = add("Accounts Assistant", desc="Short teaser only.")
-    run(Gateway())
-    assert store.get(conn, pid) is None
+    gw = Gateway()
+    run(gw)
+    row = store.get(conn, pid)
+    assert row["stage"] == "shortlisted"
+    assert row["data"]["ingest"]["text_kind"] == "teaser"
+    assert row["data"]["evaluate"]["overall"] > 0
+    assessment = row["data"]["gate"]["assessment"]
+    assert assessment["recommendation"] == "needs_clarification"
+    assert "full_ad_unavailable" in assessment["unknowns"]
+    assert ("extract", "Accounts Assistant") in gw.calls and ("evaluate", "Accounts Assistant") in gw.calls
+    assert drafts["n"] == 0
 
 
 def test_no_new_node_starts_after_the_time_limit_and_the_next_run_resumes(world):
@@ -437,7 +448,10 @@ def test_a_slow_ad_page_does_not_crash_the_run(world, monkeypatch):
     ok = add("Accounts Assistant")
     _, stats = run(Gateway())
     assert calls["n"] == 1 and stats["ingest"]["fetch_errors"] == 1
-    assert store.get(conn, slow) is None and stage(conn, ok) == "ready"
+    slow_row = store.get(conn, slow)
+    assert slow_row["stage"] == "shortlisted" and stage(conn, ok) == "ready"
+    assert slow_row["data"]["evaluate"]["overall"] > 0
+    assert "full_ad_unavailable" in slow_row["data"]["gate"]["assessment"]["unknowns"]
 
 
 def test_legacy_mode_prompts_name_no_one_person():

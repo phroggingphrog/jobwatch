@@ -15,7 +15,7 @@ def test_effective_searches_and_configured_category_receive_researched_terms():
         {}, {'seek': {'enabled':True,'keywords':['stale'], 'searches':[dict(term='admin',where='Melbourne')]}}, {}, [])
     result=research.prepare(conn,cfg,'person',['Admin and clerical roles'],
         fetch_page=lambda _: '<h2>Clerical Officer</h2>')
-    assert result.searches['seek']['searches'] == [dict(term='admin',where='Melbourne'),dict(term='Clerical Officer')]
+    assert result.searches['seek']['searches'] == [dict(term='admin',where='Melbourne'),dict(term='Clerical Officer',where='Melbourne')]
     assert tracks.classify('Clerical Officer',tracks.settings(result))=='office'
     assert tracks.classify('Clerical Officer',tracks.settings(cfg)) is None
     assert result.settings['pipeline']['screened']['category_snapshot']['categories'][0]['hours']=='standard'

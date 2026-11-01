@@ -441,22 +441,22 @@ def reconsider(conn, config, *, person=None):
     from pipeline.schemas import Stage
     cfg, restored = settings(config), 0
     policy, plan = _current_plan(person or users.current())
-    if policy is None:
-        return 0
     from jobwatch.prescreen import lifecycle
-    restored += lifecycle.reconsider(conn, policy)       # skips whose rules, profile or overrides changed return to the queue
+    if policy is not None:
+        restored += lifecycle.reconsider(conn, policy)       # skips whose rules, profile or overrides changed return to the queue
     rows = conn.execute("SELECT posting_id,reason FROM pipeline_state WHERE stage='archived' AND reason IN ('not_relevant','excluded_by_rule') ORDER BY updated_at").fetchall()
     for pid, reason in rows:
         posting = service._posting(conn, pid)
         if not posting or posting.get('closed_at'):
             continue
         if reason == 'excluded_by_rule':
-            reconsiderable = service.decision_policy_mode(config) == 'profile' and exclusion_rule_hit(posting, policy) is None
+            reconsiderable = policy is not None and service.decision_policy_mode(config) == 'profile' and exclusion_rule_hit(posting, policy) is None
         else:
-            old = latest_judgment(conn, pid)
-            reconsiderable = cfg['relevance'] == 'on' and plan is not None and old is not None and old.plan_hash != plan.plan_hash
+            # Goal relevance never had exclusion authority. Recovery does not
+            # require the goal/plan to change or another model judgment.
+            reconsiderable = True
         if reconsiderable:
-            # Return to screening before any assessment. Current on-mode no judgments archive again.
+            # Bounded recovery retains the prior judgment and event history.
             store.move(conn, pid, 'discovery_reconsider', Stage.ARCHIVED, Stage.INGESTED)
             restored += 1
             if restored >= cfg['reconsider_per_run']:

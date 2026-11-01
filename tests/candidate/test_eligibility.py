@@ -43,8 +43,11 @@ def test_no_sponsorship_only_blocks_confirmed_need():
 def test_location_and_remote_are_personal():
     job = {'location': 'Sydney NSW', 'seniority': 'senior'}
     assert check('Based in Sydney NSW.', fact('location', 'Sydney NSW'), **job).status == 'eligible'
-    assert check('Based in Sydney NSW.', fact('location', 'Melbourne VIC'), **job).status == 'excluded'
-    assert check('Remote anywhere in Australia.', fact('preference', {'remote_ok': False}), remote=True).status == 'excluded'
+    assert check('Based in Sydney NSW.', fact('location', {'regions': ['Melbourne VIC'], 'exclusive': True}), **job).status == 'excluded'
+    assert check('Based in Sydney NSW.', fact('location', 'Melbourne VIC'), **job).status == 'eligible'
+    assert check('Remote anywhere in Australia.', fact('preference', {'remote_ok': False, 'exclusive': True}), remote=True).status == 'excluded'
+    assert check('Remote anywhere in Australia.', fact('preference', {'remote_ok': False}), remote=True,
+                 location='Remote anywhere in Australia').status == 'eligible'
 
 def test_explicit_none_is_neutral_and_does_not_read_live_profile(monkeypatch):
     monkeypatch.setattr('jobwatch.candidate.policy.policy_for', lambda _: pytest.fail('read live profile'))
@@ -172,19 +175,22 @@ def test_contradictory_explicit_citizen_claims_cannot_be_resolved_by_combined_cl
 
 def test_required_onsite_location_overrides_generic_office_alternatives():
     text = 'Offices in Melbourne VIC or Sydney NSW. This role requires attendance at the Sydney NSW office.'
-    assert check(text, fact('location', 'Melbourne VIC'), location='Melbourne VIC or Sydney NSW').status == 'excluded'
-    assert check(text, fact('location', 'Sydney NSW'), location='Melbourne VIC or Sydney NSW').status == 'eligible'
+    assert check(text, fact('location', {'regions': ['Melbourne VIC'], 'exclusive': True}), location='Melbourne VIC or Sydney NSW').status == 'excluded'
+    assert check(text, fact('location', 'Melbourne VIC'), location='Melbourne VIC or Sydney NSW').status == 'eligible'
+    assert check(text, fact('location', {'regions': ['Sydney NSW'], 'exclusive': True}), location='Melbourne VIC or Sydney NSW').status == 'eligible'
 
 
 def test_required_onsite_location_missing_from_metadata_is_still_checked():
     text = 'This role requires attendance at the Sydney NSW office.'
-    assert check(text, fact('location', 'Melbourne VIC')).status == 'excluded'
+    assert check(text, fact('location', {'regions': ['Melbourne VIC'], 'exclusive': True})).status == 'excluded'
+    assert check(text, fact('location', 'Melbourne VIC')).status == 'eligible'
 
 
 def test_missing_location_or_commute_cannot_become_verified_eligibility():
-    assert check('Office based role.', fact('location', 'Sydney NSW')).status == 'held'
+    assert check('Office based role.', fact('location', {'regions': ['Sydney NSW'], 'exclusive': True})).status == 'held'
+    assert check('Office based role.', fact('location', 'Sydney NSW')).status == 'eligible'
     result = check('Office based role in Sydney NSW.', fact('location', 'Sydney NSW'),
-        fact('constraint', {'max_commute_km': 15}), location='Sydney NSW')
+        fact('constraint', {'max_commute_km': 15, 'exclusive': True}), location='Sydney NSW')
     assert result.status == 'held' and 'commute_distance' in result.questions
 
 
@@ -232,7 +238,8 @@ def test_only_allowlisted_split_keywords_are_repaired_for_rights_scanning():
 
 def test_attendance_requirement_keeps_location_before_the_required_word():
     text = 'Melbourne VIC or Sydney NSW offices. Sydney office attendance is required.'
-    assert check(text, fact('location', 'Melbourne VIC'), location='Melbourne VIC or Sydney NSW').status == 'excluded'
+    assert check(text, fact('location', {'regions': ['Melbourne VIC'], 'exclusive': True}), location='Melbourne VIC or Sydney NSW').status == 'excluded'
+    assert check(text, fact('location', 'Melbourne VIC'), location='Melbourne VIC or Sydney NSW').status == 'eligible'
 
 
 def test_remote_work_needs_posting_evidence_for_the_supported_country():

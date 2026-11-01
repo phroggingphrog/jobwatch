@@ -41,7 +41,12 @@ def posting_of(r) -> Posting:
                    remote=bool(r["remote"]), description=r["description"] or "", origin=r["origin"] or "")
 
 
-UNREADABLE_TRIES = 2
+
+def make_ad(r, text: str, kind: str, location_rule: str) -> JobAd:
+    """Build the persisted graph input from a posting and its available text."""
+    return JobAd(posting_id=r["id"], source=r["source"], title=r["title"], company=r["company"] or "",
+                 location=r["location"] or "", url=r["url"] or "", location_rule=location_rule,
+                 text_kind=kind, content_hash=content_hash(r["company"] or "", text))
 
 
 def candidates(conn, posting_ids: list[int] | None = None):
@@ -70,7 +75,6 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
     track_cfg = tracks.settings(config) if screened_mode else {}
     rows = candidates(conn, posting_ids)
     ai_track = {}
-    unlisted_drop = screened_mode and tracks.unlisted_drop(config)
     if screened_mode:                              # best title match first, like career-ops; stable, so oldest first within a track
         from pipeline import title_triage
         ai_track = {k: v for k, v in title_triage.known(conn, track_cfg).items() if track_cfg.get(v) is not None}
@@ -97,7 +101,9 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
         if screened_mode:                          # title track before any fetch (pipeline/tracks.py)
             track = tracks.classify(r["title"] or "", track_cfg) or ai_track.get(r["id"])   # list first, then the AI title check
             category = track_cfg.get(track)
-            action = category.action if category else ("archive" if track is None and unlisted_drop else "admit")
+            action = category.action if category else "admit"
+            if action == "archive" and not getattr(category, "exclusion_confirmed", False):
+                action = "admit"
             if action in ("archive", "side"):
                 stage, why = (Stage.ARCHIVED, "title_not_target") if action == "archive" else (Stage.SIDE, None)
                 store.admit(conn, r["id"], f"{action}:{r['id']}", {"track": track}, stage, why)
@@ -135,20 +141,23 @@ def run(conn, config, *, limit: int = 200, fetch_budget: int = 25, fetcher=None,
             stats["closed"] = stats.get("closed", 0) + 1
             conn.commit()
             continue
-        if kind != "full":
-            tried = adtext.fetch_state(conn, r["id"]) if screened_mode and not can_fetch else None
-            if tried is not None and (tried["tries"] or 0) >= UNREADABLE_TRIES:
-                # two failed reads: archive instead of re-checking it every run (1,030 waited on 2026-11-01)
-                store.admit(conn, r["id"], f"unreadable:{r['id']}", {"track": track}, Stage.ARCHIVED, "ad_unreadable")
-                stats["unreadable"] = stats.get("unreadable", 0) + 1
-                conn.commit()
-                continue
+        if kind != "full" and is_sponsored(r["raw_json"]):
+            store.admit(conn, r["id"], f"sponsored:{r['id']}", {"track": track}, Stage.ARCHIVED, "sponsored_ad")
+            stats["sponsored"] += 1
+            conn.commit()
+            continue
+        if not text.strip() or adtext.looks_like_wall(r["url"] or "", text):
             stats["waiting_text"] += 1
             continue
-        h = content_hash(r["company"] or "", text)
-        ad = JobAd(posting_id=r["id"], source=r["source"], title=r["title"], company=r["company"] or "",
-                   location=r["location"] or "", url=r["url"] or "", location_rule=loc, text_kind="full",
-                   content_hash=h)
+        ad = make_ad(r, text, kind, loc)
+        h = ad.content_hash
+        if kind != "full":
+            store.admit(conn, r["id"], f"partial:{r['id']}",
+                        {"ingest": ad.model_dump(), "track": track, "audit_unknowns": ["full_ad_unavailable"]})
+            stats["partial"] = stats.get("partial", 0) + 1
+            stats["admitted"] += 1
+            conn.commit()
+            continue
         full = _prescreen(conn, rules, r, text, "full", content_hash=h, ad=ad)
         if full is not None and full.skip:         # the full ad shows a clear mismatch (years, work rights, level): no model
             stats["prescreened"] = stats.get("prescreened", 0) + 1
@@ -211,9 +220,9 @@ def _browser_text(conn, r, text: str, kind: str, *, deadline: float | None = Non
 
 
 def ad_text(conn, posting_id: int) -> str:
-    """The stored full text (node 1 only admits jobs that have it)."""
+    """Read available text without fetching or treating a challenge as an ad."""
     r = conn.execute("SELECT * FROM postings WHERE id=?", (posting_id,)).fetchone()
-    text, kind = adtext.ensure_text(conn, r, allow_fetch=False)
-    if kind != "full":
-        raise RuntimeError(f"posting {posting_id}: full ad text is no longer available")
+    text, _ = adtext.ensure_text(conn, r, allow_fetch=False)
+    if not text.strip() or adtext.looks_like_wall(r["url"] or "", text):
+        raise RuntimeError(f"posting {posting_id}: usable ad text is no longer available")
     return text

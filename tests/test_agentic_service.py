@@ -1070,7 +1070,7 @@ def test_adopted_profile_alone_authorises_no_discovery(world, monkeypatch):
     _reset_profile(users)
     intake.adopt_existing(users.current(), actor='person')
     assert intake.discovery_scope(users.current()) is None
-    assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_profile'}
+    assert service.after_collect(conn, config, max_seconds=60) == {'skipped': 'no_confirmed_scope'}
 
 
 def test_daily_assessment_cap_from_scope(world, monkeypatch):
