@@ -78,13 +78,16 @@ def test_malformed_feedback_replays_after_checkpoint_loss_without_reset_or_repur
 def test_repeated_malformed_arguments_exhaust_persisted_boundary(tmp_path):
     bundle, ad, key, roles = build_case(tmp_path / 'evidence')
     choice = native_choices(roles)[0]
-    llm, seen = malformed_transport([choice, choice], {1, 2})
+    # Two corrections are allowed per tool: the third malformed call exhausts the persisted boundary,
+    # and the next run (same conn) refuses it again without another paid attempt.
+    llm, seen = malformed_transport([choice, choice, choice, choice], {1, 2, 3, 4})
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         for _ in range(2):
             with pytest.raises(RuntimeErrorSafe, match='invalid_tool_arguments_json'):
                 evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
                     screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
-    assert len(seen) == 2
+    # The second run replays the same first request from the journal: it raises on the boundary, not on a new call.
+    assert len(seen) == 3
 
 
 def test_saved_rejection_precedes_restored_state_on_journal_replay(tmp_path):
@@ -118,7 +121,9 @@ def test_parallel_valid_skill_and_malformed_evidence_do_not_grant_evidence_acces
             screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
     assert result.matches and len(seen) == 5
     outputs = [json.loads(m['content']) for m in seen[3]['messages'] if m['role'] == 'tool']
-    assert any(m.get('error') == 'unretrieved_evidence' for m in outputs)
+    assert any(m.get('error') == 'invalid_evaluation'
+               and any(v['error'] == 'unretrieved_evidence' for v in m.get('violations', ()))
+               for m in outputs)
     assert any(m.get('path') == '/skills/autonomous-evaluation/SKILL.md' for m in outputs)
     assert not any(m.get('items') for m in outputs)
 

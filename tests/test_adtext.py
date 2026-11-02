@@ -509,6 +509,18 @@ def test_ensure_text_raises_blocked_and_saves_nothing(status, world, net):
     assert adtext.get_text(conn, pid) is None
 
 
+def test_a_blocked_ad_falls_back_to_tinyfish_at_the_stored_url(world, net, monkeypatch):
+    """reader._BASE_SQL does not select p.url: the fallback must take the address from the database, not the row."""
+    conn, add, row, add_case = world
+    pid = add_case("jobspy_src", desc="teaser")
+    net({CASES["jobspy_src"]["fetch"]: (403, "no")})
+    long_text, asked = "Warehouse clerk duties and shift times. " * 60, []
+    monkeypatch.setattr(adtext, "_tinyfish_key", lambda: "synthetic-key")
+    monkeypatch.setattr(adtext, "tinyfish_text", lambda url, **kw: asked.append(url) or long_text)
+    assert adtext.ensure_text(conn, row(pid)) == (long_text[:adtext.MAX_TEXT], "full")
+    assert asked == [CASES["jobspy_src"]["url"]]
+    assert adtext.get_text(conn, pid)[0] == long_text[:adtext.MAX_TEXT]
+
 def test_ensure_text_challenge_page_is_not_saved(world, net):
     conn, add, row, add_case = world
     pid = add_case("jora", desc="teaser")

@@ -40,9 +40,11 @@ def test_confirmed_exclusion_and_unresolved_fact_keep_distinct_routes(monkeypatc
         assert not decision.passed
 
 
-def test_non_job_is_rejected_before_person_eligibility(monkeypatch):
-    service = Mock(side_effect=AssertionError('must not call'))
+def test_uncertain_job_identity_preserves_assessment_for_clarification(monkeypatch):
+    service = Mock(return_value=SimpleNamespace(status='eligible', reason='eligible'))
     monkeypatch.setattr('jobwatch.candidate.eligibility.evaluate_eligibility', service)
     f = facts().model_copy(update={'real_job': False})
-    route, decision = gate.decide(f, score(), 'Not a job')
-    assert (route, decision.reason) == ('archive', 'not_a_real_job')
+    route, decision = gate.decide(f, score(), 'Job identity is unclear')
+    assert (route, decision.reason) == ('review', 'real_job_unverified')
+    assert decision.score == score().overall
+    service.assert_called_once()

@@ -314,7 +314,30 @@ def evaluate_eligibility(job: Mapping, *, policy: DecisionPolicy | None = _CURRE
         if exclusion_hit(policy, family=job.get('role_family'), company=str(job.get('company') or ''),
                          title=title, location_text=location, remote=remote, hours=str(job.get('hours') or '')):
             return _result('excluded', 'policy_excluded')
-        if remote and policy.remote_ok is False:
+        exclusive = policy.intent.constraints if policy.intent is not None else ()
+        spatial = [f for f in exclusive if f.section in ('location', 'constraint', 'preference')]
+        from .policy import _places_in, _text, _number, _REMOTE_NO, _KM, _COMMUTE_WORDS
+        regions = set()
+        remote_forbidden = False
+        commute_limits = []
+        for fact in spatial:
+            value = fact.value
+            text_value = _text(value)
+            listed = value.get('regions') if isinstance(value, dict) else None
+            places = listed if isinstance(listed, (list, tuple)) else [listed or text_value]
+            for place in places:
+                if isinstance(place, str):
+                    regions.update(_places_in(place)[0])
+            if isinstance(value, dict):
+                remote_forbidden |= value.get('remote_ok') is False
+                number = _number(value.get('max_commute_km'))
+                if number is not None:
+                    commute_limits.append(number)
+            else:
+                remote_forbidden |= bool(_REMOTE_NO.search(text_value))
+                if _COMMUTE_WORDS.search(text_value):
+                    commute_limits.extend(float(m.group(1)) for m in _KM.finditer(text_value) if float(m.group(1)) > 0)
+        if remote and remote_forbidden:
             return _result('excluded', 'remote_excluded')
         if remote:
             from jobwatch.models import is_australian
@@ -323,18 +346,18 @@ def evaluate_eligibility(job: Mapping, *, policy: DecisionPolicy | None = _CURRE
                 # that the advertised remote arrangement is available in AU.
                 pending.append('remote_work_location')
         from pipeline.agentic.location import location_verdict
-        if policy.regions:
-            verdict = location_verdict(location, frozenset(policy.regions), remote_fit=remote, remote_ok=policy.remote_ok)
+        if regions:
+            verdict = location_verdict(location, frozenset(regions), remote_fit=remote, remote_ok=not remote_forbidden)
             if verdict == 'outside':
                 return _result('excluded', 'location_outside_scope')
             if verdict == 'unknown':
                 pending.append('location')
             if onsite and any(not named for _, named in onsite):
                 pending.append('onsite_location')
-        if policy.max_commute_km is not None and not remote:
+        if commute_limits and not remote:
             if commute_km is None:
                 pending.append('commute_distance')
-            elif commute_km > policy.max_commute_km:
+            elif commute_km > min(commute_limits):
                 return _result('excluded', 'commute_exceeded')
         level = job.get('seniority')
         if policy.seniority and level in _RANK and level not in policy.seniority:
@@ -344,8 +367,18 @@ def evaluate_eligibility(job: Mapping, *, policy: DecisionPolicy | None = _CURRE
         from .contracts import KNOWN_FAMILIES, canonicalize_family
         if any(r.kind == 'family' for r in policy.exclusions) and canonicalize_family(job.get('role_family') or '') not in KNOWN_FAMILIES:
             pending.append('role_family')
-        limit = policy.work_rights.get('hours_limit_per_fortnight')
-        if isinstance(limit, (int, float)) and not isinstance(limit, bool) and limit > 0:
+        limits = [policy.work_rights.get('hours_limit_per_fortnight')]
+        if policy.intent is not None:
+            for fact in policy.intent.constraints:
+                if fact.section not in ('constraint', 'preference') or not isinstance(fact.value, dict):
+                    continue
+                for key, multiplier in (('hours_limit_per_fortnight', 1), ('max_hours_per_week', 2)):
+                    value = fact.value.get(key)
+                    if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+                        limits.append(value * multiplier)
+        limits = [n for n in limits if isinstance(n, (int, float)) and not isinstance(n, bool) and n > 0]
+        limit = min(limits) if limits else None
+        if limit is not None:
             # A program preference has no hours-period evidence and cannot waive
             # a numeric limit. No title or employment label establishes exemption.
             stated = _advertised_hours(text)
