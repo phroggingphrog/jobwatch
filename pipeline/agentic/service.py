@@ -544,6 +544,10 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         incidents.mark_phase(conn, incident_run_id, 'liveness', posting_id=posting_id)
         # Cached READY rechecks are public-only and do not renew exhausted model budgets.
         saved_package = adapter.load_artifact(key.value, 'package_bundle')
+        if not cached_ready and saved_package is None:
+            from pipeline.agentic.draft import packaging_blocker
+            if (blocker := packaging_blocker(profile_from_snapshot(bundle))):
+                raise AgenticError(blocker)  # before any paid read: this profile cannot produce a package
         if cached_ready or saved_package is not None:
             remaining = min(60, cfg['job_seconds'], _invocation_deadline-time.time())
         else:
