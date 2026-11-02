@@ -36,7 +36,10 @@ def test_partial_fill_matches_career_ops_semantics():
     assert fill_entry(entry, blocks, {"A": "$&"}, {"B_BLOCK": ("", False)}) == "<p>$&<i>-</i></p>"
 
 
-def test_cv_html_merges_one_employer_and_prints_work_rights_once():
+def test_cv_html_merges_one_employer_and_prints_work_rights_once(monkeypatch):
+    from jobwatch.candidate import approved
+    monkeypatch.setattr(approved, 'settings', lambda person, name: {'candidate': {
+        'work_rights': {'visa': 'Student visa (subclass 500)'}}})
     page = cv_html(CONTENT, _Profile(), "cv_graduate_2page")
     assert page.count('class="job"') == 1 and "Accountant / Graduate Accountant" in page
     assert "June 2026 – August 2026 | May 2025 – November 2025" in page

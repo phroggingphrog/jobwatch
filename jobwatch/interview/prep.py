@@ -8,9 +8,10 @@ import uuid
 
 from jobwatch.util import adtext as adtext
 from jobwatch import ledger
-from jobwatch.apply.paths import profile_dir
+from jobwatch import users
+from jobwatch.candidate import approved
 from jobwatch.candidate.contracts import content_hash, digest
-from jobwatch.candidate.evidence import snapshot_evidence, verify_evidence_snapshot
+from jobwatch.candidate.evidence import verify_evidence_snapshot
 from jobwatch.interview.inputs import load_inputs
 from pipeline.agentic.contracts import AgenticError, AgenticEvaluation, parse_budget_checkpoint_json
 from pipeline.agentic.interview import InterviewReport, prepare_interview, snapshot_hash, validate_report
@@ -18,6 +19,10 @@ from pipeline.agentic.persistence import latest_result
 from pipeline.agentic.runtime import BatchBudget, JobBudget, validate_model_payload
 from pipeline.agentic.service import _config, _research, configured_llm, enabled
 
+
+
+def _approved_bundle():
+    return approved.evidence(users.current())
 
 
 def _run_table(reference):
@@ -50,6 +55,7 @@ def _subject_capture(conn,subject_id,bundle,config):
     return context,ad.text,identity
 
 def capture(conn, posting_id, bundle, config):
+    bundle = bundle or _approved_bundle()
     verify_evidence_snapshot(bundle)
     if type(posting_id) is str:return _subject_capture(conn,posting_id,bundle,config)
     inputs,revision=load_inputs(conn,posting_id)
@@ -92,7 +98,7 @@ def _payload(row):
 
 
 def load_report(conn, posting_id, config, *, bundle=None):
-    bundle=bundle or snapshot_evidence(profile_dir())
+    bundle=bundle or _approved_bundle()
     context,text,identity=capture(conn,posting_id,bundle,config)
     row=_run_row(conn,posting_id,identity)
     if row is None:return {'status':'missing','reason':None,'report':None}
@@ -112,7 +118,7 @@ def generate(conn, posting_id, config, *, bundle=None, writer=None, reviewer=Non
     if not enabled(config):raise AgenticError('agentic_disabled')
     cfg=_config(config)
     live_profile=bundle is None
-    bundle=bundle or snapshot_evidence(profile_dir())
+    bundle=bundle or _approved_bundle()
     context,text,identity=capture(conn,posting_id,bundle,config)
     if conn.in_transaction:raise AgenticError('transaction_already_active')
     attempt=uuid.uuid4().hex
@@ -168,7 +174,7 @@ def generate(conn, posting_id, config, *, bundle=None, writer=None, reviewer=Non
         client=writer or configured_llm(config)
         report=prepare_interview(context,text,bundle,budget,client,reviewer or client,
             research=_research(context,budget,cfg),writer_model=cfg['worker_model'],reviewer_model=cfg['reviewer_model'])
-        current_bundle=snapshot_evidence(profile_dir()) if live_profile else bundle
+        current_bundle=_approved_bundle() if live_profile else bundle
         if capture(conn,posting_id,current_bundle,config)[2]!=identity:raise AgenticError('interview_snapshot_changed')
         validate_report(report,context,text,current_bundle)
         value.update(status='ready',report=report.model_dump(mode='json'),reason=None)
@@ -184,7 +190,7 @@ def should_prepare_after_interview(conn, posting_id, config):
     from jobwatch.candidate.contracts import CandidateError
     if not enabled(config):return False
     try:
-        bundle=snapshot_evidence(profile_dir())
+        bundle=_approved_bundle()
         context,_,identity=capture(conn,posting_id,bundle,config)
         evaluation=context.get('evaluation')
         return bool(context.get('application') and context['application']['status']=='interview'
@@ -198,7 +204,7 @@ def enqueue(conn, posting_id, config):
     """Durably record undispatched intent before acknowledging a prep request."""
     if not enabled(config):raise AgenticError('agentic_disabled')
     cfg=_config(config)
-    context,_,identity=capture(conn,posting_id,snapshot_evidence(profile_dir()),config)
+    context,_,identity=capture(conn,posting_id,_approved_bundle(),config)
     if conn.in_transaction:raise AgenticError('transaction_already_active')
     conn.execute('BEGIN IMMEDIATE')
     try:
@@ -232,7 +238,7 @@ def queued_posting_ids(conn, config):
         except AgenticError:continue
         if value['status']!='queued':continue
         try:
-            identity=capture(conn,row['posting_id'],snapshot_evidence(profile_dir()),config)[2]
+            identity=capture(conn,row['posting_id'],_approved_bundle(),config)[2]
         except (AgenticError,CandidateError):identity=None
         if identity==row['run_key']:
             queued.add(row['posting_id']);continue
@@ -248,7 +254,7 @@ def queued_posting_ids(conn, config):
     for app in conn.execute("SELECT posting_id FROM applications WHERE status='interview'").fetchall():
         pid=app['posting_id']
         try:
-            context,_,_=capture(conn,pid,snapshot_evidence(profile_dir()),config)
+            context,_,_=capture(conn,pid,_approved_bundle(),config)
             trigger=(context.get('application') or {}).get('interview_event_id')
             evaluation=context.get('evaluation')
             if not trigger or not evaluation:continue
@@ -263,7 +269,7 @@ def is_queued(conn, posting_id, config):
     """Inspect current undispatched intent; never create new work or retry a call."""
     from jobwatch.candidate.contracts import CandidateError
     try:
-        identity=capture(conn,posting_id,snapshot_evidence(profile_dir()),config)[2]
+        identity=capture(conn,posting_id,_approved_bundle(),config)[2]
         row=_run_row(conn,posting_id,identity)
         return bool(row and _payload(row)['status']=='queued')
     except (AgenticError,CandidateError):return False
@@ -279,7 +285,7 @@ def queued_subject_ids(conn, config):
         except AgenticError:continue
         if value['status']!='queued':continue
         subject_id=row['subject_id']
-        try:identity=capture(conn,subject_id,snapshot_evidence(profile_dir()),config)[2]
+        try:identity=capture(conn,subject_id,_approved_bundle(),config)[2]
         except (AgenticError,CandidateError):identity=None
         if identity==row['run_key']:
             queued.append(subject_id);continue
@@ -309,7 +315,7 @@ def matching_posting(conn,url,config,*,bundle=None,title=None,company=None):
             try:
                 result=latest_result(conn,pid)
                 if not result or not result.get('evaluation'):continue
-                bundle=bundle or snapshot_evidence(profile_dir())
+                bundle=bundle or _approved_bundle()
                 context,_,_=capture(conn,pid,bundle,config)
             except (AgenticError,CandidateError):continue
             if context.get('evaluation') is not None:valid.append(pid)

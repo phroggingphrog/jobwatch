@@ -1,13 +1,11 @@
 """Question cards: a click saves the answer into answers.yaml; job-specific answers are worked out, not asked."""
 import shutil
-from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from jobwatch.apply import jev_forms
 from jobwatch.web import ask_cards
 
-SRC = Path.home() / "brain/data/jobwatch/profile"
 ANSWERS = '''version: 1
 availability:
   earliest_start_date: ""  # YYYY-MM-DD

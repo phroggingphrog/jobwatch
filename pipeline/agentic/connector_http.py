@@ -173,6 +173,13 @@ def onboarding_review_operation(who: str, body: OnboardingProposal):
 def onboarding_confirm_operation(who: str, body: OnboardingConfirm):
     return onboarding.confirm(who, body.proposal_id, body.proposal_digest, body.scope_digest)
 
+def discovery_status_operation(who: str) -> dict:
+    from pipeline.agentic import discovery_ops
+    from jobwatch.config import load_config
+    with users.use(who):
+        return discovery_ops.status(who, load_config())
+
+
 def create_app(*, token: str | None = None, person: str | None = None, oauth: bool | None = None,
                public_url: str | None = None, passphrase: str | None = None,
                oauth_state: str | Path | None = None) -> FastAPI:
@@ -289,10 +296,7 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
 
     @app.get('/connector/discovery/status')
     def discovery_status(who: str = Depends(authed)):
-        from pipeline.agentic import discovery_ops
-        from jobwatch.config import load_config
-        with users.use(who):
-            return discovery_ops.status(who, load_config())
+        return discovery_status_operation(who)
 
     @app.get('/connector/discovery/settings')
     def discovery_settings(who: str = Depends(authed)):

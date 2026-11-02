@@ -73,15 +73,23 @@ def test_unknown_failed_dispatch_retains_reservation_and_does_not_auto_retry(set
     assert failed.calls==1
 
 
-def test_profile_change_during_generation_prevents_ready_publication(setup):
-    from jobwatch.apply.paths import profile_dir
+def test_profile_change_during_generation_prevents_ready_publication(setup, monkeypatch, tmp_path):
     conn,bundle,config=setup
+    from jobwatch.followup import drafts
+    from jobwatch.candidate.evidence import snapshot_evidence
+    changed_root = tmp_path / 'changed-approved-evidence'
+    changed_root.mkdir()
+    (changed_root / 'cv.md').write_text('# Synthetic Example\n\n## Skills\n- Prepared bank reconciliations.\n')
+    changed_bundle = snapshot_evidence(changed_root)
+    calls = []
+    def approved_evidence(person):
+        calls.append(person)
+        return bundle if len(calls) == 1 else changed_bundle
+    monkeypatch.setattr(drafts.approved, 'evidence', approved_evidence)
     class ChangingWriter(Writer):
         base_url = model_choice.SERVER_URL
         def chat_once(self,*args,**kwargs):
             result=super().chat_once(*args,**kwargs)
-            if len(self.calls)==2:
-                (profile_dir()/'cv.md').write_text('# Synthetic Example\n\n## Skills\n- Prepared bank reconciliations.\n')
             return result
     result=generate(conn,1,config,writer=ChangingWriter(bundle),reviewer=Reviewer(),now=NOW)
     assert result['status']=='held' and result['reason']=='followup_snapshot_changed'

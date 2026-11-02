@@ -1,11 +1,14 @@
 
 from jobwatch.util import model_choice as model_choice
 from datetime import UTC, datetime
+import json
+import shutil
 
 import pytest
 from fastapi.testclient import TestClient
 
 from jobwatch import db
+from jobwatch.candidate import intake, projection
 from jobwatch.candidate.evidence import snapshot_evidence
 from jobwatch.config import Config, DEFAULT_CONFIG_DIR, DEFAULT_SETTINGS, _merge
 from jobwatch.web.app import create_app
@@ -22,14 +25,23 @@ def prep_client(tmp_path, monkeypatch):
     config=Config(config_dir=DEFAULT_CONFIG_DIR,settings=_merge(DEFAULT_SETTINGS,{'db_path':str(data/'test.db'),'pipeline':{'agentic':{'enabled':True,'worker_model':'claude/sonnet','reviewer_model':'claude/haiku','research_enabled':False}}}),rules={},searches={},feeds={},employers=[])
     conn=db.connect(config.db_path); pid=seed(conn,1,'Accounts role',company='Example',arm='accounting')
     conn.execute("INSERT INTO ad_text(posting_id,text,source,fetched_at) VALUES(?,?,'cached',?)",(pid,AD,datetime.now(UTC).isoformat())); conn.commit(); conn.close()
-    bundle=snapshot_evidence(profile); writer=Writer(bundle,payload=proposal(bundle,AD)); reviewer=Reviewer(verdicts=('approve',)*10)
+    version = intake._versions_root('owner') / '1'
+    evidence_dir = version / 'evidence'
+    evidence_dir.mkdir(parents=True)
+    shutil.copy2(profile / 'cv.md', evidence_dir / 'cv.md')
+    bundle = snapshot_evidence(evidence_dir)
+    record = {'version': 1, 'facts': [], 'evidence_bundle_hash': bundle.bundle_hash}
+    (version / 'approved.json').write_text(json.dumps(record))
+    for name, text in projection.project(record).items():
+        (version / name).write_text(text)
+    writer=Writer(bundle,payload=proposal(bundle,AD)); reviewer=Reviewer(verdicts=('approve',)*10)
     class Combo:
         base_url = model_choice.SERVER_URL
         def chat_once(self,model,*args,**kwargs):
             return (writer if model=='claude/sonnet' else reviewer).chat_once(model,*args,**kwargs)
     monkeypatch.setattr('jobwatch.interview.prep.configured_llm',lambda _:Combo())
     with TestClient(create_app(config),base_url='http://localhost',headers=OK) as client:
-        client.pid=pid; client.writer=writer; client.profile=profile; client.config=config
+        client.pid=pid; client.writer=writer; client.profile=profile; client.approved_evidence=evidence_dir; client.config=config
         yield client
 
 
@@ -62,7 +74,7 @@ def test_notes_revision_escape_staleness_and_origin(prep_client):
 
 
 def test_private_readiness_and_not_found(prep_client):
-    c=prep_client; url=f'/jobs/{c.pid}/interview-prep'; (c.profile/'cv.md').unlink()
+    c=prep_client; url=f'/jobs/{c.pid}/interview-prep'; (c.approved_evidence.parent/'approved.json').unlink()
     assert 'Check interview readiness' in c.get(url).text
     assert c.post(url).status_code==409 and not c.writer.calls
     assert c.get('/jobs/9999/interview-prep').status_code==404
@@ -178,7 +190,16 @@ def test_startup_recovers_a_friends_durable_queue_as_that_friend(prep_client,mon
     c=prep_client; done=threading.Event(); ran=[]
     with users.use('friend'):
         users.create_user_dirs('friend')
-        (users.user_dir()/'profile'/'cv.md').write_text('# Friend Candidate\n\n## Skills\n- Reconciled ledgers.\n')
+        from jobwatch.candidate import intake, projection
+        friend_version = intake._versions_root('friend') / '1'
+        friend_evidence = friend_version / 'evidence'
+        friend_evidence.mkdir(parents=True)
+        (friend_evidence / 'cv.md').write_text('# Friend Candidate\n\n## Skills\n- Reconciled ledgers.\n')
+        friend_bundle = snapshot_evidence(friend_evidence)
+        friend_record = {'version': 1, 'facts': [], 'evidence_bundle_hash': friend_bundle.bundle_hash}
+        (friend_version / 'approved.json').write_text(json.dumps(friend_record))
+        for name, text in projection.project(friend_record).items():
+            (friend_version / name).write_text(text)
         conn=db.connect(c.config.db_path); pid=seed(conn,1,'Friend role',company='Example',arm='accounting')
         conn.execute("INSERT INTO ad_text(posting_id,text,source,fetched_at) VALUES(?,?,'cached',?)",(pid,AD,datetime.now(UTC).isoformat())); conn.commit()
         assert service.enqueue(conn,pid,c.config); conn.close()

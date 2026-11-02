@@ -231,15 +231,16 @@ def test_board_times_use_the_persons_timezone(tmp_path, monkeypatch):
     from jobwatch.apply import render
     from jobwatch.web import queries as q
     monkeypatch.setattr(place, "_candidate", render._candidate)       # the real profile reader, not the Melbourne stub
-    pdir = tmp_path / "profile"
-    pdir.mkdir()
-    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(pdir))
-    (pdir / "profile.yaml").write_text("candidate:\n  timezone: Australia/Perth\n")
+    from jobwatch.candidate import approved, intake
+    settings = {'candidate': {'timezone': 'Australia/Perth'}}
+    current = {'version': 1}
+    monkeypatch.setattr(approved, 'settings', lambda person, name: settings)
+    monkeypatch.setattr(intake, 'current_version', lambda person: current)
+    q._tz_for.cache_clear()
     noon = datetime(2026, 1, 15, 4, 0, tzinfo=UTC)                 # 12:00 in Perth, 15:00 in Melbourne
     assert q.absolute(noon).endswith("12:00 PM AWST")
-    (pdir / "profile.yaml").write_text("candidate:\n  timezone: Australia/Melbourne\n")
-    import os, time
-    os.utime(pdir / "profile.yaml", ns=(time.time_ns() + 10**9, time.time_ns() + 10**9))   # a profile edit is picked up
+    settings['candidate']['timezone'] = 'Australia/Melbourne'
+    current['version'] = 2
     assert q.absolute(noon).endswith("3:00 PM AEDT")
 
 

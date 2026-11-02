@@ -1,6 +1,6 @@
-"""The person's own settings, read from their profile dir (profile.yaml, interests_and_criteria.yaml).
+"""Read settings from the server-bound person's approved version.
 
-Nothing here knows any one person: a missing file or key means neutral behaviour (no hours limit, nothing excluded).
+A person without approval has no settings. Invalid approved files raise an integrity error.
 """
 from __future__ import annotations
 

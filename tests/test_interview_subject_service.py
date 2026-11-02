@@ -29,8 +29,10 @@ def test_subject_uses_existing_runtime_without_tracker_changes(world):
     assert load_report(conn,sid,config,bundle=bundle)['status']=='ready'
 
 
-def test_subject_queue_durable_and_changed_notes_do_not_auto_dispatch(world):
+def test_subject_queue_durable_and_changed_notes_do_not_auto_dispatch(world, monkeypatch):
     conn,bundle,config=world;sid=subject(conn)
+    from jobwatch.interview import prep
+    monkeypatch.setattr(prep.approved, 'evidence', lambda person: bundle)
     assert enqueue(conn,sid,config)
     assert queued_subject_ids(conn,config)==(sid,)
     save_subject_inputs(conn,sid,InterviewInputs(invite='Changed'),expected_revision=1)

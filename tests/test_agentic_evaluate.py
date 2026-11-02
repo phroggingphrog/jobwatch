@@ -205,18 +205,18 @@ def test_neutral_jd_family_vocabulary_does_not_imply_personal_exclusion(tmp_path
 
 @pytest.mark.parametrize("source", ["ad", "career_ops_profile.md", "research"])
 def test_job_ad_preferences_and_research_cannot_prove_candidate_qualifications(tmp_path, source):
+    from pipeline.agentic.gate import assessment_audit
     bundle, ad, key, choices = build_case(tmp_path)
-    citation = choices[-1]["arguments"]["matches"][0]["evidence"][0]
-    citation.update(source_id=source, content_hash=key.ad_hash, quote="Reconciled ledgers")
-    choices.insert(4, copy.deepcopy(choices[3]))  # repeat the invalid focused judgment, not the later summary
-    with pytest.raises(AgenticError, match="invalid_tool_arguments"):
-        evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
+    choices[-1]["arguments"]["matches"][0]["evidence"][0].update(
+        source_id=source, content_hash=key.ad_hash, quote="Reconciled ledgers")
+    result = evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
+    audit = assessment_audit(result, ad_text=ad, evidence_bundle=bundle)
+    assert 'candidate_citation_unverified' in audit.unknowns
+    assert audit.completeness == 'partial'
 
 
 @pytest.mark.parametrize("change,error", [
     ("requirements_hash", "invalid_tool_arguments"),
-    ("citation_hash", "invalid_tool_arguments"),
-    ("citation_quote", "invalid_tool_arguments"),
     ("missing_coverage", "invalid_tool_arguments"),
     ("not_applicable", "invalid_tool_arguments"),
 ])
@@ -303,11 +303,27 @@ def test_uncertain_jd_facts_remain_visible_in_report(tmp_path):
 
 
 def test_job_requirement_cannot_cite_candidate_source(tmp_path):
+    from pipeline.agentic.gate import assessment_audit
     bundle, ad, key, choices = build_case(tmp_path)
     choices[1]["arguments"]["requirements"]["requirements"][0]["jd_signal"] = {
         "source_id": "cv.md", "content_hash": bundle.sources["cv.md"], "quote": "Reconciled ledgers"}
-    with pytest.raises(AgenticError, match="invalid_citation"):
-        evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
+    changed = RequirementSet.model_validate(choices[1]['arguments']['requirements'])
+    choices[-1]['arguments']['requirements_hash'] = changed.requirement_hash
+    result = evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
+    audit = assessment_audit(result, ad_text=ad, evidence_bundle=bundle)
+    assert 'requirement_citation_unverified' in audit.unknowns
+    assert audit.completeness == 'partial'
+
+
+@pytest.mark.parametrize('field,value', [('content_hash', 'a' * 64), ('quote', 'Invented qualification')])
+def test_invalid_candidate_citation_remains_unverified(tmp_path, field, value):
+    from pipeline.agentic.gate import assessment_audit
+    bundle, ad, key, choices = build_case(tmp_path)
+    choices[-1]['arguments']['matches'][0]['evidence'][0][field] = value
+    result = evaluate_job(key, ad, budget(key), FakeModel(choices), evidence_bundle=bundle)
+    audit = assessment_audit(result, ad_text=ad, evidence_bundle=bundle)
+    assert 'candidate_citation_unverified' in audit.unknowns
+    assert audit.completeness == 'partial'
 
 
 def test_descriptive_report_headings_preserve_complete_validated_report(tmp_path):

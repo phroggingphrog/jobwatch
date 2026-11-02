@@ -15,6 +15,7 @@ import re
 from datetime import datetime
 
 from .verify import CLAIM_LISTS
+from jobwatch.candidate import approved
 
 SECTION_TITLES = {"summary": "Professional Profile", "skills": "Core Capabilities",
                   "experience": "Professional Experience", "education": "Education & Qualifications",
@@ -28,16 +29,9 @@ def _candidate() -> dict:
     """The person's own profile (profile.yaml `candidate`): headline and work rights come from there, never from code
     (owner 2026-10-20: the app is per person; another user must not get the owner's visa or headline)."""
     try:
-        import yaml
-        from .paths import profile_dir
         from jobwatch import users
-        from jobwatch.candidate import intake
-        person = users.current()
-        approved = intake.current_version(person)
-        path = (intake._versions_root(person) / str(approved['version']) / 'profile.yaml'
-                if approved else profile_dir() / 'profile.yaml')
-        return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("candidate") or {}
-    except Exception:  # noqa: BLE001 - no profile yet: the CV simply leaves these lines out
+        return approved.settings(users.current(), 'profile.yaml').get('candidate') or {}
+    except Exception:  # noqa: BLE001 - no approved profile: the CV leaves these lines out
         return {}
 
 

@@ -2,7 +2,8 @@
 
     INGESTED --extract--> EXTRACTED --evaluate--> SCORED --gate--> DRAFT_QUEUED --draft--> DRAFTED --form_map--> READY
                                                            \\--gate--> ARCHIVED
-    any non-terminal stage --(node failed 3x, or the gate needs a person)--> DLQ
+    any non-terminal stage --(node failed 3x)--> DLQ
+    SCORED --(needs clarification)--> SHORTLISTED
 
 Rules the code enforces:
 - EDGES is the whole control flow. A node returns its output; the runner, not the model, picks the next stage, and a
@@ -40,12 +41,12 @@ class Edge:
 EDGES: dict[Stage, Edge] = {
     Stage.INGESTED: Edge("extract", frozenset({Stage.EXTRACTED})),
     Stage.EXTRACTED: Edge("evaluate", frozenset({Stage.SCORED})),
-    Stage.SCORED: Edge("gate", frozenset({Stage.DRAFT_QUEUED, Stage.ARCHIVED})),
+    Stage.SCORED: Edge("gate", frozenset({Stage.DRAFT_QUEUED, Stage.ARCHIVED, Stage.SHORTLISTED})),
     Stage.DRAFT_QUEUED: Edge("draft", frozenset({Stage.DRAFTED})),
     Stage.DRAFTED: Edge("form_map", frozenset({Stage.READY})),
 }
-TERMINAL = frozenset({Stage.READY, Stage.ARCHIVED, Stage.DLQ})
-GATE_ROUTE = {"draft": Stage.DRAFT_QUEUED, "archive": Stage.ARCHIVED, "review": Stage.DLQ}
+TERMINAL = frozenset({Stage.READY, Stage.ARCHIVED, Stage.DLQ, Stage.SHORTLISTED})
+GATE_ROUTE = {"draft": Stage.DRAFT_QUEUED, "archive": Stage.ARCHIVED, "review": Stage.SHORTLISTED}
 
 
 @dataclass
@@ -55,7 +56,7 @@ class Settings:
     form_model: str = DEFAULT_MODEL
     threshold: float = gate.THRESHOLD
     concurrency: int = 6
-    ingest_limit: int = 200
+    ingest_limit: int = 20
     fetch_budget: int = 25
     drafts_per_run: int = 3
     drafts_per_day: int = 10            # cost guard across runs (an Opus-written draft costs about $1.70)
@@ -79,6 +80,10 @@ class Graph:
     _drafts_left: int = 0
     deadline: float | None = None           # time.monotonic() after which no NEW node starts
     stats: dict = field(default_factory=dict)
+    # control flow lives on the class so a mode can swap it (pipeline/screened.py) without copying the runner
+    EDGES = EDGES
+    TERMINAL = TERMINAL
+    GATE_ROUTE = GATE_ROUTE
 
     def __post_init__(self):
         store.ensure(self.conn)
@@ -93,7 +98,7 @@ class Graph:
 
     def _move(self, pid: int, cur: Stage, nxt: Stage, output: dict | None, reason: str | None = None,
               attempts: int = 1) -> Stage:
-        edge = EDGES[cur]
+        edge = self.EDGES[cur]
         if nxt not in edge.to:
             raise RuntimeError(f"illegal move {cur} -> {nxt} by node {edge.node}")
         store.move(self.conn, pid, edge.node, cur, nxt, output=output, reason=reason, attempts=attempts)
@@ -102,7 +107,7 @@ class Graph:
         return nxt
 
     def _dead(self, pid: int, cur: Stage, error: str, attempts: int) -> Stage:
-        store.dead_letter(self.conn, pid, EDGES[cur].node, cur, attempts, error)
+        store.dead_letter(self.conn, pid, self.EDGES[cur].node, cur, attempts, error)
         self.conn.commit()
         self._count(str(Stage.DLQ))
         return Stage.DLQ
@@ -117,11 +122,11 @@ class Graph:
         """Run exactly one node for the job's current stage and persist the result."""
         row = store.get(self.conn, pid)
         cur = Stage(row["stage"])
-        if cur in TERMINAL:
+        if cur in self.TERMINAL:
             return cur
         data = row["data"]
         ad = JobAd.model_validate(data["ingest"])
-        node = EDGES[cur].node
+        node = self.EDGES[cur].node
         try:
             if cur is Stage.INGESTED:
                 text = ingest.ad_text(self.conn, pid)
@@ -140,12 +145,23 @@ class Graph:
                 facts = JobFacts.model_validate(data["extract"])
                 score = MatchScore.model_validate({k: v for k, v in data["evaluate"].items()
                                                    if k in MatchScore.model_fields})
+                from . import tracks
+                category = tracks.settings(self.config).get(data.get("track"))
                 route, dec = gate.decide(facts, score, text, ad.title, self.settings.threshold,
-                                         posting={"company": ad.company, "location": ad.location})
-                nxt = GATE_ROUTE[route]
-                if nxt is Stage.DLQ:
-                    return self._dead(pid, cur, f"needs review: {dec.reason}", 1)
-                return self._move(pid, cur, nxt, dec.model_dump(), reason=None if dec.passed else dec.reason)
+                                         posting={"company": ad.company, "location": ad.location, "track": data.get("track")},
+                                         hours_policy=category.hours if category else "standard")
+                from .decision import build_decision
+                unknowns = tuple(data.get('audit_unknowns') or ())
+                if route == 'review':
+                    unknowns += (dec.reason,)
+                assessment = build_decision(fit_score=score.overall,
+                    explicit_conflicts=(dec.reason,) if route == 'archive' else (), unknowns=unknowns)
+                if route == 'draft' and unknowns:
+                    route = 'review'
+                output = {**dec.model_dump(), 'assessment': assessment.model_dump()}
+                return self._move(pid, cur, self.GATE_ROUTE[route], output,
+                                  reason=dec.reason if route == 'archive' or not dec.passed else
+                                         (unknowns[0] if unknowns else None))
             if cur is Stage.DRAFT_QUEUED:
                 if self._drafts_left <= 0:
                     return cur                              # waits for the next run (cost cap), not a failure
@@ -182,7 +198,7 @@ class Graph:
 
     async def run_job(self, pid: int) -> Stage:
         stage = Stage(store.get(self.conn, pid)["stage"])
-        while stage not in TERMINAL:
+        while stage not in self.TERMINAL:
             if self.deadline is not None and time.monotonic() > self.deadline:
                 self._count("time_limit")                   # a node is never cut in half: stop between nodes
                 break
@@ -200,7 +216,7 @@ class Graph:
         if ingest_new:
             self.stats["ingest"] = ingest.run(self.conn, self.config, limit=self.settings.ingest_limit,
                                               fetch_budget=self.settings.fetch_budget, posting_ids=posting_ids)
-        todo = [pid for st in EDGES for pid in store.at_stage(self.conn, st)]
+        todo = [pid for st in self.EDGES for pid in store.at_stage(self.conn, st)]
         todo = sorted(set(todo))[: limit or None]
         sem = asyncio.Semaphore(max(1, self.settings.concurrency))
 

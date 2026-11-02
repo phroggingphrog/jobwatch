@@ -60,6 +60,50 @@ Comparison base: `152fc29224b9bd098ccf2731f991d2b29689c9a7`, unchanged checkout 
 
 Remaining action: review the missing-directory confirmation path and public mappings, without weakening exact-input or specific-reason checks. Verify snapshot policy and reader failure behavior explicitly. Do not claim the entire change is ready from these focused results.
 
+## Independent release verification
+
+The release worktree integrates `ac113b2` with current `origin/main` at `486d8f2`. It preserves the read-only `discovery_status` registration.
+
+Independent review found live-input reads in interview, follow-up, preference, candidate insight, ordering, rendering, location, and web routes. These paths now use approved evidence or settings. Explicit synthetic bundles remain available for tests. Missing approved evidence and missing adopted source files close discovery with `profile_file_missing`. Upload-only evidence does not require a live source counterpart. Legacy projection hashes do not identify evidence files.
+
+Verification evidence:
+
+- `/tmp/jobwatch-release-integrated-final.log`: 1,239 passed in 120.74 seconds on committed release source `8b2db12`. This covers candidate intake, policy, recovery, approved readers, all reader rules, discovery gates, profile API, and registered MCP status.
+
+- `/tmp/jobwatch-release-boundary-stable.log`: 27 passed. This checks reader delegation, approved corruption refusal, and MCP discovery status.
+- `/tmp/jobwatch-release-gate-final.log`: 100 passed. Historical policy tests retain their assertions and use explicit synthetic settings. The commute test uses per-person approved settings.
+- `/tmp/jobwatch-release-web-gate-final.log`: 147 passed in 38.85 seconds. This includes candidate onboarding absence, local statistics, approved readers, and historical admission.
+- `/tmp/jobwatch-release-discovery-final.log`: 27 passed in 12.33 seconds. Synthetic fixtures use `profile_inputs_hash` and mock the current `scope_state` interface.
+- `/tmp/jobwatch-release-impacted-final.log`: 92 passed and 2 fixture failures. Focused reruns passed both corrected fixtures. They now inject approved evidence and preserve publication-drift assertions. `/tmp/jobwatch-release-drift-final.log` independently reports 3 passed in 4.31 seconds.
+- `/tmp/jobwatch-release-core-final.log`: 152 passed in 88.13 seconds. The command reached its 90-second limit after the summary. Process termination remains a limitation.
+- `/tmp/jobwatch-release-baseline-gate-adtext.log`: clean current main reports 333 passed and 3 pre-existing `adtext` failures for HTTP 403, 429, and 502 handling.
+
+The complete suite contained 4,496 tests at initial collection. A later collection contained 4,508 tests. All 27 bounded batches ran. Do not treat unrun or timed-out tests as passing.
+
+| Batch | Initial result |
+|---|---|
+| 1–7 | 133, 180, 156, 124, 170, 169, and 68 passed; batch 7 skipped 2 |
+| 8–11 | 233 passed / 3 baseline failures; 110 passed; 169 passed / 8 fixture failures; 150 passed |
+| 12–13 | Each reached 240 seconds without a complete summary |
+| 14–17 | 137 passed; 176 passed / 4 fixture failures; 150 passed; 177 passed / 1 baseline failure |
+| 18–20 | 164, 174, and 146 passed |
+| 21–24 | 116 passed / 1 fixture failure; 142 passed / 1 fixture failure; 89 and 655 passed |
+| 25–27 | 167 passed / 1 fixture failure; 154 passed / 3 fixture failures; 53 passed / 1 fixture failure |
+
+Completed initial summaries total 4,162 passed, 23 failed, and 2 skipped. Four fetch failures reproduce on clean current main and remain in issue #50. Focused reruns passed all 19 repaired synthetic fixture failures. Runtime safety source did not change after `8b2db12`.
+
+Residual evidence includes 48 browser tests and 48 non-service batch-12 tests passing. The baseline module passed 62 tests before a 90-second limit. An agentic-service residual run reached a 120-second limit after 19 progress marks. Exact complete node coverage for batches 12 and 13 remains unavailable. The full suite has not passed on final source.
+
+The final interview and follow-up web modules passed 29 tests in 28.04 seconds. These fixtures publish separate approved evidence for each person. Missing-approval tests remove approved versions, not person input. Publication-drift assertions remain intact.
+
+OpenSpec verification records all attempted batches and limitations. It does not claim full-suite success.
+
+Read-only live-data preflight checks passed for both approved profiles. Evidence, restriction settings, and confirmed scope remained valid. Three other users had no approved version. Candidate onboarding reported `confirmed`. No person input changed.
+
+The pre-deployment API returned HTTP 503 for authenticated discovery status. Issue #48 records the running process and checkout interface mismatch. The release-source read-only status function succeeded without a model call. Runtime verification remains necessary after restart.
+
+TASK-408 records deployment state, backups, rollback, final test results, and limitations. The owner later authorized merge and deployment. The earlier design excludes deployment from implementation scope; the later authorization controls this release.
+
 ## Historical progress
 
 - Milestone 1: Design recorded before implementation. Source review found that `confirm()` writes projections to `profile/` and can omit stale annotations from the version snapshot. Candidate readers also load the live directory. `jobwatch` remains unavailable for task tracking (`command not found`).

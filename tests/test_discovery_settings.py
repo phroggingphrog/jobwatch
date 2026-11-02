@@ -34,7 +34,8 @@ def _confirmed_profile(person, ceiling=900):
         'version': 1,
         'scope': scope.model_dump(mode='json'),
         'scope_digest': intake._scope_digest(scope),
-        'file_sha256': {'profile.yaml': hashlib.sha256(raw_profile).hexdigest()},
+        'file_sha256': {},
+        'profile_inputs_hash': hashlib.sha256(raw_profile).hexdigest(),
     }
     path = version / 'approved.json'
     path.write_text(json.dumps(approved), encoding='utf-8')

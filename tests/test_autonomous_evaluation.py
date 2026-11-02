@@ -268,10 +268,10 @@ def test_skip_does_not_dispatch_any_paid_model(tmp_path):
 
 
 @pytest.mark.parametrize('change,error', [
-    ('no_retrieval', 'unretrieved_evidence'), ('candidate_citation', 'invalid_citation'),
+    ('no_retrieval', 'invalid_evaluation'), ('candidate_citation', 'invalid_evaluation'),
     ('coverage', 'invalid_evaluation'), ('requirements_hash', 'requirements_changed'),
-    ('judgment', 'invalid_evaluation'), ('not_applicable', 'contradictory_match'),
-    ('partial_no_citation', 'invalid_model_payload'), ('fabricated_contradiction', 'invalid_citation')])
+    ('judgment', 'invalid_evaluation'), ('not_applicable', 'invalid_evaluation'),
+    ('partial_no_citation', 'invalid_model_payload'), ('fabricated_contradiction', 'invalid_evaluation')])
 def test_invalid_matching_fails_closed(tmp_path, change, error):
     bundle, ad, key, roles = build_case(tmp_path / 'evidence')
     choices = native_choices(roles)
@@ -292,7 +292,8 @@ def test_invalid_matching_fails_closed(tmp_path, change, error):
         citation = copy.deepcopy(match['evidence'][0]); citation['quote'] = 'Invented contradiction'
         match.update(match='missing', evidence=[], risk='Gap', mitigation='Ask owner')
         match['judgment'].update(status='contradicted', contradiction_evidence=[citation], open_question='Which proof?')
-    choices.append(copy.deepcopy(choices[-1]))
+    # A tool now allows two corrections, so the third identical rejection exhausts the bound.
+    choices.extend(copy.deepcopy(choices[-1]) for _ in range(2))
     llm, seen = transport(choices)
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
         with pytest.raises(Exception, match=error):
@@ -300,14 +301,18 @@ def test_invalid_matching_fails_closed(tmp_path, change, error):
                                 evidence_bundle=bundle, model='claude/sonnet')
 
 
-def test_canonical_gate_holds_missing_evidence_despite_high_score(tmp_path):
+def test_canonical_gate_records_missing_evidence_as_partial_despite_high_score(tmp_path):
     from jobwatch.candidate.policy import default_policy
-    from pipeline.agentic.gate import decide
+    from pipeline.agentic.gate import assessment_audit, decide
     bundle, ad, key, llm, seen, conn, args = run_case(tmp_path, match='missing', score=5)
     result = evaluate_autonomous(key, ad, budget(key), llm, **args)
     gate = decide(result, ad_text=ad, title='Synthetic analyst', policy=default_policy(),
                   captured_complete=True, expected_run_key=key, evidence_bundle=bundle)
-    assert gate.route == 'hold' and gate.reason == 'insufficient_evidence'
+    assert (gate.route, gate.reason) == ('draft', 'eligible')
+    audit = assessment_audit(result, ad_text=ad, evidence_bundle=bundle, decision=gate)
+    assert audit.completeness == 'partial'
+    assert audit.recommendation == 'needs_clarification'
+    assert 'candidate_evidence_incomplete' in audit.unknowns
 
 
 def test_configured_turn_limit_survives_resume(tmp_path):

@@ -29,7 +29,7 @@ from pipeline.schemas import Stage
 from pipeline.agentic.contracts import (AgenticError, AgenticEvaluation, AgenticGateDecision, DraftProposal,
                                         PackageManifest, ReviewVerdict, RunKey)
 from pipeline.agentic.evaluator import evaluate_job
-from pipeline.agentic.gate import decide
+from pipeline.agentic.gate import assessment_audit, decide
 from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, km_from_home
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
 from pipeline.agentic import decision_log, discovery_settings, jev_skills, incidents
@@ -86,7 +86,8 @@ def agentic_settings(config) -> dict:
 
 def enabled(config) -> bool:
     from jobwatch.execution_mode import effective_mode
-    return effective_mode(config) == 'agentic'
+    # 'screened' keeps the agentic evaluator, but reaches it only through pipeline.screened.promote
+    return effective_mode(config) in ('agentic', 'screened')
 
 
 def _config(config):
@@ -259,6 +260,27 @@ def _run_key(posting_id, captured, bundle, policy, cfg, inputs=None, structural=
                                       'location_reference': LOCATION_REFERENCE_HASH, 'posting': posting}))
 
 
+
+def _in_profile_region(conn, ids):
+    """Postings whose stored location the confirmed profile admits today. A match made under an older rule is
+    re-checked here, so an interstate posting never reaches a paid read (16 NSW/QLD were read by 2026-10-31)."""
+    from types import SimpleNamespace
+    from jobwatch.candidate import intake
+    from jobwatch.discovery_gate import profile_location_rule
+    approved = intake.current_version(users.current())
+    if not approved:
+        return list(ids)
+    policy = policy_for(users.current(), approved=approved)
+    kept = []
+    for pid in ids:
+        row = conn.execute('SELECT location,state,remote FROM postings WHERE id=?', (pid,)).fetchone()
+        if row is None:
+            continue
+        if profile_location_rule(SimpleNamespace(location=row[0] or '', state=row[1], remote=bool(row[2])), policy):
+            kept.append(pid)
+    return kept
+
+
 def snapshot_inventory(conn, config, *, posting_ids=None, limit=20, evidence_bundle=None, policy=None):
     """Read-only inventory: no schema creation, profile writes, gateway, or fetching."""
     if type(limit) is not int or not 1 <= limit <= 20:
@@ -274,8 +296,9 @@ def snapshot_inventory(conn, config, *, posting_ids=None, limit=20, evidence_bun
         # never retried and the posting was stranded: 874 of them by 2026-10-13, while a re-read of a
         # sampled few now succeeds. This does not relax any gate; it only gives them another read.
         retry = max(1, limit // 4)
-        newest = [r[0] for r in conn.execute(
-            'SELECT id FROM postings ORDER BY last_seen_at DESC,id DESC LIMIT ?', (limit - retry,))]
+        newest = _in_profile_region(conn, [r[0] for r in conn.execute(
+            'SELECT p.id FROM postings p JOIN matches m ON m.posting_id=p.id '
+            'ORDER BY p.last_seen_at DESC,p.id DESC LIMIT ?', ((limit - retry) * 10,))])[:limit - retry]
         stale = []
         # The inventory must not assume the pipeline's own tables exist yet (a fresh database has none).
         if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentic_runs'").fetchone():
@@ -612,7 +635,7 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         # hold the job; a requirement the ad states that the owner cannot meet archives it (owner, 2026-10-12).
         # None means Jev was not reached; the job then runs exactly as before.
         with deadline_scope(_invocation_deadline):
-            if cfg.get('autonomous_evaluation', False) and text_kind == 'full' and saved_package is None:
+            if cfg.get('autonomous_evaluation', False) and ad_text.strip() and saved_package is None:
                 prior_screen = adapter.load_artifact(key.value, 'public_screening')
                 if prior_screen is None:
                     screen = jev_screen(ad_text, config, budget=budget)
@@ -620,12 +643,12 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 else:
                     screen = prior_screen['result']
             else:
-                screen = jev_screen(ad_text, config) if text_kind == 'full' and saved_package is None else None
+                screen = jev_screen(ad_text, config) if ad_text.strip() and saved_package is None else None
         extras = extras_settings(config)
         applicable = applicable_knockouts(dp)
         knockout = next((KNOCKOUT_REASONS[q] for q, at in extras['knockout_at'].items()
                          if q in applicable and screen is not None and screen.get(q, 0) >= float(at)), None)
-        if text_kind != 'full':
+        if not ad_text.strip():
             reason = 'insufficient_evidence'
         elif screen is not None and screen['injection'] >= float(extras['jev_hold_at']):
             reason = 'ad_has_ai_instructions'
@@ -703,12 +726,20 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 if _capture(conn, posting_id) != captured or _run_key(
                         posting_id, captured, bundle, pol, cfg, (reference, mappings), conn=conn).value != key.value:
                     raise AgenticError('snapshot_changed')
+            if evaluation.run_key != key:
+                raise AgenticError('snapshot_changed')
             decision = gate_current(evaluation, posting=posting, ad_text=ad_text, decision_policy=dp, policy=pol,
                                     captured_complete=text_kind == 'full', expected_run_key=key,
                                     evidence_bundle=bundle)
             if dp is not None:
                 decision_log.record(conn, key.value, dp, decision)
             adapter.save_artifact(claim, 'evaluation', evaluation.model_dump(mode='json'))
+            if adapter.load_artifact(key.value, 'assessment_audit') is None:
+                audit = assessment_audit(evaluation, ad_text=ad_text, captured_complete=text_kind == 'full',
+                    evidence_bundle=bundle, decision=decision, title=posting['title'],
+                    company=str(posting.get('company') or ''), decision_policy=dp,
+                    commute_km=commute_km_of(dp, posting.get('location')))
+                adapter.save_artifact(claim, 'assessment_audit', audit.model_dump())
             completed_phase = 'evaluation'
             incidents.mark_phase(conn, incident_run_id, completed_phase, posting_id=posting_id, completed=True)
             # Jev skills (owner 2026-10-12, career facts only): a second-opinion fit score and a requirement map
@@ -777,6 +808,15 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         code = getattr(exc, 'code', None)
         reason = code if isinstance(exc, AgenticError) and type(code) is str and code.replace('_', '').isalnum() else 'execution_failed'
         reason = _runtime_stop_reason(exc, scope) or reason
+        if reason in {'model_invalid_response', 'model_truncated_response', 'invalid_requirements',
+                      'invalid_evaluation', 'invalid_citation', 'invalid_candidate_citation',
+                      'contradictory_match', 'requirements_changed'}:
+            # A separate artifact cannot be mistaken for a validated evaluation.
+            from pipeline.decision import build_decision
+            partial = {'assessment_decision': build_decision(errors=(reason,)).model_dump(),
+                       'posting_id': posting_id, 'run_key': key.value}
+            if adapter.load_artifact(key.value, 'partial_assessment') is None:
+                adapter.save_artifact(claim, 'partial_assessment', partial)
         if isinstance(exc, RuntimeErrorSafe) and reason == 'cancelled':
             raise  # release the claim below, then preserve the active posting for the caller
 
@@ -1179,6 +1219,7 @@ def after_collect(conn, config, max_seconds=None, collector_run_id=None, *, dead
         AgenticStore(conn).ensure()
         pending = [pid for pid in unseen[:25] + pending if not incidents.is_paused(conn, pid)
                    and not _unreadable_backoff(conn, pid) and not _invalid_backoff(conn, pid)]
+        pending = _in_profile_region(conn, pending)
         if pending:
             pending = _without_completed(conn,config,pending)[:200]
         if discovery_cfg['ordering'] == 'legacy':
@@ -1281,10 +1322,10 @@ def _target_first(conn, config, pending):
         captured = _capture(conn, pid)
         if captured and captured[1]:
             items[pid] = (content_hash(captured[1].encode()), captured[1])
-    try:
-        profile_md = (profile_dir() / 'career_ops_profile.md').read_text(encoding='utf-8')
-    except OSError:
-        profile_md = ''
+    from jobwatch import users
+    from jobwatch.candidate import approved
+    bundle = approved.evidence(users.current())
+    profile_md = bundle.contents.get('career_ops_profile.md', b'').decode('utf-8', 'strict')
     scores = rank_by_target(conn, items, profile_md, config) if items else None
     if not scores:
         return pending[:20]

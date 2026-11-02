@@ -9,9 +9,10 @@ import uuid
 
 from jobwatch.util import adtext as adtext
 from jobwatch import ledger
-from jobwatch.apply.paths import profile_dir
+from jobwatch import users
+from jobwatch.candidate import approved
 from jobwatch.candidate.contracts import digest
-from jobwatch.candidate.evidence import snapshot_evidence, verify_evidence_snapshot
+from jobwatch.candidate.evidence import verify_evidence_snapshot
 from jobwatch.followup.events import application_cadence, history, _events, FollowupEventError
 from pipeline.agentic.contracts import AgenticError, parse_budget_checkpoint_json
 from pipeline.agentic.followup import (CRITERIA, FollowupDraft, compose_followup, snapshot_hash, validate_proposal)
@@ -19,7 +20,12 @@ from pipeline.agentic.runtime import BatchBudget, JobBudget, validate_model_payl
 from pipeline.agentic.service import _config, configured_llm, enabled
 
 
+def _approved_bundle():
+    return approved.evidence(users.current())
+
+
 def capture(conn, application_id, bundle, *, now=None, channel="email"):
+    bundle = bundle or _approved_bundle()
     if channel not in {'email','linkedin'}:raise AgenticError('invalid_followup_channel')
     row = conn.execute('SELECT * FROM applications WHERE id=?',(application_id,)).fetchone()
     if row is None:
@@ -60,7 +66,7 @@ def _rows(conn, application_id):
 
 
 def load_draft(conn, application_id, *, bundle=None, now=None, channel="email"):
-    bundle = bundle or snapshot_evidence(profile_dir())
+    bundle = bundle or _approved_bundle()
     application, text, identity = capture(conn,application_id,bundle,now=now,channel=channel)
     for row in _rows(conn,application_id):
         value=_payload(row)
@@ -83,7 +89,7 @@ def generate(conn, application_id, config, *, bundle=None, writer=None, reviewer
     if not enabled(config):raise AgenticError('agentic_disabled')
     cfg=_config(config)
     live_profile = bundle is None
-    bundle=bundle or snapshot_evidence(profile_dir())
+    bundle=bundle or _approved_bundle()
     application,text,identity=capture(conn,application_id,bundle,now=now,channel=channel)
     # Snapshot identity scopes retries. Never reset an unknown prior reservation
     # merely because the worker restarted or the owner clicked twice.
@@ -155,7 +161,7 @@ def generate(conn, application_id, config, *, bundle=None, writer=None, reviewer
         draft=compose_followup(application,text,bundle,budget,client,reviewer or client,
             writer_model=cfg['worker_model'],reviewer_model=cfg['reviewer_model'],previous_drafts=prior_drafts)
         # Re-read owner events and profile before publishing any accepted draft.
-        current_bundle = snapshot_evidence(profile_dir()) if live_profile else bundle
+        current_bundle = _approved_bundle() if live_profile else bundle
         if capture(conn,application_id,current_bundle,now=now,channel=channel)[2]!=identity:
             raise AgenticError('followup_snapshot_changed')
         value.update(status='ready',draft=draft.model_dump(mode='json'),reason=None)

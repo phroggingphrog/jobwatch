@@ -5,11 +5,13 @@ import sqlite3
 
 from jobwatch.preferences import PreferenceStore, PreferenceError, predict_set
 from pipeline.agentic import service
+from jobwatch import users
+from jobwatch.candidate import approved
 
 
 def candidate_paths(config) -> dict:
     from jobwatch.candidate.analysis import structural_summary
-    bundle = service.snapshot_evidence(service.profile_dir())
+    bundle = approved.evidence(users.current())
     result = service.analyse_candidate(bundle, *service.load_inputs(bundle, service._config(config)), service.default_policy())
     summary = structural_summary(result)
     summary.pop('detail_tool', None)

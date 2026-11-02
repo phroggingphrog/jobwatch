@@ -71,7 +71,7 @@ def test_default_selection_and_supported_upper_bound(reader, controls):
 def test_assessment_limit_and_daily_allowance_deferrals_stay_distinct(reader, monkeypatch):
     conn, config, calls = reader
     scope = intake.discovery_scope(users.current())
-    monkeypatch.setattr(intake, 'discovery_scope', lambda person: scope.model_copy(update={'daily_assessments': 2}))
+    monkeypatch.setattr(intake, 'scope_state', lambda person: (scope.model_copy(update={'daily_assessments': 2}), 'ok'))
     result = service.after_collect(conn, config, max_assessments=1)
     assert calls[-1][2] == [42]
     assert result['assessment_limit_deferred'] == [43]

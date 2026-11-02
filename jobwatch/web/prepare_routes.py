@@ -166,16 +166,17 @@ def register(app, config, conn_factory, render, sessions):
         statistics = {"status": "input_unavailable"}
         outcomes = None
         try:
-            from jobwatch.candidate.evidence import snapshot_evidence
+            from jobwatch.candidate import approved
+            from jobwatch import users
             from jobwatch.candidate.presentation import statistical_view
             from jobwatch.outcomes.readiness import outcome_readiness
             outcomes = outcome_readiness(conn)
             try:
                 from jobwatch.candidate.assessment import assessment_run_key
-                from jobwatch.candidate.contracts import content_hash, digest
+                from jobwatch.candidate.contracts import CandidateError, content_hash, digest
                 from jobwatch.candidate.evidence import career_profile_text
                 from jobwatch.candidate.policy import default_policy
-                bundle = snapshot_evidence(paths.profile_dir())
+                bundle = approved.evidence(users.current())
                 cfg = _config(config)
                 statistics = statistical_view(bundle, cfg)
                 if not cfg.get('autonomous_evaluation', False):
@@ -183,7 +184,9 @@ def register(app, config, conn_factory, render, sessions):
                         content_hash(career_profile_text(bundle).encode()),
                         digest(default_policy().model_dump(mode='json')), statistics['run_key'], cfg['evaluator_model'])
             except Exception as exc:
-                if str(exc) == 'source_missing':    # no profile yet (fresh start): the page says so, nothing to log
+                if isinstance(exc, CandidateError) and str(exc) == 'no_profile_version':
+                    statistics = {'status': 'input_unavailable'}
+                elif str(exc) == 'source_missing':    # no approved source yet: the page says so, nothing to log
                     statistics = {'status': 'input_unavailable'}
                 else:
                     logging.getLogger(__name__).exception('candidate page: statistics failed')

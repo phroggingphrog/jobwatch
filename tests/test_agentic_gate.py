@@ -23,6 +23,19 @@ AD = (
 AD_HASH = hashlib.sha256(AD.encode("utf-8")).hexdigest()
 
 
+@pytest.fixture(autouse=True)
+def historical_person_settings(monkeypatch, _person_profile):
+    from jobwatch.candidate import person
+    values = {
+        'profile.yaml': {'candidate': {'work_rights': {
+            'hours_limit_per_fortnight': 48, 'full_time_programs_ok': True}}},
+        'interests_and_criteria.yaml': {'target_roles': {'excluded_families': [
+            'customer_service', 'hospitality', 'retail', 'shop_floor', 'engineering',
+            'health', 'education', 'trades', 'it', 'sales_marketing', 'other']}},
+    }
+    monkeypatch.setattr(person, '_yaml', lambda name: values[name])
+
+
 @pytest.fixture
 def policy():
     return TargetPolicy(version="test-v1")
@@ -514,12 +527,11 @@ def test_logistics_requirements_never_hold_a_job(rid, text, exempt, expected):
 
 def test_commute_home_follows_the_current_person_not_the_first_one_cached(tmp_path, monkeypatch):
     from jobwatch import users
+    from jobwatch.candidate import approved
     from pipeline.agentic.location import km_from_home
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path)); monkeypatch.delenv('JOBWATCH_PROFILE_DIR', raising=False)
-    for who, where in (('owner', 'Brunswick, VIC'), ('bob', 'Geelong, VIC')):
-        with users.use(who):
-            d = users.user_dir() / 'profile'; d.mkdir(parents=True)
-            (d / 'profile.yaml').write_text(f'candidate:\n  location: "{where}"\n', encoding='utf-8')
+    locations = {'owner': 'Brunswick, VIC', 'bob': 'Geelong, VIC'}
+    monkeypatch.setattr(approved, 'settings', lambda person, name: {'candidate': {'location': locations[person]}})
     with users.use('owner'):
         near = km_from_home('Glen Iris, Melbourne VIC')
     with users.use('bob'):

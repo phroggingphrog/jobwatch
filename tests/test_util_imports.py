@@ -35,8 +35,8 @@ def test_every_relative_import_in_jobwatch_resolves():
 def test_place_reads_the_real_profile(tmp_path, monkeypatch):
     import jobwatch.util.place as place
     importlib.reload(place)  # drop the conftest stub so the real lazy import runs
-    (tmp_path / "profile.yaml").write_text(yaml.safe_dump({"candidate": {
-        "location": "Exampleton, NSW", "timezone": "Australia/Sydney"}}))
-    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", str(tmp_path))
+    from jobwatch.candidate import approved
+    monkeypatch.setattr(approved, 'settings', lambda person, name: {'candidate': {
+        'location': 'Exampleton, NSW', 'timezone': 'Australia/Sydney'}})
     assert place.person_state() == "NSW"
     assert str(place.person_timezone()) == "Australia/Sydney"

@@ -19,10 +19,12 @@ class SearchPlan(StrictFrozen):
     locations: tuple[str, ...]
     hypotheses: tuple[str, ...]
     plan_hash: str
+    dropped_focus: int = 0         # focus items not sent as queries; in the hash only when non-zero, so old plans still verify
 
     @model_validator(mode='after')
     def verify_hash(self):
-        if self.plan_hash != digest(self.model_dump(mode='json', exclude={'plan_hash'})):
+        skip = {'plan_hash'} if self.dropped_focus else {'plan_hash', 'dropped_focus'}
+        if self.plan_hash != digest(self.model_dump(mode='json', exclude=skip)):
             raise ValueError('plan_hash_mismatch')
         return self
 
@@ -31,6 +33,14 @@ def query_for(title: str) -> str:
     text = re.sub(r'\([^)]*\)', '', title.casefold())
     text = re.sub(r'\bn\.?e\.?c\.?|\bnfd\b', '', text)
     return ' '.join(text.strip(' ,.;-').split())[:80]
+
+
+TITLE_RE = re.compile(r'^[a-z0-9][a-z0-9 &/+\-]*$')
+
+
+def title_shaped(q) -> bool:
+    q = q.casefold().strip()
+    return 1 <= len(q.split()) <= 6 and bool(TITLE_RE.match(q))
 
 
 def _unique(items):
@@ -43,7 +53,9 @@ def _unique(items):
 
 
 def search_plan(policy, hypotheses, *, extra_locations=(), max_queries=12) -> SearchPlan:
-    queries = _unique([q.casefold()[:80] for q in policy.focus] + [query_for(h.title) for h in hypotheses])[:max_queries]
+    focus = [q for q in policy.focus if title_shaped(q)]
+    dropped = len(policy.focus) - len(focus)
+    queries = _unique([q.casefold()[:80] for q in focus] + [query_for(h.title) for h in hypotheses])[:max_queries]
     home = policy.home or {}
     location = ', '.join(str(home[k]) for k in ('place', 'state') if home.get(k))
     from pipeline.agentic.location import regions_named
@@ -53,6 +65,8 @@ def search_plan(policy, hypotheses, *, extra_locations=(), max_queries=12) -> Se
     data = dict(profile_version=policy.profile_version, policy_hash=policy.policy_hash,
         queries={key: queries for key in ('seek', 'jora', 'jobspy')},
         locations=locations, hypotheses=tuple(h.id for h in hypotheses))
+    if dropped:
+        data['dropped_focus'] = dropped
     return SearchPlan(**data, plan_hash=digest(data))
 
 

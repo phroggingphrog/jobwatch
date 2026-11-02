@@ -322,10 +322,20 @@ def test_prepare_post_reaches_specific_route_before_generic_job_action(tmp_path,
 
 
 def test_candidate_page_computes_local_statistics_without_model_calls(tmp_path, monkeypatch):
+    import json
+    from jobwatch import users
+    from jobwatch.candidate import intake, projection
+    from jobwatch.candidate.evidence import snapshot_evidence
     client, browser, _ = setup(tmp_path, monkeypatch, package=False)
-    root=client.data/'profile';root.mkdir(parents=True,exist_ok=True)
-    (root/'cv.md').write_text('# Fictional\n\n## Skills\n- Prepare financial reports and reconcile financial accounts\n')
-    monkeypatch.setenv('JOBWATCH_PROFILE_DIR',str(root))
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(client.data))
+    person = users.current()
+    version = intake._versions_root(person) / '1'
+    (version / 'evidence').mkdir(parents=True)
+    (version / 'evidence' / 'cv.md').write_text('# Fictional\n\n## Skills\n- Prepare financial reports and reconcile financial accounts\n')
+    record = {'version': 1, 'facts': [], 'evidence_bundle_hash': snapshot_evidence(version / 'evidence').bundle_hash}
+    (version / 'approved.json').write_text(json.dumps(record))
+    for name, text in projection.project(record).items():
+        (version / name).write_text(text)
     def forbidden(*args,**kwargs):
         raise AssertionError('GET must never call a model')
     monkeypatch.setattr(prepare_routes,'configured_llm',forbidden)
