@@ -45,7 +45,7 @@ EDGES: dict[Stage, Edge] = {
     Stage.DRAFT_QUEUED: Edge("draft", frozenset({Stage.DRAFTED})),
     Stage.DRAFTED: Edge("form_map", frozenset({Stage.READY})),
 }
-TERMINAL = frozenset({Stage.READY, Stage.ARCHIVED, Stage.DLQ, Stage.SHORTLISTED})
+TERMINAL = frozenset({Stage.READY, Stage.ARCHIVED, Stage.DLQ, Stage.SHORTLISTED, Stage.EVALUATED})
 GATE_ROUTE = {"draft": Stage.DRAFT_QUEUED, "archive": Stage.ARCHIVED, "review": Stage.SHORTLISTED}
 
 

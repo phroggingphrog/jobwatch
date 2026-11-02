@@ -311,7 +311,7 @@ class AgenticStore:
             raise
 
     def release(self, claim: Claim, *, status: str = "held", reason: str | None = None) -> None:
-        if status not in {"held", "ready", "archived", "failed"}:
+        if status not in {"held", "ready", "archived", "failed", "evaluated"}:
             _fail("invalid_status")
         self._begin()
         try:

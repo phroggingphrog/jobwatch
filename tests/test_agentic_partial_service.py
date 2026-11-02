@@ -19,7 +19,7 @@ def test_partial_capture_evaluates_and_persists_audit(world, monkeypatch):
     llm = LLM(transport=gateway, keys=['synthetic'])
     stage = run_agentic_job(42, config, conn, evidence_bundle=bundle, llm=llm, operation='evaluate')
     result = latest_result(conn, 42)
-    assert stage == Stage.DLQ, result
+    assert stage == Stage.EVALUATED, result
     assert result['reason'] == 'evaluation_complete', result
     assert result['evaluation']['global_score'] == 4.3
     assert result['assessment_audit']['completeness'] == 'partial'
