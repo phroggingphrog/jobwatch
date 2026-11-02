@@ -1,6 +1,6 @@
 # Jobwatch agent map
 
-**Source snapshot:** feature branch from `a16658f24ccc0acffaad0de1cd2006f03d982ce3`, inspected 2026-11-01. This map describes source behavior. It does not claim that the checkout is deployed or that every path has passed live acceptance.
+**Source snapshot:** feature branch from `a16658f24ccc0acffaad0de1cd2006f03d982ce3`, inspected 2026-11-01, then reconciled with `main` at `e2499a7` (PR #60) for the execution modes and candidate-intent routing. Other sections, including the service and release path, still describe the original inspection. This map describes source behavior. It does not claim that the checkout is deployed or that every path has passed live acceptance.
 
 **DeepWiki:** The web tool could not retrieve `phroggingphrog/jobwatch`. `deepwiki_ask` returned “Repository not found”; `deepwiki_structure` returned the same result. The repository is private or not indexed. No Jobwatch DeepWiki source pages or citations are available. The requested DeepWiki URL is [https://deepwiki.com/phroggingphrog/jobwatch](https://deepwiki.com/phroggingphrog/jobwatch), but it does not provide verified coverage. This map uses checked-out source and runtime metadata instead.
 
@@ -12,7 +12,7 @@ The product intent in `INTENT.md` sets a reliable Screening → Evaluation slice
 
 ## Entrypoints and orchestration
 
-- `jobwatch/cli.py` dispatches collection, reading, web, MCP and management commands. `jobwatch/execution_mode.py` selects `off`, `reader`, `pipeline`, or `agentic` behavior.
+- `jobwatch/cli.py` dispatches collection, reading, web, MCP and management commands. `jobwatch/execution_mode.py` selects `off`, `reader`, `pipeline`, `agentic`, or `screened` behavior.
 - `jobwatch/pipeline.py` runs collectors, normalizes and saves postings, then invokes the selected assessment hook unless the run is collect-only. The fast and slow collection timers are separate from the native agent API.
 - `pipeline/graph.py` and `pipeline/nodes/` implement a deterministic staged alternative. `pipeline/store.py` and `pipeline/schemas.py` own shared stage, event, and dead-letter state. The agent service and website also use this substrate.
 - `pipeline/agentic/service.py` implements automatic assessment and preparation. It captures a saved posting and full ad, makes input-bound run keys, checks prescreen and candidate digest, checks public ad safety and liveness, runs evaluation, applies the canonical gate, and optionally creates reviewed application documents. It records runs, artifacts, budgets, incidents and stage changes.
@@ -68,7 +68,7 @@ The source templates in `systemd/` still point to `%h/apps/jobwatch`; they do no
 
 The owner asked for obvious keyword filtering backed by a database vocabulary, rather than an expensive model deciding basic location, seniority, employment type or work-rights constraints. Current source implements that shape: `prescreen_terms`, `prescreen_rules`, `prescreen_overrides`, and `prescreen_decisions` are per-person database tables. The generic engine does not contain per-field term lists. Seed words are versioned data; confirmed profile policy is projected to rules. Metadata screening precedes ad fetch, and full-ad screening precedes evaluation. Only an obvious hit under a skip rule stops work; weak or uncertain evidence flags. Overrides and rule hashes support re-admission after changes.
 
-The term bank includes seniority title terms, location and remote handling, work type, hours, citizenship, clearance and sponsorship phrases. Confirmed candidate facts control the rule effect; unknown work rights are not invented. This matches the owner's database-driven deterministic prescreen requirement. It does not establish complete lexical coverage or accuracy for every occupation, market or phrasing. A person can extend the bank with the prescreen CLI and inspect counts.
+The term bank includes seniority title terms, location and remote handling, work type, hours, citizenship, clearance and sponsorship phrases. Confirmed candidate facts control the rule effect; unknown work rights are not invented. Since PR #60, `jobwatch/candidate/intent.py::normalize_intent` separates confirmed facts into preferences, explicit constraints, work rights and ambiguities before policy and eligibility read them. A goal or preference is advisory and does not exclude a posting; only an explicit constraint, an exclusion or a work-rights fact can. This matches the owner's database-driven deterministic prescreen requirement. It does not establish complete lexical coverage or accuracy for every occupation, market or phrasing. A person can extend the bank with the prescreen CLI and inspect counts.
 
 A concrete reliability defect existed in `jobwatch/prescreen/lifecycle.py::reconsider`: a missing posting row reached `row.keys()` because of conditional-expression precedence, aborting the reconsideration batch. The fix now skips the missing row safely. A new regression test creates an orphaned archived prescreen state and checks that reconsideration completes. The normal database foreign-key cascade may make this state uncommon; its production reachability is not established.
 
