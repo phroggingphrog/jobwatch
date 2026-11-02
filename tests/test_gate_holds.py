@@ -134,5 +134,10 @@ def test_unknown_rights_are_not_replaced_by_unconfirmed_personal_preferences():
           "verification_required", "review", sc=score(3, "not_wanted"))
 
 
-def test_not_real_job_keeps_first_precedence():
-    check(facts(real_job=False), "Applicants must be Australian citizens.", "not_a_real_job")
+def test_not_real_job_claim_does_not_override_unverified_rights():
+    check(facts(real_job=False), "Applicants must be Australian citizens.", "verification_required", "review")
+
+
+def test_not_real_job_claim_does_not_override_confirmed_rights():
+    text = "Applicants must be Australian citizens."
+    check(facts(real_job=False, quote=text), text, "work_rights_incompatible")

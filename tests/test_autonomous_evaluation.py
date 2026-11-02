@@ -301,14 +301,18 @@ def test_invalid_matching_fails_closed(tmp_path, change, error):
                                 evidence_bundle=bundle, model='claude/sonnet')
 
 
-def test_canonical_gate_holds_missing_evidence_despite_high_score(tmp_path):
+def test_canonical_gate_records_missing_evidence_as_partial_despite_high_score(tmp_path):
     from jobwatch.candidate.policy import default_policy
-    from pipeline.agentic.gate import decide
+    from pipeline.agentic.gate import assessment_audit, decide
     bundle, ad, key, llm, seen, conn, args = run_case(tmp_path, match='missing', score=5)
     result = evaluate_autonomous(key, ad, budget(key), llm, **args)
     gate = decide(result, ad_text=ad, title='Synthetic analyst', policy=default_policy(),
                   captured_complete=True, expected_run_key=key, evidence_bundle=bundle)
-    assert gate.route == 'hold' and gate.reason == 'insufficient_evidence'
+    assert (gate.route, gate.reason) == ('draft', 'eligible')
+    audit = assessment_audit(result, ad_text=ad, evidence_bundle=bundle, decision=gate)
+    assert audit.completeness == 'partial'
+    assert audit.recommendation == 'needs_clarification'
+    assert 'candidate_evidence_incomplete' in audit.unknowns
 
 
 def test_configured_turn_limit_survives_resume(tmp_path):

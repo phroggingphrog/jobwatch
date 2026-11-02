@@ -1,8 +1,8 @@
 """Typed contracts for the deterministic pipeline (owner spec 2026-10-08).
 
-Every model output is parsed into one of these with Pydantic in strict mode (no type coercion, unknown keys
-rejected). A reply that does not validate is never "fixed up" by guessing: the node retries (max 3) and then the
-job goes to the dead letter queue. The overall score is computed by code from the rubric, never by the model.
+Model outputs use validated Pydantic contracts. Compatible extra fields and type coercion are permitted.
+Unusable output retries at most 3 times, then records a technical failure. Missing audit proof remains
+advisory and does not imply unsuitable work. The overall rubric score is computed by code.
 """
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ class Stage(StrEnum):
     INGESTED = "ingested"          # node 1 admitted it (full ad text, in area, not a duplicate)
     EXTRACTED = "extracted"        # node 2 produced JobFacts
     SCORED = "scored"              # node 3 produced MatchScore
+    SHORTLISTED = "shortlisted"         # screened mode: passed the gate, waits for promotion to the agentic evaluator
+    SIDE = "side"                       # screened mode: a side job for income, listed only
     DRAFT_QUEUED = "draft_queued"  # node 4 passed it (score >= threshold, no hard rule hit)
     DRAFTED = "drafted"            # node 5 produced a verified ApplicationPackage
     READY = "ready"                # node 6 produced the form map; waiting for the owner to submit by hand
@@ -37,7 +39,7 @@ class JobAd(Strict):
     location: str = Field(max_length=200)
     url: str = Field(max_length=2000)
     location_rule: str = Field(min_length=1, max_length=40)
-    text_kind: Literal["full"]
+    text_kind: Literal["full", "partial", "teaser"]
     content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

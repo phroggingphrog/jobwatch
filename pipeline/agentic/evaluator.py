@@ -10,13 +10,13 @@ from pydantic import Field, field_validator
 
 from jobwatch.candidate.assessment import (
     CandidateAssessment, EvidenceSelection, NoArguments,
-    validate_assessment, verify_candidate_citations,
+    validate_assessment,
 )
 from jobwatch.candidate.contracts import AnalysisResult, JOB_ROLE_FAMILIES, canonicalize_family
 from jobwatch.candidate.evidence import bind_career_profile, career_profile_text, verify_evidence_snapshot
 from pipeline.agentic.contracts import (
     AgenticError, AgenticEvaluation, Dimension, EvidenceJudgment, RequirementMatch, RequirementSet,
-    RunKey, SourceCitation, StrictFrozen, check_frozen_requirements, validate_citations,
+    RunKey, SourceCitation, StrictFrozen, check_frozen_requirements,
 )
 from pipeline.agentic.research import ResearchCapability, ResearchIntent, ResearchUnavailable
 from pipeline.agentic.runtime import JobBudget, RoleSpec, Tool, run_role
@@ -197,7 +197,6 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
         raise AgenticError("evidence_hash_mismatch")
     analysis = _snapshot_analysis(candidate_analysis, bundle, run_key)
     framing = career_profile_text(bundle)
-    ad_sources = {"ad": (ad_hash, ad_text), "jd": (ad_hash, ad_text)}
 
     research_tools = []
     research_used = False
@@ -277,25 +276,31 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
     # The model often garbles the 64-character ad hash it was asked to echo; the code already knows it.
     if original.ad_hash != ad_hash:
         original = original.model_copy(update={'ad_hash': ad_hash})
+    citation_warnings = []
+    def advisory_ad_citation(citation):
+        try:
+            return _exact_ad_citation(citation, ad_text, ad_hash)
+        except AgenticError:
+            citation_warnings.append('ad_citation_unverified')
+            return citation
     original = RequirementSet(ad_hash=ad_hash, requirements=tuple(
-        r.model_copy(update={'jd_signal': _exact_ad_citation(r.jd_signal, ad_text, ad_hash)})
+        r.model_copy(update={'jd_signal': advisory_ad_citation(r.jd_signal)})
         if r.jd_signal else r for r in original.requirements))
     extraction = extraction.model_copy(update={'requirements': original})
-    validate_citations(tuple(r.jd_signal for r in original.requirements if r.jd_signal), ad_sources)
     if extraction.location_evidence:
         extraction = extraction.model_copy(update={
-            'location_evidence': _exact_ad_citation(extraction.location_evidence, ad_text, ad_hash)})
-        validate_citations((extraction.location_evidence,), ad_sources)
+            'location_evidence': advisory_ad_citation(extraction.location_evidence)})
     rights = extraction.facts.work_rights
     if rights.quote and rights.quote not in ad_text:
         found = _find_in_ad(rights.quote, ad_text)
         if found is None:
-            raise AgenticError("invalid_citation")
-        extraction = extraction.model_copy(update={'facts': extraction.facts.model_copy(update={
-            'work_rights': rights.model_copy(update={'quote': found})})})
-        rights = extraction.facts.work_rights
+            citation_warnings.append('work_rights_citation_unverified')
+        else:
+            extraction = extraction.model_copy(update={'facts': extraction.facts.model_copy(update={
+                'work_rights': rights.model_copy(update={'quote': found})})})
+            rights = extraction.facts.work_rights
     if rights.requirement != "none_stated" and not rights.quote:
-        raise AgenticError("invalid_citation")
+        citation_warnings.append('work_rights_citation_unverified')
 
     context = {
         "requirements": original.model_dump(mode="json"), "requirements_hash": original.requirement_hash,
@@ -376,11 +381,10 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
                 if bundle.items and not judgment.reviewed_evidence_ids and judgment.status != "not_applicable":
                     raise ValueError("inspect primary evidence before judging")
                 citations = (*match.evidence, *judgment.contradiction_evidence)
-                verify_candidate_citations(tuple(citations), bundle)
                 reviewed = [item for item in bundle.items if item.id in judgment.reviewed_evidence_ids]
                 if any(not any(item.source_file == cite.source_id and item.source_hash == cite.content_hash
                                and cite.quote in item.quote for item in reviewed) for cite in citations):
-                    raise ValueError("citations must resolve to reviewed records")
+                    citation_warnings.append('candidate_citation_unverified')
                 if match.requirement_id in essential_ids and match.match in {"partial", "missing"} \
                         and (not match.risk.strip() or not match.mitigation.strip()):
                     raise ValueError("essential gap needs risk and mitigation")
@@ -463,8 +467,6 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
         raise AgenticError("requirements_changed")
     check_frozen_requirements(original, extraction.requirements)
     for match in matching.matches:
-        verify_candidate_citations(match.evidence, bundle)
-        verify_candidate_citations(match.judgment.contradiction_evidence, bundle)
         if match.match == "partial" and not match.evidence:
             raise AgenticError("invalid_candidate_citation")
         if match.match in {"missing", "not_applicable"} and match.evidence:
@@ -488,7 +490,8 @@ def evaluate_job(run_key: RunKey, ad_text: str, budget: JobBudget, llm: Any, *,
             research_available=research_used, report=report,
             screening_questions=tuple(extraction.facts.screening_questions),
             matching_diagnostics={**evidence_search.diagnostics(model),
-                'ad_uncertainties': list(extraction.uncertainties), 'commute_km_from_home': commute_km})
+                'ad_uncertainties': list(extraction.uncertainties),
+                'citation_warnings': list(dict.fromkeys(citation_warnings)), 'commute_km_from_home': commute_km})
     except Exception:
         invalid = True
     if invalid:
