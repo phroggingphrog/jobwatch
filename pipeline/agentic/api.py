@@ -231,7 +231,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                     worked = True
                     await asyncio.to_thread(process, person, row)
             if not worked:
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1.0)
 
     @asynccontextmanager
     async def lifespan(app):

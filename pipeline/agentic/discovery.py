@@ -85,7 +85,7 @@ def _current_plan(person):
     return policy, plan
 
 
-def prepare_run(conn, config):
+def prepare_run(conn, config, *, research=False):
     try:
         scope = intake.discovery_scope(users.current())
         if scope is None:
@@ -100,9 +100,12 @@ def prepare_run(conn, config):
             from types import SimpleNamespace
             hypotheses = tuple(SimpleNamespace(id=f'scope:{i}', title=value) for i, value in enumerate(scope.basis))
             plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
-        return replace(config, searches=searches_overlay(plan, config.searches, policy),
-                       feeds=feeds_overlay(plan, config.feeds, policy),
-                       extra={**config.extra, 'search_plan': plan})
+        projected = replace(config, searches=searches_overlay(plan, config.searches, policy),
+                            feeds=feeds_overlay(plan, config.feeds, policy),
+                            extra={**config.extra, 'search_plan': plan, 'discovery_goals': tuple(scope.basis)})
+        if not research: return projected
+        from pipeline.vocabulary_research import prepare
+        return prepare(conn, projected, users.current(), scope.basis)
     except Exception as exc:
         log.info('discovery prepare: %s', type(exc).__name__)
         # Never fall back to another person's shared search settings after a
@@ -318,10 +321,9 @@ def screen_step(conn, config, *, person=None, llm=None, context=None, seconds=30
                     _store_judgment(conn, result, cfg['relevance'])
                     out['judged'] += 1
                     out['uncertain'] += result.relevant == 'uncertain'
-                if cfg['relevance'] == 'on' and result.relevant == 'no':
-                    store.move(conn, pid, 'relevance', Stage.INGESTED, Stage.ARCHIVED,
-                               output=result.model_dump(mode='json'), reason='not_relevant')
-                    out['archived'] += 1
+                # A goal-relative mismatch is advisory evidence, not an
+                # explicitly confirmed exclusion. Keep the judgment for ranking
+                # and audit, but never archive a job from this judgment alone.
                 conn.commit()
         if context is not None:
             screen(context)
@@ -439,22 +441,22 @@ def reconsider(conn, config, *, person=None):
     from pipeline.schemas import Stage
     cfg, restored = settings(config), 0
     policy, plan = _current_plan(person or users.current())
-    if policy is None:
-        return 0
     from jobwatch.prescreen import lifecycle
-    restored += lifecycle.reconsider(conn, policy)       # skips whose rules, profile or overrides changed return to the queue
+    if policy is not None:
+        restored += lifecycle.reconsider(conn, policy)       # skips whose rules, profile or overrides changed return to the queue
     rows = conn.execute("SELECT posting_id,reason FROM pipeline_state WHERE stage='archived' AND reason IN ('not_relevant','excluded_by_rule') ORDER BY updated_at").fetchall()
     for pid, reason in rows:
         posting = service._posting(conn, pid)
         if not posting or posting.get('closed_at'):
             continue
         if reason == 'excluded_by_rule':
-            reconsiderable = service.decision_policy_mode(config) == 'profile' and exclusion_rule_hit(posting, policy) is None
+            reconsiderable = policy is not None and service.decision_policy_mode(config) == 'profile' and exclusion_rule_hit(posting, policy) is None
         else:
-            old = latest_judgment(conn, pid)
-            reconsiderable = cfg['relevance'] == 'on' and plan is not None and old is not None and old.plan_hash != plan.plan_hash
+            # Goal relevance never had exclusion authority. Recovery does not
+            # require the goal/plan to change or another model judgment.
+            reconsiderable = True
         if reconsiderable:
-            # Return to screening before any assessment. Current on-mode no judgments archive again.
+            # Bounded recovery retains the prior judgment and event history.
             store.move(conn, pid, 'discovery_reconsider', Stage.ARCHIVED, Stage.INGESTED)
             restored += 1
             if restored >= cfg['reconsider_per_run']:

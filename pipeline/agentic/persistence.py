@@ -19,7 +19,7 @@ from pipeline.agentic.store import AgenticStore, Claim
 from pipeline.agentic.liveness import latest_observation, observation_metadata, observation_current
 
 
-KINDS = frozenset({'candidate_digest', 'candidate_digest_counts', 'public_screening', 'snapshot', 'structural_inputs', 'candidate', 'evaluation', 'evaluation_counts', 'proposal', 'review', 'answers',
+KINDS = frozenset({'candidate_digest', 'candidate_digest_counts', 'public_screening', 'snapshot', 'structural_inputs', 'candidate', 'evaluation', 'assessment_audit', 'partial_assessment', 'evaluation_counts', 'proposal', 'review', 'answers',
                    'manifest', 'verify', 'cv', 'letter', 'cv_markdown', 'letter_markdown', 'form_map', 'package_bundle', 'company_research', 'model_insights'})
 
 
@@ -66,7 +66,7 @@ def latest_result(conn: sqlite3.Connection, posting_id: int, *, data_root: Path 
     result = {'run_key': row[0], 'posting_id': posting_id, 'status': row[1], 'stored_status': row[1], 'reason': row[2],
               'application_id': None, 'draft_id': None, 'version': None, 'package_dir': None,
               'artifact_paths': {}, 'artifact_hashes': {}, 'evaluation': None, 'candidate': None,
-              'manifest': None, 'cv_pdf': None, 'letter_pdf': None,
+              'manifest': None, 'assessment_audit': None, 'partial_assessment': None, 'cv_pdf': None, 'letter_pdf': None,
               'liveness': observation_metadata(latest_observation(conn, posting_id))}
     package = conn.execute('SELECT application_id,draft_id,version,package_dir,phase '
                            'FROM agentic_packages WHERE run_key=?', (row[0],)).fetchone()
@@ -76,7 +76,7 @@ def latest_result(conn: sqlite3.Connection, posting_id: int, *, data_root: Path 
     for kind, path, sha in conn.execute('SELECT kind,path,sha256 FROM agentic_artifacts WHERE run_key=?', (row[0],)):
         result['artifact_paths'][kind] = path
         result['artifact_hashes'][kind] = sha
-        if kind in parse:   # list views pass {'evaluation'}: the 3 MB candidate file is only needed on a job's own page
+        if kind in parse or (kind in {'assessment_audit', 'partial_assessment'} and 'evaluation' in parse):
             try:
                 result[kind] = json.loads(_read_artifact(path, sha, data_root=data_root))
             except (AgenticError, ValueError):

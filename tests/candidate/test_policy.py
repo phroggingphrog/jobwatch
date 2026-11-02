@@ -51,7 +51,7 @@ def test_a_family_rule_value_must_be_a_known_family():
 def test_location_and_commute_are_read_from_evidence_text():
     p = policy_of(fact('location', 'I live in Box Hill, VIC; open to Melbourne or remote work'), fact('constraint', 'Will not commute more than 30 km'))
     assert p.home == {'place': 'Box Hill, VIC', 'state': 'VIC', 'country': 'AU'}
-    assert (p.regions, p.remote_ok, p.max_commute_km) == (('VIC',), True, 30.0)
+    assert (p.regions, p.remote_ok, p.max_commute_km) == ((), None, 30.0)
 
 def test_no_location_facts_means_no_area_limit():
     p = policy_of(fact('experience', 'Accounts Assistant'))
@@ -72,7 +72,8 @@ def test_citizen_or_pr_detection(text, expect):
     assert policy_of(fact('work_rights', text)).work_rights.get('citizen_or_pr') is expect
 
 def test_seniority_from_stated_levels_ignores_negated_ones():
-    assert policy_of(fact('preference', 'Looking for graduate and junior roles')).seniority == ('entry', 'junior')
+    assert policy_of(fact('preference', 'Looking for graduate and junior roles')).seniority == ()
+    assert policy_of(fact('preference', {'seniority': ['graduate', 'junior'], 'exclusive': True})).seniority == ('entry', 'junior')
     assert policy_of(fact('preference', 'no senior roles please')).seniority == ()
     assert policy_of(fact('experience', 'Senior Accountant, Ledger Co')).seniority == ()
 
@@ -176,17 +177,19 @@ def test_rules_from_fact_ignores_other_shapes():
 
 
 def test_remote_and_regions_rules():
-    assert policy_of(fact('preference', 'Happy with wfh')).remote_ok is True
+    assert policy_of(fact('preference', 'Happy with wfh')).remote_ok is None
     assert policy_of(fact('preference', 'remote work is fine'), fact('constraint', 'on-site only')).remote_ok is False
     p = policy_of(fact('location', 'Melbourne or Sydney'), fact('preference', 'Australia-wide is fine'))
     assert p.regions == ()
-    assert policy_of(fact('location', 'Melbourne or Sydney')).regions == ('NSW', 'VIC')
+    assert policy_of(fact('location', 'Melbourne or Sydney')).regions == ()
+    assert policy_of(fact('location', {'regions': ['Melbourne', 'Sydney'], 'exclusive': True})).regions == ('NSW', 'VIC')
 
 
 def test_a_refusal_of_remote_work_is_not_read_as_remote_ok():
     for text in ('I do not want remote work', 'Remote work is not an option for me', "I'm not interested in remote jobs",
                  'avoid remote roles'):
-        assert policy_of(fact('preference', text)).remote_ok is False, text
+        assert policy_of(fact('preference', text)).remote_ok is None, text
+    assert policy_of(fact('location', 'no remote work')).remote_ok is False
 
 
 def test_describe_modes(monkeypatch):
@@ -201,41 +204,53 @@ def test_describe_modes(monkeypatch):
                                                 'reason': 'no_confirmed_profile'}
 
 
+@pytest.mark.parametrize('text,regions,wide,excluded', [
+    ('Open to Melbourne, but not Sydney', {'VIC'}, False, True),
+    ('Richmond, NSW', {'NSW'}, False, False),
+    ('Australia-wide except Geelong', set(), True, True),
+    ('Box Hill VIC not far from Melbourne', {'VIC'}, False, False),
+    ('Box Hill VIC not near Sydney', {'VIC'}, False, True),
+])
+def test_place_parser_keeps_welcome_and_negation_distinct(text, regions, wide, excluded):
+    from jobwatch.candidate.policy import _places_in
+    assert _places_in(text) == (regions, wide, excluded)
+
+
 # --- a place the person rules out is asked about, never dropped
 def test_never_in_a_place_asks_and_adds_no_region():
     p = policy_of(fact('location', 'I live in Box Hill, VIC'), fact('constraint', 'never in Sydney', fid='n1'))
-    assert 'exclusion:n1' in p.open_questions and 'NSW' not in p.regions and p.regions == ('VIC',)
+    assert 'exclusion:n1' in p.open_questions and 'NSW' not in p.regions and p.regions == ()
 
 
 def test_a_welcomed_place_survives_a_negated_one_in_the_same_sentence():
     p = policy_of(fact('location', 'Open to Melbourne, but not Sydney', fid='n2'))
-    assert p.regions == ('VIC',) and 'exclusion:n2' in p.open_questions
+    assert p.regions == () and 'exclusion:n2' in p.open_questions
     assert 'location' not in p.open_questions
 
 
 def test_not_australia_wide_is_a_narrowing_that_asks():
     p = policy_of(fact('location', 'Not Australia-wide, just Melbourne', fid='n3'))
-    assert p.regions == ('VIC',) and 'exclusion:n3' in p.open_questions
+    assert p.regions == () and 'exclusion:n3' in p.open_questions
 
 
 def test_anywhere_except_asks():
     p = policy_of(fact('location', 'Anywhere in Victoria except Geelong', fid='n4'))
-    assert 'exclusion:n4' in p.open_questions and p.regions == ('VIC',)
+    assert 'exclusion:n4' in p.open_questions and p.regions == ()
 
 
 def test_a_clean_state_and_suburb_pair_is_not_split():
     p = policy_of(fact('location', 'Richmond, NSW'))
-    assert p.regions == ('NSW',) and not any(q.startswith('exclusion:') for q in p.open_questions)
+    assert p.regions == () and not any(q.startswith('exclusion:') for q in p.open_questions)
 
 
 def test_not_far_does_not_negate_a_place():
     p = policy_of(fact('location', 'I live in Box Hill VIC, not far from the city', fid='n5'))
-    assert p.regions == ('VIC',) and 'exclusion:n5' not in p.open_questions
+    assert p.regions == () and 'exclusion:n5' not in p.open_questions
 
 
 def test_negated_australia_wide_does_not_clear_regions_or_the_location_question():
     p = policy_of(fact('location', 'Not Australia-wide', fid='n7'), fact('location', 'Melbourne'))
-    assert p.regions == ('VIC',) and 'location' not in p.open_questions
+    assert p.regions == () and 'location' not in p.open_questions
     assert any(q.startswith('exclusion:') for q in p.open_questions) and 'exclusion:n7' in p.open_questions
 
 
@@ -253,12 +268,14 @@ def test_the_question_text_comes_from_any_evidence_fact(monkeypatch):
 @pytest.mark.parametrize('text,km', [('within 10.5 km of home', 10.5), ('Can travel up to 2.5 km', 2.5),
                                       ('Commute under 30 km. Within 12 km if possible', 12.0)])
 def test_decimal_and_sentence_distances(text, km):
-    assert policy_of(fact('constraint', text)).max_commute_km == km
+    p = policy_of(fact('constraint', text, fid='distance'))
+    assert p.max_commute_km is None and 'exclusion:distance' in p.open_questions
+    assert policy_of(fact('constraint', {'max_commute_km': km})).max_commute_km == km
 
 
 def test_a_contracted_negation_ignores_the_level():
     assert policy_of(fact('preference', "I don't want senior roles")).seniority == ()
-    assert policy_of(fact('preference', "I don’t want senior roles, junior is fine")).seniority == ('junior',)
+    assert policy_of(fact('preference', "I don’t want senior roles, junior is fine")).seniority == ()
 
 
 def test_a_non_dict_fact_does_not_void_the_policy():
@@ -284,14 +301,14 @@ def test_a_policy_survives_a_json_round_trip():
 def test_not_near_a_place_rules_it_out():
     p = policy_of(fact('location', 'I live in Box Hill, VIC'), fact('constraint', 'Not near Sydney', fid='n8'),
                   fact('preference', 'not close to Sydney NSW', fid='n9'))
-    assert p.regions == ('VIC',) and 'exclusion:n8' in p.open_questions and 'exclusion:n9' in p.open_questions
+    assert p.regions == () and 'exclusion:n8' in p.open_questions and 'exclusion:n9' in p.open_questions
 
 
 def test_not_far_from_the_city_keeps_the_home_region_and_asks_nothing():
     p = policy_of(fact('location', 'I live in Box Hill VIC, not far from the city', fid='n10'))
-    assert p.regions == ('VIC',) and not any(q.startswith('exclusion:') for q in p.open_questions)
+    assert p.regions == () and not any(q.startswith('exclusion:') for q in p.open_questions)
     q = policy_of(fact('location', 'Box Hill VIC not far from the city', fid='n11'))
-    assert q.regions == ('VIC',) and 'exclusion:n11' not in q.open_questions
+    assert q.regions == () and 'exclusion:n11' not in q.open_questions
 
 
 def test_australia_wide_except_a_place_asks():
@@ -303,7 +320,7 @@ def test_australia_wide_except_a_place_asks():
                                   'Box Hill VIC, not far from Box Hill station'])
 def test_not_far_from_a_place_describes_the_area_and_asks_nothing(text):
     p = policy_of(fact('location', text, fid='nf'))
-    assert p.regions == ('VIC',) and not any(q.startswith('exclusion:') for q in p.open_questions)
+    assert p.regions == () and not any(q.startswith('exclusion:') for q in p.open_questions)
 
 
 def test_not_far_from_the_city_names_no_region_and_keeps_the_location_question():
@@ -316,7 +333,7 @@ def test_not_far_from_the_city_names_no_region_and_keeps_the_location_question()
                                        ('Box Hill VIC, not near Sydney', True), ('I live in Box Hill VIC. Not near Sydney', True)])
 def test_not_near_and_not_close_are_clause_boundaries(text, asks):
     p = policy_of(fact('location', text, fid='nn'))
-    assert p.regions == ('VIC',) and ('exclusion:nn' in p.open_questions) is asks
+    assert p.regions == () and ('exclusion:nn' in p.open_questions) is asks
 
 
 def test_not_near_a_place_with_no_home_gives_no_region():
@@ -328,7 +345,7 @@ def test_not_near_a_place_with_no_home_gives_no_region():
                                   'I live in Box Hill VIC not close to the station'])
 def test_home_state_ignores_a_not_near_tail(text):
     p = policy_of(fact('location', text))
-    assert p.home['state'] == 'VIC' and p.home['place'] == 'Box Hill VIC' and p.regions == ('VIC',)
+    assert p.home['state'] == 'VIC' and p.home['place'] == 'Box Hill VIC' and p.regions == ()
 
 
 # ----------------------------------------------------------------------------- built-in excluded codes are a parameter

@@ -7,6 +7,7 @@ JOBWATCH_DB          SQLite path (default from jobwatch.yaml, ~/.local/share/job
 """
 from __future__ import annotations
 
+import copy
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,11 +47,24 @@ def _merge(base: dict, override: dict) -> dict:
     return out
 
 
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+_parsed: dict[Path, tuple[tuple[int, int], Any]] = {}
+
+
 def _load(path: Path) -> Any:
+    # The agent worker reloads config on every poll; re-parse only files that changed.
+    try:
+        st = path.stat()
+    except OSError:
+        return {}
     if not path.is_file():
         return {}
-    with path.open() as fh:
-        return yaml.safe_load(fh) or {}
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _parsed.get(path)
+    if hit is None or hit[0] != key:
+        with path.open() as fh:
+            hit = _parsed[path] = (key, yaml.load(fh, Loader=_Loader) or {})
+    return copy.deepcopy(hit[1])
 
 
 @dataclass
