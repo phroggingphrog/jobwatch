@@ -271,6 +271,8 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
     finally:
         summary = {"run_id": run_id, "collectors": [{k: v for k, v in r.items() if k != "health"} for r in results],
                    "alerts": note, "ai": ai, "pruned": pruned, "requests": http.requests_made if http else 0}
+        if discovery_run_id is not None:
+            summary['invocation_id'] = discovery_run_id
         if error:
             summary["error"] = error
             summary["error_detail"] = error_detail
