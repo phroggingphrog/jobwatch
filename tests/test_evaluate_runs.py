@@ -52,8 +52,7 @@ def test_bounds_and_paid_budget_reject_before_clients(frozen):
 
 def test_other_person_cannot_retrieve_frozen_inputs(frozen):
     record=prepared(frozen)
-    users.create_user_dirs('friend')
-    with users.use('friend'),pytest.raises(AgenticError,match='baseline_not_found'):
+    with pytest.raises(AgenticError,match='baseline_not_found'):
         evaluate_runs.replay(record.baseline_id)
 
 

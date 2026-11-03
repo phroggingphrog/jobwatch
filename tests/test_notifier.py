@@ -171,8 +171,7 @@ def test_alias_needs_both_settings_and_the_owner(conn, monkeypatch):
     monkeypatch.delenv(legacy.FILE_ENV, raising=False)
     assert notifier.channels_for(conn) == []
     monkeypatch.setenv(legacy.FILE_ENV, '/x')
-    with users.use('someone-else'):
-        assert notifier.channels_for(conn) == []
+    assert notifier.channels_for(conn) == []
 
 
 def test_migration_creates_tables_and_ensure_is_idempotent(tmp_path):

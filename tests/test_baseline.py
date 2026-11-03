@@ -438,12 +438,10 @@ def test_a_failed_freeze_leaves_no_visible_baseline(frozen, monkeypatch):
 
 def test_baselines_are_per_person_and_ids_cannot_escape(frozen):
     b = baseline.freeze_baseline(frozen.ro, frozen.config)
-    users.create_user_dirs('friend')
-    with users.use('friend'):
-        with pytest.raises(AgenticError) as err:
-            baseline.load_baseline(b.baseline_id)
-        assert _code(err) == 'baseline_not_found'
-        assert baseline.list_baselines() == []
+    with pytest.raises(AgenticError) as err:
+        baseline.load_baseline(b.baseline_id)
+    assert _code(err) == 'baseline_not_found'
+    assert baseline.list_baselines() == []
     for bad in ('../x', 'bl-20260101T000000Z-zzzzzzzz', '', b.baseline_id + '\n'):
         for call in (baseline.load_baseline, lambda i: baseline.pinned_profile(i).__enter__(),
                      baseline.frozen_approved, baseline.frozen_decision_policy):
@@ -457,11 +455,9 @@ def test_baselines_are_per_person_and_ids_cannot_escape(frozen):
 
 def test_freeze_refuses_without_a_profile_version_or_cases(world):
     conn, config, bundle, add = world
-    users.create_user_dirs('friend')
-    with users.use('friend'):
-        with pytest.raises(AgenticError) as err:
-            baseline.freeze_baseline(conn, config)
-        assert _code(err) == 'no_profile_version'
+    with pytest.raises(AgenticError) as err:
+        baseline.freeze_baseline(conn, config)
+    assert _code(err) == 'no_profile_version'
     with pytest.raises(AgenticError) as err:
         baseline.freeze_baseline(conn, config)
     assert _code(err) == 'no_cases'
@@ -680,14 +676,12 @@ def test_labelling_validates_the_baseline_id_before_any_path_is_joined(frozen, m
         patch.setattr(os, 'open', lambda path, *a, **k: touched.append(path) or real(path, *a, **k))
         _refuse_bad_ids(b, cid, label)
     assert touched == []
-    users.create_user_dirs('friend')
-    with users.use('friend'):                                    # another person's baseline is not visible
-        with pytest.raises(AgenticError) as err:
-            label_case(b.baseline_id, cid, actor='owner', suitable=True)
-        assert _code(err) == 'baseline_not_found'
-        with pytest.raises(AgenticError) as err:
-            read_labels(b.baseline_id)
-        assert _code(err) == 'baseline_not_found'
+    with pytest.raises(AgenticError) as err:
+        label_case(b.baseline_id, cid, actor='owner', suitable=True)
+    assert _code(err) == 'baseline_not_found'
+    with pytest.raises(AgenticError) as err:
+        read_labels(b.baseline_id)
+    assert _code(err) == 'baseline_not_found'
     assert read_labels(b.baseline_id) == []
 
 

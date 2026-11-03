@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 
 from jobwatch import users
-from jobwatch.web.auth_routes import COOKIE, set_password
 from tests.web.test_agentic import _client
 
 
@@ -70,25 +69,6 @@ def test_unreadable_saved_allowance_can_be_replaced(tmp_path, monkeypatch):
     assert 'Current setting: Unlimited' in client.get('/preferences').text
 
 
-def test_daily_token_allowance_is_bound_to_authenticated_person(tmp_path, monkeypatch):
-    monkeypatch.setenv('JOBWATCH_SESSION_SECRET', 'synthetic-session-secret')
-    client = _client(tmp_path, monkeypatch)
-    users.create_user_dirs('friend')
-    set_password('friend', 'synthetic-password')
-    login = client.post('/login', data={'username': 'friend', 'password': 'synthetic-password'},
-                        follow_redirects=False)
-    assert login.status_code == 303
-    assert COOKIE in client.cookies
-
-    response = client.post('/preferences/discovery-settings', data={
-        'mode': 'limited', 'daily_token_ceiling': '9000', 'person': users.DEFAULT_USER},
-        follow_redirects=False)
-    assert response.status_code == 303
-    friend_settings = Path(client.data) / 'users' / 'friend' / 'config' / 'discovery.json'
-    owner_settings = Path(client.data) / 'config' / 'discovery.json'
-    assert friend_settings.exists() and not owner_settings.exists()
-    page = client.get('/preferences')
-    assert 'Current setting: 9000 tokens per day' in page.text
 
 
 def test_daily_token_allowance_rejects_cross_origin_posts(tmp_path, monkeypatch):

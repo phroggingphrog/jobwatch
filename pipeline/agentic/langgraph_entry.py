@@ -43,23 +43,22 @@ class _FakeModel(chat.ConversationModel):
 def make_graph():
     person = os.environ.get('JOBWATCH_LANGGRAPH_PERSON') or users.current()
     cfg = load_config()
-    with users.use(person):
-        root = ensure_dir(users.user_dir() / 'career-chat')
-        connection = connect(root / 'state-langgraph.sqlite', timeout=5, check_same_thread=False)
-        lock = threading.RLock()
-        saver, store = ChatSaver(connection, lock), ChatStore(connection, lock)
-        from pipeline.agentic.service import configured_llm, settings
-        settings_copy = deepcopy(settings(cfg))
-        settings_copy['_agent_db_path'] = str(chat.job_database(cfg))
-        settings_copy['openrouter_extras'] = {'enabled': False}
-        if os.environ.get('JOBWATCH_LANGGRAPH_FAKE') == '1':
-            original = chat.ConversationModel
-            chat.ConversationModel = _FakeModel
-            try:
-                return chat._build(person, connection, settings_copy, object(), 'fake/stub', saver, store)
-            finally:
-                chat.ConversationModel = original
-        transport = configured_llm(cfg)
-        selected = model_choice.get_model('chat')
-        chat._route(transport, selected)
-        return chat._build(person, connection, settings_copy, transport, selected, saver, store)
+    root = ensure_dir(users.user_dir() / 'career-chat')
+    connection = connect(root / 'state-langgraph.sqlite', timeout=5, check_same_thread=False)
+    lock = threading.RLock()
+    saver, store = ChatSaver(connection, lock), ChatStore(connection, lock)
+    from pipeline.agentic.service import configured_llm, settings
+    settings_copy = deepcopy(settings(cfg))
+    settings_copy['_agent_db_path'] = str(chat.job_database(cfg))
+    settings_copy['openrouter_extras'] = {'enabled': False}
+    if os.environ.get('JOBWATCH_LANGGRAPH_FAKE') == '1':
+        original = chat.ConversationModel
+        chat.ConversationModel = _FakeModel
+        try:
+            return chat._build(person, connection, settings_copy, object(), 'fake/stub', saver, store)
+        finally:
+            chat.ConversationModel = original
+    transport = configured_llm(cfg)
+    selected = model_choice.get_model('chat')
+    chat._route(transport, selected)
+    return chat._build(person, connection, settings_copy, transport, selected, saver, store)

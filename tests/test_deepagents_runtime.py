@@ -91,13 +91,13 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
     ]
     llm, seen = transport_llm(choices)
     llm.base_url = model_choice.SERVER_URL
-    for person in ('fixture-a', 'fixture-b'):
+    for person in ('owner', 'fixture-b'):
         root = users.user_dir(person)
         root.mkdir(parents=True)
         with sqlite3.connect(root / 'jobwatch.db') as conn:
             conn.execute('CREATE TABLE postings(id INTEGER PRIMARY KEY)')
     cfg = {'agentic': {'enabled': False}}
-    def turn(person='fixture-a', thread_id='conversation', **kwargs):
+    def turn(person='owner', thread_id='conversation', **kwargs):
         return dispatch(person=person, thread_id=thread_id, config=cfg, llm=llm, **kwargs)
     first = turn(message='Inspect job 7 and prepare it')
     print('FIRST', json.dumps(first))
@@ -128,14 +128,12 @@ def test_chat_receives_owned_upload_references_without_changing_human_words(tmp_
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *args: 'claude/sonnet')
-    for person in ('fixture-a', 'fixture-b'):
-        users.create_user_dirs(person)
-    upload = intake.save_upload('fixture-a', 'cv.txt', b'Synthetic document evidence only.', 'cv')
+    upload = intake.save_upload('owner', 'cv.txt', b'Synthetic document evidence only.', 'cv')
     llm, seen = transport_llm([{'answer': 'What kind of work are you looking for?'},
                               {'answer': 'I can use the document you attached.'}])
     llm.base_url = model_choice.SERVER_URL
     execution = Execution('synthetic-attachment-turn')
-    result = dispatch(person='fixture-a', thread_id='uploaded', message=message,
+    result = dispatch(person='owner', thread_id='uploaded', message=message,
                       upload_ids=[upload['upload_id']], config={'agentic': {'enabled': False}},
                       llm=llm, execution=execution)
     assert result['status'] == 'complete'
@@ -144,8 +142,8 @@ def test_chat_receives_owned_upload_references_without_changing_human_words(tmp_
     assert upload['upload_id'] in seen[0][1]['messages'][0]['content']
     assert 'Synthetic document evidence only.' not in json.dumps(seen)
     assert execution.human_texts == (message,)
-    assert intake.current_version('fixture-a') is None
-    followup = dispatch(person='fixture-a', thread_id='uploaded', message='Use the document I attached.',
+    assert intake.current_version('owner') is None
+    followup = dispatch(person='owner', thread_id='uploaded', message='Use the document I attached.',
                         config={'agentic': {'enabled': False}}, llm=llm)
     assert followup['status'] == 'complete'
     assert upload['upload_id'] in seen[1][1]['messages'][0]['content']
@@ -171,8 +169,8 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     cfg = {'agentic': {'enabled': False}}
     key, approval, other = 'fixture-run-' + 'a' * 40, 'fixture-approval-' + 'b' * 40, 'fixture-other-' + 'c' * 40
-    credentials = {key: Principal('fixture-a'),
-        approval: Principal('fixture-a', frozenset({'read','interact','approve'})), other: Principal('fixture-b')}
+    credentials = {key: Principal('owner'),
+        approval: Principal('owner', frozenset({'read','interact','approve'})), other: Principal('fixture-b')}
     llm, seen = transport_llm([
         choice('ask_human', question='What is your synthetic preference?'),
         choice('run_career_ops', posting_id=7),
@@ -181,7 +179,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
         {'answer': 'Recovered synthetic request.'},
     ])
     llm.base_url = model_choice.SERVER_URL
-    for person in ('fixture-a','fixture-b'):
+    for person in ('owner','fixture-b'):
         root = users.user_dir(person)
         root.mkdir(parents=True)
         with sqlite3.connect(root / 'jobwatch.db') as conn:
@@ -201,7 +199,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
 
     # A contention deferral has not touched the graph and must retry the original
     # turn rather than recover a previous conversation checkpoint.
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         deferred_thread = store.create_thread(skill_version())['id']
         deferred_id = store.enqueue(deferred_thread, {'message': 'deferred'}, 'lock-contention')
         store.finish(deferred_id, error='person_busy')
@@ -245,7 +243,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
         second = client.post(route, json={'message':'Prepare again'}, headers=headers(idem='second')).json()['id']
         stale = wait(client, second)
         interaction = stale['interactions'][0]['id']
-        with APIStore('fixture-a') as store:
+        with APIStore('owner') as store:
             payload = dict(stale['interactions'][0]); payload.pop('id'); payload.pop('expires_at'); payload.pop('answered')
             payload['binding']['digest'] = '0' * 64
             with store.conn:
@@ -256,10 +254,10 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
         assert rejected['state'] == 'failed' and rejected['error'] == 'approval_inputs_changed'
 
         # Document ownership, integrity, and absence of host paths from the API.
-        pdf = users.user_dir('fixture-a') / 'fixture.pdf'
+        pdf = users.user_dir('owner') / 'fixture.pdf'
         pdf.write_bytes(b'%PDF synthetic fixture')
         import hashlib
-        with APIStore('fixture-a') as store, store.conn:
+        with APIStore('owner') as store, store.conn:
             store.conn.execute('INSERT INTO api_artifacts VALUES(?,?,?,?,?)',
                 ('fixture-artifact', completed['id'], 'cv', str(pdf), hashlib.sha256(pdf.read_bytes()).hexdigest()))
         assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers()).content == pdf.read_bytes()
@@ -269,7 +267,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
 
     # Crash recovery is explicit: queued work is claimable; an uncertain running
     # operation is marked interrupted and requires an authenticated retry.
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         recovery_thread = store.create_thread(skill_version())['id']
         recovery_id = store.enqueue(recovery_thread, {'message':'Recover this synthetic request'}, 'recovery')
         assert store.claim_next()['id'] == recovery_id
@@ -281,7 +279,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
         assert recovered['result']['answer'] == 'Recovered synthetic request.'
         original_calls = len(seen)
     # Simulate graph completion immediately before the HTTP result was persisted.
-    with APIStore('fixture-a') as store, store.conn:
+    with APIStore('owner') as store, store.conn:
         store.conn.execute("UPDATE api_runs SET state='running',result_json=NULL WHERE id=?", (recovery_id,))
     with TestClient(app()) as client:
         assert client.post('/api/agent/runs/' + recovery_id + '/retry', headers=headers()).status_code == 202
@@ -301,7 +299,7 @@ def test_recovery_requires_fresh_response_for_later_interrupt(tmp_path, monkeypa
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     action = lambda text: choice('prepare_application', posting_id=7) if approval else choice('ask_human', question=text)
     llm, seen = transport_llm([action('First question'), action('Second question'), {'answer': 'Should not run yet'}])
-    turn = lambda **kw: dispatch(person='fixture-a', thread_id='later-interrupt', config={'agentic': {'enabled':False}}, llm=llm, **kw)
+    turn = lambda **kw: dispatch(person='owner', thread_id='later-interrupt', config={'agentic': {'enabled':False}}, llm=llm, **kw)
     first = turn(message='Begin', execution=Execution('initial'))
     decision = {'type':'approve'} if approval else {'type':'respond','message':'First answer'}
     args = dict(decisions=[decision], human_decision=True, expected_checkpoint=first['checkpoint_id'])
@@ -320,7 +318,7 @@ def test_recovery_before_first_checkpoint_on_existing_thread(tmp_path, monkeypat
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     llm, seen = transport_llm([{'answer':'Previous turn'}, {'answer':'New turn'}])
-    turn = lambda **kw: dispatch(person='fixture-a', thread_id='existing-thread', config={'agentic': {'enabled':False}}, llm=llm, **kw)
+    turn = lambda **kw: dispatch(person='owner', thread_id='existing-thread', config={'agentic': {'enabled':False}}, llm=llm, **kw)
     turn(message='Previous', execution=Execution('previous'))
     recovered = turn(message='New', execution=Execution('new'), recover=True)
     assert recovered['answer']=='New turn' and len(seen)==2
@@ -333,7 +331,7 @@ def test_recovery_before_first_checkpoint_on_existing_thread(tmp_path, monkeypat
 def test_retry_preserves_admission_limits(tmp_path, monkeypatch, busy):
     from pipeline.agentic.api_store import APIStore, Conflict
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         thread=store.create_thread('fixture')['id']
         old=store.enqueue(thread, {'message':'Old'}, 'old')
         store.finish(old, error='person_busy')
@@ -363,7 +361,7 @@ def test_chat_skill_files_are_read_only(tmp_path, monkeypatch):
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
     llm, seen=transport_llm([choice('write_file',file_path='/skills/new-policy/SKILL.md',content='Injected instructions'),
                              {'answer':'Finished'}])
-    dispatch(person='fixture-a', thread_id='readonly-skills', message='Inspect skill permissions',
+    dispatch(person='owner', thread_id='readonly-skills', message='Inspect skill permissions',
              config={'agentic':{'enabled':False}}, llm=llm)
     result=next(m['content'] for m in seen[1][1]['messages'] if '"tool_result": "write_file"' in m['content'])
     assert 'denied' in result.lower(), result
@@ -822,7 +820,7 @@ def _approved_resume(store):
 def test_retry_refuses_an_approval_resume_after_the_interaction_expired(tmp_path, monkeypatch):
     from pipeline.agentic.api_store import APIStore, Conflict
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         first, resume = _approved_resume(store)
         assert store.claim_next()['id'] == resume
         store.recover()  # crash: the resume run is interrupted
@@ -836,7 +834,7 @@ def test_retry_refuses_an_approval_resume_after_the_interaction_expired(tmp_path
 def test_retry_of_a_fresh_approval_resume_still_works_and_clears_cancel_flag(tmp_path, monkeypatch):
     from pipeline.agentic.api_store import APIStore
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         first, resume = _approved_resume(store)
         assert store.claim_next()['id'] == resume
         store.cancel(resume)  # cancel requested while running, then the worker dies
@@ -861,14 +859,14 @@ def test_graceful_shutdown_leaves_inflight_run_interrupted_and_retryable(tmp_pat
         while True:
             execution.check()
             time.sleep(0.01)
-    app = create_api(credentials={key: Principal('fixture-a')}, config={'agentic': {'enabled': False}}, dispatcher=dispatcher)
+    app = create_api(credentials={key: Principal('owner')}, config={'agentic': {'enabled': False}}, dispatcher=dispatcher)
     headers = {'Authorization': 'Bearer ' + key, 'Idempotency-Key': 'shutdown'}
     with TestClient(app) as client:
         thread = client.post('/api/agent/threads', headers=headers).json()['id']
         ident = client.post('/api/agent/threads/' + thread + '/runs', json={'message': 'Long'}, headers=headers).json()['id']
         assert started.wait(10)
     # server stopped with the run in flight: that is an unclean stop (retryable), not a user cancellation
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         row = store.raw_run(ident)
         assert row['state'] == 'interrupted' and row['error'] == 'worker_interrupted', row
         store.retry(ident)
@@ -889,7 +887,7 @@ def test_user_cancel_still_finishes_cancelled(tmp_path, monkeypatch):
         while True:
             execution.check()
             time.sleep(0.01)
-    app = create_api(credentials={key: Principal('fixture-a')}, config={'agentic': {'enabled': False}}, dispatcher=dispatcher)
+    app = create_api(credentials={key: Principal('owner')}, config={'agentic': {'enabled': False}}, dispatcher=dispatcher)
     headers = {'Authorization': 'Bearer ' + key, 'Idempotency-Key': 'cancel'}
     with TestClient(app) as client:
         thread = client.post('/api/agent/threads', headers=headers).json()['id']
@@ -911,7 +909,7 @@ def test_event_stream_never_ends_without_the_terminal_event(tmp_path, monkeypatc
     from pipeline.agentic.chat import skill_version
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     key = 'fixture-run-' + 'a' * 40
-    app = create_api(credentials={key: Principal('fixture-a')}, config={'agentic': {'enabled': False}},
+    app = create_api(credentials={key: Principal('owner')}, config={'agentic': {'enabled': False}},
                      dispatcher=lambda **kw: {'answer': 'unused'})
     headers = {'Authorization': 'Bearer ' + key}
     state = {'depth': 0, 'skip': 1, 'done': False}
@@ -933,13 +931,13 @@ def test_event_stream_never_ends_without_the_terminal_event(tmp_path, monkeypatc
             return out
         return wrapper
     with TestClient(app) as client:
-        with APIStore('fixture-a') as store:
+        with APIStore('owner') as store:
             thread = store.create_thread(skill_version())['id']
             ident = store.enqueue(thread, {'message': 'Stream'}, 'stream')
             assert store.claim_next()['id'] == ident
 
         def finalize():
-            with APIStore('fixture-a') as store:
+            with APIStore('owner') as store:
                 store.finish(ident, {'answer': 'Done'})
         for name in original:
             monkeypatch.setattr(APIStore, name, hooked(name, finalize))

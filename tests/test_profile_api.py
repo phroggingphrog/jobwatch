@@ -36,14 +36,13 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
-    for person in ('fixture-a', 'fixture-b'):
-        users.create_user_dirs(person)
+    for person in ('owner', 'fixture-b'):
         model_choice.set_models({'reader': 'claude/sonnet'}, person)      # the approved paid route for candidate text
     fake = FakeLLM()
     fake.next = {'facts': [{'section': 'experience', 'value': 'Accounts Assistant, Ledger Co', 'basis': 'evidence',
                             'upload': 1, 'sources': [{'line': 5, 'quote': 'Ledger Co, Accounts Assistant, 2021 - 2023'}]}],
                  'questions': [{'section': 'work_rights', 'text': 'What are your work rights?', 'why': 'Matching.'}]}
-    credentials = {RUN: Principal('fixture-a'), APPROVE: Principal('fixture-a', frozenset({'read', 'interact', 'approve'})),
+    credentials = {RUN: Principal('owner'), APPROVE: Principal('owner', frozenset({'read', 'interact', 'approve'})),
                    OTHER: Principal('fixture-b', frozenset({'read', 'run', 'interact', 'approve'}))}
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: fake)
     with TestClient(app) as client:
@@ -109,7 +108,7 @@ def test_confirm_needs_approve_scope(env):
     assert c.post(f'{P}/proposals/{pid}/confirm', json=body, headers=h(RUN)).status_code == 403
     assert c.post(f'{P}/proposals/{pid}/confirm', json=body).status_code == 401
     assert c.post(f'{P}/proposals/{pid}/confirm', json={**body, 'actor': 'agent'}, headers=h(APPROVE)).status_code == 422
-    assert intake.current_version('fixture-a') is None
+    assert intake.current_version('owner') is None
     stale = c.post(f'{P}/proposals/{pid}/confirm', json={**body, 'proposal_digest': '0' * 64}, headers=h(APPROVE))
     assert stale.status_code == 409 and stale.json() == {'error': 'proposal_changed'}
     bad = c.post(f'{P}/proposals/{pid}/confirm', json={**body, 'scope_digest': '0' * 64}, headers=h(APPROVE))
@@ -188,8 +187,7 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
-    for person in ('fixture-a', 'fixture-b'):
-        users.create_user_dirs(person)
+    for person in ('owner', 'fixture-b'):
         model_choice.set_models({'reader': 'claude/sonnet'}, person)
     started, release, seen = threading.Event(), threading.Event(), []
 
@@ -201,7 +199,7 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
             started.set()
             assert release.wait(10)
             return FakeLLM().chat(*a, **kw)
-    credentials = {RUN: Principal('fixture-a'), OTHER: Principal('fixture-b')}
+    credentials = {RUN: Principal('owner'), OTHER: Principal('fixture-b')}
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: Blocking())
     with TestClient(app) as c:
         ids = {t: upload(c, token=t).json()['upload_id'] for t in (RUN, OTHER)}
@@ -227,19 +225,18 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
 def test_an_adopted_owner_onboards_by_a_proposal_on_the_current_version_over_http(env):
     from jobwatch.apply import paths as apaths
     c = env
-    with users.use('fixture-a'):
-        apaths.profile_dir().mkdir(parents=True, exist_ok=True)
-        (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Synthetic\n')
-        (apaths.profile_dir() / 'master_resume.md').write_text('# Synthetic\n\nAccounts Assistant, 2021\n')
-        intake.adopt_existing('fixture-a', actor='person')
-    assert intake.discovery_scope('fixture-a') is None and c.get(P + '/', headers=h()).json()['version'] == 1
+    apaths.profile_dir().mkdir(parents=True, exist_ok=True)
+    (apaths.profile_dir() / 'profile.yaml').write_text('candidate:\n  name: Synthetic\n')
+    (apaths.profile_dir() / 'master_resume.md').write_text('# Synthetic\n\nAccounts Assistant, 2021\n')
+    intake.adopt_existing('owner', actor='person')
+    assert intake.discovery_scope('owner') is None and c.get(P + '/', headers=h()).json()['version'] == 1
     up = upload(c).json()['upload_id']
     res = c.post(P + '/proposals', json={'upload_ids': [up], 'base_version': 1}, headers=h())
     assert res.status_code == 202 and res.json()['base_version'] == 1
     pid = settled(c, res.json()['id'])['id']
     conf = c.get(f'{P}/proposals/{pid}/confirmation', headers=h()).json()
     r = c.post(f'{P}/proposals/{pid}/confirm', json={k: conf[k] for k in ('proposal_digest', 'scope_digest')}, headers=h(APPROVE))
-    assert r.status_code == 201 and r.json() == {'version': 2} and intake.discovery_scope('fixture-a') is not None
+    assert r.status_code == 201 and r.json() == {'version': 2} and intake.discovery_scope('owner') is not None
 
 
 def test_the_scope_only_routes_are_gone(env):
@@ -266,8 +263,7 @@ def test_confirm_while_parsing_is_409_and_uploads_add_documents(tmp_path, monkey
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
-    users.create_user_dirs('fixture-a')
-    model_choice.set_models({'reader': 'claude/sonnet'}, 'fixture-a')
+    model_choice.set_models({'reader': 'claude/sonnet'}, 'owner')
     release = threading.Event()
 
     class Blocking:
@@ -276,7 +272,7 @@ def test_confirm_while_parsing_is_409_and_uploads_add_documents(tmp_path, monkey
         def chat(self, *a, **kw):
             assert release.wait(10)
             return FakeLLM().chat(*a, **kw)
-    credentials = {RUN: Principal('fixture-a'), APPROVE: Principal('fixture-a', frozenset({'read', 'interact', 'approve'}))}
+    credentials = {RUN: Principal('owner'), APPROVE: Principal('owner', frozenset({'read', 'interact', 'approve'}))}
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: Blocking())
     with TestClient(app) as c:
         try:
@@ -305,7 +301,7 @@ def test_parse_over_http_refuses_a_non_paid_reader_model_without_a_model_call(en
     c = env
     first = proposal(c)
     ids = [upload(c, kind='evidence').json()['upload_id']]
-    model_choice.set_models({'reader': 'openrouter/free-model'}, 'fixture-a')
+    model_choice.set_models({'reader': 'openrouter/free-model'}, 'owner')
     calls = len(c.fake.calls)
     r = c.post(P + '/proposals', json={'upload_ids': ids, 'base_version': None}, headers=h())
     assert r.status_code == 403 and r.json() == {'error': 'model_not_allowed'}
@@ -373,9 +369,8 @@ def test_policy_is_per_person(env):
 
 def test_policy_endpoint_needs_read_scope_only(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    users.create_user_dirs('fixture-a')
     reader, no_read = 'fixture-read-' + 'd' * 40, 'fixture-noread-' + 'e' * 40
-    credentials = {reader: Principal('fixture-a', frozenset({'read'})), no_read: Principal('fixture-a', frozenset({'run', 'interact', 'approve'}))}
+    credentials = {reader: Principal('owner', frozenset({'read'})), no_read: Principal('owner', frozenset({'run', 'interact', 'approve'}))}
     with TestClient(create_api(credentials=credentials, config={'agentic': {'enabled': False}})) as c:
         assert c.get(P + '/policy', headers=h(reader)).status_code == 200
         assert c.get(P + '/policy', headers=h(no_read)).status_code == 403
@@ -385,10 +380,9 @@ def test_policy_endpoint_needs_read_scope_only(tmp_path, monkeypatch):
 
 def test_policy_mode_is_canonical_for_both_supported_config_spellings(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    users.create_user_dirs('fixture-a')
     for flag in ('profile', 'legacy'):
         config = {'agentic': {'enabled': False, 'decision_policy': flag}}
-        with TestClient(create_api(credentials={RUN: Principal('fixture-a')}, config=config)) as c:
+        with TestClient(create_api(credentials={RUN: Principal('owner')}, config=config)) as c:
             got = c.get(P + '/policy', headers=h()).json()
             assert got['mode'] == 'profile' and got['enabled'] is True and got['policy'] is None
 
@@ -396,7 +390,7 @@ def test_policy_mode_is_canonical_for_both_supported_config_spellings(tmp_path, 
 def test_policy_reads_write_nothing_and_call_no_model(env):
     confirm_profile(env)
     calls = len(env.fake.calls)
-    base = users.user_dir('fixture-a')
+    base = users.user_dir('owner')
     before = sorted((str(p.relative_to(base)), p.stat().st_mtime_ns, p.stat().st_size) for p in base.rglob('*') if p.is_file())
     for _ in range(2):
         assert env.get(P + '/policy', headers=h()).status_code == 200
@@ -422,5 +416,5 @@ def test_current_understanding_is_shared_read_only_and_server_scoped(env, monkey
     second = env.get(P + '/understanding', headers=h(OTHER))
     assert first.status_code == second.status_code == 200
     assert first.json()['candidate'] is None
-    assert observed == ['fixture-a', 'fixture-b']
+    assert observed == ['owner', 'fixture-b']
     assert env.fake.calls == []

@@ -86,8 +86,6 @@ def stored_channels(conn, person=None) -> list[ChannelConfig]:
 def _alias(conn, person) -> ChannelConfig | None:
     """The older install-wide settings, as an equivalent channel for the owner only."""
     from jobwatch import settings, users
-    if person != users.DEFAULT_USER:
-        return None
     if not (settings.get(legacy.SSH_ENV) and settings.get(legacy.FILE_ENV)):
         return None
     return ChannelConfig(legacy.ALIAS_CHANNEL, "ssh_append",

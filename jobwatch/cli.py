@@ -46,7 +46,7 @@ def _extensions():
     mods = []
     for name in ("jobwatch.apply.cli_ext", "jobwatch.outcomes.cli_ext",
                  "jobwatch.web.cli_ext", "jobwatch.commands.review", "pipeline.cli", "jobwatch.commands.preference", "jobwatch.commands.profile",
-                 "jobwatch.commands.baseline", "jobwatch.commands.evaluation", "jobwatch.user_cli", "jobwatch.notifier.cli",
+                 "jobwatch.commands.baseline", "jobwatch.commands.evaluation", "jobwatch.notifier.cli",
                  "jobwatch.prescreen.cli"):
         try:
             mods.append(importlib.import_module(name))
@@ -57,25 +57,14 @@ def _extensions():
 
 
 def main(argv: list[str] | None = None) -> int:
-    """`jobwatch --user <name|all> <command>`: run as one person, or once for every person."""
-    import contextlib
-    from . import users
+    """`jobwatch <command>`: one owner, one data folder."""
     argv = list(sys.argv[1:] if argv is None else argv)
-    who = None
-    if "--user" in argv:
-        i = argv.index("--user")
-        who = argv[i + 1]
-        del argv[i:i + 2]
-    names = (users.list_users() if who == "all" else [who]) if who else [None]
-    rc = 0
-    # People run one after another inside one unit: split its time over those who will actually run (a person
-    # without a confirmed scope is skipped in ~0 s), so the whole run stays inside the unit's TimeoutStartSec.
     from . import run as pipeline
-    unit_seconds = pipeline.SLOW_UNIT_BUDGET_S if '--tier' in argv and argv[argv.index('--tier')+1] == 'slow' else pipeline.UNIT_BUDGET_S
     slow = '--tier' in argv and argv[argv.index('--tier')+1] == 'slow'
+    unit_seconds = pipeline.SLOW_UNIT_BUDGET_S if slow else pipeline.UNIT_BUDGET_S
     invocation_deadline = time.time() + unit_seconds
-    # The one absolute stop: a started assessment may run past its person's window (when that person has no per-job
-    # time limit) but never past this. Override with JOBWATCH_HARD_STOP_SECONDS; keep it below the unit's timeout.
+    # The one absolute stop: a started assessment may run past its window (when there is no per-job time limit)
+    # but never past this. Override with JOBWATCH_HARD_STOP_SECONDS; keep it below the unit's timeout.
     from pipeline.agentic import execution as _execution
     try:
         hard_seconds = float(os.environ.get('JOBWATCH_HARD_STOP_SECONDS') or (pipeline.SLOW_HARD_STOP_S if slow else pipeline.HARD_STOP_S))
@@ -84,17 +73,10 @@ def main(argv: list[str] | None = None) -> int:
     positional = [a for i, a in enumerate(argv) if not a.startswith('-') and (i == 0 or argv[i-1] != '--config-dir')]
     timer_run = bool(positional) and positional[0] in ('read', 'run')   # never for the long-running web service
     hard_stop = _execution.HARD_STOP.set(time.time() + hard_seconds if timer_run else None)
-    from .candidate import intake
-    running = sum(1 for name in names if name and intake.discovery_scope(name) is not None)
-    share = pipeline.PEOPLE_SHARE.set(1.0 / max(1, running))
     try:
-        for name in names:
-            with (users.use(name) if name else contextlib.nullcontext()):
-                rc = _main(argv, deadline=min(invocation_deadline, time.time()+unit_seconds/max(1,running))) or rc
+        return _main(argv, deadline=invocation_deadline) or 0
     finally:
-        pipeline.PEOPLE_SHARE.reset(share)
         _execution.HARD_STOP.reset(hard_stop)
-    return rc
 
 
 def _main(argv: list[str], *, deadline=None) -> int:
@@ -180,24 +162,23 @@ def _main(argv: list[str], *, deadline=None) -> int:
         # 2026-10-19 owner: "make the reader read more ads per run". The collect runs leave the reader ~4 min, so it
         # read 2-5 ads and skipped ~17 each time; this run is the reader alone with the whole 13 min.
         from pipeline.agentic import service as agentic
-        from .run import PEOPLE_SHARE, UNIT_BUDGET_S
+        from .run import UNIT_BUDGET_S
         conn = dbm.connect(config.db_path)
         from . import expiry
         from .profile_check import check as _check_profile
         for problem in _check_profile():
             print("profile check:", problem)
-        part = PEOPLE_SHARE.get()                     # --user all: this person's share of the unit
         from pipeline.agentic import incidents
         import os
         run_id = 'reader-' + uuid.uuid4().hex
-        deadline = deadline if deadline is not None else time.time()+UNIT_BUDGET_S*part
+        deadline = deadline if deadline is not None else time.time()+UNIT_BUDGET_S
         incidents.reconcile_known_failures(conn)
         incidents.begin_run(conn, run_id, unit=os.environ.get('JOBWATCH_SERVICE_UNIT', 'manual'))
         state = 'completed'
         try:
             incidents.mark_phase(conn, run_id, 'expiry')
             phase_start = time.monotonic()
-            swept = expiry.sweep(conn, max_seconds=max(0,min(180*part, deadline-time.time())))
+            swept = expiry.sweep(conn, max_seconds=max(0,min(180, deadline-time.time())))
             incidents.mark_phase(conn, run_id, 'expiry', completed=True)
             print({'expiry': swept, 'phase_seconds': {'expiry': time.monotonic()-phase_start}}, flush=True)
             result = agentic.after_collect(conn, config, max_seconds=max(0,deadline-time.time()),

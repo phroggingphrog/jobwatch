@@ -28,7 +28,7 @@ def test_active_discovery_cancellation_retains_posting_after_registry_closes(wor
     monkeypatch.setattr(service, 'after_collect', assess)
     token = 'a'*40
     headers = {'Authorization': 'Bearer '+token}
-    with TestClient(create_api(credentials={token: Principal('fixture-a')}, config=config)) as client:
+    with TestClient(create_api(credentials={token: Principal('owner')}, config=config)) as client:
         response = client.post('/api/agent/discovery/start', headers=headers, json={'request_id': 'shutdown-check'})
         assert response.status_code == 202
         ident = response.json()['run_id']
@@ -41,11 +41,11 @@ def test_active_discovery_cancellation_retains_posting_after_registry_closes(wor
                 time.sleep(.01)
             else:
                 pytest.fail('User cancellation did not complete')
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         row = store.raw_run(ident)
         assert row['state'] == ('cancelled' if user_cancel else 'interrupted')
         assert row['error'] == ('cancelled' if user_cancel else 'worker_interrupted')
-    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+    with job_connection(config, write=True) as conn:
         registry = conn.execute('SELECT state,posting_id FROM agentic_invocations WHERE run_id=?', (ident,)).fetchone()
         assert registry[0] == 'failed' and registry[1] == 42
         failures = incidents.list_incidents(conn)
@@ -69,8 +69,8 @@ def test_cli_outer_exception_marks_registry_failed(world, monkeypatch, command):
         raise OSError('synthetic')
     monkeypatch.setattr(expiry, 'sweep', broken)
     monkeypatch.setattr(pipeline, 'run', broken)
-    with users.use('fixture-a'), pytest.raises(OSError, match='synthetic'):
+    with pytest.raises(OSError, match='synthetic'):
         cli._main([command])
-    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+    with job_connection(config, write=True) as conn:
         assert conn.execute('SELECT state FROM agentic_invocations').fetchone()[0] == 'failed'
         assert len(incidents.list_incidents(conn)) == 1

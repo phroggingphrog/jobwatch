@@ -21,9 +21,8 @@ def test_selection_retry_outbox_crash_recovery_and_person_isolation(frozen, monk
     assert selection.request(frozen.conn,frozen.config,**data,request_id='selected',actor='person') == row
     with pytest.raises(selection.SelectionError,match='idempotency_conflict'):
         selection.request(frozen.conn,frozen.config,**{**data,'posting_ids':[42]},request_id='selected',actor='person')
-    with users.use('other-person'):
-        with pytest.raises(selection.SelectionError,match='not_found'):
-            selection.status(frozen.conn,row['id'])
+    with pytest.raises(selection.SelectionError,match='not_found'):
+        selection.status(frozen.conn,row['id'])
     # Simulate process death between queue commit and jobs/outbox reconciliation.
     original = selection._mark_queued
     monkeypatch.setattr(selection,'_mark_queued',lambda *a,**k: (_ for _ in ()).throw(OSError('synthetic crash')))

@@ -125,17 +125,16 @@ def two_people(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DB', str(tmp_path / 'jobwatch.db'))
     monkeypatch.setattr(users, 'base_dir', lambda: tmp_path)
     for name, company in (('owner', 'Acme Pty'), ('guest', 'Secret Co')):
-        with users.use(name):
-            conn = dbm.connect(users.db_path())
-            conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,company,first_seen_at,last_seen_at)"
-                         " VALUES(1,'s','1','https://example.com/ad','h','d','Data Analyst',?, 't','t')", (company,))
-            conn.execute("INSERT INTO applications(posting_id,status,created_at,updated_at) VALUES(1,'drafted','t','2026-10-25T10:00:00')")
-            conn.execute("INSERT INTO ad_reviews(posting_id,content_hash,prompt_version,model,verdict,reviewed_at,score,reason,pros_json)"
-                         " VALUES(1,'c',1,'m','show','t',4.2,'Matches your SQL work.','[\"SQL\"]')")
-            conn.execute("INSERT INTO selection_requests(id,person,request_key,input_hash,manifest_json,state,created_at,updated_at)"
-                         " VALUES('s1',?,'k','h',?,'completed','t','2026-10-25T10:00:00')",
-                         (name, json.dumps({'request': {'posting_ids': [1]}})))
-            conn.commit(); conn.close()
+        conn = dbm.connect(users.db_path())
+        conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,company,first_seen_at,last_seen_at)"
+                     " VALUES(1,'s','1','https://example.com/ad','h','d','Data Analyst',?, 't','t')", (company,))
+        conn.execute("INSERT INTO applications(posting_id,status,created_at,updated_at) VALUES(1,'drafted','t','2026-10-25T10:00:00')")
+        conn.execute("INSERT INTO ad_reviews(posting_id,content_hash,prompt_version,model,verdict,reviewed_at,score,reason,pros_json)"
+                     " VALUES(1,'c',1,'m','show','t',4.2,'Matches your SQL work.','[\"SQL\"]')")
+        conn.execute("INSERT INTO selection_requests(id,person,request_key,input_hash,manifest_json,state,created_at,updated_at)"
+                     " VALUES('s1',?,'k','h',?,'completed','t','2026-10-25T10:00:00')",
+                     (name, json.dumps({'request': {'posting_ids': [1]}})))
+        conn.commit(); conn.close()
     return tmp_path
 
 
@@ -248,14 +247,13 @@ def test_assessment_activity_never_becomes_a_recommendation_or_application(two_p
 
     evaluation = make_evaluation([], posting_id=2, score=4.9)
     current_key = evaluation.run_key.value
-    with users.use('owner'):
-        conn = dbm.connect(users.db_path())
-        conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,company,first_seen_at,last_seen_at)"
-                     " VALUES(2,'s','2','https://example.com/ad/2','h2','d2','Researcher','New Co','t','t')")
-        conn.execute('CREATE TABLE agentic_activity(id INTEGER PRIMARY KEY, posting_id INTEGER, at REAL)')
-        conn.execute('INSERT INTO agentic_activity(posting_id,at) VALUES(2,100)')
-        conn.commit()
-        conn.close()
+    conn = dbm.connect(users.db_path())
+    conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,company,first_seen_at,last_seen_at)"
+                 " VALUES(2,'s','2','https://example.com/ad/2','h2','d2','Researcher','New Co','t','t')")
+    conn.execute('CREATE TABLE agentic_activity(id INTEGER PRIMARY KEY, posting_id INTEGER, at REAL)')
+    conn.execute('INSERT INTO agentic_activity(posting_id,at) VALUES(2,100)')
+    conn.commit()
+    conn.close()
     latest = {'run_key': current_key, 'reason': 'hard_gate', 'status': 'archived',
               'evaluation': evaluation.model_dump(mode='json')}
     monkeypatch.setattr(cc, 'latest_result', lambda conn, posting_id, **kw:
@@ -396,11 +394,10 @@ def reviewed(two_people, monkeypatch):
 
 
 def _requests(person):
-    with users.use(person):
-        conn = dbm.connect(users.db_path())
-        rows = conn.execute('SELECT posting_id, digest FROM submit_requests').fetchall() \
-            if conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() else []
-        conn.close()
+    conn = dbm.connect(users.db_path())
+    rows = conn.execute('SELECT posting_id, digest FROM submit_requests').fetchall() \
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name='submit_requests'").fetchone() else []
+    conn.close()
     return rows
 
 
@@ -431,8 +428,7 @@ def test_a_digest_for_one_person_does_not_submit_for_another(reviewed, monkeypat
     from jobwatch.apply import prepare
     monkeypatch.setattr(prepare, 'latest_preparation',
                         lambda root, app_id: dict(PREPARED) if 'owner' in str(root) or str(root).endswith('owner') else None)
-    with users.use('guest'):
-        guest_dir = str(users.user_dir())
+    guest_dir = str(users.user_dir())
     if 'owner' in guest_dir:
         pytest.skip('layout does not separate people by name')
     with pytest.raises(Exception):

@@ -64,12 +64,11 @@ def test_status_never_creates_or_changes_runtime_files(tmp_path, monkeypatch, in
     monkeypatch.setattr(discovery_ops.intake, 'discovery_scope', lambda person: None)
     config = make_config(tmp_path=tmp_path)
     if initialized:
-        with users.use('fixture-a'):
-            conn = db.connect(users.db_path())
-            service.AgenticStore(conn).ensure()
-            conn.commit()
-            conn.execute('PRAGMA journal_mode=DELETE')
-            conn.close()
+        conn = db.connect(users.db_path())
+        service.AgenticStore(conn).ensure()
+        conn.commit()
+        conn.execute('PRAGMA journal_mode=DELETE')
+        conn.close()
         with APIStore('fixture-a') as store:
             store.enqueue_discovery({'discovery': True}, 'fixture-request', 'fixture-skill')
             store.conn.execute('PRAGMA journal_mode=DELETE')

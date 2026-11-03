@@ -89,7 +89,7 @@ def wrangle(docs: list[tuple[str, str, str]], user: str, llm: LLM | None = None)
     cvs = [t for k, _, t in docs if k == "cv"]
     if not cvs:
         raise ValueError("Please upload at least one CV.")
-    if user == users.DEFAULT_USER and (users.user_dir(user) / "profile" / "profile.yaml").exists():
+    if (users.user_dir(user) / "profile" / "profile.yaml").exists():
         raise PermissionError("the owner's profile already exists and is not rebuilt from onboarding")
     profile, questions = build_profile("\n\n".join(cvs), user, llm)
     certs: list[str] = []

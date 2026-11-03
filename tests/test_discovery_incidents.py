@@ -119,12 +119,11 @@ def test_other_account_never_uses_owners_install_wide_route(conn, monkeypatch):
     monkeypatch.setenv(legacy.SSH_ENV, 'someone@example.invalid')
     monkeypatch.setenv(legacy.FILE_ENV, '/tmp/x')
     monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('another account must not use the owner route'))
-    with users.use('other-person'):
-        incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed', now=100)
-        incidents.flush_notifications(conn, now=100 + WINDOW)
-        row = incidents.list_incidents(conn)[0]
-        assert row['notification_state'] == 'no_channel'
-        assert incidents.is_paused(conn, 42) and notify.unread(conn) == 1
+    incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed', now=100)
+    incidents.flush_notifications(conn, now=100 + WINDOW)
+    row = incidents.list_incidents(conn)[0]
+    assert row['notification_state'] == 'no_channel'
+    assert incidents.is_paused(conn, 42) and notify.unread(conn) == 1
 
 
 def test_rows_stored_before_generic_wording_read_as_generic(conn):

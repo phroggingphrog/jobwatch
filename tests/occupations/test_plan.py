@@ -63,13 +63,13 @@ def test_query_cleanup_and_whole_word_recall_only_widens():
 def test_plan_storage_is_private_and_per_person():
     from jobwatch import users
     plan = search_plan(policy(), hyps('Accountant'))
-    save_plan('fixture-a', plan)
-    assert load_plan('fixture-a') == plan and load_plan('fixture-b') is None
-    path = users.user_dir('fixture-a') / 'discovery/search-plan.json'
+    save_plan('owner', plan)
+    assert load_plan('owner') == plan and load_plan('fixture-b') is None
+    path = users.user_dir('owner') / 'discovery/search-plan.json'
     assert path.stat().st_mode & 0o777 == 0o600
     payload = json.loads(path.read_text()); payload['policy_hash'] = 'tampered'
     path.write_text(json.dumps(payload))
-    assert load_plan('fixture-a') is None
+    assert load_plan('owner') is None
 
 
 def test_defaults_and_flag_separation():

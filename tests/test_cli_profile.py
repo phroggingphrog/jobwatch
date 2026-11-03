@@ -9,33 +9,26 @@ from jobwatch.candidate import intake
 
 def test_profile_adopt_creates_version_one_for_the_current_person(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
-    with users.use("friend"):
-        (apaths.profile_dir() / "profile.yaml").write_text("candidate:\n  name: Synthetic\n")
-        (apaths.profile_dir() / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")
+    (apaths.profile_dir() / "profile.yaml").write_text("candidate:\n  name: Synthetic\n")
+    (apaths.profile_dir() / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")
     assert cli.main(["--user", "friend", "profile", "adopt"]) == 0
     assert capsys.readouterr().out.strip() == "adopted profile as version 1"
-    with users.use("friend"):
-        assert json.loads((users.user_dir() / "profile-versions" / "1" / "approved.json").read_text())["adopted_from_files"] is True
-        assert (apaths.profile_dir() / "profile.yaml").read_text() == "candidate:\n  name: Synthetic\n"
+    assert json.loads((users.user_dir() / "profile-versions" / "1" / "approved.json").read_text())["adopted_from_files"] is True
+    assert (apaths.profile_dir() / "profile.yaml").read_text() == "candidate:\n  name: Synthetic\n"
 
 
 def test_profile_adopt_refusal_exits_non_zero_with_the_code(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
     assert cli.main(["--user", "friend", "profile", "adopt"]) == 1
     cap = capsys.readouterr()
     assert "nothing_to_adopt" in cap.err and cap.out == ""
-    with users.use("friend"):
-        assert intake.current_version("friend") is None
+    assert intake.current_version("friend") is None
 
 
 def _two_people(tmp_path, monkeypatch):
     from conftest import confirm_discovery
     from jobwatch.config import load_config
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    for name in ("friend", "mate"):
-        users.create_user_dirs(name)
     confirm_discovery(load_config(), "mate")                 # mate is confirmed; friend has nothing
 
 
@@ -85,7 +78,6 @@ def test_manual_assessment_commands_are_gated(tmp_path, monkeypatch, capsys):
     from jobwatch import reader, recall
     from pipeline import graph
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
     for mod, name in ((reader, "review_pending"), (reader, "sort_not_target"), (recall, "triage_new"), (graph, "run_once")):
         monkeypatch.setattr(mod, name, lambda *a, **k: pytest.fail("assessed without a confirmed profile"))
     for argv in (["review"], ["review", "recall"], ["review", "sort"], ["pipeline", "run"], ["pipeline", "sort"]):
@@ -95,6 +87,5 @@ def test_manual_assessment_commands_are_gated(tmp_path, monkeypatch, capsys):
     config = type("C", (), {})()
     monkeypatch.setattr(agentic_cli, "enabled", lambda cfg: True)
     monkeypatch.setattr(agentic_cli, "agentic_batch_run", lambda *a, **k: pytest.fail("assessed without a confirmed profile"))
-    with users.use("friend"):
-        assert agentic_cli.main(["--db", str(tmp_path / "x.db")]) == 0
+    assert agentic_cli.main(["--db", str(tmp_path / "x.db")]) == 0
     assert "no_confirmed_profile" in capsys.readouterr().out

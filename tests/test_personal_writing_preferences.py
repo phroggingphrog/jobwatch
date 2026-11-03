@@ -41,12 +41,10 @@ def test_other_person_and_global_career_examples_are_not_loaded(tmp_path, monkey
     outside = tmp_path / 'outside' / 'style' / 'examples'
     outside.mkdir(parents=True)
     (outside / 'owner.md').write_text('OTHER PERSON VOICE')
-    users.create_user_dirs('friend')
     local = users.user_dir('friend') / 'style' / 'examples'
     local.mkdir(parents=True, exist_ok=True)
     (local / 'friend.md').write_text('OWN APPROVED VOICE')
-    with users.use('friend'):
-        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
     assert 'OWN APPROVED VOICE' in str(guide)
     assert 'OTHER PERSON VOICE' not in str(guide)
 
@@ -106,15 +104,13 @@ def test_pdf_trimming_has_no_unconfirmed_six_skill_or_three_bullet_floor():
 def test_symlinked_style_directory_cannot_read_another_person(tmp_path, monkeypatch):
     from jobwatch import users
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    users.create_user_dirs('friend')
     other = tmp_path / 'other-person' / 'examples'
     other.mkdir(parents=True)
     (other / 'private.md').write_text('OTHER PERSON PRIVATE VOICE')
     style = users.user_dir('friend') / 'style'
     style.mkdir(exist_ok=True)
     (style / 'examples').symlink_to(other, target_is_directory=True)
-    with users.use('friend'):
-        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
     assert 'human_examples' not in guide
 
 
@@ -173,7 +169,6 @@ def test_current_examples_override_archived_examples(tmp_path, monkeypatch):
 def test_archive_library_refuses_traversal_symlinks_and_other_person(tmp_path, monkeypatch):
     from jobwatch import users
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    users.create_user_dirs('friend')
     career = users.user_dir('friend') / 'career'
     (career / 'style').mkdir(parents=True)
     (career / 'style' / 'style_references.csv').write_text(
@@ -185,8 +180,7 @@ def test_archive_library_refuses_traversal_symlinks_and_other_person(tmp_path, m
     owner_samples = tmp_path / 'career' / 'style' / 'examples'
     owner_samples.mkdir(parents=True)
     (owner_samples / 'letter.md').write_text('OWNER ONLY VOICE')
-    with users.use('friend'):
-        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
     assert guide['reference_library']['files'] == []
     assert guide['reference_library']['unavailable'] >= 2
     assert 'ANOTHER PERSON SECRET' not in str(guide) and 'OWNER ONLY VOICE' not in str(guide)

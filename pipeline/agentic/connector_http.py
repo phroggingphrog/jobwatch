@@ -176,8 +176,7 @@ def onboarding_confirm_operation(who: str, body: OnboardingConfirm):
 def discovery_status_operation(who: str) -> dict:
     from pipeline.agentic import discovery_ops
     from jobwatch.config import load_config
-    with users.use(who):
-        return discovery_ops.status(who, load_config())
+    return discovery_ops.status(who, load_config())
 
 
 def create_app(*, token: str | None = None, person: str | None = None, oauth: bool | None = None,
@@ -185,7 +184,7 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
                oauth_state: str | Path | None = None) -> FastAPI:
     token = token if token is not None else os.environ.get('JOBWATCH_CONNECTOR_TOKEN')
     person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.DEFAULT_USER)
-    if not token or len(token) < 32 or not users.valid_name(person):
+    if not token or len(token) < 32 or not bool(person):
         raise RuntimeErrorSafe('connector_configuration_required')
     # OAuth login is OFF unless JOBWATCH_CONNECTOR_OAUTH=1 (or oauth=True) and it is fully configured: a public URL (the
     # TypeScript server's origin) and a passphrase of 16+ characters. Half-configured refuses to start.
@@ -302,29 +301,25 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
     def discovery_settings(who: str = Depends(authed)):
         from pipeline.agentic import discovery_ops
         from jobwatch.config import load_config
-        with users.use(who):
-            return discovery_ops.get_settings(who, load_config())
+        return discovery_ops.get_settings(who, load_config())
 
     @app.post('/connector/discovery/settings')
     def save_discovery_settings(body: DailySettings, who: str = Depends(authed)):
         from pipeline.agentic import discovery_ops
         from jobwatch.config import load_config
-        with users.use(who):
-            return discovery_ops.set_settings(who, load_config(), body.daily_token_ceiling)
+        return discovery_ops.set_settings(who, load_config(), body.daily_token_ceiling)
 
     @app.post('/connector/discovery/start', status_code=202)
     def discovery_start(body: DiscoveryStart, who: str = Depends(authed)):
         from pipeline.agentic import discovery_ops
         from jobwatch.config import load_config
-        with users.use(who):
-            return discovery_ops.start(who, load_config(), body.request_id)
+        return discovery_ops.start(who, load_config(), body.request_id)
 
     @app.post('/connector/discovery/retry', status_code=202)
     def discovery_retry(body: DiscoveryRetry, who: str = Depends(authed)):
         from pipeline.agentic import discovery_ops
         from jobwatch.config import load_config
-        with users.use(who):
-            return discovery_ops.start(who, load_config(), **body.model_dump())
+        return discovery_ops.start(who, load_config(), **body.model_dump())
 
     @app.post('/connector/onboarding/start')
     def onboarding_start(body: OnboardingStart, who: str = Depends(authed)):

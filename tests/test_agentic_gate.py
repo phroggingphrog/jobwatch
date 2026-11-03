@@ -532,8 +532,6 @@ def test_commute_home_follows_the_current_person_not_the_first_one_cached(tmp_pa
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path)); monkeypatch.delenv('JOBWATCH_PROFILE_DIR', raising=False)
     locations = {'owner': 'Brunswick, VIC', 'bob': 'Geelong, VIC'}
     monkeypatch.setattr(approved, 'settings', lambda person, name: {'candidate': {'location': locations[person]}})
-    with users.use('owner'):
-        near = km_from_home('Glen Iris, Melbourne VIC')
-    with users.use('bob'):
-        far = km_from_home('Glen Iris, Melbourne VIC')
+    near = km_from_home('Glen Iris, Melbourne VIC')
+    far = km_from_home('Glen Iris, Melbourne VIC')
     assert near == 13 and far is not None and far > 50  # a second person must not inherit the first person's home

@@ -61,5 +61,4 @@ def test_no_database_returns_not_built_without_creating_one():
     with TestClient(create_api(credentials={A:Principal('no-db-fixture')},config={'pipeline':{'execution_mode':'off'}})) as api:
         result=api.get(PREFIX,headers=headers())
         assert result.status_code==200 and result.json()['status']=='not_built'
-        with users.use('no-db-fixture'):
-            assert not users.db_path().exists()
+        assert not users.db_path().exists()

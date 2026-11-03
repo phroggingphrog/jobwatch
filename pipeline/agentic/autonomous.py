@@ -202,7 +202,7 @@ class NativeModel(BaseChatModel):
         return self.model_copy(update={'schemas': [convert_to_openai_tool(t) for t in tools]})
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        with users.use(self.person), execution.use(self.scope), self.counts['lock']:
+        with execution.use(self.scope), self.counts['lock']:
             self.budget.ensure_live()
             transcript = convert_to_openai_messages(messages)
             if len(transcript) != len(messages):
@@ -606,7 +606,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
             return answer
 
         def invoke(runtime: ToolRuntime, **args):
-            with users.use(run.person), execution.use(run.scope), run.lock:
+            with execution.use(run.scope), run.lock:
                 budget.ensure_live()
                 if run.load('evaluation') is not None:
                     raise RuntimeErrorSafe('terminal_already_selected')
@@ -789,7 +789,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
     cfg = {'configurable': {'thread_id': run.thread}, 'callbacks': [], 'recursion_limit': (1000000 if budget.role_turn_limit is None else 16 * budget.role_turn_limit + 100)}
 
     def invoke():
-        with users.use(run.person), execution.use(run.scope), tracing_context(enabled=False):
+        with execution.use(run.scope), tracing_context(enabled=False):
             saved = run.saver.get_tuple(cfg)
             # Canonical action access can outlive graph messages. Deduplicate only
             # records present in this transcript, so journal replay restores sources.

@@ -259,7 +259,7 @@ class _RegistryBoundary(AgentMiddleware):
 
     def wrap_tool_call(self, request, handler):
         from jobwatch import users
-        with users.use(self.person), invocation.use(self.invocation):
+        with invocation.use(self.invocation):
             self.execution.budget.ensure_live()
             self.execution.validate(request.tool_call["name"], request.tool_call["args"])
             if self.execution.output is not None:
@@ -350,7 +350,7 @@ def run_deepagents_role(role, context, budget, llm, *, max_turns=None, max_outpu
         person = users.current()
         scope = invocation.current()
         def private_invoke():
-            with users.use(person), invocation.use(scope):
+            with invocation.use(scope):
                 return _invoke(execution)
         result = Context().run(private_invoke)
     except RuntimeErrorSafe as exc:

@@ -27,7 +27,7 @@ _MISSING = object()
 
 
 def _path(person: str) -> Path:
-    if not users.valid_name(person):
+    if not bool(person):
         raise ValueError("invalid_person")
     return users.user_dir(person) / "config" / "discovery.json"
 
@@ -68,8 +68,7 @@ def job_limits(person: str, cfg: dict) -> dict:
 def get_settings(person: str, config) -> dict:
     """Return the effective daily token cap and per-job limits; null means unlimited."""
     from pipeline.agentic.service import _config
-    with users.use(person):
-        jobs = job_limits(person, _config(config))
+    jobs = job_limits(person, _config(config))
     return {**_daily(person, config), **jobs}
 
 
@@ -83,8 +82,7 @@ def _daily(person: str, config) -> dict:
         ceiling = confirmed.daily_token_ceiling
     else:
         from pipeline.agentic.service import _config
-        with users.use(person):
-            ceiling = _config(config)["batch_token_ceiling"]
+        ceiling = _config(config)["batch_token_ceiling"]
     return {"daily_token_ceiling": ceiling}
 
 

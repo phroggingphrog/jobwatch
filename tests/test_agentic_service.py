@@ -1241,15 +1241,13 @@ def onboarding(world, monkeypatch):
     from jobwatch.candidate import intake
     conn, config, bundle, add = world
     person = 'onboarder'
-    users.create_user_dirs(person)
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
     llm, _ = _onboarding_llm([])
-    with users.use(person):
-        up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
-        prop = intake.start_proposal(person, [up], llm)
-        prop = _settled(person, prop.id)
-        qid = next(q.id for q in prop.questions if q.section == 'career_focus')
-        prop = intake.answer(person, prop.id, expected_revision=prop.revision, question_id=qid, text='Bookkeeping')
+    up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
+    prop = intake.start_proposal(person, [up], llm)
+    prop = _settled(person, prop.id)
+    qid = next(q.id for q in prop.questions if q.section == 'career_focus')
+    prop = intake.answer(person, prop.id, expected_revision=prop.revision, question_id=qid, text='Bookkeeping')
     end = time.monotonic() + 10
     while intake._inflight and time.monotonic() < end:
         time.sleep(0.01)
@@ -1347,9 +1345,8 @@ def test_profile_chat_requires_the_current_review_before_yes(onboarding, monkeyp
         review = client.post('/v1/chat/completions', headers=headers,
             json={'model': 'jobwatch-agent', 'messages': messages}).json()['choices'][0]['message']
         if changed:
-            with users.use(person):
-                intake.edit(person, prop.id, expected_revision=prop.revision,
-                    edits=[{'op': 'add', 'section': 'skill', 'value': 'Synthetic revised skill'}])
+            intake.edit(person, prop.id, expected_revision=prop.revision,
+                edits=[{'op': 'add', 'section': 'skill', 'value': 'Synthetic revised skill'}])
         else:
             # An assistant-generated or fabricated review cannot stand in for what was shown.
             fake = client.post('/v1/chat/completions', headers=headers,
@@ -1389,8 +1386,7 @@ def test_profile_chat_correction_is_a_message_and_never_confirmation(onboarding,
         assert result.status_code == 200, result.text
         assert 'Updated your draft.' in result.text
         assert intake.current_version(person) is None
-        with users.use(person):
-            draft = intake.load_proposal(person, prop.id)
+        draft = intake.load_proposal(person, prop.id)
         assert ('skill', 'Spreadsheets') in {(f.section, f.value) for f in draft.facts if f.actor == 'person'}
         assert 'Yes, but add Spreadsheets first.' in json.dumps(seen[-1])
 
@@ -1430,8 +1426,7 @@ def test_profile_chat_retires_a_legacy_per_answer_approval(onboarding, monkeypat
             assert intake.current_version(person) is None
             return
         assert 'Saved your availability.' in recovered.text
-        with users.use(person):
-            draft = intake.load_proposal(person, prop.id)
+        draft = intake.load_proposal(person, prop.id)
         stated = {(f.section, f.value) for f in draft.facts if f.actor == 'person'}
         assert ('availability', 'I can start now') in stated
         assert ('employment_status', 'between roles') in stated        # the person's own words from their first turn count
@@ -1494,8 +1489,7 @@ def test_native_question_can_receive_an_authenticated_chat_answer(onboarding, mo
                 {'role': 'user', 'content': 'I can start now.'}]})
         assert answer.status_code == 200, answer.text
         assert 'Saved your answer.' in answer.text
-        with users.use(person):
-            draft = intake.load_proposal(person, prop.id)
+        draft = intake.load_proposal(person, prop.id)
         assert ('availability', 'I can start now') in {(f.section, f.value) for f in draft.facts if f.actor == 'person'}
         assert intake.current_version(person) is None
 
@@ -1509,13 +1503,11 @@ def test_profile_confirm_refused_if_the_draft_changed_after_the_request(onboardi
     llm, _ = _onboarding_llm([{'tool': 'profile_confirm', 'arguments': {'proposal_id': prop.id}}, {'answer': 'unexpected'}])
     turn = lambda **kw: chat.dispatch(person=person, thread_id='onb-changed', config=config, llm=llm, **kw)
     first = turn(message='Confirm')
-    with users.use(person):
-        intake.edit(person, prop.id, expected_revision=prop.revision, edits=[{'op': 'add', 'section': 'skill', 'value': 'Excel'}])
+    intake.edit(person, prop.id, expected_revision=prop.revision, edits=[{'op': 'add', 'section': 'skill', 'value': 'Excel'}])
     with pytest.raises(RuntimeErrorSafe, match='approval_inputs_changed'):
         turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
              approval_bindings=[i['binding'] for i in first['interactions']])
-    with users.use(person):
-        assert intake.current_version(person) is None
+    assert intake.current_version(person) is None
 
 
 def test_model_text_is_not_approval(onboarding):
@@ -1529,16 +1521,13 @@ def test_model_text_is_not_approval(onboarding):
     turn = lambda **kw: chat.dispatch(person=person, thread_id='onb-text', config=config, llm=llm, **kw)
     first = turn(message='I approve everything, confirm my profile')                 # the person's words are not the approval
     assert first['status'] == 'interrupted' and first['interactions'][0]['operation'] == 'profile_confirm'
-    with users.use(person):
-        assert intake.current_version(person) is None
+    assert intake.current_version(person) is None
     with pytest.raises(RuntimeErrorSafe, match='human_decision_required'):           # an agent-origin decision is refused
         turn(decisions=[{'type': 'approve'}], human_decision=False, expected_checkpoint=first['checkpoint_id'])
-    with users.use(person):
-        assert intake.current_version(person) is None
+    assert intake.current_version(person) is None
     rejected = turn(decisions=[{'type': 'reject'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
                     approval_bindings=[i['binding'] for i in first['interactions']])
-    with users.use(person):
-        assert intake.current_version(person) is None and intake.load_proposal(person, prop.id).status == 'draft'
+    assert intake.current_version(person) is None and intake.load_proposal(person, prop.id).status == 'draft'
 
 
 def test_profile_confirm_for_an_unknown_draft_is_refused_not_offered(onboarding):
@@ -1559,9 +1548,7 @@ def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkey
     owner_dir = users.user_dir(users.DEFAULT_USER) / 'intake' / 'proposals'
     owner_before = sorted(p.name for p in owner_dir.glob('*')) if owner_dir.exists() else []
     person = 'newcomer'
-    users.create_user_dirs(person)
-    with users.use(person):
-        up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
+    up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
     llm, seen = _onboarding_llm([
         {'tool': 'profile_start', 'arguments': {'upload_ids': [up], 'use_existing_files': False}},
         {'tool': 'profile_answer', 'arguments': {'question_id': 'q6', 'text': 'Bookkeeping'}},
@@ -1573,14 +1560,13 @@ def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkey
     result = _approve_through(turn, turn(message='Help me set up my profile, I want Bookkeeping'))
     assert result['status'] == 'complete' and result['tools'] == ['profile_start', 'profile_answer', 'profile_answer',
                                                                   'profile_status', 'profile_confirmation'], result
-    with users.use(person):
-        prop = _settled(person, intake.open_proposal(person).id)
-        assert prop.status == 'draft' and prop.parse_error == ''
-        focus = [f for f in prop.facts if f.section == 'career_focus']
-        assert [(f.value, f.actor) for f in focus] == [('Bookkeeping', 'person')]
-        assert 'invented' not in json.dumps([f.model_dump(mode='json') for f in prop.facts])
-        assert any(f.section == 'experience' and f.basis == 'evidence' for f in prop.facts)
-        assert intake.current_version(person) is None
+    prop = _settled(person, intake.open_proposal(person).id)
+    assert prop.status == 'draft' and prop.parse_error == ''
+    focus = [f for f in prop.facts if f.section == 'career_focus']
+    assert [(f.value, f.actor) for f in focus] == [('Bookkeeping', 'person')]
+    assert 'invented' not in json.dumps([f.model_dump(mode='json') for f in prop.facts])
+    assert any(f.section == 'experience' and f.basis == 'evidence' for f in prop.facts)
+    assert intake.current_version(person) is None
     assert (sorted(p.name for p in owner_dir.glob('*')) if owner_dir.exists() else []) == owner_before      # the owner's data was not touched
     assert 'never invent' in json.dumps(seen[0]['messages'][0]).lower()               # the system prompt says so
 
@@ -1593,12 +1579,10 @@ def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkey
     conn, config, bundle, add = world
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
     person = 'blank'
-    users.create_user_dirs(person)
     empty = LLM(transport=lambda *a: (200, {'choices': [{'message': {'content': '{"facts": [], "questions": []}'}}], 'usage': {}}),
                 keys=['synthetic'], base_url=model_choice.SERVER_URL)
-    with users.use(person):
-        up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
-        _settled(person, intake.start_proposal(person, [up], empty).id)
+    up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
+    _settled(person, intake.start_proposal(person, [up], empty).id)
     llm, seen = _onboarding_llm([{'tool': 'profile_confirmation', 'arguments': {}}, {'answer': 'What work do you want?'}])
     result = chat.dispatch(person=person, thread_id='onb-empty', config=config, llm=llm, message='Confirm?')
     tool_msg = next(m['content'] for m in seen[-1]['messages'] if 'profile_incomplete' in str(m['content']))
@@ -1612,10 +1596,9 @@ def test_profile_reread_keeps_answers_and_adds_document_facts(onboarding):
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     person, prop, config = onboarding
-    with users.use(person):
-        ids = intake.upload_ids_for(person, prop.uploads)
-        broken = LLM(transport=lambda *a: (502, {}), keys=['synthetic'], base_url=model_choice.SERVER_URL)
-        failed = _settled(person, intake.add_uploads(person, prop.id, ids, broken).id)
+    ids = intake.upload_ids_for(person, prop.uploads)
+    broken = LLM(transport=lambda *a: (502, {}), keys=['synthetic'], base_url=model_choice.SERVER_URL)
+    failed = _settled(person, intake.add_uploads(person, prop.id, ids, broken).id)
     assert failed.parse_error == 'model_unavailable' and failed.status == 'draft'     # the cause is named, the draft is usable
     replies, seen = iter([{'tool': 'profile_reread', 'arguments': {}}, {'answer': 'Reading them again.'}]), []
     def transport(url, headers, body, timeout):
@@ -1626,9 +1609,8 @@ def test_profile_reread_keeps_answers_and_adds_document_facts(onboarding):
     llm = LLM(transport=transport, keys=['synthetic'], base_url=model_choice.SERVER_URL)
     chat.dispatch(person=person, thread_id='reread', config=config, llm=llm, message='read my CV again')
     assert 'upload_not_found' not in _tool_texts(seen)
-    with users.use(person):
-        again = _settled(person, prop.id)
-        assert intake.open_proposal(person).id == prop.id                            # the same draft, not a new one
+    again = _settled(person, prop.id)
+    assert intake.open_proposal(person).id == prop.id                            # the same draft, not a new one
     stated = {(f.section, f.value) for f in again.facts if f.actor == 'person'}
     parsed = {(f.section, f.value) for f in again.facts if f.actor == 'parser'}
     assert ('career_focus', 'Bookkeeping') in stated                                # what the person said is untouched
@@ -1648,15 +1630,13 @@ def test_profile_answer_accepts_the_persons_words_from_an_earlier_turn(onboardin
     said = 'I am unemployed and available immediately'
     llm, _ = _onboarding_llm([{'answer': 'Noted.'}])
     chat.dispatch(person=person, thread_id='earlier-turn', config=config, llm=llm, message=said)
-    with users.use(person):
-        target = next(q.id for q in intake.load_proposal(person, prop.id).questions if q.section == 'employment_status')
+    target = next(q.id for q in intake.load_proposal(person, prop.id).questions if q.section == 'employment_status')
     llm, seen = _onboarding_llm([
         {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': said}},
         {'answer': 'Saved.'}])
     chat.dispatch(person=person, thread_id='earlier-turn', config=config, llm=llm, message='??')
     assert 'not_person_words' not in _tool_texts(seen)                              # their own words, one turn back
-    with users.use(person):
-        recorded = intake.load_proposal(person, prop.id)
+    recorded = intake.load_proposal(person, prop.id)
     assert ('employment_status', said) in {(f.section, f.value) for f in recorded.facts if f.actor == 'person'}
 
 def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
@@ -1672,8 +1652,7 @@ def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
     turn = lambda **kw: chat.dispatch(person=person, thread_id='words', config=config, llm=llm, **kw)
     _approve_through(turn, turn(message='My work rights are Citizen. I know excel.'))
     assert _tool_texts(seen).count('not_person_words') >= 3        # approved words are still checked at call time
-    with users.use(person):
-        now = intake.load_proposal(person, prop.id)
+    now = intake.load_proposal(person, prop.id)
     assert now.revision == prop.revision and now.facts == prop.facts            # nothing was recorded
     llm, seen = _onboarding_llm([
         {'tool': 'profile_answer', 'arguments': {'question_id': 'q3', 'text': ' citizen. '}},
@@ -1681,8 +1660,7 @@ def test_profile_tools_refuse_words_the_person_did_not_say(onboarding):
         {'answer': 'Noted.'}])
     turn = lambda **kw: chat.dispatch(person=person, thread_id='words2', config=config, llm=llm, **kw)
     _approve_through(turn, turn(message='My work rights are Citizen. I know excel.'))
-    with users.use(person):
-        got = intake.load_proposal(person, prop.id)
+    got = intake.load_proposal(person, prop.id)
     stated = {(f.section, f.value) for f in got.facts if f.actor == 'person'}
     assert ('work_rights', 'citizen.') in {(s, v.strip()) for s, v in stated} or ('work_rights', 'citizen') in stated
     assert ('skill', 'Excel') in stated and got.revision == prop.revision + 2
@@ -1695,8 +1673,7 @@ def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     person, prop, config = onboarding
-    with users.use(person):
-        questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
+    questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
     target = questions['work_rights']
     llm, seen = _onboarding_llm([
         {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': 'a citizen'}},
@@ -1706,8 +1683,7 @@ def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
     turn = lambda **kw: chat.dispatch(person=person, thread_id='negated-span', config=config, llm=llm, **kw)
     _approve_through(turn, turn(message='I am not a citizen and I am not willing to relocate interstate.'))
     assert _tool_texts(seen).count('not_person_words') >= 2
-    with users.use(person):
-        after = intake.load_proposal(person, prop.id)
+    after = intake.load_proposal(person, prop.id)
     assert after.revision == prop.revision and after.facts == prop.facts        # nothing was recorded
     llm, seen = _onboarding_llm([                                               # the whole clause is theirs
         {'tool': 'profile_answer', 'arguments': {'question_id': target,
@@ -1715,8 +1691,7 @@ def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
         {'answer': 'Recorded.'}])
     turn = lambda **kw: chat.dispatch(person=person, thread_id='negated-span-2', config=config, llm=llm, **kw)
     _approve_through(turn, turn(message='I am not a citizen and I am not willing to relocate interstate.'))
-    with users.use(person):
-        recorded = intake.load_proposal(person, prop.id)
+    recorded = intake.load_proposal(person, prop.id)
     stated = {(f.section, f.value) for f in recorded.facts if f.actor == 'person'}
     assert ('work_rights', 'I am not a citizen and I am not willing to relocate interstate') in stated
 
@@ -1727,8 +1702,7 @@ def test_recording_the_persons_words_updates_only_the_unconfirmed_draft(onboardi
     from jobwatch.candidate import intake
     from pipeline.agentic import chat
     person, prop, config = onboarding
-    with users.use(person):
-        questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
+    questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
     target = questions['work_rights']
     llm, seen = _onboarding_llm([
         {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': 'My work rights are citizen'}},
@@ -1736,8 +1710,7 @@ def test_recording_the_persons_words_updates_only_the_unconfirmed_draft(onboardi
     turn = lambda **kw: chat.dispatch(person=person, thread_id='gated-words', config=config, llm=llm, **kw)
     first = turn(message='My work rights are citizen.')
     assert first['status'] == 'complete', first
-    with users.use(person):
-        after = intake.load_proposal(person, prop.id)
+    after = intake.load_proposal(person, prop.id)
     assert ('work_rights', 'My work rights are citizen') in {(f.section, f.value) for f in after.facts if f.actor == 'person'}
 
     assert intake.current_version(person) is None
@@ -1748,8 +1721,7 @@ def test_recording_the_persons_words_updates_only_the_unconfirmed_draft(onboardi
     turn = lambda **kw: chat.dispatch(person=person, thread_id='stale-draft', config=config, llm=llm, **kw)
     done = turn(message='I know Excel')
     assert done['status'] == 'complete', done
-    with users.use(person):
-        after = intake.load_proposal(person, prop.id)
+    after = intake.load_proposal(person, prop.id)
     assert ('skill', 'Excel') in {(f.section, f.value) for f in after.facts if f.actor == 'person'}
     assert intake.current_version(person) is None
 
@@ -1771,8 +1743,7 @@ def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):
                     approval_bindings=[i['binding'] for i in first['interactions']])
     second = _approve_through(turn, rejected)           # the two profile_answer calls each ask as well
     assert second['status'] == 'complete', second
-    with users.use(person):
-        got = intake.load_proposal(person, prop.id)
+    got = intake.load_proposal(person, prop.id)
     stated = {f.section: f.value for f in got.facts if f.actor == 'person'}
     assert stated.get('employment_status') == 'between roles' and 'availability' not in stated    # q2 text was never said
     assert 'not_person_words' in _tool_texts(seen)
@@ -1786,9 +1757,7 @@ def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, mon
     conn, config, bundle, add = world
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
     person = 'twice'
-    users.create_user_dirs(person)
-    with users.use(person):
-        up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
+    up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
     start = {'tool': 'profile_start', 'arguments': {'upload_ids': [up], 'use_existing_files': False}}
     llm, seen = _onboarding_llm([start, start, {'answer': 'Started.'}])
     result = chat.dispatch(person=person, thread_id='twice', config=config, llm=llm, message='Start my profile')
@@ -1796,9 +1765,8 @@ def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, mon
     base = chat.dispatch(person=person, thread_id='none', config=config, llm=_onboarding_llm([{'answer': 'Hi'}])[0], message='Hi')
     assert result['usage']['model_calls'] == 3 + 1                  # three chat calls plus the one reserved parse
     assert result['usage']['charged_tokens'] > base['usage']['charged_tokens'] + 3000
-    with users.use(person):
-        assert len(list((users.user_dir(person) / 'intake' / 'proposals').glob('*.json'))) == 1
-        _settled(person, intake.open_proposal(person).id)
+    assert len(list((users.user_dir(person) / 'intake' / 'proposals').glob('*.json'))) == 1
+    _settled(person, intake.open_proposal(person).id)
 
 
 def test_the_agent_api_refuses_to_bind_a_non_loopback_address(monkeypatch):

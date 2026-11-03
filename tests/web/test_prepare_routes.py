@@ -443,7 +443,6 @@ def test_a_stale_or_expired_chat_request_presses_nothing(tmp_path, monkeypatch):
 def test_background_work_runs_once_per_person_as_that_person(tmp_path, monkeypatch):
     from jobwatch import users
     client, browser, _ = setup(tmp_path, monkeypatch)
-    users.create_user_dirs('friend')
     (users.user_dir('friend') / 'jobwatch.db').touch()
     seen = []
     client.app.state.for_each_person(lambda: seen.append(users.current()))

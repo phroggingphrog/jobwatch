@@ -132,28 +132,26 @@ def test_lifting_a_limit_restarts_a_saved_run_that_carried_the_old_one(tmp_path)
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
-    users.create_user_dirs('sam')
-    users.create_user_dirs('sue')
     monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda *a, **k: {})
     return tmp_path
 
 
 def test_defaults_are_finite_and_unlimited_round_trips_per_person(data_dir):
-    base = discovery_settings.get_settings('sam', CONFIG)
+    base = discovery_settings.get_settings('owner', CONFIG)
     assert base == {'daily_token_ceiling': 1234, 'job_token_ceiling': 250_000, 'job_seconds': 900, 'job_max_turns': 16}
-    saved = discovery_settings.set_settings('sam', CONFIG, 1234, job_token_ceiling=None, job_seconds=None,
+    saved = discovery_settings.set_settings('owner', CONFIG, 1234, job_token_ceiling=None, job_seconds=None,
                                             job_max_turns=40)
     assert saved == {'daily_token_ceiling': 1234, 'job_token_ceiling': None, 'job_seconds': None, 'job_max_turns': 40}
-    assert discovery_settings.get_settings('sam', CONFIG) == saved
+    assert discovery_settings.get_settings('owner', CONFIG) == saved
     assert discovery_settings.get_settings('sue', CONFIG) == base
-    assert discovery_settings.job_limits('sam', service._config(CONFIG)) == {
+    assert discovery_settings.job_limits('owner', service._config(CONFIG)) == {
         'job_token_ceiling': None, 'job_seconds': None, 'job_max_turns': 40}
 
 
 def test_saving_only_the_daily_value_keeps_job_limits_and_old_files_still_read(data_dir):
-    discovery_settings.set_settings('sam', CONFIG, 1234, job_seconds=None)
-    discovery_settings.set_settings('sam', CONFIG, None)         # what an older client posts
-    assert discovery_settings.get_settings('sam', CONFIG)['job_seconds'] is None
+    discovery_settings.set_settings('owner', CONFIG, 1234, job_seconds=None)
+    discovery_settings.set_settings('owner', CONFIG, None)         # what an older client posts
+    assert discovery_settings.get_settings('owner', CONFIG)['job_seconds'] is None
     path = discovery_settings._path('sue')
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"daily_token_ceiling":500}')
@@ -164,21 +162,21 @@ def test_saving_only_the_daily_value_keeps_job_limits_and_old_files_still_read(d
 @pytest.mark.parametrize('value', [0, -5, True, 1.5, '9'])
 def test_job_limits_must_be_positive_integers_or_null(data_dir, field, value):
     with pytest.raises(ValueError):
-        discovery_settings.set_settings('sam', CONFIG, 1234, **{field: value})
+        discovery_settings.set_settings('owner', CONFIG, 1234, **{field: value})
 
 
 def test_damaged_file_falls_back_to_finite_job_limits(data_dir):
-    path = discovery_settings._path('sam')
+    path = discovery_settings._path('owner')
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"daily_token_ceiling":true}')
-    assert discovery_settings.job_limits('sam', CFG) == discovery_settings.job_defaults(CFG)
+    assert discovery_settings.job_limits('owner', CFG) == discovery_settings.job_defaults(CFG)
 
 
 def test_native_api_reads_and_writes_job_limits(world):  # noqa: F811
     config, _ = world
     token = 'a' * 40
     headers = {'Authorization': 'Bearer ' + token}
-    with TestClient(create_api(credentials={token: Principal('fixture-a')}, config=config)) as client:
+    with TestClient(create_api(credentials={token: Principal('owner')}, config=config)) as client:
         path = '/api/agent/discovery/settings'
         got = client.get(path, headers=headers).json()
         assert got == {'daily_token_ceiling': 2_000_000, 'job_token_ceiling': 250_000, 'job_seconds': 300,
@@ -269,18 +267,15 @@ def test_deepseek_flash_is_allowed_for_assessment_and_free_or_stealth_routes_sta
 
 def test_cheap_assessment_profile_moves_only_the_evaluator_role(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
-    users.create_user_dirs('sam')
-    users.create_user_dirs('sue')
-    model_choice.apply_profile('cheap-assessment', 'sam')
-    assert model_choice.chosen('sam') == {'evaluator': 'deepseek-flash'}
+    model_choice.apply_profile('cheap-assessment', 'owner')
+    assert model_choice.chosen('owner') == {'evaluator': 'deepseek-flash'}
     assert model_choice.chosen('sue') == {}
-    assert model_choice.get_model('writer', 'sam') != 'deepseek-flash'           # drafting is untouched
-    with users.use('sam'):
-        cfg = service._config({})
+    assert model_choice.get_model('writer', 'owner') != 'deepseek-flash'           # drafting is untouched
+    cfg = service._config({})
     assert cfg['evaluator_model'] == 'deepseek-flash' and cfg['worker_model'] != 'deepseek-flash'
     assert cfg['reviewer_model'] != 'deepseek-flash' and cfg['answer_model'] != 'deepseek-flash'
     with pytest.raises(KeyError):
-        model_choice.apply_profile('unknown', 'sam')
+        model_choice.apply_profile('unknown', 'owner')
 
 
 def test_a_gateway_that_rejects_json_mode_or_reasoning_gets_one_request_without_them():
@@ -325,14 +320,12 @@ def tool_reply(*calls, content=None):
 @pytest.fixture
 def sam(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
-    users.create_user_dirs('sam')
-    return 'sam'
+    return 'owner'
 
 
 def test_default_profile_keeps_the_json_path_and_sends_no_tools(sam):
     llm, seen = transport_llm([choice()])
-    with users.use(sam):
-        run_role(role(), {}, job(), llm)
+    run_role(role(), {}, job(), llm)
     body = seen[0][1]
     assert body['response_format'] == {'type': 'json_object'} and 'tools' not in body and body['max_tokens'] == 12_000
 
@@ -348,8 +341,7 @@ def test_native_tools_profile_sends_tools_reads_the_tool_call_and_floors_max_tok
         return next(replies)
 
     b = job()
-    with users.use(sam):
-        result = run_role(role(), {}, b, LLM(transport=transport, keys=['k']))
+    result = run_role(role(), {}, b, LLM(transport=transport, keys=['k']))
     assert result.output.answer == 'done' and result.tool_trace == ('read_evidence', 'finish')
     for body in calls:
         assert 'response_format' not in body and body['tool_choice'] == 'auto' and body['max_tokens'] == 16_000
@@ -362,28 +354,24 @@ def test_native_tools_profile_sends_tools_reads_the_tool_call_and_floors_max_tok
 def test_native_tools_content_json_is_still_accepted_when_the_model_does_not_call_a_tool(sam):
     model_choice.set_gateway_profile('claude/sonnet', {'native_tools': True}, sam)
     llm, seen = transport_llm([choice()])
-    with users.use(sam):
-        assert run_role(role(), {}, job(), llm).output.answer == 'complete'
+    assert run_role(role(), {}, job(), llm).output.answer == 'complete'
     assert 'tools' in seen[0][1]
 
 
 def test_malformed_native_tool_call_is_a_safe_failure_not_a_crash(sam):
     model_choice.set_gateway_profile('claude/sonnet', {'native_tools': True}, sam)
     llm, _ = transport_llm([tool_reply(('finish', '{not json'))])
-    with users.use(sam):
-        assert_safe_failure('model_invalid_response', lambda: run_role(role(), {}, job(), llm))
+    assert_safe_failure('model_invalid_response', lambda: run_role(role(), {}, job(), llm))
 
 
 def test_json_mode_off_drops_response_format_but_still_parses_json_text(sam):
     model_choice.set_gateway_profile('claude/sonnet', {'json_mode': False}, sam)
     llm, seen = transport_llm([choice()])
-    with users.use(sam):
-        assert run_role(role(), {}, job(), llm).output.answer == 'complete'
+    assert run_role(role(), {}, job(), llm).output.answer == 'complete'
     assert 'response_format' not in seen[0][1] and 'tools' not in seen[0][1]
 
 
 def test_profiles_are_per_person_per_model_and_ignore_bad_values(sam, tmp_path):
-    users.create_user_dirs('sue')
     model_choice.set_gateway_profile('deepseek-flash', {'native_tools': True, 'min_output_tokens': 16_000}, sam)
     assert model_choice.gateway_profile('deepseek-flash', sam) == {
         'native_tools': True, 'json_mode': True, 'min_output_tokens': 16_000}

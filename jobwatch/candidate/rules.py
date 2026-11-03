@@ -140,8 +140,7 @@ def confirm(config, proposal_id, *, rule_digest, actor):
         if scope is None:
             raise RuleError(scope_reason)
         input_hashes = {name: sha for name, sha in last.get('file_sha256',{}).items() if name not in intake._PROJECTED}
-        with users.use(person):
-            intake._refuse_hand_edits(profile_dir(),input_hashes)
+        intake._refuse_hand_edits(profile_dir(),input_hashes)
         approved = copy.deepcopy(last)
         payload = proposal['payload']
         facts = approved['facts']

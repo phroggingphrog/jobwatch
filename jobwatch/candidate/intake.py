@@ -531,26 +531,25 @@ def _finish_parse(person: str, proposal_id: str, base_version, shas, result, err
 
 def _parse_worker(person: str, proposal_id: str, base_version, docs, blocks, llm, deadline) -> None:
     try:
-        with users.use(person):
-            shas = [sha for sha, _ in docs]
-            try:
-                result, error = _model_parse(person, docs, blocks, llm, deadline), ""
-            except IntakeError as exc:
-                result, error = None, exc.code
-            except DeadlineExceeded as exc:                  # the reader had its whole budget: a timeout, not the documents
-                log.warning("profile parse failed: %s", type(exc).__name__)
-                result, error = None, "parse_timeout"
-            except LLMError as exc:                          # the reader route failed: name it, the documents are not at fault
-                log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
-                result, error = None, "parse_timeout" if getattr(exc, "code", "") == "deadline" else "model_unavailable"
-            except Exception as exc:                         # a gateway or parser failure: a fixed code, no private text
-                log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
-                result, error = None, "parse_failed"
-            try:
-                _finish_parse(person, proposal_id, base_version, shas, result, error)
-            except Exception as exc:
-                log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
-                _finish_parse(person, proposal_id, base_version, shas, None, "parse_failed")
+        shas = [sha for sha, _ in docs]
+        try:
+            result, error = _model_parse(person, docs, blocks, llm, deadline), ""
+        except IntakeError as exc:
+            result, error = None, exc.code
+        except DeadlineExceeded as exc:                  # the reader had its whole budget: a timeout, not the documents
+            log.warning("profile parse failed: %s", type(exc).__name__)
+            result, error = None, "parse_timeout"
+        except LLMError as exc:                          # the reader route failed: name it, the documents are not at fault
+            log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
+            result, error = None, "parse_timeout" if getattr(exc, "code", "") == "deadline" else "model_unavailable"
+        except Exception as exc:                         # a gateway or parser failure: a fixed code, no private text
+            log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
+            result, error = None, "parse_failed"
+        try:
+            _finish_parse(person, proposal_id, base_version, shas, result, error)
+        except Exception as exc:
+            log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
+            _finish_parse(person, proposal_id, base_version, shas, None, "parse_failed")
     except Exception as exc:                        # a daemon thread has nowhere to raise to; the slot is freed below
         log.warning("profile parse failed: %s %s", type(exc).__name__, getattr(exc, "code", ""))
     finally:
@@ -641,19 +640,18 @@ def upload_profile_files(person: str) -> list[str]:
     from them and asks the gaps. A symlinked or oversized file is refused before anything is saved."""
     from ._private_io import read_profile_source
     found: dict[str, bytes] = {}
-    with users.use(person):
-        pdir = apaths.profile_dir()
-        for name in _ALLOWED:
-            # Offer source documents, not canonical profile/configuration YAML.
-            if Path(name).suffix not in ('.pdf', '.docx', '.txt', '.md'):
-                continue
-            try:
-                canonical, raw = read_profile_source(pdir, name, MAX_UPLOAD_BYTES)
-            except FileNotFoundError:
-                continue
-            except (OSError, ValueError):
-                raise IntakeError("unreadable_document") from None   # symlinks are never followed
-            found.setdefault(canonical, raw)
+    pdir = apaths.profile_dir()
+    for name in _ALLOWED:
+        # Offer source documents, not canonical profile/configuration YAML.
+        if Path(name).suffix not in ('.pdf', '.docx', '.txt', '.md'):
+            continue
+        try:
+            canonical, raw = read_profile_source(pdir, name, MAX_UPLOAD_BYTES)
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError):
+            raise IntakeError("unreadable_document") from None   # symlinks are never followed
+        found.setdefault(canonical, raw)
     return [save_upload(person, name, raw, "evidence" if name == "career_ops_profile.md" else "cv")["upload_id"]
             for name, raw in found.items()]
 
@@ -839,8 +837,7 @@ def scope_for(person: str, proposal: Proposal, config) -> SearchScope:
 
 def _scope_of(person: str, facts: list[ProfileFact], config) -> SearchScope:
     from pipeline.agentic.service import _config
-    with users.use(person):
-        ceiling = _config(config)["batch_token_ceiling"]
+    ceiling = _config(config)["batch_token_ceiling"]
     basis = _values(facts, "career_focus") or list(dict.fromkeys(_values(facts, "experience") + _values(facts, "skill")))[:_SCOPE_ITEMS]
     return SearchScope(basis=tuple(basis), locations=tuple(_values(facts, "location")),
                        daily_assessments=DAILY_ASSESSMENTS, daily_token_ceiling=ceiling)
@@ -959,7 +956,7 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
     if actor != "person":
         raise IntakeError("person_required")           # model text or an agent is never approval
     load_proposal(person, proposal_id)                 # validates the id before it names a lock file
-    with users.use(person), _locked(person, "versions.lock"), _locked(person, proposal_id + ".lock", "proposals"):
+    with _locked(person, "versions.lock"), _locked(person, proposal_id + ".lock", "proposals"):
         cur = load_proposal(person, proposal_id)
         if cur.status == "parsing":
             raise IntakeError("proposal_parsing")
@@ -973,8 +970,7 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         if not scope.basis:
             raise IntakeError("profile_incomplete")        # nothing to search for: discovery cannot be turned on from this
         nums = _numbers(person)
-        with users.use(person):
-            pdir = apaths.profile_dir()
+        pdir = apaths.profile_dir()
         last = _approved(person, nums[-1]) if nums else {}
         if nums:
             if last.get("proposal_id") == cur.id and last.get("proposal_digest") == proposal_digest \
@@ -985,20 +981,18 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         if cur.base_version != (nums[-1] if nums else None):
             raise IntakeError("proposal_changed")      # built on no version or an old one: not on the current version
         recorded = last.get("file_sha256") or {}
-        with users.use(person):
-            pdir = apaths.profile_dir()
-            input_hashes = recorded
-            _refuse_hand_edits(pdir, input_hashes)
+        pdir = apaths.profile_dir()
+        input_hashes = recorded
+        _refuse_hand_edits(pdir, input_hashes)
         if nums and any(os.path.lexists(pdir / name) and name not in recorded for name in _ALLOWED):
             raise IntakeError("adopt_first")
         for name in _ALLOWED:
             if name in _PROJECTED and name != "master_resume.md":
                 continue
             if name in recorded and os.path.lexists(pdir / name):
-                with users.use(person):
-                    pdir = apaths.profile_dir()
-                    if hashlib.sha256(_read_profile_file(pdir, name)).hexdigest() != recorded[name]:
-                        raise IntakeError("profile_edited_by_hand")
+                pdir = apaths.profile_dir()
+                if hashlib.sha256(_read_profile_file(pdir, name)).hexdigest() != recorded[name]:
+                    raise IntakeError("profile_edited_by_hand")
         if not nums and any(os.path.lexists(pdir / name) for name in _ALLOWED + _PROJECTED):
             raise IntakeError("adopt_first")
         n = (nums[-1] if nums else 0) + 1
@@ -1049,11 +1043,10 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                 shutil.copytree(_versions_root(person) / str(nums[-1]) / "evidence", stage / "evidence",
                                 dirs_exist_ok=True, ignore=shutil.ignore_patterns(".tmp-*"))
             else:
-                with users.use(person):
-                    pdir = apaths.profile_dir()
-                    if pdir.is_dir():
-                        shutil.copytree(pdir, stage / "evidence", dirs_exist_ok=True,
-                                        ignore=shutil.ignore_patterns(".tmp-*", "interests_and_criteria.yaml"))
+                pdir = apaths.profile_dir()
+                if pdir.is_dir():
+                    shutil.copytree(pdir, stage / "evidence", dirs_exist_ok=True,
+                                    ignore=shutil.ignore_patterns(".tmp-*", "interests_and_criteria.yaml"))
             if meta and not any((stage / "evidence" / name).exists() for name in ("cv.md", "master_resume.md")):
                 name = "cv.md" if meta["ext"] in (".md", ".txt") else "master_resume.md"
                 _write_private(stage / "evidence" / name, original_bytes)
@@ -1091,7 +1084,7 @@ def adopt_existing(person: str, *, actor: Literal["person"]) -> int:
     Person inputs and evidence annotations are copied into the evidence directory. Derived settings remain version files."""
     if actor != "person":
         raise IntakeError("person_required")
-    with users.use(person), _locked(person, "versions.lock"):
+    with _locked(person, "versions.lock"):
         version = (max(_numbers(person)) if _numbers(person) else 0) + 1
         pdir = apaths.profile_dir()
         found = {}
@@ -1173,18 +1166,16 @@ def scope_state(person: str) -> tuple[SearchScope | None, str]:
         if _scope_digest(scope) != cur["scope_digest"]:
             return None, "scope_changed"
         if cur.get("profile_inputs_hash"):
-            with users.use(person):
-                profile_file = apaths.profile_dir() / "profile.yaml"
-                if cur.get("adopted_from_files") and not profile_file.is_file():
-                    return None, "profile_edited_by_hand"
-                if profile_file.is_file() and hashlib.sha256(read_regular_file(profile_file, MAX_JSON_BYTES)).hexdigest() != cur["profile_inputs_hash"]:
-                    return None, "profile_edited_by_hand"
-        with users.use(person):
-            live_dir = apaths.profile_dir()
-            input_hashes = dict(cur.get("file_sha256") or {})
-            if cur.get("profile_inputs_hash"):
-                input_hashes.pop("profile.yaml", None)
-            _refuse_hand_edits(live_dir, input_hashes)
+            profile_file = apaths.profile_dir() / "profile.yaml"
+            if cur.get("adopted_from_files") and not profile_file.is_file():
+                return None, "profile_edited_by_hand"
+            if profile_file.is_file() and hashlib.sha256(read_regular_file(profile_file, MAX_JSON_BYTES)).hexdigest() != cur["profile_inputs_hash"]:
+                return None, "profile_edited_by_hand"
+        live_dir = apaths.profile_dir()
+        input_hashes = dict(cur.get("file_sha256") or {})
+        if cur.get("profile_inputs_hash"):
+            input_hashes.pop("profile.yaml", None)
+        _refuse_hand_edits(live_dir, input_hashes)
         for name, sha in (cur.get("file_sha256") or {}).items():
             if name not in _ALLOWED:
                 continue  # Legacy records also hash generated projections, not source evidence.

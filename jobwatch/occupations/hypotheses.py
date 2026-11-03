@@ -97,46 +97,45 @@ def _folder(person):
 def _load(person, *, approved=None, policy=None, reference=None, model=None, key=None, config=None):
     """Read and validate a cache against today's approved inputs, without a model call."""
     try:
-        with users.use(person):
-            approved = approved if approved is not None else intake.current_version(person)
-            policy = policy if policy is not None else policy_for(person)
-            if not approved or policy is None or policy.profile_version != approved['version']:
+        approved = approved if approved is not None else intake.current_version(person)
+        policy = policy if policy is not None else policy_for(person)
+        if not approved or policy is None or policy.profile_version != approved['version']:
+            return None
+        reference = reference if reference is not None else loaders.load_reference_records()
+        if model is None:
+            from pipeline.agentic.service import _config
+            model = _config(config if config is not None else load_config())['embedding_model']
+        if not model:
+            return None
+        folder = _folder(person)
+        if key is None:
+            pointer = json.loads(read_regular_file(folder / 'latest.json', 2048))
+            key = pointer['key']
+        if not isinstance(key, str) or not re.fullmatch('[a-f0-9]{64}', key):
+            return None
+        payload = json.loads(read_regular_file(folder / f'{key}.json', 4_000_000))
+        limit = payload['limit']
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            return None
+        if payload['key'] != key or _cache_key(approved, policy, reference, model, limit) != key:
+            return None
+        if payload['algorithm'] != ALGORITHM_VERSION or payload['profile_version'] != approved['version']:
+            return None
+        if payload['policy_hash'] != policy.policy_hash or payload['datasets'] != reference.versions:
+            return None
+        if payload['payload_hash'] != digest({k: v for k, v in payload.items() if k != 'payload_hash'}):
+            return None
+        got = tuple(FieldHypothesis.model_validate_json(json.dumps(h)) for h in payload['hypotheses'])
+        ids = {r.id: r for r in reference.records}
+        fact_ids = {f[0] for f in _usable(approved)}
+        doc_keys = payload['doc_keys']
+        if len(got) > limit or len({h.id for h in got}) != len(got) or set(doc_keys) != {h.id for h in got}:
+            return None
+        for h in got:
+            if (h.id not in ids or ids[h.id].title != h.title or not set(h.supporting_facts) <= fact_ids
+                    or doc_keys[h.id] != text_key(ids[h.id].text) or not set(h.related) <= set(ids)):
                 return None
-            reference = reference if reference is not None else loaders.load_reference_records()
-            if model is None:
-                from pipeline.agentic.service import _config
-                model = _config(config if config is not None else load_config())['embedding_model']
-            if not model:
-                return None
-            folder = _folder(person)
-            if key is None:
-                pointer = json.loads(read_regular_file(folder / 'latest.json', 2048))
-                key = pointer['key']
-            if not isinstance(key, str) or not re.fullmatch('[a-f0-9]{64}', key):
-                return None
-            payload = json.loads(read_regular_file(folder / f'{key}.json', 4_000_000))
-            limit = payload['limit']
-            if type(limit) is not int or not 1 <= limit <= 1000:
-                return None
-            if payload['key'] != key or _cache_key(approved, policy, reference, model, limit) != key:
-                return None
-            if payload['algorithm'] != ALGORITHM_VERSION or payload['profile_version'] != approved['version']:
-                return None
-            if payload['policy_hash'] != policy.policy_hash or payload['datasets'] != reference.versions:
-                return None
-            if payload['payload_hash'] != digest({k: v for k, v in payload.items() if k != 'payload_hash'}):
-                return None
-            got = tuple(FieldHypothesis.model_validate_json(json.dumps(h)) for h in payload['hypotheses'])
-            ids = {r.id: r for r in reference.records}
-            fact_ids = {f[0] for f in _usable(approved)}
-            doc_keys = payload['doc_keys']
-            if len(got) > limit or len({h.id for h in got}) != len(got) or set(doc_keys) != {h.id for h in got}:
-                return None
-            for h in got:
-                if (h.id not in ids or ids[h.id].title != h.title or not set(h.supporting_facts) <= fact_ids
-                        or doc_keys[h.id] != text_key(ids[h.id].text) or not set(h.related) <= set(ids)):
-                    return None
-            return got, doc_keys
+        return got, doc_keys
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
 
@@ -178,96 +177,95 @@ def _rank(records, queries, query_facts, documents):
 def field_hypotheses(person, *, limit=15, llm=None, config=None, policy=None, conn=None, seconds=240.0):
     if type(limit) is not int or not 1 <= limit <= 1000:
         raise DiscoveryError('invalid_configuration')
-    with users.use(person):
-        config = config if config is not None else load_config()
-        approved = intake.current_version(person)
-        policy = policy if policy is not None else policy_for(person)
-        if policy is None or not approved or policy.profile_version != approved.get('version'):
-            raise DiscoveryError('no_policy')
-        facts = _usable(approved)
-        if not facts:
-            raise DiscoveryError('no_profile_facts')
-        reference = loaders.load_reference_records()
-        if not reference.records:
-            raise DiscoveryError('reference_unavailable')
-        from pipeline.agentic.service import _config, configured_llm
-        model = _config(config)['embedding_model']
-        if model is None:
-            raise DiscoveryError('embedding_not_configured')
-        key = _cache_key(approved, policy, reference, model, limit)
-        cached = _load(person, approved=approved, policy=policy, reference=reference, model=model, key=key)
-        if cached is not None:
-            return cached[0]
-        # Reuse the discovery settings validator; configuration never enters a RunKey.
-        from pipeline.agentic.discovery import settings
-        ceiling = settings(config)['embedding_token_ceiling']
-        llm = llm if llm is not None else configured_llm(config)
-        owns_connection = conn is None
-        if owns_connection:
-            database_path = config.db_path
-            ensure_dir(database_path.parent)
-            # SQLite inherits this mode for its WAL too; establish it before opening a new DB.
-            try:
-                descriptor = os.open(database_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-            except FileExistsError:
-                pass
-            else:
-                os.close(descriptor)
-            conn = db.connect(database_path)
+    config = config if config is not None else load_config()
+    approved = intake.current_version(person)
+    policy = policy if policy is not None else policy_for(person)
+    if policy is None or not approved or policy.profile_version != approved.get('version'):
+        raise DiscoveryError('no_policy')
+    facts = _usable(approved)
+    if not facts:
+        raise DiscoveryError('no_profile_facts')
+    reference = loaders.load_reference_records()
+    if not reference.records:
+        raise DiscoveryError('reference_unavailable')
+    from pipeline.agentic.service import _config, configured_llm
+    model = _config(config)['embedding_model']
+    if model is None:
+        raise DiscoveryError('embedding_not_configured')
+    key = _cache_key(approved, policy, reference, model, limit)
+    cached = _load(person, approved=approved, policy=policy, reference=reference, model=model, key=key)
+    if cached is not None:
+        return cached[0]
+    # Reuse the discovery settings validator; configuration never enters a RunKey.
+    from pipeline.agentic.discovery import settings
+    ceiling = settings(config)['embedding_token_ceiling']
+    llm = llm if llm is not None else configured_llm(config)
+    owns_connection = conn is None
+    if owns_connection:
+        database_path = config.db_path
+        ensure_dir(database_path.parent)
+        # SQLite inherits this mode for its WAL too; establish it before opening a new DB.
         try:
-            with discovery_budget(conn, 'reference-index', token_ceiling=ceiling, seconds=seconds) as budget:
-                embedder = make_embedder(llm, config, budget)
-                store = reference_store(model)
-                try:
-                    documents = embed_cached(embedder, store, {text_key(r.text): r.text for r in reference.records})
-                except AgenticError as exc:
-                    if exc.code in {'token_limit', 'deadline_exceeded', 'invocation_budget_exhausted', 'daily_budget'}:
-                        raise DiscoveryError('reference_index_incomplete') from None
-                    raise
-                queries, query_facts = [f[2] for f in facts], [(f[0],) for f in facts]
-                skills = [f for f in facts if f[1] in ('skill', 'transferable_skill')]
-                if skills:
-                    queries.append(('skills: ' + '; '.join(f[2] for f in skills))[:1500])
-                    query_facts.append(tuple(f[0] for f in skills[:8]))
-                query_vectors = embedder.embed_queries(queries, kind='field_from_evidence')
-                records = [r for r in reference.records if not _excluded(r, policy)]
-                if not records:
-                    ranked, scores, supports = [], {}, {}
-                else:
-                    ranked, scores, supports = _rank(records, query_vectors, query_facts, documents)
-                focus_ranked = []
-                if policy.focus and records:
-                    focus_vectors = normalise(embedder.embed_queries(list(policy.focus), kind='field_from_evidence'))
-                    matrix = np.array([documents[text_key(r.text)] for r in records], dtype=np.float32)
-                    focus_scores = (focus_vectors @ matrix.T).max(axis=0)
-                    focus_ranked = [r for _, r in sorted(zip(focus_scores, records), key=lambda p: (-float(p[0]), p[1].id))]
-        finally:
-            if owns_connection:
-                conn.close()
-        selected = select(policy.strategy, ranked, focus_ranked, limit)
-        links = {}
-        for link in reference.correspondences:
-            links.setdefault(link.a, set()).add(link.b)
-            links.setdefault(link.b, set()).add(link.a)
-        hypotheses = []
-        for record in selected:
-            representative = next((i for i, h in enumerate(hypotheses) if h.id in links.get(record.id, ())), None)
-            if representative is not None:
-                existing = hypotheses[representative]
-                hypotheses[representative] = existing.model_copy(update={'related': (*existing.related, record.id)})
-                continue
-            similarity = round(max(-1., min(1., scores[record.id])), 4)
-            supporting = supports[record.id]
-            rationale = (f"Closest approved facts: {', '.join(supporting)}. Similarity {similarity:.4f}. "
-                         f'Strategy {policy.strategy}. A search hypothesis only; it is not evidence that you qualify.')
-            hypotheses.append(FieldHypothesis(scheme=record.scheme, code=record.code, title=record.title,
-                similarity=similarity, supporting_facts=supporting, rationale=rationale))
-        payload = {'key': key, 'profile_version': approved['version'], 'policy_hash': policy.policy_hash,
-                   'algorithm': ALGORITHM_VERSION, 'datasets': reference.versions, 'limit': limit,
-                   'hypotheses': [h.model_dump(mode='json') for h in hypotheses],
-                   'doc_keys': {h.id: text_key(next(r.text for r in reference.records if r.id == h.id)) for h in hypotheses}}
-        payload['payload_hash'] = digest(payload)
-        folder = _folder(person)
-        safe_write_bytes(folder / f'{key}.json', json.dumps(payload, sort_keys=True, allow_nan=False).encode())
-        safe_write_bytes(folder / 'latest.json', json.dumps({'key': key}).encode())
-        return tuple(hypotheses)
+            descriptor = os.open(database_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            os.close(descriptor)
+        conn = db.connect(database_path)
+    try:
+        with discovery_budget(conn, 'reference-index', token_ceiling=ceiling, seconds=seconds) as budget:
+            embedder = make_embedder(llm, config, budget)
+            store = reference_store(model)
+            try:
+                documents = embed_cached(embedder, store, {text_key(r.text): r.text for r in reference.records})
+            except AgenticError as exc:
+                if exc.code in {'token_limit', 'deadline_exceeded', 'invocation_budget_exhausted', 'daily_budget'}:
+                    raise DiscoveryError('reference_index_incomplete') from None
+                raise
+            queries, query_facts = [f[2] for f in facts], [(f[0],) for f in facts]
+            skills = [f for f in facts if f[1] in ('skill', 'transferable_skill')]
+            if skills:
+                queries.append(('skills: ' + '; '.join(f[2] for f in skills))[:1500])
+                query_facts.append(tuple(f[0] for f in skills[:8]))
+            query_vectors = embedder.embed_queries(queries, kind='field_from_evidence')
+            records = [r for r in reference.records if not _excluded(r, policy)]
+            if not records:
+                ranked, scores, supports = [], {}, {}
+            else:
+                ranked, scores, supports = _rank(records, query_vectors, query_facts, documents)
+            focus_ranked = []
+            if policy.focus and records:
+                focus_vectors = normalise(embedder.embed_queries(list(policy.focus), kind='field_from_evidence'))
+                matrix = np.array([documents[text_key(r.text)] for r in records], dtype=np.float32)
+                focus_scores = (focus_vectors @ matrix.T).max(axis=0)
+                focus_ranked = [r for _, r in sorted(zip(focus_scores, records), key=lambda p: (-float(p[0]), p[1].id))]
+    finally:
+        if owns_connection:
+            conn.close()
+    selected = select(policy.strategy, ranked, focus_ranked, limit)
+    links = {}
+    for link in reference.correspondences:
+        links.setdefault(link.a, set()).add(link.b)
+        links.setdefault(link.b, set()).add(link.a)
+    hypotheses = []
+    for record in selected:
+        representative = next((i for i, h in enumerate(hypotheses) if h.id in links.get(record.id, ())), None)
+        if representative is not None:
+            existing = hypotheses[representative]
+            hypotheses[representative] = existing.model_copy(update={'related': (*existing.related, record.id)})
+            continue
+        similarity = round(max(-1., min(1., scores[record.id])), 4)
+        supporting = supports[record.id]
+        rationale = (f"Closest approved facts: {', '.join(supporting)}. Similarity {similarity:.4f}. "
+                     f'Strategy {policy.strategy}. A search hypothesis only; it is not evidence that you qualify.')
+        hypotheses.append(FieldHypothesis(scheme=record.scheme, code=record.code, title=record.title,
+            similarity=similarity, supporting_facts=supporting, rationale=rationale))
+    payload = {'key': key, 'profile_version': approved['version'], 'policy_hash': policy.policy_hash,
+               'algorithm': ALGORITHM_VERSION, 'datasets': reference.versions, 'limit': limit,
+               'hypotheses': [h.model_dump(mode='json') for h in hypotheses],
+               'doc_keys': {h.id: text_key(next(r.text for r in reference.records if r.id == h.id)) for h in hypotheses}}
+    payload['payload_hash'] = digest(payload)
+    folder = _folder(person)
+    safe_write_bytes(folder / f'{key}.json', json.dumps(payload, sort_keys=True, allow_nan=False).encode())
+    safe_write_bytes(folder / 'latest.json', json.dumps({'key': key}).encode())
+    return tuple(hypotheses)

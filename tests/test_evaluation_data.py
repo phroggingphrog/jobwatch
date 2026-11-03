@@ -143,17 +143,13 @@ def test_split_seed_partition_and_person_are_validated(frozen):
     eval_data.create_split(record.baseline_id)
     with pytest.raises(AgenticError,match='invalid_holdout_operation'):
         eval_data.audit_holdout(record.baseline_id,'export',allow_holdout=True)
-    with users.use('someone-else'):                       # another person has no such baseline at all
-        with pytest.raises(AgenticError,match='baseline_not_found'):
-            eval_data.record_for(record.baseline_id)
+    with pytest.raises(AgenticError,match='baseline_not_found'):
+        eval_data.record_for(record.baseline_id)
     import shutil
-    users.create_user_dirs('someone-else')
-    with users.use('someone-else'):
-        theirs=baseline._baselines_root()/record.baseline_id
+    theirs=baseline._baselines_root()/record.baseline_id
     shutil.copytree(baseline._baseline_dir(record.baseline_id),theirs)   # a copied baseline keeps its owner
-    with users.use('someone-else'):
-        with pytest.raises(AgenticError,match='evaluation_person_mismatch'):
-            eval_data.record_for(record.baseline_id)
+    with pytest.raises(AgenticError,match='evaluation_person_mismatch'):
+        eval_data.record_for(record.baseline_id)
 
 
 def test_write_once_refuses_a_divergent_rewrite(frozen,tmp_path):

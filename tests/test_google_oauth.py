@@ -38,17 +38,15 @@ def test_token_file_0600_with_mock(env, monkeypatch):
         def json(self):
             return {"access_token": "a", "refresh_token": "r", "expires_in": 3600, "scope": "x"}
     monkeypatch.setattr(g.requests, "post", lambda *a, **k: R())
-    with users.use("friend"):
-        g.exchange_code("code")
-        p = g.token_path()
-        assert p.parent.name == "friend"
+    g.exchange_code("code")
+    p = g.token_path()
+    assert p.parent.name == "friend"
     assert stat.S_IMODE(p.stat().st_mode) == 0o600
     assert json.loads(p.read_text())["refresh_token"] == "r"
 
 
 def test_state_tamper_rejected(env):
-    with users.use("friend"):
-        s = g.make_state()
+    s = g.make_state()
     assert g.check_state(s) == "friend"
     body, sig = s.rsplit(".", 1)
     flipped = ("1" if sig[0] == "0" else "0") + sig[1:]        # a real change: "0" over a leading "0" tampered nothing

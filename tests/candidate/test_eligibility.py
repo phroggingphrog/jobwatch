@@ -201,8 +201,7 @@ def test_omitted_policy_resolves_only_the_current_person_on_each_call(monkeypatc
     monkeypatch.setattr('jobwatch.candidate.policy.policy_for', policies.get)
     text = 'Applicants must be Australian citizens only.'
     for person, status in (('synthetic-a', 'eligible'), ('synthetic-b', 'excluded'), ('synthetic-a', 'eligible')):
-        with users.use(person):
-            assert evaluate_eligibility({}, ad_text=text).status == status
+        assert evaluate_eligibility({}, ad_text=text).status == status
 
 
 def test_inferred_rights_cannot_certify_a_restriction():

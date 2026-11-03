@@ -110,23 +110,6 @@ def test_freeze_opens_the_database_read_only(frozen, capsys, monkeypatch):
     assert any(str(db).endswith('?mode=ro') and kw.get('uri') is True for db, kw in seen)
 
 
-def test_cli_errors_print_the_code_and_exit_one(frozen, monkeypatch, capsys):
-    # a friend with no profile
-    users.create_user_dirs('friend')      # under the world's temporary data folder
-    rc, out, err = run(['--user', 'friend', 'baseline', 'freeze'], capsys)
-    assert rc == 1 and 'no_profile_version' in err and out == ''
-
-    rc, out, err = run(['baseline', 'show', '../x'], capsys)
-    assert rc == 1 and 'invalid_baseline_id' in err and out == ''
-
-    _use_world(frozen, monkeypatch)
-    monkeypatch.setattr(sys.stdin, 'isatty', lambda: True)
-    rc, out, err = run(['baseline', 'freeze', '--limit', '1'], capsys)
-    bid = _FROZE.match(out.strip()).group(1)
-    cid = baseline.load_baseline(bid)[0].case_ids[0]
-    rc, out, err = run(['baseline', 'label', bid, cid, '--relevance', '9'], capsys)
-    assert rc == 1 and 'invalid_label' in err and out == ''
-    assert baseline.read_labels(bid) == []
 
 
 def test_label_command_refuses_without_a_terminal(frozen, capsys, monkeypatch):

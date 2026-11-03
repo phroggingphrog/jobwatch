@@ -66,7 +66,7 @@ class _JobwatchTokenVerifier(TokenVerifier):
 def _person_from_request() -> str:
     token = get_access_token()
     person = token.subject if token else None
-    if not users.valid_name(person):
+    if not bool(person):
         raise RuntimeErrorSafe('mcp_auth_required')
     return person
 
@@ -80,9 +80,8 @@ def _read():
     from jobwatch.config import load_config
     from pipeline.agentic.chat import job_connection
     person = _person_from_request()
-    with users.use(person):
-        with job_connection(load_config()) as conn:
-            yield conn
+    with job_connection(load_config()) as conn:
+        yield conn
 
 def _identifier(value) -> int:
     if type(value) is not int or value < 1:
@@ -268,7 +267,7 @@ def create_server(*, token: str | None = None, person: str | None = None, access
     token = token if token is not None else os.environ.get('JOBWATCH_MCP_TOKEN')
     person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.DEFAULT_USER)
     # A static token stays mandatory unless Access is the front door; without either, no server starts.
-    if not users.valid_name(person) or (not access.enabled and (not token or len(token) < 32)) \
+    if not bool(person) or (not access.enabled and (not token or len(token) < 32)) \
             or (access.enabled and not access.requires_jwt and token and len(token) < 32):
         raise RuntimeErrorSafe('mcp_configuration_required')
 

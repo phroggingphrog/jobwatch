@@ -132,8 +132,7 @@ def test_identity_changes_for_person_profile_policy_model_and_skill(world, monke
     for altered in ({**args, 'cfg': {**args['cfg'], 'evaluator_model':'synthetic-other'}},
                     {**args, 'approved_profile': None}):
         assert cd.current_digest(conn, **altered) is None
-    with users.use('synthetic-other'):
-        assert cd.current_digest(conn, **args, approved_profile=None) is None
+    assert cd.current_digest(conn, **args, approved_profile=None) is None
     monkeypatch.setattr(cd, 'VERSION', 'synthetic-schema-change')
     assert cd.current_digest(conn, **args) is None
     assert first.identity

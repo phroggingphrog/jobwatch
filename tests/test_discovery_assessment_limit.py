@@ -118,10 +118,8 @@ def test_limit_is_bound_to_receipt_and_person(reader):
     assert replay == {'run_id': first['run_id'], 'state': 'completed'}
     assert discovery_ops.start(person, config, 'unbounded-receipt')['run_id'] != first['run_id']
     other = 'synthetic-other'
-    users.create_user_dirs(other)
-    with users.use(other):
-        from tests.test_agentic_service import confirm_discovery
-        confirm_discovery(config)
+    from tests.test_agentic_service import confirm_discovery
+    confirm_discovery(config)
     second = discovery_ops.start(other, config, 'bounded-receipt', max_assessments=2)
     assert second['run_id'] != first['run_id']
 

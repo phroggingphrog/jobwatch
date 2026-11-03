@@ -203,15 +203,14 @@ def _confirm(config, person, llm):
     from jobwatch import users
     from jobwatch.apply import paths as apaths
     from jobwatch.candidate import intake
-    with users.use(person):
-        pdir = apaths.profile_dir()
-        if intake.current_version(person) is None and any(os.path.lexists(pdir / n) for n in _HAND_NAMES):
-            if not any(os.path.lexists(pdir / n) for n in ("cv.md", "master_resume.md")):
-                (pdir / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")      # adoption needs a CV source
-            intake.adopt_existing(person, actor="person")
-        cur = intake.current_version(person)
-        up = intake.save_upload(person, "cv.txt", SYNTHETIC_CV, "cv")["upload_id"]
-        prop = intake.propose(person, [up], llm, base_version=cur["version"] if cur else None)
-        shown = intake.confirmation(person, prop.id, config)
-        return intake.confirm(person, prop.id, proposal_digest=shown["proposal_digest"], scope_digest=shown["scope_digest"],
-                              actor="person", config=config)
+    pdir = apaths.profile_dir()
+    if intake.current_version(person) is None and any(os.path.lexists(pdir / n) for n in _HAND_NAMES):
+        if not any(os.path.lexists(pdir / n) for n in ("cv.md", "master_resume.md")):
+            (pdir / "master_resume.md").write_text("# Synthetic\n\nAccounts Assistant, 2021\n")      # adoption needs a CV source
+        intake.adopt_existing(person, actor="person")
+    cur = intake.current_version(person)
+    up = intake.save_upload(person, "cv.txt", SYNTHETIC_CV, "cv")["upload_id"]
+    prop = intake.propose(person, [up], llm, base_version=cur["version"] if cur else None)
+    shown = intake.confirmation(person, prop.id, config)
+    return intake.confirm(person, prop.id, proposal_digest=shown["proposal_digest"], scope_digest=shown["scope_digest"],
+                          actor="person", config=config)

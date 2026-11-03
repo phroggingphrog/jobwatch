@@ -591,9 +591,8 @@ def test_reader_workers_keep_calling_person_identity_and_confirmed_policy(world,
         observed.append((users.current(), reader.settings_block()))
         return original(*args, **kwargs)
     monkeypatch.setattr(reader, 'ask', capture)
-    with users.use('synthetic-review'):
-        pid = add('Accounts Clerk')
-        result = reader.review_pending(conn, config, llm=make_llm(FakeGateway()), limit=10)
+    pid = add('Accounts Clerk')
+    result = reader.review_pending(conn, config, llm=make_llm(FakeGateway()), limit=10)
     assert result['reviewed'] == 1
     assert conn.execute('SELECT verdict FROM ad_reviews WHERE posting_id=?', (pid,)).fetchone()[0] == 'show'
     assert len(observed) == 1 and observed[0][0] == 'synthetic-review'

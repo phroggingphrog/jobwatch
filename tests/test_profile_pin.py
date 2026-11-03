@@ -34,14 +34,12 @@ def test_pin_cannot_redirect_approved_person_readers(tmp_path, monkeypatch):
 
 def test_pin_applies_to_a_non_default_person(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
     frozen = _profile(tmp_path / "frozen", 20)
-    with users.use("friend"):
-        own = paths.profile_dir()
-        assert own == tmp_path / "users" / "friend" / "profile"
-        with paths.pin_profile_dir(frozen):
-            assert paths.profile_dir() == frozen
-        assert paths.profile_dir() == own
+    own = paths.profile_dir()
+    assert own == tmp_path / "users" / "friend" / "profile"
+    with paths.pin_profile_dir(frozen):
+        assert paths.profile_dir() == frozen
+    assert paths.profile_dir() == own
 
 
 def test_pinned_folder_is_read_only_to_code(tmp_path):

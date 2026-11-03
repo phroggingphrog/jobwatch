@@ -44,9 +44,8 @@ def test_digest_races_payload_conflicts_and_identity(world):
         rules.propose(config, kind='location', value='Perth', request_id='a', actor='person')
     with pytest.raises(rules.RuleError, match='person_required'):
         rules.confirm(config, a['id'], rule_digest=a['digest'], actor='model')
-    with users.use('other-person'):
-        with pytest.raises(rules.RuleError, match='not_found'):
-            rules.confirm(config, a['id'], rule_digest=a['digest'], actor='person')
+    with pytest.raises(rules.RuleError, match='not_found'):
+        rules.confirm(config, a['id'], rule_digest=a['digest'], actor='person')
     rules.confirm(config, a['id'], rule_digest=a['digest'], actor='person')
     with pytest.raises(rules.RuleError, match='profile_changed'):
         rules.confirm(config, b['id'], rule_digest=b['digest'], actor='person')

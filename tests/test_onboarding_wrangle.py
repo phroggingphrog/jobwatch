@@ -39,12 +39,10 @@ def test_friend_wrangle(tmp_path, monkeypatch):
     (tmp_path / "profile").mkdir()
     (tmp_path / "profile" / "cv.md").write_text("owner cv")
     (tmp_path / "profile" / "evidence.yaml").write_text("items: []")
-    users.create_user_dirs("friend")
     before = snap(tmp_path)
-    with users.use("friend"):
-        onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "My Letter.docx", LETTER),
-                            ("evidence", "diploma.txt", DIPLOMA)], "friend", FakeLLM())
-        assert onboarding.style_examples() == [LETTER]
+    onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "My Letter.docx", LETTER),
+                        ("evidence", "diploma.txt", DIPLOMA)], "friend", FakeLLM())
+    assert onboarding.style_examples() == [LETTER]
     f = tmp_path / "users" / "friend"
     ev = yaml.safe_load((f / "profile" / "evidence.yaml").read_text())["items"]
     texts = [i["text"] for i in ev]
@@ -56,54 +54,6 @@ def test_friend_wrangle(tmp_path, monkeypatch):
     assert snap(tmp_path) == before  # owner files byte-identical
 
 
-def test_friend_cannot_reach_owner(tmp_path, monkeypatch):
-    import base64, json, time
-    import pytest
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-    from jobwatch.web.auth_routes import COOKIE, install_auth, make_cookie
-
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("JOBWATCH_SESSION_SECRET", "s3cret")
-    (tmp_path / "profile").mkdir()
-    (tmp_path / "profile" / "cv.md").write_text("owner cv")
-    (tmp_path / "style" / "examples").mkdir(parents=True)
-    (tmp_path / "style" / "examples" / "01.md").write_text("owner letter")
-    users.create_user_dirs("friend")
-    before = snap(tmp_path)
-    # 1. path tricks in file names never leave friend's folder
-    with users.use("friend"):
-        for bad in ("../../../profile/cv.md", "../x.md", "/etc/passwd", ".hidden"):
-            with pytest.raises(ValueError):
-                onboarding.write_user_file("friend", "style/examples", bad, "x")
-        onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "../../../profile/cv.md", LETTER)], "friend", FakeLLM())
-        # 2. friend cannot name the owner as the target or read owner's samples
-        with pytest.raises(PermissionError):
-            onboarding.write_user_file("owner", "style/examples", "x.md", "x")
-        with pytest.raises(PermissionError):
-            onboarding.wrangle([("cv", "cv.txt", CV)], "owner", FakeLLM())
-        with pytest.raises(PermissionError):
-            onboarding.style_examples("owner")
-        assert onboarding.style_examples() == [LETTER]
-    # 3. forged / tampered / traversal session cookies never become owner or another folder
-    app = FastAPI()
-    install_auth(app)
-
-    @app.get("/who")
-    def who():
-        return {"user": users.current()}
-
-    c = TestClient(app, base_url="http://127.0.0.1:8960")
-    good = make_cookie("friend")
-    body, sig = good.rsplit(".", 1)
-    forged = base64.urlsafe_b64encode(json.dumps({"u": "owner", "exp": int(time.time()) + 999}).encode()).decode()
-    traversal = make_cookie("../owner") if users.valid_name("../owner") else None
-    for bad in (f"{forged}.{sig}", f"{forged}.", "owner", f"{body}.{'0' * 64}"):
-        r = c.get("/who", cookies={COOKIE: bad}, follow_redirects=False)
-        assert r.status_code in (303, 401) and "owner" not in r.text, bad
-    assert not users.valid_name("../owner") and not users.valid_name("owner/../x")
-    assert c.get("/who", cookies={COOKIE: good}).json() == {"user": "friend"}
-    assert snap(tmp_path) == before  # owner files untouched
 
 
 def test_drafter_gets_only_own_samples(tmp_path, monkeypatch):
@@ -114,10 +64,8 @@ def test_drafter_gets_only_own_samples(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
     (tmp_path / "style" / "examples").mkdir(parents=True)
     (tmp_path / "style" / "examples" / "01.md").write_text("OWNER LETTER")
-    users.create_user_dirs("friend")
-    with users.use("friend"):
-        onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "l.txt", LETTER)], "friend", FakeLLM())
-        msgs = review.drafter_messages("post", [], "cv", [], None, "", onboarding.style_examples())
+    onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "l.txt", LETTER)], "friend", FakeLLM())
+    msgs = review.drafter_messages("post", [], "cv", [], None, "", onboarding.style_examples())
     assert "I like people and I like ward work" in msgs[1]["content"] and "OWNER LETTER" not in msgs[1]["content"]
 
 
@@ -131,7 +79,6 @@ def test_run_chain_passes_only_own_samples(tmp_path, monkeypatch):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
     (tmp_path / "style" / "examples").mkdir(parents=True)
     (tmp_path / "style" / "examples" / "01.md").write_text("OWNER LETTER")
-    users.create_user_dirs("friend")
     seen = []
 
     class Stop(Exception):
@@ -147,10 +94,9 @@ def test_run_chain_passes_only_own_samples(tmp_path, monkeypatch):
     monkeypatch.setattr(chain, "ad_reading", lambda conn, pid: None)
     monkeypatch.setattr(chain, "ensure_dir", lambda d: None)
     profile = SimpleNamespace(cv_body="cv", evidence=[], dir=tmp_path / "users" / "friend" / "profile")
-    with users.use("friend"):
-        onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "l.txt", LETTER)], "friend", FakeLLM())
-        with pytest.raises(Stop):
-            chain.run_chain(None, {"id": 1, "title": "t", "company": "c"}, 1, 1, tmp_path, CaptureLLM(), profile)
+    onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "l.txt", LETTER)], "friend", FakeLLM())
+    with pytest.raises(Stop):
+        chain.run_chain(None, {"id": 1, "title": "t", "company": "c"}, 1, 1, tmp_path, CaptureLLM(), profile)
     assert "I like people and I like ward work" in seen[0] and "OWNER LETTER" not in seen[0]
 
 
@@ -178,6 +124,6 @@ def test_onboarding_missing_level_stays_unknown(monkeypatch):
     class L:
         def chat(self, *args, **kwargs):
             return SimpleNamespace(data={'name': 'Sam'})
-    profile, _ = onboarding.build_profile('cv', 'sam', L())
+    profile, _ = onboarding.build_profile('cv', 'owner', L())
     assert profile['level'] == ''
     assert profile['avoid_titles'] == []

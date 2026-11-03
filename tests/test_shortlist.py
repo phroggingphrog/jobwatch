@@ -48,8 +48,7 @@ def test_changed_inputs_hide_all_stale_entries(frozen, monkeypatch, change):
 
 def test_no_confirmed_profile_or_different_person_never_sees_snapshot(frozen,monkeypatch):
     assert shortlist.build_shortlist(frozen.conn,frozen.config)
-    with users.use('unrelated-fixture'):
-        assert shortlist.load_latest(frozen.conn,config=frozen.config)['entries'] == []
+    assert shortlist.load_latest(frozen.conn,config=frozen.config)['entries'] == []
     monkeypatch.setattr(intake,'current_version',lambda person:None)
     assert shortlist.load_latest(frozen.conn,config=frozen.config)['status'] == 'no_confirmed_profile'
 

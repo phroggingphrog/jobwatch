@@ -1457,9 +1457,7 @@ def test_rights_policy_stays_with_the_current_person_in_scanner_batteries(monkey
         for person, citizen in (('synthetic-citizen', True), ('synthetic-temporary', False))}
     monkeypatch.setattr('jobwatch.candidate.policy.policy_for', lambda person, **kw: profiles[person])
     text = 'Applicants must be Australian citizens only.'
-    with users.use('synthetic-citizen'):
-        accepted = run(text)
-    with users.use('synthetic-temporary'):
-        declined = run(text)
+    accepted = run(text)
+    declined = run(text)
     assert accepted['verdict'] == 'show'
     assert (declined['verdict'], declined['hide_reason']) == ('hide', 'work_rights_incompatible')

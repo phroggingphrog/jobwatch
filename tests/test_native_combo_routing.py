@@ -74,8 +74,7 @@ def test_combo_prompt_changes_job_identity_but_not_current_digest(world, monkeyp
     assert rotated[0]['run_key'] != changed[0]['run_key']
     assert cd.current_digest(conn, **args).identity == ready.identity
     assert len(calls) == 2
-    with users.use('synthetic-other'):
-        assert mc.native_assessment_route(base) == {'model': base, 'prompt_hash': None}
+    assert mc.native_assessment_route(base) == {'model': base, 'prompt_hash': None}
 
 
 def test_evaluation_version_changes_job_identity_but_reuses_candidate_digest(world, monkeypatch):

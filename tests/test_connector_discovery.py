@@ -59,14 +59,14 @@ def transport(monkeypatch):
     monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setattr(agentic, 'discovery_ops', module, raising=False)
     monkeypatch.setattr(config_module, 'load_config', config)
-    a = TestClient(connector_http.create_app(token=TOKEN, person='fixture-a'))
+    a = TestClient(connector_http.create_app(token=TOKEN, person='owner'))
     b = TestClient(connector_http.create_app(token=TOKEN, person='fixture-b'))
     return a, b, calls, module
 
 
 def test_discovery_status_and_start_use_authenticated_person_and_person_config(transport):
     a, b, calls, _ = transport
-    for client, person in ((a, 'fixture-a'), (b, 'fixture-b')):
+    for client, person in ((a, 'owner'), (b, 'fixture-b')):
         status = client.get(P + '/status', headers=H)
         assert status.status_code == 200
         assert status.json()['incidents'] == [{'incident_id': person + '-incident'}]
@@ -85,7 +85,7 @@ def test_retry_forwards_only_the_selected_incident_and_context(transport):
             'expected_context': 'a' * 64}
     response = a.post(P + '/retry', headers=H, json=body)
     assert response.status_code == 202, response.text
-    assert calls == [('start', 'fixture-a', 'fixture-a', {'configured_person': 'fixture-a'}, 'retry-1',
+    assert calls == [('start', 'owner', 'owner', {'configured_person': 'owner'}, 'retry-1',
                       {'incident_id': 'paused-one', 'posting_id': 42, 'expected_context': 'a' * 64})]
 
 

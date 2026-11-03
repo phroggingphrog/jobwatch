@@ -15,6 +15,5 @@ def test_revision_changes_run_key_and_is_isolated(world):
     assert before!=after
     assert revisions.current(1)['instructions']=='Use shorter paragraphs.'
     assert bundle.sources==evidence
-    with users.use('other-person'):
-        assert revisions.current(1) is None
+    assert revisions.current(1) is None
     assert snapshot_inventory(conn,config,posting_ids=[1],limit=1)[0]['run_key']==after

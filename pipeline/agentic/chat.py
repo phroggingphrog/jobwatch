@@ -310,7 +310,7 @@ class _PrivateBoundary(AgentMiddleware):
         if not self.execution and request.tool_call['name'] in (*GATED, 'profile_confirm'):
             # No Jobwatch dispatch scope (LangGraph server path): the exact-binding approvals are not set up, never run.
             raise RuntimeErrorSafe('approval_required_via_jobwatch_client')
-        with users.use(self.person), invocation.use(self.execution):
+        with invocation.use(self.execution):
             if self.execution:
                 self.execution.check()
                 self.execution.event('tool_started', tool=request.tool_call['name'])
@@ -324,7 +324,7 @@ class _PrivateBoundary(AgentMiddleware):
         if not self.execution and request.tool_call['name'] in (*GATED, 'profile_confirm'):
             # No Jobwatch dispatch scope (LangGraph server path): the exact-binding approvals are not set up, never run.
             raise RuntimeErrorSafe('approval_required_via_jobwatch_client')
-        with users.use(self.person), invocation.use(self.execution):
+        with invocation.use(self.execution):
             if self.execution:
                 self.execution.check()
                 self.execution.event('tool_started', tool=request.tool_call['name'])
@@ -931,7 +931,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
     No arbitrary graph config, callback, checkpoint id, path or namespace is accepted.
     Serialize all turns for one person with an OS file lock (including across processes).
     """
-    if not users.valid_name(person) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', thread_id or ''):
+    if not bool(person) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', thread_id or ''):
         raise RuntimeErrorSafe('invalid_request')
     if (message is None and decisions is None) or (message is not None and
             (type(message) is not str or (not message.strip() and not upload_ids and not attachment_receipts) or len(message) > 16000)):
@@ -960,9 +960,8 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
         import uuid
         from jobwatch.config import load_config
         from pipeline.agentic.service import _config
-        with users.use(person):
-            config = config if config is not None else load_config()
-            settings = _config(config)
+        config = config if config is not None else load_config()
+        settings = _config(config)
         execution = invocation.Execution(uuid.uuid4().hex,
             seconds=min(settings['job_seconds'], settings['batch_seconds']),
             token_ceiling=settings['job_token_ceiling'])
@@ -971,7 +970,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
         nonlocal decisions
         import fcntl
         from jobwatch.config import load_config
-        with users.use(person), invocation.use(execution), tracing_context(enabled=False):
+        with invocation.use(execution), tracing_context(enabled=False):
             root = ensure_dir(users.user_dir() / 'career-chat')
             with (root / 'dispatch.lock').open('a') as lockfile:
                 os.chmod(root / 'dispatch.lock', 0o600)

@@ -112,16 +112,14 @@ def test_second_person_gets_their_own_profile_and_the_owners_stays_untouched(tmp
                      (owner_profile / 'Default' / 'Cookies').read_bytes())
 
         # a second person signs in and opens a session for the same application
-        with users.use('friend'):
-            users.create_user_dirs('friend')
-            assert manager.open('shared-app', local_site)['state'] == 'ready'
-            friend_profile = (tmp_path / 'users' / 'friend' / 'browser' / 'sessions' / digest / 'profile')
-            assert manager.sessions[('friend', 'shared-app')].profile == friend_profile
-            assert manager.status('shared-app')['state'] == 'ready'
-            # work done in the browser thread runs as the person who asked for it (their DB and folders)
-            assert manager.with_page('shared-app', lambda page: users.current()) == 'friend'
-            friend_cookies = friend_profile / 'Default' / 'Cookies'
-            assert b'owner seek login' not in (friend_cookies.read_bytes() if friend_cookies.exists() else b'')
+        assert manager.open('shared-app', local_site)['state'] == 'ready'
+        friend_profile = (tmp_path / 'users' / 'friend' / 'browser' / 'sessions' / digest / 'profile')
+        assert manager.sessions[('friend', 'shared-app')].profile == friend_profile
+        assert manager.status('shared-app')['state'] == 'ready'
+        # work done in the browser thread runs as the person who asked for it (their DB and folders)
+        assert manager.with_page('shared-app', lambda page: users.current()) == 'friend'
+        friend_cookies = friend_profile / 'Default' / 'Cookies'
+        assert b'owner seek login' not in (friend_cookies.read_bytes() if friend_cookies.exists() else b'')
 
         # both browsers are open at once; the owner's session works and his profile is unchanged
         assert manager.status('shared-app')['state'] == 'ready'
@@ -512,10 +510,8 @@ def test_open_applications_lists_only_the_current_persons_live_browsers(tmp_path
     manager = BrowserSessionManager(allow_loopback=True)
     try:
         manager.open('owner-app', local_site)
-        with users.use('friend'):
-            users.create_user_dirs('friend')
-            manager.open('friend-app', local_site)
-            assert manager.open_applications() == ['friend-app']
+        manager.open('friend-app', local_site)
+        assert manager.open_applications() == ['friend-app']
         assert manager.open_applications() == ['owner-app']
     finally:
         manager.close_all()
