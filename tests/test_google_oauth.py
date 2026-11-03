@@ -8,6 +8,11 @@ from jobwatch.google import oauth as g
 from jobwatch import users
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.fixture
 def env(monkeypatch, tmp_path):
     monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))

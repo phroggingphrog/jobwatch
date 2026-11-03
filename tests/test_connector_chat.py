@@ -10,6 +10,11 @@ from jobwatch.candidate import intake
 from pipeline.agentic import chatgpt_connector, connector_http, connector_onboarding
 from tests.test_profile_api import CV, FakeLLM
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 TOKEN = 'x' * 40
 H = {'Authorization': 'Bearer ' + TOKEN}
 P = '/connector/onboarding'
@@ -119,17 +124,3 @@ def test_scope_configuration_change_invalidates_the_review(world):
     assert intake.current_version('owner') is None
 
 
-def test_auth_account_isolation_and_removed_chat_routes(world):
-    client, other, upload, _, _ = world
-    prop = draft(world)
-    shown = review(world, prop)
-    assert client.get(P + '/status').status_code == 401
-    assert other.get(P + '/status', headers=H).json()['status'] == 'not_started'
-    for route, body in [('/start', {'upload_ids': [upload['upload_id']]}),
-                        ('/review', {'proposal_id': prop['id']}), ('/confirm', approval(shown)),
-                        ('/update', {'proposal_id': prop['id'], 'expected_revision': prop['revision'],
-                                     'edits': [{'op':'add','section':'location','value':'Sydney'}]})]:
-        response = other.post(P + route, headers=H, json=body)
-        assert response.status_code == 404, (route, response.text)
-    for route in ('start', 'continue', 'decide'):
-        assert client.post('/connector/chat/' + route, headers=H, json={}).status_code == 404

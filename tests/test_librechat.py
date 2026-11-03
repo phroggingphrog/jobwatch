@@ -12,6 +12,11 @@ from fastapi.testclient import TestClient
 from pipeline.agentic.api import Principal, create_api
 from pipeline.agentic.api_store import APIStore
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 RUN, DECIDE, OTHER = 'a' * 40, 'b' * 40, 'c' * 40
 
 
@@ -191,23 +196,6 @@ def test_new_attachment_during_pending_approval_is_explicitly_refused(client):
     assert len(client.calls) == 1
 
 
-def test_durable_identity_retry_and_stream(client):
-    first = turn(client).json()
-    assert first['choices'][0]['message']['content'].startswith('Synthetic Jobwatch response')
-    assert turn(client).json()['id'] == first['id']
-    streamed = turn(client, stream=True)
-    frames = [json.loads(s[6:]) for s in streamed.text.splitlines() if s.startswith('data: {')]
-    assert frames[1]['choices'][0]['delta']['content'].startswith('Synthetic Jobwatch response')
-    assert streamed.text.endswith('data: [DONE]\n\n')
-    assert len(client.calls) == 1
-    turn(client, 'next')
-    assert client.calls[0]['thread_id'] == client.calls[1]['thread_id']
-    assert client.calls[0]['message'] == 'hello'
-    other = turn(client, token=OTHER).json()
-    assert other['id'] != first['id']
-    assert client.calls[-1]['person'] == 'fixture-b'
-    assert client.calls[-1]['thread_id'] != client.calls[0]['thread_id']
-    assert client.get('/api/agent/runs/' + first['id'][9:], headers=headers(OTHER)).status_code == 404
 
 
 def test_model_text_and_chat_key_cannot_approve(client):

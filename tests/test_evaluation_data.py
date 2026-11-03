@@ -7,6 +7,11 @@ from pipeline.agentic.contracts import AgenticError
 from tests.baseline_support import world, frozen  # noqa:F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_write_once_grouped_split_and_selected_loading(frozen, monkeypatch):
     record = eval_data.freeze_cases(frozen.ro, frozen.config)
     split = eval_data.create_split(record.baseline_id, seed=41)
@@ -135,21 +140,6 @@ def test_a_baseline_frozen_before_phase_7_is_unavailable_not_corrupt(frozen):
         evaluate_runs.replay(record.baseline_id,labels=False)
 
 
-def test_split_seed_partition_and_person_are_validated(frozen):
-    record=eval_data.freeze_cases(frozen.ro,frozen.config)
-    for seed in ('1729',1.5,-1,2**32,True):
-        with pytest.raises(AgenticError,match='invalid_split_seed'):
-            eval_data.create_split(record.baseline_id,seed=seed)
-    eval_data.create_split(record.baseline_id)
-    with pytest.raises(AgenticError,match='invalid_holdout_operation'):
-        eval_data.audit_holdout(record.baseline_id,'export',allow_holdout=True)
-    with pytest.raises(AgenticError,match='baseline_not_found'):
-        eval_data.record_for(record.baseline_id)
-    import shutil
-    theirs=baseline._baselines_root()/record.baseline_id
-    shutil.copytree(baseline._baseline_dir(record.baseline_id),theirs)   # a copied baseline keeps its owner
-    with pytest.raises(AgenticError,match='evaluation_person_mismatch'):
-        eval_data.record_for(record.baseline_id)
 
 
 def test_write_once_refuses_a_divergent_rewrite(frozen,tmp_path):

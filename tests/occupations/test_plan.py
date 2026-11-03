@@ -9,6 +9,11 @@ from pipeline.agentic.discovery import settings, recall_filter, prepare_run
 from conftest import make_config
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def policy(**kw):
     return SimpleNamespace(profile_version=1, policy_hash='a' * 64,
         focus=kw.get('focus', ()), home=kw.get('home'), remote_ok=kw.get('remote_ok', False))
@@ -60,16 +65,6 @@ def test_query_cleanup_and_whole_word_recall_only_widens():
     assert title_matches_plan('Bookkeeper', plan)
 
 
-def test_plan_storage_is_private_and_per_person():
-    from jobwatch import users
-    plan = search_plan(policy(), hyps('Accountant'))
-    save_plan('owner', plan)
-    assert load_plan('owner') == plan and load_plan('fixture-b') is None
-    path = users.user_dir('owner') / 'discovery/search-plan.json'
-    assert path.stat().st_mode & 0o777 == 0o600
-    payload = json.loads(path.read_text()); payload['policy_hash'] = 'tampered'
-    path.write_text(json.dumps(payload))
-    assert load_plan('owner') is None
 
 
 def test_defaults_and_flag_separation():

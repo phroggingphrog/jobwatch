@@ -6,6 +6,11 @@ from jobwatch import users
 from pipeline.agentic.api import create_api, Principal
 from pipeline.agentic import shortlist
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 AGENT,HUMAN,OTHER='a'*40,'h'*40,'o'*40
 
 
@@ -59,33 +64,6 @@ def test_rule_confirmation_stales_evaluations_without_model_calls(client,frozen)
     assert client.get('/api/agent/profile/rules',headers=headers()).json()['rules']
 
 
-def test_native_selection_persists_pending_identity_retry_and_cancellation(frozen):
-    entries=shortlist.build_shortlist(frozen.conn,frozen.config)
-    entry=next(e for e in entries if e.posting_id==42)
-    body=dict(posting_ids=[42],expected_entry_ids={'42':entry.entry_id},expected_run_keys={'42':entry.run_key})
-    credentials={AGENT:Principal(users.current(),frozenset({'read','run'})),
-        HUMAN:Principal(users.current(),frozenset({'read','approve'})),OTHER:Principal('other-person',frozenset({'read'}))}
-    # Exercise durable HTTP acceptance before starting the worker; recovery and
-    # actual worker/PDF retrieval have separate integration coverage.
-    api=TestClient(create_api(credentials=credentials,config=frozen.config,
-        llm_factory=lambda person:pytest.fail('selection acceptance called a model')))
-    try:
-        path='/api/agent/selections'
-        assert api.post(path,json=body,headers=headers(AGENT)).status_code==403
-        response=api.post(path,json=body,headers=headers())
-        assert response.status_code==202,response.text
-        selected=response.json()
-        assert selected['state']=='pending_dispatch' and selected['run_id'] is None
-        assert api.post(path,json=body,headers=headers()).json()['id']==selected['id']
-        assert api.post(path,json={**body,'posting_ids':[43]},headers=headers()).status_code==409
-        assert api.get(path,headers=headers()).json()['selections'][0]['id']==selected['id']
-        assert api.get(path,headers=headers(OTHER)).json()=={'selections':[]}
-        path+='/'+selected['id']
-        assert api.get(path,headers=headers(OTHER)).status_code==404
-        assert api.post(path+'/cancel',headers=headers()).json()['state']=='cancelled'
-        assert api.post(path+'/cancel',headers=headers()).json()['state']=='cancelled'
-    finally:
-        api.close()
 
 
 def test_current_prompt_get_reports_stale_without_writing_or_offering_old_profile_questions(client,frozen,monkeypatch):

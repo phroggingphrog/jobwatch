@@ -10,6 +10,12 @@ import pytest
 from tests.test_discovery_operations import world  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "owner-jobwatch.db"))
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_native_settings_persist_unlimited_without_accepting_client_identity(world):
     config, profile = world
     token_a, token_b = 'a'*40, 'b'*40

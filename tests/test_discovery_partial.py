@@ -1,3 +1,4 @@
+import pytest
 import time
 
 from fastapi.testclient import TestClient
@@ -8,6 +9,11 @@ from pipeline.agentic.api import Principal, create_api
 from pipeline.agentic.api_store import APIStore
 from pipeline.agentic.chat import job_connection
 from tests.test_discovery_operations import world  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 
 def test_outer_deadline_retains_returned_discovery_summary_and_usage(world, monkeypatch):

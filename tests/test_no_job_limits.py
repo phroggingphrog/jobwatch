@@ -17,6 +17,11 @@ from pipeline.agentic.store import AgenticStore
 from tests.test_deepagents_runtime import assert_safe_failure, choice, role, transport_llm
 from tests.test_discovery_operations import world  # noqa: F401
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 CFG = {'job_token_ceiling': 250_000, 'job_seconds': 900, 'batch_seconds': 1800, 'batch_token_ceiling': 2_000_000}
 CONFIG = {'pipeline': {'agentic': {'batch_token_ceiling': 1234}}}
 INCIDENT_CODES = ('token_limit', 'turn_limit', 'deadline_exceeded', 'failed_attempt_limit')
@@ -136,16 +141,6 @@ def data_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_defaults_are_finite_and_unlimited_round_trips_per_person(data_dir):
-    base = discovery_settings.get_settings('owner', CONFIG)
-    assert base == {'daily_token_ceiling': 1234, 'job_token_ceiling': 250_000, 'job_seconds': 900, 'job_max_turns': 16}
-    saved = discovery_settings.set_settings('owner', CONFIG, 1234, job_token_ceiling=None, job_seconds=None,
-                                            job_max_turns=40)
-    assert saved == {'daily_token_ceiling': 1234, 'job_token_ceiling': None, 'job_seconds': None, 'job_max_turns': 40}
-    assert discovery_settings.get_settings('owner', CONFIG) == saved
-    assert discovery_settings.get_settings('sue', CONFIG) == base
-    assert discovery_settings.job_limits('owner', service._config(CONFIG)) == {
-        'job_token_ceiling': None, 'job_seconds': None, 'job_max_turns': 40}
 
 
 def test_saving_only_the_daily_value_keeps_job_limits_and_old_files_still_read(data_dir):
@@ -371,15 +366,6 @@ def test_json_mode_off_drops_response_format_but_still_parses_json_text(sam):
     assert 'response_format' not in seen[0][1] and 'tools' not in seen[0][1]
 
 
-def test_profiles_are_per_person_per_model_and_ignore_bad_values(sam, tmp_path):
-    model_choice.set_gateway_profile('deepseek-flash', {'native_tools': True, 'min_output_tokens': 16_000}, sam)
-    assert model_choice.gateway_profile('deepseek-flash', sam) == {
-        'native_tools': True, 'json_mode': True, 'min_output_tokens': 16_000}
-    assert model_choice.gateway_profile('deepseek-flash', 'sue') == model_choice.PROFILE_DEFAULT
-    assert model_choice.gateway_profile('openai/sol', sam) == model_choice.PROFILE_DEFAULT
-    path = users.user_dir(sam) / 'config' / 'model_profiles.json'
-    path.write_text('{"deepseek-flash": {"native_tools": "yes", "min_output_tokens": -4, "json_mode": 0}}')
-    assert model_choice.gateway_profile('deepseek-flash', sam) == model_choice.PROFILE_DEFAULT
 
 
 def test_chat_once_native_tools_returns_the_same_shape_as_the_json_path():

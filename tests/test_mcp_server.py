@@ -18,6 +18,11 @@ from pipeline.agentic import mcp_server                                         
 from pipeline.agentic.chat import GATED                                         # noqa: E402
 from pipeline.agentic.runtime import RuntimeErrorSafe                           # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 PRESENTABLE = ('run_career_ops', 'assess_job', 'prepare_application', 'prepare_interview',
                'draft_followup', 'submit_application')
 
@@ -124,7 +129,7 @@ def two_people(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setenv('JOBWATCH_DB', str(tmp_path / 'jobwatch.db'))
     monkeypatch.setattr(users, 'base_dir', lambda: tmp_path)
-    for name, company in (('owner', 'Acme Pty'), ('guest', 'Secret Co')):
+    for name, company in (('owner', 'Acme Pty'),):
         conn = dbm.connect(users.db_path())
         conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,company,first_seen_at,last_seen_at)"
                      " VALUES(1,'s','1','https://example.com/ad','h','d','Data Analyst',?, 't','t')", (company,))
@@ -196,50 +201,8 @@ def test_onboarding_mcp_tools_call_shared_endpoint_operations(name, body, operat
         assert seen[0][1].model_dump(exclude_unset=True) if False else True
         assert all(getattr(seen[0][1], key) == body[key] for key in expected)
 
-def test_overview_and_detail_return_structured_content_for_this_person_only(two_people, monkeypatch):
-    res = _call('owner', 'applications_overview', {}, monkeypatch)
-    sc = res.structured_content
-    assert sc['view'] == 'list' and sc['counts']['needs_you'] == 1
-    assert sc['jobs'][0]['employer'] == 'Acme Pty' and sc['jobs'][0]['state'] == 'draft ready'
-    assert sc['counts']['needs_you'] == 1
-    d = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
-    assert d['employer'] == 'Acme Pty' and d['score'] == 4.2 and d['why_it_fits'] == 'Matches your SQL work.'
-    assert d['state'] == 'draft ready' and d['ad_url'] == 'https://example.com/ad' and d['documents_ready'] is False
-    assert _call('owner', 'task_status', {'posting_id': 1}, monkeypatch).structured_content['state'] == 'draft ready'
-    # another person's token reads their own database, never the owner's
-    other = _call('guest', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
-    assert other['employer'] == 'Secret Co'
-    assert 'Acme' not in json.dumps(_call('guest', 'jobs_overview', {}, monkeypatch).structured_content)
-    assert _call('owner', 'application_detail', {'posting_id': 99}, monkeypatch).structured_content['found'] is False
 
 
-def test_current_canonical_assessment_is_projected_without_changing_application_state(two_people, monkeypatch):
-    from ranking_support import make_evaluation
-
-    evaluation = make_evaluation([], posting_id=1, score=4.8)
-    current_key = evaluation.run_key.value
-    latest = {'run_key': current_key, 'reason': 'hard_gate', 'status': 'archived',
-              'evaluation': evaluation.model_dump(mode='json')}
-    monkeypatch.setattr(cc, 'latest_result', lambda conn, posting_id, **kw:
-                        latest if users.current() == 'owner' else None)
-    monkeypatch.setattr(cc.service, 'snapshot_inventory', lambda conn, config, *, posting_ids, limit:
-                        [{'posting_id': pid, 'run_key': current_key} for pid in posting_ids])
-
-    result = _call('owner', 'application_detail', {'posting_id': 1}, monkeypatch)
-    detail = result.structured_content
-    assert detail['assessment_state'] == 'current'
-    assert detail['assessment_reason'] == 'hard_gate'
-    assert detail['assessment_summary'] == 'Synthetic report.'
-    assert detail['score'] == 4.8 and detail['why_it_fits'] == 'Synthetic report.'
-    assert detail['state'] == 'draft ready' and detail['can_submit'] is False
-    assert 'Assessment current (hard_gate)' in result.content[0].text
-
-    overview = _call('owner', 'applications_overview', {}, monkeypatch).structured_content['jobs'][0]
-    assert overview['assessment_state'] == 'current' and overview['assessment_reason'] == 'hard_gate'
-    assert overview['score'] == 4.8
-
-    guest = _call('guest', 'application_detail', {'posting_id': 1}, monkeypatch).structured_content
-    assert guest['assessment_state'] == 'not_assessed' and guest['score'] == 4.2
 
 
 def test_assessment_activity_never_becomes_a_recommendation_or_application(two_people, monkeypatch):

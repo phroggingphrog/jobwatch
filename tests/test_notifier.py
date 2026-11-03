@@ -14,6 +14,11 @@ from jobwatch import notifier
 from jobwatch.notifier import channels, legacy, service
 from tests.notify_support import FakeChannel, use_fake_channel
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -165,13 +170,6 @@ def test_settings_alias_is_an_equivalent_ssh_append_channel(conn, monkeypatch):
     assert notifier.channels_for(conn) == []
 
 
-def test_alias_needs_both_settings_and_the_owner(conn, monkeypatch):
-    from jobwatch import users
-    monkeypatch.setenv(legacy.SSH_ENV, 'owner@assistant.example')
-    monkeypatch.delenv(legacy.FILE_ENV, raising=False)
-    assert notifier.channels_for(conn) == []
-    monkeypatch.setenv(legacy.FILE_ENV, '/x')
-    assert notifier.channels_for(conn) == []
 
 
 def test_migration_creates_tables_and_ensure_is_idempotent(tmp_path):

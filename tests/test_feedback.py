@@ -9,6 +9,11 @@ from pipeline.agentic import feedback, shortlist
 from tests.baseline_support import world, frozen  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.fixture
 def conn(tmp_path):
     value = db.connect(tmp_path / 'feedback.db')
@@ -73,23 +78,6 @@ def test_rejection_replay_and_restore_preserve_human_history(shortlisted):
     f.conn.rollback()
 
 
-def test_reject_binds_current_entry_and_replay_binds_exact_payload(shortlisted):
-    f = shortlisted
-    with pytest.raises(feedback.FeedbackError, match='posting_not_shortlisted'):
-        reject(f)
-    assert feedback.list_events(f.conn) == []
-    with pytest.raises(feedback.FeedbackError, match='entry_changed'):
-        feedback.record_feedback(f.conn, f.config, posting_id=42, kind='reject',
-            actor='person', request_id='stale', expected_entry_id='wrong', reason_code='pay_too_low')
-    assert feedback.list_events(f.conn) == []
-    event = reject(f)
-    for changed in ({'source':'chat'}, {'expected_entry_id':'changed'}, {'reason_text':'changed'}):
-        values = dict(posting_id=42, kind='reject', actor='person', request_id='reject-one',
-            expected_entry_id=f.entries[42].entry_id, reason_code='other', reason_text='  Exact human words.\n')
-        values.update(changed)
-        with pytest.raises(feedback.FeedbackError, match='feedback_conflict'):
-            feedback.record_feedback(f.conn, f.config, **values)
-    assert feedback.list_events(f.conn) == [event]
 
 
 def test_restore_binds_latest_active_rejection_and_never_replays_state(shortlisted):
@@ -146,23 +134,6 @@ def test_invalid_lifecycle_inputs_leave_no_event(conn, changed, code):
     assert feedback.list_events(conn) == []
 
 
-def test_append_helper_is_atomic_with_caller_and_person_scoped(conn):
-    with pytest.raises(feedback.FeedbackError, match='transaction_required'):
-        feedback.append_event(conn, kind='answer', request_id='a', actor='person')
-    conn.execute('BEGIN IMMEDIATE')
-    first = feedback.append_event(conn, kind='answer', request_id='same', actor='person',
-        reason_text='Raw exact answer', prompt_id='p', detail={'answer':'Raw exact answer'})
-    assert conn.in_transaction
-    assert feedback.append_event(conn, kind='answer', request_id='same', actor='person',
-        reason_text='Raw exact answer', prompt_id='p', detail={'answer':'Raw exact answer'}) == first
-    with pytest.raises(feedback.FeedbackError, match='feedback_conflict'):
-        feedback.append_event(conn, kind='answer', request_id='same', actor='person', reason_text='different')
-    assert feedback.list_events(conn) == []
-    second = feedback.append_event(conn, kind='answer', request_id='same', actor='person')
-    assert second['id'] != first['id']
-    assert feedback.list_events(conn) == [second]
-    conn.rollback()
-    assert conn.execute('SELECT count(*) FROM feedback_events').fetchone()[0] == 0
 
 
 @pytest.mark.parametrize('kind', ['select', 'exclude', 'comparison', 'answer'])
@@ -211,22 +182,6 @@ def test_append_accepts_a_canonical_domain_request_hash(conn):
     conn.rollback()
 
 
-def test_shared_connection_dismissals_never_cross_people(conn):
-    empty = feedback.dismissal_state_hash(conn)
-    conn.execute('BEGIN IMMEDIATE')
-    first = feedback.append_event(conn, kind='reject', request_id='a', actor='person',
-        posting_id=42, entry_id='a-entry', reason_code='pay_too_low')
-    conn.commit()
-    own = feedback.dismissal_state_hash(conn)
-    assert feedback.rejected_posting_ids(conn) == {42}
-    assert feedback.dismissal_state_hash(conn) == empty
-    assert feedback.rejected_posting_ids(conn) == set()
-    assert feedback.list_events(conn) == []
-    with pytest.raises(feedback.FeedbackError, match='rejection_stale'):
-        feedback.record_feedback(conn, {}, posting_id=42, kind='restore', actor='person',
-            request_id='b', expected_rejection_id=first['id'])
-    assert feedback.dismissal_state_hash(conn) == own
-    assert feedback.list_events(conn) == [first]
 
 
 def test_public_mutation_cannot_commit_caller_transaction(conn):

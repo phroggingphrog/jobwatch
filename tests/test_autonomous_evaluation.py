@@ -11,6 +11,11 @@ from pipeline.agentic.runtime import RuntimeErrorSafe
 from test_agentic_evaluate import build_case, budget
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def transport(choices, *, include_usage=True, reasoning=False):
     pending = iter(choices)
     seen = []

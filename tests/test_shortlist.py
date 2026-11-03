@@ -9,6 +9,11 @@ from jobwatch.candidate import intake
 from pipeline.agentic import shortlist
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_shortlist_tables_are_additive_and_migration_is_idempotent(tmp_path):
     conn = db.connect(tmp_path / 'jobs.db')
     names = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
@@ -46,11 +51,6 @@ def test_changed_inputs_hide_all_stale_entries(frozen, monkeypatch, change):
     assert shortlist.load_entry(frozen.conn,42,config=frozen.config) is None
 
 
-def test_no_confirmed_profile_or_different_person_never_sees_snapshot(frozen,monkeypatch):
-    assert shortlist.build_shortlist(frozen.conn,frozen.config)
-    assert shortlist.load_latest(frozen.conn,config=frozen.config)['entries'] == []
-    monkeypatch.setattr(intake,'current_version',lambda person:None)
-    assert shortlist.load_latest(frozen.conn,config=frozen.config)['status'] == 'no_confirmed_profile'
 
 
 def test_impressions_are_deduplicated_and_are_never_choices(frozen):

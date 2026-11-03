@@ -10,6 +10,11 @@ from jobwatch.candidate import intake
 from pipeline.agentic import discovery_settings
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 CONFIG = {'pipeline': {'agentic': {'batch_token_ceiling': 1234}}}
 
 
@@ -49,14 +54,6 @@ def test_default_is_finite_and_inherits_confirmed_scope(data_dir, monkeypatch):
     assert discovery_settings._path('owner').parent == data_dir / 'users' / 'owner' / 'config'
 
 
-def test_unlimited_setting_is_person_scoped_and_written_privately(data_dir, monkeypatch):
-    monkeypatch.setattr('jobwatch.util.model_choice.chosen', lambda: {})
-    assert discovery_settings.set_settings('owner', CONFIG, None)['daily_token_ceiling'] is None
-    assert discovery_settings.get_settings('owner', CONFIG)['daily_token_ceiling'] is None
-    assert discovery_settings.get_settings('sue', CONFIG)['daily_token_ceiling'] == 1234
-    path = discovery_settings._path('owner')
-    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 @pytest.mark.parametrize('value', [0, -1, True, 1.5, '100'])

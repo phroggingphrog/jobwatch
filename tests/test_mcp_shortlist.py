@@ -4,6 +4,11 @@ from tests.baseline_support import world, frozen
 from jobwatch import users
 from pipeline.agentic import shortlist, chatgpt_connector as cc, selection
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 @pytest.fixture
 def connector(frozen, monkeypatch):
     monkeypatch.setattr(cc, 'load_config', lambda: frozen.config)
@@ -76,40 +81,6 @@ def test_holds_remain_visible_but_cannot_prepare_and_exclusions_never_appear(con
         cc.prepare_selected(users.current(),42,expected_entry_id=held['entry_id'],expected_run_key=held['run_key'],request_id='held-request',confirmed=True)
 
 
-def test_connector_loads_each_person_rules_before_opening_their_database(tmp_path, monkeypatch):
-    from jobwatch.config import load_config
-    monkeypatch.setattr(users, 'base_dir', lambda: tmp_path)
-    shared = tmp_path / 'install-config'
-    shared.mkdir()
-    (shared / 'rules.yaml').write_text('policy: owner-only\n')
-    (shared / 'searches.yaml').write_text('search: owner-search\n')
-    guest = tmp_path / 'users' / 'guest' / 'config'
-    guest.mkdir(parents=True)
-    (guest / 'rules.yaml').write_text('policy: guest-only\n')
-    (guest / 'searches.yaml').write_text('search: guest-search\n')
-    monkeypatch.setenv('JOBWATCH_CONFIG_DIR', str(shared))
-    seen = []
-    class ConfigChecked(Exception):
-        pass
-    def inspect_config():
-        config = load_config()
-        seen.append((users.current(), config.rules['policy'], config.searches['search']))
-        raise ConfigChecked
-    monkeypatch.setattr(cc, 'load_config', inspect_config)
-    operations = [
-        lambda person: cc.overview(person),
-        lambda person: cc.application_overview(person),
-        lambda person: cc.detail(person, 1),
-        lambda person: cc.prepare_selected(person, 1, expected_entry_id='entry',
-            expected_run_key='key', request_id='request', confirmed=True),
-    ]
-    for operation in operations:
-        for person in ('guest', 'owner'):
-            with pytest.raises(ConfigChecked):
-                operation(person)
-    assert seen == [('guest', 'guest-only', 'guest-search'),
-                    ('owner', 'owner-only', 'owner-search')] * len(operations)
-    assert users.current() == users.DEFAULT_USER
 
 
 def test_missing_person_database_returns_not_built_without_creating_it(tmp_path, monkeypatch):

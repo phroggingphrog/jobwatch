@@ -14,6 +14,11 @@ from test_agentic_evaluate import build_case, budget
 from test_autonomous_evaluation import native_choices, transport
 from test_agentic_service import world
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 COMBO = 'jobwatch-assessment-deepseek'
 
 

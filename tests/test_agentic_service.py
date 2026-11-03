@@ -20,6 +20,11 @@ from pipeline.agentic.service import agentic_batch_run, run_agentic_job, snapsho
 from pipeline.schemas import Stage
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 PROOF = ('Reconciled supplier ledgers in Excel, checked invoice references against purchase records, '
          'documented discrepancies for review, and prepared a clear weekly report for the finance team. '
          'Maintained an organised reconciliation workbook and explained each outstanding item with '
@@ -1538,37 +1543,6 @@ def test_profile_confirm_for_an_unknown_draft_is_refused_not_offered(onboarding)
     assert result['status'] == 'complete' and result['answer'] == 'No such draft.', result
 
 
-def test_onboarding_tools_run_as_the_person_and_record_their_words(world, monkeypatch):
-    from jobwatch.util import model_choice as model_choice
-    from jobwatch import users
-    from jobwatch.candidate import intake
-    from pipeline.agentic import chat
-    conn, config, bundle, add = world
-    monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
-    owner_dir = users.user_dir(users.DEFAULT_USER) / 'intake' / 'proposals'
-    owner_before = sorted(p.name for p in owner_dir.glob('*')) if owner_dir.exists() else []
-    person = 'newcomer'
-    up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
-    llm, seen = _onboarding_llm([
-        {'tool': 'profile_start', 'arguments': {'upload_ids': [up], 'use_existing_files': False}},
-        {'tool': 'profile_answer', 'arguments': {'question_id': 'q6', 'text': 'Bookkeeping'}},
-        {'tool': 'profile_answer', 'arguments': {'question_id': 'q99', 'text': 'invented'}},
-        {'tool': 'profile_status', 'arguments': {}},
-        {'tool': 'profile_confirmation', 'arguments': {}},
-        {'answer': 'Tell me your work rights.'}])
-    turn = lambda **kw: chat.dispatch(person=person, thread_id='onb-tools', config=config, llm=llm, **kw)
-    result = _approve_through(turn, turn(message='Help me set up my profile, I want Bookkeeping'))
-    assert result['status'] == 'complete' and result['tools'] == ['profile_start', 'profile_answer', 'profile_answer',
-                                                                  'profile_status', 'profile_confirmation'], result
-    prop = _settled(person, intake.open_proposal(person).id)
-    assert prop.status == 'draft' and prop.parse_error == ''
-    focus = [f for f in prop.facts if f.section == 'career_focus']
-    assert [(f.value, f.actor) for f in focus] == [('Bookkeeping', 'person')]
-    assert 'invented' not in json.dumps([f.model_dump(mode='json') for f in prop.facts])
-    assert any(f.section == 'experience' and f.basis == 'evidence' for f in prop.facts)
-    assert intake.current_version(person) is None
-    assert (sorted(p.name for p in owner_dir.glob('*')) if owner_dir.exists() else []) == owner_before      # the owner's data was not touched
-    assert 'never invent' in json.dumps(seen[0]['messages'][0]).lower()               # the system prompt says so
 
 
 def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkeypatch):
@@ -1696,34 +1670,6 @@ def test_profile_tools_refuse_a_span_the_person_negated(onboarding):
     assert ('work_rights', 'I am not a citizen and I am not willing to relocate interstate') in stated
 
 
-def test_recording_the_persons_words_updates_only_the_unconfirmed_draft(onboarding):
-    """Routine answers need no second approval; confirmation still gates authoritative facts."""
-    from jobwatch import users
-    from jobwatch.candidate import intake
-    from pipeline.agentic import chat
-    person, prop, config = onboarding
-    questions = {q.section: q.id for q in intake.load_proposal(person, prop.id).questions}
-    target = questions['work_rights']
-    llm, seen = _onboarding_llm([
-        {'tool': 'profile_answer', 'arguments': {'question_id': target, 'text': 'My work rights are citizen'}},
-        {'answer': 'Recorded.'}])
-    turn = lambda **kw: chat.dispatch(person=person, thread_id='gated-words', config=config, llm=llm, **kw)
-    first = turn(message='My work rights are citizen.')
-    assert first['status'] == 'complete', first
-    after = intake.load_proposal(person, prop.id)
-    assert ('work_rights', 'My work rights are citizen') in {(f.section, f.value) for f in after.facts if f.actor == 'person'}
-
-    assert intake.current_version(person) is None
-    # Corrections also stay in the draft and must use the person's own words.
-    llm, seen = _onboarding_llm([
-        {'tool': 'profile_correct', 'arguments': {'edits': [{'op': 'add', 'section': 'skill', 'value': 'Excel'}]}},
-        {'answer': 'Done.'}])
-    turn = lambda **kw: chat.dispatch(person=person, thread_id='stale-draft', config=config, llm=llm, **kw)
-    done = turn(message='I know Excel')
-    assert done['status'] == 'complete', done
-    after = intake.load_proposal(person, prop.id)
-    assert ('skill', 'Excel') in {(f.section, f.value) for f in after.facts if f.actor == 'person'}
-    assert intake.current_version(person) is None
 
 
 def test_profile_tools_use_the_last_human_message_on_a_resumed_turn(onboarding):

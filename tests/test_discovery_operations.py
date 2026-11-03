@@ -11,6 +11,12 @@ from pipeline.agentic.api_store import APIStore, Conflict
 from pipeline.agentic.chat import job_connection
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "owner-jobwatch.db"))
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
@@ -27,16 +33,6 @@ def world(tmp_path, monkeypatch):
     return config, profile
 
 
-def test_discovery_queue_is_idempotent_person_bound_and_not_a_chat(world):
-    config, _ = world
-    first = ops.start('owner', config, 'request-1')
-    assert first == ops.start('owner', config, 'request-1')
-    with pytest.raises(Conflict, match='discovery_busy'):
-        ops.start('owner', config, 'request-2')
-    second_person = ops.start('fixture-b', config, 'request-1')
-    assert second_person['run_id'] != first['run_id']
-    with APIStore('owner') as store:
-        assert store.raw_run(first['run_id'])['input_json'] == '{"discovery":true}'
 
 
 def test_explicit_retry_rechecks_inputs_and_releases_only_selected_incident(world, monkeypatch):

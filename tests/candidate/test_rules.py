@@ -8,6 +8,11 @@ from jobwatch.candidate.policy import policy_for
 from tests.baseline_support import world
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_add_withdraw_retry_and_immutable_history(world):
     _, config, _, _ = world
     person = users.current()

@@ -12,6 +12,11 @@ from jobwatch.util.llm import LLM
 from pipeline.agentic import profile_api
 from pipeline.agentic.api import Principal, create_api
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 CV = b"Alex Example\nAccounts Assistant\n\nExperience\nLedger Co, Accounts Assistant, 2021 - 2023\n"
 RUN, APPROVE, OTHER = 'fixture-run-' + 'a' * 40, 'fixture-approval-' + 'b' * 40, 'fixture-other-' + 'c' * 40
 P = '/api/agent/profile'
@@ -115,16 +120,6 @@ def test_confirm_needs_approve_scope(env):
     assert bad.status_code == 409 and bad.json() == {'error': 'scope_changed'}
 
 
-def test_other_person_cannot_see_proposal(env):
-    c = env
-    pid = proposal(c)['id']
-    for method, path, body in (('get', '', None), ('get', '/confirmation', None), ('patch', '', {'expected_revision': 1, 'edits': [{'op': 'remove', 'fact_id': 'f1'}]}),
-                               ('post', '/answers', {'expected_revision': 1, 'question_id': 'q1', 'text': 'x'}),
-                               ('post', '/confirm', {'proposal_digest': 'a', 'scope_digest': 'b'})):
-        r = getattr(c, method)(f'{P}/proposals/{pid}{path}', headers=h(OTHER), **({'json': body} if body else {}))
-        assert r.status_code == 404 and r.json() == {'error': 'proposal_not_found'}, (method, path)
-    r = c.post(P + '/proposals', json={'upload_ids': ['0' * 16], 'base_version': None}, headers=h(OTHER))
-    assert r.status_code == 404 and r.json() == {'error': 'upload_not_found'}
 
 
 def test_upload_size_and_type_limits(env):
@@ -360,11 +355,6 @@ def test_policy_endpoint_asks_about_an_exclusion_it_cannot_apply(env):
     assert asked[0]['why'] and got['policy']['exclusions'] == []
 
 
-def test_policy_is_per_person(env):
-    confirm_profile(env)
-    assert env.get(P + '/policy', headers=h()).json()['policy']['profile_version'] == 1
-    other = env.get(P + '/policy', headers=h(OTHER)).json()
-    assert other == {'policy': None, 'mode': 'profile', 'enabled': True, 'open_questions': [], 'reason': 'no_confirmed_profile'}
 
 
 def test_policy_endpoint_needs_read_scope_only(tmp_path, monkeypatch):

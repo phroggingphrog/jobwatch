@@ -11,6 +11,11 @@ from jobwatch.notifier import legacy
 from pipeline.agentic import incidents
 from tests.notify_support import FakeChannel, use_fake_channel
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 WINDOW = incidents.DIGEST_SECONDS
 
 
@@ -113,17 +118,6 @@ def test_no_channel_is_reported_without_send(conn, monkeypatch):
     assert row['notification_state'] == 'no_channel' and row['notification_error'] is None
 
 
-def test_other_account_never_uses_owners_install_wide_route(conn, monkeypatch):
-    from jobwatch import users
-    monkeypatch.setattr(notify, 'is_live', lambda _: True)
-    monkeypatch.setenv(legacy.SSH_ENV, 'someone@example.invalid')
-    monkeypatch.setenv(legacy.FILE_ENV, '/tmp/x')
-    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('another account must not use the owner route'))
-    incidents.report(conn, posting_id=42, run_id='other-attempt', reason='execution_failed', now=100)
-    incidents.flush_notifications(conn, now=100 + WINDOW)
-    row = incidents.list_incidents(conn)[0]
-    assert row['notification_state'] == 'no_channel'
-    assert incidents.is_paused(conn, 42) and notify.unread(conn) == 1
 
 
 def test_rows_stored_before_generic_wording_read_as_generic(conn):

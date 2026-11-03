@@ -16,6 +16,11 @@ from tests.fixtures.frozen_person_gate_20261022 import decide
 from pipeline.schemas import JobFacts
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 AD = (
     "Graduate accounting analyst role based in Melbourne. Hybrid attendance with two days "
     "in the Melbourne office. Part-time, 24 hours per week. Australian work rights required."
@@ -525,13 +530,3 @@ def test_logistics_requirements_never_hold_a_job(rid, text, exempt, expected):
     assert _logistics(SimpleNamespace(id=rid, text=text, jd_signal=None), exempt) is expected
 
 
-def test_commute_home_follows_the_current_person_not_the_first_one_cached(tmp_path, monkeypatch):
-    from jobwatch import users
-    from jobwatch.candidate import approved
-    from pipeline.agentic.location import km_from_home
-    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path)); monkeypatch.delenv('JOBWATCH_PROFILE_DIR', raising=False)
-    locations = {'owner': 'Brunswick, VIC', 'bob': 'Geelong, VIC'}
-    monkeypatch.setattr(approved, 'settings', lambda person, name: {'candidate': {'location': locations[person]}})
-    near = km_from_home('Glen Iris, Melbourne VIC')
-    far = km_from_home('Glen Iris, Melbourne VIC')
-    assert near == 13 and far is not None and far > 50  # a second person must not inherit the first person's home

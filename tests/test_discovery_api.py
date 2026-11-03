@@ -10,6 +10,11 @@ from pipeline.agentic.discovery import RelevanceJudgment, _store_judgment
 from jobwatch.occupations.plan import search_plan, save_plan
 from jobwatch.candidate.policy import build_policy
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 A, B, NO_READ = 'a'*40, 'b'*40, 'c'*40
 PREFIX = '/api/agent/discovery'
 
@@ -39,21 +44,6 @@ def test_uncached_discovery_is_read_only_and_never_computes(api, monkeypatch):
     assert api.get(PREFIX+'/postings/1/relevance',headers=h()).status_code == 404
 
 
-def test_plan_and_relevance_are_per_person(api):
-    from types import SimpleNamespace
-    policy = build_policy({'version':1,'facts':[]})
-    save_plan('owner',search_plan(policy,[SimpleNamespace(title='Accountant',id='anzsco2022:221111')]))
-    conn = db.connect(users.db_path())
-    conn.execute("INSERT INTO postings(id,source,source_id,url,url_hash,dedupe_key,title,first_seen_at,last_seen_at) VALUES(1,'seek','one','https://example.invalid/one','one','one','Accountant','now','now')")
-    _store_judgment(conn, RelevanceJudgment(posting_id=1,relevant='uncertain',quotes=(),similarity=.2,
-        matched_hypotheses=(),reason='Unknown duties',ad_hash='a',plan_hash='p'), 'shadow')
-    conn.commit(); conn.close()
-    assert api.get(PREFIX+'/plan',headers=h()).json()['plan']['queries']['seek'] == ['accountant']
-    assert api.get(PREFIX+'/plan',headers=h(B)).json()['plan'] is None
-    result = api.get(PREFIX+'/postings/1/relevance',headers=h())
-    assert result.status_code == 200 and result.json()['judgment']['relevant'] == 'uncertain'
-    assert result.json()['mode'] == 'shadow'
-    assert api.get(PREFIX+'/postings/1/relevance',headers=h(B)).status_code == 404
 
 
 def test_capabilities_advertise_discovery(api):

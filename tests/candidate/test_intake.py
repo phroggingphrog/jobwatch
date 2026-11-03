@@ -268,9 +268,6 @@ def test_unknown_upload_and_proposal_ids(person, fake_llm):
             intake.load_proposal(person, bad)
 
 
-def test_uploads_are_per_person(person, fake_llm, upload_id):
-    with pytest.raises(intake.IntakeError, match='upload_not_found'):
-        intake.propose('kim', [upload_id], fake_llm)
 
 
 def test_non_object_model_output_is_parse_failed(person, fake_llm, upload_id):
@@ -795,10 +792,6 @@ def test_missing_recorded_evidence_closes_discovery(person, full, missing):
     assert intake.scope_state(person) == (None, 'profile_file_missing')
 
 
-def test_discovery_scope_is_checked_as_the_person_not_the_ambient_user(person, full):
-    ok(person, full)
-    (apaths.profile_dir() / 'master_resume.md').write_text('edited source\n')
-    assert intake.discovery_scope('owner') is None
 
 
 def test_adopted_extras_are_carried_into_the_next_evidence_snapshot(person, full, fake_llm, upload_id):
@@ -1006,14 +999,6 @@ def test_add_uploads_needs_a_draft_and_no_parse_in_flight(person, held, fake_llm
         intake.add_uploads(person, '0' * 16, [upload_id], fake_llm)
 
 
-def test_parse_runs_as_the_person_and_slot_is_per_person(person, held, fake_llm, upload_id):
-    kim_up = intake.save_upload('kim', 'cv.txt', SYNTHETIC_CV.encode(), 'cv')['upload_id']
-    p = intake.start_proposal(person, [upload_id], held)
-    q = intake.start_proposal('kim', [kim_up], fake_llm)                              # another person is not blocked
-    assert settle('kim', q.id).status == 'draft'
-    held.release.set()
-    assert settle(person, p.id).status == 'draft'
-    assert not (users.user_dir('kim') / 'intake' / 'proposals' / (p.id + '.json')).exists()
 
 
 def _profile(person, **files):

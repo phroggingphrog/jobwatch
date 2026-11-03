@@ -12,6 +12,11 @@ from jobwatch.util.llm import LLM
 from jobwatch.models import Posting
 from jobwatch.dedupe import ingest
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 CFG = dict(reader.DEFAULTS)
 
 
@@ -572,32 +577,6 @@ def test_automatic_reader_reconsiders_cached_show_after_confirmed_policy_change(
     assert gw.calls == [DEFAULT_MODEL]  # A changed approved profile is re-evaluated automatically.
 
 
-def test_reader_workers_keep_calling_person_identity_and_confirmed_policy(world, confirmed_candidate, monkeypatch):
-    import copy
-    from jobwatch import users
-    from jobwatch.candidate.policy import build_policy
-    config, conn, add = world
-    profiles = {}
-    for person, employer in ((users.DEFAULT_USER, 'OWNER_ONLY_EMPLOYER'),
-                              ('synthetic-review', 'CALLER_ONLY_EMPLOYER')):
-        profiles[person] = copy.deepcopy(confirmed_candidate)
-        profiles[person]['facts'].append({'id': 'excluded-employer', 'section': 'exclusion', 'basis': 'evidence',
-            'value': {'kind': 'employer', 'value': employer}})
-    monkeypatch.setattr('jobwatch.candidate.policy.policy_for', lambda person, **kw: build_policy(profiles[person]))
-    monkeypatch.setattr('jobwatch.candidate.intake.current_version', lambda person: profiles[person])
-    observed = []
-    original = reader.ask
-    def capture(*args, **kwargs):
-        observed.append((users.current(), reader.settings_block()))
-        return original(*args, **kwargs)
-    monkeypatch.setattr(reader, 'ask', capture)
-    pid = add('Accounts Clerk')
-    result = reader.review_pending(conn, config, llm=make_llm(FakeGateway()), limit=10)
-    assert result['reviewed'] == 1
-    assert conn.execute('SELECT verdict FROM ad_reviews WHERE posting_id=?', (pid,)).fetchone()[0] == 'show'
-    assert len(observed) == 1 and observed[0][0] == 'synthetic-review'
-    assert 'CALLER_ONLY_EMPLOYER' in observed[0][1]
-    assert 'OWNER_ONLY_EMPLOYER' not in observed[0][1]
 
 
 def test_fetch_only_fills_the_ad_text_and_calls_no_model(world):

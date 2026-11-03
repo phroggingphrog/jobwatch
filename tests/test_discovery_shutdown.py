@@ -13,6 +13,11 @@ from pipeline.agentic.chat import job_connection
 from tests.test_discovery_operations import world  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.mark.parametrize('user_cancel', [False, True], ids=['shutdown', 'user-cancel'])
 def test_active_discovery_cancellation_retains_posting_after_registry_closes(world, monkeypatch, user_cancel):
     config, _ = world

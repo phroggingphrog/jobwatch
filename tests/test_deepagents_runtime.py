@@ -25,6 +25,11 @@ from pipeline.agentic.runtime import (BatchBudget, JobBudget, RoleSpec, RuntimeE
                                      Tool, run_role)
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 class ReadArgs(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
     source: str

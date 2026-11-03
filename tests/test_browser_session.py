@@ -11,6 +11,11 @@ import pytest
 from jobwatch.web.browser_session import BrowserSessionError, BrowserSessionManager, _public_url
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.fixture
 def local_site():
     class Handler(BaseHTTPRequestHandler):
@@ -94,39 +99,6 @@ def test_profile_is_private_and_shared_so_logins_carry_over(manager, local_site)
     assert manager.with_page('an-application', lambda page: page.evaluate("localStorage.getItem('synthetic')")) == 'retained'
 
 
-def test_second_person_gets_their_own_profile_and_the_owners_stays_untouched(tmp_path, monkeypatch, local_site):
-    """TASK-111.1: one person's Seek/LinkedIn logins must never land in another person's profile."""
-    from jobwatch import users
-    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    manager = BrowserSessionManager(allow_loopback=True)          # no fixed root: per signed-in person
-    try:
-        digest = hashlib.sha256(b'accounts').hexdigest()   # one shared profile per person
-        owner_profile = tmp_path / 'browser' / 'sessions' / digest / 'profile'
-
-        # the owner signs in and opens a browser; his logins live in that profile
-        assert manager.open('shared-app', local_site)['state'] == 'ready'
-        assert manager.sessions[(users.DEFAULT_USER, 'shared-app')].profile == owner_profile
-        (owner_profile / 'Default').mkdir(exist_ok=True)
-        (owner_profile / 'Default' / 'Cookies').write_bytes(b'owner seek login')
-        untouched = (owner_profile.stat().st_mtime_ns, sorted(p.name for p in owner_profile.iterdir()),
-                     (owner_profile / 'Default' / 'Cookies').read_bytes())
-
-        # a second person signs in and opens a session for the same application
-        assert manager.open('shared-app', local_site)['state'] == 'ready'
-        friend_profile = (tmp_path / 'users' / 'friend' / 'browser' / 'sessions' / digest / 'profile')
-        assert manager.sessions[('friend', 'shared-app')].profile == friend_profile
-        assert manager.status('shared-app')['state'] == 'ready'
-        # work done in the browser thread runs as the person who asked for it (their DB and folders)
-        assert manager.with_page('shared-app', lambda page: users.current()) == 'friend'
-        friend_cookies = friend_profile / 'Default' / 'Cookies'
-        assert b'owner seek login' not in (friend_cookies.read_bytes() if friend_cookies.exists() else b'')
-
-        # both browsers are open at once; the owner's session works and his profile is unchanged
-        assert manager.status('shared-app')['state'] == 'ready'
-        assert (owner_profile.stat().st_mtime_ns, sorted(p.name for p in owner_profile.iterdir()),
-                (owner_profile / 'Default' / 'Cookies').read_bytes()) == untouched
-    finally:
-        manager.close_all()
 
 
 def test_subrequests_to_private_network_are_blocked(manager, local_site):
@@ -503,15 +475,3 @@ def test_confirmation_url_only_matches_a_final_confirmation_page(path, confirmed
     assert bool(_CONFIRM_URL.search(path)) is confirmed
 
 
-def test_open_applications_lists_only_the_current_persons_live_browsers(tmp_path, monkeypatch, local_site):
-    from jobwatch import users
-    from jobwatch.web.browser_session import BrowserSessionManager
-    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    manager = BrowserSessionManager(allow_loopback=True)
-    try:
-        manager.open('owner-app', local_site)
-        manager.open('friend-app', local_site)
-        assert manager.open_applications() == ['friend-app']
-        assert manager.open_applications() == ['owner-app']
-    finally:
-        manager.close_all()

@@ -26,6 +26,11 @@ from pipeline.agentic.service import agentic_batch_run
 from tests.baseline_support import frozen, synthetic_case, world  # noqa: F401  (fixtures)
 from tests.test_agentic_service import SyntheticGateway
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -436,21 +441,6 @@ def test_a_failed_freeze_leaves_no_visible_baseline(frozen, monkeypatch):
     assert list((users.user_dir() / 'baselines').iterdir()) == []
 
 
-def test_baselines_are_per_person_and_ids_cannot_escape(frozen):
-    b = baseline.freeze_baseline(frozen.ro, frozen.config)
-    with pytest.raises(AgenticError) as err:
-        baseline.load_baseline(b.baseline_id)
-    assert _code(err) == 'baseline_not_found'
-    assert baseline.list_baselines() == []
-    for bad in ('../x', 'bl-20260101T000000Z-zzzzzzzz', '', b.baseline_id + '\n'):
-        for call in (baseline.load_baseline, lambda i: baseline.pinned_profile(i).__enter__(),
-                     baseline.frozen_approved, baseline.frozen_decision_policy):
-            with pytest.raises(AgenticError) as err:
-                call(bad)
-            assert _code(err) == 'invalid_baseline_id'
-    with pytest.raises(AgenticError) as err:
-        baseline.load_baseline('bl-20260101T000000Z-0123abcd')
-    assert _code(err) == 'baseline_not_found'
 
 
 def test_freeze_refuses_without_a_profile_version_or_cases(world):

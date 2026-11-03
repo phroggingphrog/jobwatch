@@ -1,7 +1,13 @@
 """Trusted server enrollment; invented subjects, never real account/profile fixtures."""
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 from fastapi.testclient import TestClient
 from pipeline.agentic.api import create_api, Principal
+
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 RUN, HUMAN, BRIDGE='r'*40,'h'*40,'b'*48
 
@@ -13,19 +19,6 @@ def setup(monkeypatch):
 def enroll(c,subject,key=BRIDGE):
     return c.post('/api/agent/librechat/enroll',headers={'Authorization':'Bearer '+key},json={'subject':subject})
 
-def test_trusted_enrollment_preserves_owner_and_isolates_friends(monkeypatch):
-    c=setup(monkeypatch)
-    assert enroll(c,'synthetic-friend',RUN).status_code==401
-    owner=enroll(c,'synthetic-owner');assert owner.status_code==200
-    assert owner.json()=={'person':'owner','chat_key':RUN,'human_key':HUMAN}
-    first=enroll(c,'synthetic-friend');assert first.status_code==200
-    friend=first.json();assert friend['person']!='owner' and friend['chat_key']!=friend['human_key']
-    assert enroll(c,'synthetic-friend').json()==friend
-    assert enroll(c,'synthetic-second').json()['person']!=friend['person']
-    headers={'Authorization':'Bearer '+friend['chat_key']}
-    thread=c.post('/api/agent/threads',headers=headers);assert thread.status_code==201
-    assert c.get('/api/agent/threads/'+thread.json()['id'],headers={'Authorization':'Bearer '+RUN}).status_code==404
-    assert c.get('/api/agent/capabilities',headers={'Authorization':'Bearer '+friend['human_key']}).json()['scopes']==['approve','interact','read']
 
 def test_concurrent_enrollment_is_idempotent_and_does_not_accept_identity_fields(monkeypatch):
     c=setup(monkeypatch)

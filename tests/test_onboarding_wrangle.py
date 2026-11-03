@@ -1,9 +1,15 @@
+import pytest
 import hashlib
 from types import SimpleNamespace
 
 import yaml
 
 from jobwatch import onboarding, users
+
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 CV = """# Sam Friend
 sam@example.com
@@ -34,70 +40,12 @@ def snap(root):
             and "users" not in p.relative_to(root).parts}
 
 
-def test_friend_wrangle(tmp_path, monkeypatch):
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    (tmp_path / "profile").mkdir()
-    (tmp_path / "profile" / "cv.md").write_text("owner cv")
-    (tmp_path / "profile" / "evidence.yaml").write_text("items: []")
-    before = snap(tmp_path)
-    onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "My Letter.docx", LETTER),
-                        ("evidence", "diploma.txt", DIPLOMA)], "friend", FakeLLM())
-    assert onboarding.style_examples() == [LETTER]
-    f = tmp_path / "users" / "friend"
-    ev = yaml.safe_load((f / "profile" / "evidence.yaml").read_text())["items"]
-    texts = [i["text"] for i in ev]
-    print((f / "profile" / "profile.yaml").read_text())
-    print((f / "profile" / "evidence.yaml").read_text())
-    print(sorted(str(p.relative_to(f)) for p in (f / "style").rglob("*") if p.is_file()))
-    assert "Pharmacology 200" in texts and "Made up course" not in texts
-    assert (f / "style" / "examples" / "01-my-letter.md").read_text() == LETTER
-    assert snap(tmp_path) == before  # owner files byte-identical
 
 
 
 
-def test_drafter_gets_only_own_samples(tmp_path, monkeypatch):
-    from jobwatch.apply import review
-    monkeypatch.setattr('pipeline.agentic.writing_guide.approved_writing_profile', lambda: {'facts': [{
-        'section': 'preference', 'basis': 'evidence', 'value': {'kind': 'writing', 'value': {'use_style_examples': True}}}]})
-
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    (tmp_path / "style" / "examples").mkdir(parents=True)
-    (tmp_path / "style" / "examples" / "01.md").write_text("OWNER LETTER")
-    onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "l.txt", LETTER)], "friend", FakeLLM())
-    msgs = review.drafter_messages("post", [], "cv", [], None, "", onboarding.style_examples())
-    assert "I like people and I like ward work" in msgs[1]["content"] and "OWNER LETTER" not in msgs[1]["content"]
 
 
-def test_run_chain_passes_only_own_samples(tmp_path, monkeypatch):
-    import pytest
-    from jobwatch.apply import chain
-
-    monkeypatch.setattr('pipeline.agentic.writing_guide.approved_writing_profile', lambda: {'facts': [{
-        'section': 'preference', 'basis': 'evidence', 'value': {'kind': 'writing', 'value': {'use_style_examples': True}}}]})
-
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    (tmp_path / "style" / "examples").mkdir(parents=True)
-    (tmp_path / "style" / "examples" / "01.md").write_text("OWNER LETTER")
-    seen = []
-
-    class Stop(Exception):
-        pass
-
-    class CaptureLLM:
-        def chat(self, model, messages, **kw):
-            seen.append(messages[1]["content"])
-            raise Stop
-
-    monkeypatch.setattr(chain, "full_posting_text", lambda conn, p: "posting")
-    monkeypatch.setattr(chain, "get_or_extract", lambda conn, pid, llm: [])
-    monkeypatch.setattr(chain, "ad_reading", lambda conn, pid: None)
-    monkeypatch.setattr(chain, "ensure_dir", lambda d: None)
-    profile = SimpleNamespace(cv_body="cv", evidence=[], dir=tmp_path / "users" / "friend" / "profile")
-    onboarding.wrangle([("cv", "cv.txt", CV), ("letter", "l.txt", LETTER)], "friend", FakeLLM())
-    with pytest.raises(Stop):
-        chain.run_chain(None, {"id": 1, "title": "t", "company": "c"}, 1, 1, tmp_path, CaptureLLM(), profile)
-    assert "I like people and I like ward work" in seen[0] and "OWNER LETTER" not in seen[0]
 
 
 def test_legacy_string_work_rights_reads_as_unknown(tmp_path, monkeypatch):

@@ -11,6 +11,12 @@ from pipeline.agentic.chat import job_connection, skill_version
 from tests.test_discovery_operations import world  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "owner-jobwatch.db"))
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_retry_replay_returns_admitted_run_after_release_and_profile_change(world, monkeypatch):
     config, profile = world
     with job_connection(config, write=True) as conn:

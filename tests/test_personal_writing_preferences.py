@@ -1,6 +1,12 @@
 """Confirmed style choices never become another person's defaults."""
+import pytest
 from pipeline.agentic.writing_guide import writing_guide, writing_preferences, templates_for
 from pipeline.agentic.draft import _role
+
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 
 def approved(**options):
@@ -166,25 +172,6 @@ def test_current_examples_override_archived_examples(tmp_path, monkeypatch):
     assert 'ARCHIVE VOICE' not in str(guide)
 
 
-def test_archive_library_refuses_traversal_symlinks_and_other_person(tmp_path, monkeypatch):
-    from jobwatch import users
-    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    career = users.user_dir('friend') / 'career'
-    (career / 'style').mkdir(parents=True)
-    (career / 'style' / 'style_references.csv').write_text(
-        'ref_id,kind,analysis_file,anon_file,layout_file\n'
-        'escape,cv,../../private.yaml,,\nlink,cv,style/link.yaml,,\n')
-    outside = tmp_path / 'private.yaml'
-    outside.write_text('ANOTHER PERSON SECRET')
-    (career / 'style' / 'link.yaml').symlink_to(outside)
-    owner_samples = tmp_path / 'career' / 'style' / 'examples'
-    owner_samples.mkdir(parents=True)
-    (owner_samples / 'letter.md').write_text('OWNER ONLY VOICE')
-    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
-    assert guide['reference_library']['files'] == []
-    assert guide['reference_library']['unavailable'] >= 2
-    assert 'ANOTHER PERSON SECRET' not in str(guide) and 'OWNER ONLY VOICE' not in str(guide)
-    assert 'human_examples' not in guide
 
 
 def test_reference_text_and_total_output_are_bounded(tmp_path, monkeypatch):

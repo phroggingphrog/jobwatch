@@ -1,5 +1,11 @@
+import pytest
 from jobwatch import fieldgen, users
 from jobwatch.config import load_config
+
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 NURSE = {"candidate": {"location": "Melbourne, VIC"}, "level": "graduate",
          "target_titles": ["graduate nurse", "registered nurse", "nursing assistant"],

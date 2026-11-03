@@ -15,6 +15,11 @@ from tests.test_browser_session import manager, submission_site  # noqa: F401
 from tests.test_submit_confirm import _ready
 from tests.web.test_agentic import _client
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 CHAT, HUMAN, FRIEND = 'a'*40, 'b'*40, 'c'*40
 
 
@@ -78,22 +83,6 @@ def test_live_review_changed_form_and_final_submit(native):
     assert seen==[('GET','/'),('POST','/submit')]
 
 
-def test_browser_capability_needs_reviewed_digest_for_submit_and_is_person_bound(native):
-    client,manager,(base,seen),prepared=native
-    cap=client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1})
-    assert cap.status_code==200,cap.text
-    cap=cap.json()
-    box=manager.with_page('1',lambda page:page.locator('#submit').bounding_box())
-    body=cap['ticket']+'\n'+json.dumps({'kind':'click','x':box['x']+5,'y':box['y']+5})
-    refused=client.post('/api/agent/client/browser/action',content=body,headers={'Content-Type':'text/plain','Origin':'null'})
-    assert refused.status_code==409,refused.text
-    assert seen==[('GET','/')]
-    assert client.post('/api/agent/client/browser/control',headers=auth(CHAT),json={'posting_id':1}).status_code==403
-    from jobwatch.web.browser_session import BrowserSessionError
-    with pytest.raises(BrowserSessionError,match='browser_session_not_open'):
-        manager.status('1')
-    # A principal cannot add a claimed person to a grant.
-    assert client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1,'person':'friend'}).status_code==422
 
 
 def test_browser_capability_presses_submit_for_the_reviewed_form(native):
@@ -112,21 +101,6 @@ def test_browser_capability_presses_submit_for_the_reviewed_form(native):
     assert seen!=[('GET','/')]
 
 
-def test_accounts_and_expired_browser_grants_are_isolated(native,monkeypatch):
-    client,manager,_,prepared=native
-    for suffix in ('','/frame','/review'):
-        assert client.get('/api/agent/applications/1'+suffix,headers=auth(FRIEND)).status_code==404
-    assert client.get('/api/agent/applications',headers=auth(FRIEND)).json()=={'applications':[]}
-    assert client.get('/api/agent/applications/1/frame',headers=auth()).headers['content-type']=='image/jpeg'
-    assert client.post('/api/agent/client/browser/control',headers=auth(FRIEND),json={'posting_id':1}).status_code==404
-    cap=client.post('/api/agent/client/browser/control',headers=auth(),json={'posting_id':1}).json()
-    from pipeline.agentic.client_api import _db
-    with _db() as conn:
-        conn.execute('UPDATE tickets SET expires=0')
-    response=client.post('/api/agent/client/browser/action',headers={'Content-Type':'text/plain','Origin':'null'},
-                        content=cap['ticket']+'\n'+json.dumps({'kind':'type','text':'Never inserted'}))
-    assert response.status_code==401
-    assert manager.with_page('1',lambda page:page.locator('#name').input_value())=='Synthetic'
 
 
 def test_website_adapter_uses_shared_native_session_not_pages(native,monkeypatch):

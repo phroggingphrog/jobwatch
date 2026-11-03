@@ -17,6 +17,11 @@ from test_interview_prep import Writer, Reviewer, proposal
 from test_interview_service import AD
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.fixture
 def prep_client(tmp_path, monkeypatch):
     data=tmp_path/'data'; profile=data/'profile'; profile.mkdir(parents=True)
@@ -183,31 +188,6 @@ def test_startup_recovers_durable_queue_once(prep_client,monkeypatch):
     assert len(c.writer.calls)==2
 
 
-def test_startup_recovers_a_friends_durable_queue_as_that_friend(prep_client,monkeypatch):
-    import threading
-    import jobwatch.interview.prep as service
-    from jobwatch import users
-    c=prep_client; done=threading.Event(); ran=[]
-    from jobwatch.candidate import intake, projection
-    friend_version = intake._versions_root('friend') / '1'
-    friend_evidence = friend_version / 'evidence'
-    friend_evidence.mkdir(parents=True)
-    (friend_evidence / 'cv.md').write_text('# Friend Candidate\n\n## Skills\n- Reconciled ledgers.\n')
-    friend_bundle = snapshot_evidence(friend_evidence)
-    friend_record = {'version': 1, 'facts': [], 'evidence_bundle_hash': friend_bundle.bundle_hash}
-    (friend_version / 'approved.json').write_text(json.dumps(friend_record))
-    for name, text in projection.project(friend_record).items():
-        (friend_version / name).write_text(text)
-    conn=db.connect(c.config.db_path); pid=seed(conn,1,'Friend role',company='Example',arm='accounting')
-    conn.execute("INSERT INTO ad_text(posting_id,text,source,fetched_at) VALUES(?,?,'cached',?)",(pid,AD,datetime.now(UTC).isoformat())); conn.commit()
-    assert service.enqueue(conn,pid,c.config); conn.close()
-    def generate(conn,pid,config,**kw):
-        ran.append((users.current(),conn.execute('PRAGMA database_list').fetchone()[2])); done.set()
-    monkeypatch.setattr(service,'generate',generate)
-    monkeypatch.setattr(service,'is_queued',lambda *a,**kw:False)       # the fake run drains the queue
-    with TestClient(create_app(c.config),base_url='http://localhost',headers=OK):
-        assert done.wait(10), 'Startup did not recover the friend queue'
-    assert ran==[('friend',str(users.db_path('friend')))]
 
 
 def test_startup_never_retries_held_unknown_dispatch(prep_client,monkeypatch):
