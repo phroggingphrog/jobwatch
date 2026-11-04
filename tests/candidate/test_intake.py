@@ -45,6 +45,7 @@ def local_gateway(monkeypatch):
 @pytest.fixture
 def person(monkeypatch):
     monkeypatch.setenv('JOBWATCH_PROFILE_DIR', '')   # no pinned profile: the owner's own folder, as the old second person had
+    (users.user_dir() / 'profile').mkdir(parents=True, exist_ok=True)
     model_choice.set_models({'reader': 'claude/sonnet'}, 'owner')
     yield 'owner'
     intake._inflight.clear()

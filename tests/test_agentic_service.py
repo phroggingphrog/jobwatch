@@ -692,7 +692,7 @@ def test_real_deepagents_research_checkpoints_on_file_database(world, monkeypatc
     summary = agentic_batch_run([46], config, conn, evidence_bundle=bundle,
                                llm=LLM(transport=ResearchGateway(bundle), keys=['synthetic']), operation='evaluate')
     assert checkpoint_errors == []
-    assert summary['ready'] == 0 and summary['archived'] == 0 and summary['held'] == 0 and summary['evaluated'] == 1
+    assert summary['ready'] == 0 and summary['archived'] == 0 and summary['held'] == 0 and summary['evaluated'] == 1, summary
     assert latest_result(conn, 46)['reason'] == 'evaluation_complete'
     assert len(queries) == 1 and queries[0][1] != main_thread
     cp = json.loads(conn.execute('SELECT checkpoint_json FROM agentic_runs').fetchone()[0])
@@ -1238,14 +1238,18 @@ def _settled(person, pid, timeout=10):
 
 
 @pytest.fixture
-def onboarding(world, monkeypatch):
+def onboarding(world, monkeypatch, tmp_path):
     """A person with no approved profile, one draft whose career focus the person has stated."""
     import time
     from jobwatch.util import model_choice as model_choice
     from jobwatch import users
     from jobwatch.candidate import intake
     conn, config, bundle, add = world
-    person = 'onboarder'
+    person = users.current()
+    _reset_profile(users)
+    profile = tmp_path / 'onboarding-profile'
+    profile.mkdir()
+    monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(profile))
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
     llm, _ = _onboarding_llm([])
     up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
@@ -1268,8 +1272,7 @@ def test_profile_confirm_needs_human_approval_bound_to_digests(onboarding):
     first = turn(message='Yes, set me up')
     item = first['interactions'][0]
     assert first['status'] == 'interrupted' and item['type'] == 'approval' and item['operation'] == 'profile_confirm'
-    with __import__('jobwatch.users', fromlist=['use']).use(person):
-        shown = intake.confirmation(person, prop.id, config)
+    shown = intake.confirmation(person, prop.id, config)
     assert item['binding']['proposal_digest'] == shown['proposal_digest'] and item['binding']['scope_digest'] == shown['scope_digest']
     assert 'profile_confirm' in chat.GATED and intake.current_version(person) is None      # nothing before the human decides
     second = turn(decisions=[{'type': 'approve'}], human_decision=True, expected_checkpoint=first['checkpoint_id'],
@@ -1289,17 +1292,12 @@ def _profile_chat(onboarding, monkeypatch, script):
     monkeypatch.setenv('JOBWATCH_UI_FORMAT', 'artifacts')
     monkeypatch.setenv('JOBWATCH_LIBRECHAT_IDENTITY_KEY', 'b' * 48)
     monkeypatch.setenv('JOBWATCH_LIBRECHAT_OWNER_SUBJECT', 'synthetic-owner')
-    from pipeline.agentic.identity import registry
-    with registry() as identities:
-        identities.execute('INSERT INTO identities VALUES(?,?,?,?)',
-            ('synthetic-profile-user', person, 'r' * 40, 'h' * 40))
-        identities.commit()
     llm, seen = _onboarding_llm(script)
-    app = create_api(credentials={'o' * 40: Principal(users.DEFAULT_USER),
-        'z' * 40: Principal(users.DEFAULT_USER, frozenset({'read', 'interact', 'approve'}))},
+    app = create_api(credentials={'r' * 40: Principal(users.DEFAULT_USER),
+        'h' * 40: Principal(users.DEFAULT_USER, frozenset({'read', 'interact', 'approve'}))},
         config=config, llm_factory=lambda _: llm)
     headers = {'Authorization': 'Bearer ' + 'b' * 48,
-        'X-Jobwatch-Client-Subject': 'synthetic-profile-user', 'X-Jobwatch-Conversation': 'profile-review'}
+        'X-Jobwatch-Client-Subject': 'synthetic-owner', 'X-Jobwatch-Conversation': 'profile-review'}
     return TestClient(app), headers, seen
 
 

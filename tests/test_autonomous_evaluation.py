@@ -203,10 +203,8 @@ def test_reasoning_checkpoint_restart_after_provider_interruption_preserves_wire
         assert len(resumed_seen) == 2
 
 
-@pytest.mark.parametrize('change', ['ad', 'person', 'config', 'screen', 'model', 'skills', 'insights', 'commute'])
+@pytest.mark.parametrize('change', ['ad', 'config', 'screen', 'model', 'skills', 'insights', 'commute'])
 def test_changed_inputs_cannot_reuse_result(tmp_path, monkeypatch, change):
-    from jobwatch import users
-    from contextlib import nullcontext
     bundle, ad, key, llm, seen, conn, args = run_case(tmp_path)
     evaluate_autonomous(key, ad, budget(key), llm, **args)
     if change == 'ad':
@@ -220,9 +218,8 @@ def test_changed_inputs_cannot_reuse_result(tmp_path, monkeypatch, change):
     if change == 'skills': monkeypatch.setattr('pipeline.agentic.autonomous.version', lambda: 'changed')
     if change == 'insights': args['model_insights'] = {'new': True}
     if change == 'commute': args['commute_km'] = 21
-    with users.use('synthetic-other') if change == 'person' else nullcontext():
-        with pytest.raises(RuntimeErrorSafe, match='model_unavailable'):
-            evaluate_autonomous(key, ad, budget(key), llm, **args)
+    with pytest.raises(RuntimeErrorSafe, match='model_unavailable'):
+        evaluate_autonomous(key, ad, budget(key), llm, **args)
     assert len(seen) == 5
 
 

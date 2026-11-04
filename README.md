@@ -3,6 +3,8 @@
 This checkout is the isolated `jobwatch-new` single-owner continuation. Execution
 is off and no service activation is part of source work. The older multi-person
 implementation and acceptance notes are historical; current scope is in INTENT.md.
+For this copy, load the private `../env` before invoking runtime commands. It pins
+settings loading away from the retired installation. Keep that file outside Git.
 
 A self-hosted career-operations backend. It collects job postings, evaluates ads
 against the owner's approved evidence and preferences, and prepares application
