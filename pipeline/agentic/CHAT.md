@@ -1,5 +1,14 @@
 # Jobwatch native agent API (TASK-183)
 
+For the isolated `jobwatch-new` continuation, the server binds every operation to
+one owner. Sign-up and multi-person support are removed; references below to those
+historical configurations do not restore them. Bearer scopes, exact-input human
+confirmation, selected preparation and confirmed Submit remain required.
+Scheduled promotion evaluates only and persists `evaluated` success backed by
+valid saved candidate/evaluation artifacts. Document identity readiness applies
+to preparation, independently of evaluation. Services and automation remain off
+until a separate release decision.
+
 The owner chose: **"native API is my plan"**. Jobwatch runs the agent itself.
 A client uses authenticated HTTP endpoints; a website or external AI chat host is
 not required. LangChain model/tool interfaces, Deep Agents planning and specialist

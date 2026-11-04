@@ -122,11 +122,16 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
     if not ids:
         return out
     from pipeline.agentic.service import agentic_batch_run
-    for pid in ids:                                         # logged before the call: a crash must not allow a re-promotion
-        store.event(conn, pid, "promote", Stage.SHORTLISTED, Stage.SHORTLISTED, 1, None)
-    conn.commit()
-    out["promoted"] = len(ids)
-    out["agentic"] = agentic_batch_run(ids, config, conn, max_seconds=max_seconds, deadline=deadline)
+    started = set()
+    def record_start(pid):
+        if pid not in started:
+            store.event(conn, pid, "promote", Stage.SHORTLISTED, Stage.SHORTLISTED, 1, None)
+            conn.commit()
+            started.add(pid)
+    out["selected"] = len(ids)
+    out["agentic"] = agentic_batch_run(ids, config, conn, max_seconds=max_seconds, deadline=deadline,
+                                       operation='evaluate', _on_started=record_start)
+    out["promoted"] = len(started)
     return out
 
 

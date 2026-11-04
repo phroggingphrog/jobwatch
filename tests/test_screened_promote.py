@@ -24,6 +24,8 @@ def test_top_three_by_score_are_promoted(tmp_path, monkeypatch):
 
     def stub(snapshot_ids, cfg, c, **kw):
         calls.append(list(snapshot_ids))
+        for pid in snapshot_ids:
+            kw['_on_started'](pid)
         return {"processed": len(snapshot_ids)}
     monkeypatch.setattr("pipeline.agentic.service.agentic_batch_run", stub)
     out = screened.promote(conn, config, max_seconds=60, deadline=None)
@@ -54,8 +56,12 @@ def test_promotion_prioritizes_category_then_score_without_minimum(tmp_path, mon
                      (track, pid))
     conn.commit()
     calls = []
-    monkeypatch.setattr("pipeline.agentic.service.agentic_batch_run",
-                        lambda ids, cfg, c, **kw: calls.append(list(ids)) or {"processed": len(ids)})
+    def batch(ids, cfg, c, **kw):
+        calls.append(list(ids))
+        for pid in ids:
+            kw['_on_started'](pid)
+        return {"processed": len(ids)}
+    monkeypatch.setattr("pipeline.agentic.service.agentic_batch_run", batch)
     result = screened.promote(conn, config, max_seconds=60, deadline=None)
     assert calls == [[high, low, second]]
     assert result["promoted"] == 3
@@ -69,8 +75,12 @@ def test_a_posting_promoted_today_is_not_promoted_again_or_counted_twice(tmp_pat
     store.ensure(conn)
     ids = [shortlist(conn, f"again{i}", 4.5 - i / 10) for i in range(4)]
     calls = []
-    monkeypatch.setattr("pipeline.agentic.service.agentic_batch_run",
-                        lambda snapshot_ids, cfg, c, **kw: calls.append(list(snapshot_ids)) or {"processed": len(snapshot_ids)})
+    def batch(snapshot_ids, cfg, c, **kw):
+        calls.append(list(snapshot_ids))
+        for pid in snapshot_ids:
+            kw['_on_started'](pid)
+        return {"processed": len(snapshot_ids)}
+    monkeypatch.setattr("pipeline.agentic.service.agentic_batch_run", batch)
     screened.promote(conn, config, max_seconds=60, deadline=None)
     again = screened.promote(conn, config, max_seconds=60, deadline=None)
     assert calls == [ids[:3]] and again["promoted"] == 0 and again["allowance"] == 0

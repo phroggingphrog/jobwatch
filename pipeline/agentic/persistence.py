@@ -63,6 +63,8 @@ def latest_result(conn: sqlite3.Connection, posting_id: int, *, data_root: Path 
         return None
     if row[1] == 'ready':
         parse = parse | {'manifest'}   # the readiness check below reads the manifest
+    elif row[1] == 'evaluated':
+        parse = parse | {'candidate', 'evaluation'}
     result = {'run_key': row[0], 'posting_id': posting_id, 'status': row[1], 'stored_status': row[1], 'reason': row[2],
               'application_id': None, 'draft_id': None, 'version': None, 'package_dir': None,
               'artifact_paths': {}, 'artifact_hashes': {}, 'evaluation': None, 'candidate': None,
@@ -83,6 +85,11 @@ def latest_result(conn: sqlite3.Connection, posting_id: int, *, data_root: Path 
                 result['status'], result['reason'] = 'held', 'artifact_invalid'
     result['cv_pdf'] = result['artifact_paths'].get('cv')
     result['letter_pdf'] = result['artifact_paths'].get('letter')
+    if result['status'] == 'evaluated':
+        try:
+            completed_evaluation(result)
+        except AgenticError:
+            result['status'], result['reason'] = 'held', 'artifact_invalid'
     if result['status'] == 'ready':
         try:
             if not package or package[4] != 'complete':
@@ -107,6 +114,26 @@ def latest_result(conn: sqlite3.Connection, posting_id: int, *, data_root: Path 
         if not current:
             result['status'], result['reason'] = 'held', 'posting_check_required'
     return result
+
+
+def completed_evaluation(result):
+    """Validate both completion artifacts and their bindings before reporting success or reuse."""
+    from jobwatch.candidate.assessment import CandidateAssessment
+    from jobwatch.candidate.contracts import AnalysisResult
+    from pipeline.agentic.contracts import AgenticEvaluation
+    try:
+        evaluation = validate_model_payload(AgenticEvaluation, result.get('evaluation'))
+        try:
+            candidate = validate_model_payload(CandidateAssessment, result.get('candidate'))
+        except AgenticError:
+            candidate = validate_model_payload(AnalysisResult, result.get('candidate'))
+        key = evaluation.run_key
+        if (key.value != result['run_key'] or key.posting_id != result['posting_id']
+                or candidate.run_key != key.candidate_hash or candidate.evidence_hash != key.evidence_hash):
+            raise AgenticError('artifact_invalid')
+    except (AgenticError, KeyError, ValueError, TypeError):
+        raise AgenticError('artifact_invalid') from None
+    return evaluation, candidate
 
 
 class PersistenceAdapter:

@@ -34,7 +34,7 @@ from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, k
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
 from pipeline.agentic import decision_log, discovery_settings, jev_skills, incidents
 from pipeline.agentic.forms import build_form_map
-from pipeline.agentic.persistence import PersistenceAdapter, latest_result
+from pipeline.agentic.persistence import PersistenceAdapter, completed_evaluation, latest_result
 from pipeline.agentic.runtime import (BatchBudget, CALL_SECONDS, UNLIMITED_JOB_TOKENS, CALL_SECONDS_REASONING, JobBudget, RuntimeErrorSafe,
                                       validate_model_payload)
 from pipeline.agentic.store import AgenticStore
@@ -457,7 +457,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     batch: BatchBudget | None = None, candidate_cache: dict | None = None,
                     expected_run_key: str | None = None, _batch_registry: dict | None = None,
                     _invocation_deadline: float | None = None, operation: str = 'prepare',
-                    _skip_reasons=None, collector_run_id=None, _discovery_run_id=None) -> Stage | None:
+                    _skip_reasons=None, collector_run_id=None, _discovery_run_id=None,
+                    _on_started=None) -> Stage | None:
     if operation not in ('evaluate', 'prepare'):
         raise AgenticError('invalid_operation')
     def skip(reason, next_eligible_at=None):
@@ -541,10 +542,12 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     stage, reason, final_status = Stage.DLQ, 'execution_failed', 'held'
     try:
         activity('started')  # inside the try: a failure here must still release the claim
+        if _on_started is not None:
+            _on_started(posting_id)
         incidents.mark_phase(conn, incident_run_id, 'liveness', posting_id=posting_id)
         # Cached READY rechecks are public-only and do not renew exhausted model budgets.
         saved_package = adapter.load_artifact(key.value, 'package_bundle')
-        if not cached_ready and saved_package is None:
+        if operation == 'prepare' and not cached_ready and saved_package is None:
             from pipeline.agentic.draft import packaging_blocker
             if (blocker := packaging_blocker(profile_from_snapshot(bundle))):
                 raise AgenticError(blocker)  # before any paid read: this profile cannot produce a package
@@ -765,7 +768,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 stage = Stage.ARCHIVED if decision.route == 'archive' else Stage.DLQ
                 reason, final_status = decision.reason, 'archived' if decision.route == 'archive' else 'held'
             elif operation == 'evaluate':
-                reason = 'evaluation_complete'
+                if adapter.load_artifact(key.value, 'candidate') is None or adapter.load_artifact(key.value, 'evaluation') is None:
+                    raise AgenticError('artifact_invalid')
+                stage, reason, final_status = Stage.EVALUATED, 'evaluation_complete', 'evaluated'
             else:
                 if saved_package is None:
                     budget.ensure_live()
@@ -852,7 +857,7 @@ def _approved_evidence(person: str):
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
                       run_id=None, token_allowance=None, token_allowance_reason='daily_budget',
                       expected_run_keys=None, **kwargs):
-    summary = {'processed': 0, 'ready': 0, 'archived': 0, 'held': 0, 'skipped': 0,
+    summary = {'processed': 0, 'ready': 0, 'evaluated': 0, 'archived': 0, 'held': 0, 'skipped': 0,
                'deferred': [], 'skipped_reasons': {}}
     if not enabled(config):
         return summary
@@ -945,7 +950,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             summary['deferred'].extend(skips or [{'posting_id': pid, 'reason': 'not_admitted', 'next_eligible_at': None}])
             continue
         summary['processed'] += 1
-        summary[{Stage.READY: 'ready', Stage.ARCHIVED: 'archived', Stage.DLQ: 'held'}[stage]] += 1
+        summary[{Stage.READY: 'ready', Stage.EVALUATED: 'evaluated', Stage.ARCHIVED: 'archived', Stage.DLQ: 'held'}[stage]] += 1
         if stage == Stage.READY:
             _tell_owner_ready(conn, pid)
         if run_id is not None:
@@ -1020,6 +1025,12 @@ def _evaluation_current(conn, posting_id, captured, key, decision_policy):
     """Skip paid reassessment only for unchanged completed inputs and fresh liveness."""
     result = latest_result(conn, posting_id, parse=frozenset({'evaluation','candidate'}))
     if not result or result.get('reason') != 'evaluation_complete' or result.get('run_key') != key.value:
+        return False
+    try:
+        evaluation, _ = completed_evaluation(result)
+        if evaluation.run_key != key:
+            return False
+    except (AgenticError, ValueError, TypeError):
         return False
     if not observation_current(latest_observation(conn, posting_id),posting_id=posting_id,
             url=captured[0]['url'],ad_hash=key.ad_hash):

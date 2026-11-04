@@ -1,7 +1,11 @@
 # Jobwatch
 
+This checkout is the isolated `jobwatch-new` single-owner continuation. Execution
+is off and no service activation is part of source work. The older multi-person
+implementation and acceptance notes are historical; current scope is in INTENT.md.
+
 A self-hosted career-operations backend. It collects job postings, evaluates ads
-against each person's approved evidence and preferences, and prepares application
+against the owner's approved evidence and preferences, and prepares application
 materials for selected jobs. It never applies on its own: you review the filled
 employer form, then press Submit yourself or confirm that exact form for Jobwatch
 to submit through its canonical confirmation path.

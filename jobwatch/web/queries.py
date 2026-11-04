@@ -1281,12 +1281,14 @@ def agentic_models(conn, posting_ids: list[int] | None = None) -> dict[int, dict
         if "stage" in row.keys():
             if row["status"] in ("draft_queued", "drafted", "ready"):
                 status = "ready" if row["status"] == "ready" else "held"
+            elif row["status"] == "evaluated":
+                status = "evaluated"
             elif row["status"] in ("archived", "dlq"):
                 status = "held"
             else:
                 status = "claimed"
         else:
-            status = row["status"] if row["status"] in ("ready", "held", "failed", "claimed", "new") else "held"
+            status = row["status"] if row["status"] in ("ready", "evaluated", "held", "failed", "claimed", "new") else "held"
         evaluation = checkpoint.get("evaluate") if isinstance(checkpoint.get("evaluate"), dict) else {}
         dimensions = {}
         for key in ("technical_skills", "experience", "domain"):
@@ -1328,7 +1330,7 @@ def agentic_models(conn, posting_ids: list[int] | None = None) -> dict[int, dict
                           if isinstance(d, dict) and type(d.get("score")) in (int, float) and 1 <= d["score"] <= 5}
             hold = hold_words(result["reason"])
             out[pid] = {"status": result["status"], "reason": reason, "dimensions": dimensions,
-                        "hold": hold if result["status"] != "ready" else "", "claim_count": 0,
+                        "hold": hold if result["status"] not in ("ready", "evaluated") else "", "claim_count": 0,
                         "verified_claims": 0, "hold_count": (result.get("manifest") or {}).get("owner_to_answer", 0),
                         "global_score": evaluation.get("global_score"), "has_evaluation": bool(evaluation)}
     return out

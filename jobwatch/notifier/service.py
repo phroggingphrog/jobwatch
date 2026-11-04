@@ -197,10 +197,14 @@ def dispatch(conn, *, person=None, now=None, limit=50) -> int:
     """Try every due outbox row once; failures wait RETRY_SECONDS, then stop after MAX_ATTEMPTS. Returns deliveries."""
     person, now = _person(person), time.time() if now is None else now
     ensure(conn)
-    rows = conn.execute("SELECT id,channel,event_json,attempts,message_id FROM notify_outbox WHERE person=? AND state='pending' "
-                        "AND next_attempt_at<=? AND (lease_until IS NULL OR lease_until<=?) ORDER BY id LIMIT ?",
-                        (person, now, now, limit)).fetchall()
     configs = {c.name: c for c in channels_for(conn, person)}
+    if not configs:
+        return 0
+    placeholders = ','.join('?' for _ in configs)
+    rows = conn.execute("SELECT id,channel,event_json,attempts,message_id FROM notify_outbox WHERE person=? AND state='pending' "
+                        f"AND channel IN ({placeholders}) "
+                        "AND next_attempt_at<=? AND (lease_until IS NULL OR lease_until<=?) ORDER BY id LIMIT ?",
+                        (person, *configs, now, now, limit)).fetchall()
     delivered = 0
     for oid, name, event_json, attempts, message_id in rows:
         cfg = configs.get(name)
@@ -235,8 +239,14 @@ def deliver(conn, event: Event, *, person=None, now=None) -> DeliveryResult:
     if not targets:
         return DeliveryResult("no_channel")
     receipts = []
+    previously_delivered = False
     for cfg in targets:
         if _duplicate(conn, person, cfg.name, event, now):
+            previously_delivered |= conn.execute(
+                "SELECT 1 FROM notify_outbox WHERE person=? AND channel=? AND dedupe_key=? "
+                "AND created_at>? AND state='delivered' LIMIT 1",
+                (person, cfg.name, event.key, now - event.dedupe_window),
+            ).fetchone() is not None
             continue
         oid = conn.execute("INSERT INTO notify_outbox(person,channel,dedupe_key,event_kind,event_json,state,attempts,created_at) "
                            "VALUES(?,?,?,?,?,'failed',1,?)",
@@ -248,7 +258,8 @@ def deliver(conn, event: Event, *, person=None, now=None) -> DeliveryResult:
             conn.execute("UPDATE notify_outbox SET last_error=? WHERE id=?", (receipt.detail, oid))
         receipts.append(receipt)
     conn.commit()
-    return DeliveryResult("delivered" if any(r.ok for r in receipts) else "failed", receipts)
+    return DeliveryResult("delivered" if any(r.ok for r in receipts) or previously_delivered
+                          else "failed", receipts)
 
 
 def test_channel(conn, name: str, *, person=None) -> tuple[ChannelConfig, _channels.Receipt, bool]:

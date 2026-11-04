@@ -1,6 +1,7 @@
 # Jobwatch: current product intent
 
-This is the normative product contract, reconciled on 2026-10-30. It states the
+This is the normative product contract for the isolated single-owner continuation,
+reconciled on 2026-11-04. It states the
 intended behavior, not a claim that every requirement is implemented or deployed.
 Keep this repository public and candidate-free. Changes to the product goal need
 the owner's explicit direction.
@@ -12,9 +13,9 @@ is evidence of decisions, not a second set of active requirements.
 ## Product and delivery boundary
 
 Jobwatch is a profile-driven career-operations backend. It discovers openings,
-reads complete ads against each person's approved evidence and preferences,
+reads complete ads against the owner's approved evidence and preferences,
 explains fit and eligibility, and prepares application materials and related
-career work. It supports different people and fields without hard-coded candidate
+career work. This copy serves one owner across fields without hard-coded candidate
 facts, work rights, locations, target roles or writing assumptions.
 
 The primary interface is an authenticated native HTTP agent API. Jobwatch owns
@@ -50,8 +51,8 @@ neither a client nor an adapter owns orchestration or human approval authority.
 Return useful structured results, progress, questions and documents in chat.
 Canonical tool results remain authoritative; optional widgets or Artifacts must
 not create a second workflow. Preserve useful text fallbacks and existing data
-and owner identity. Do not require friends to share or enter backend API keys;
-account mapping and credentials stay server-side and per person.
+and owner identity. Credentials stay server-side. Additional accounts, sign-up and
+multi-person support are outside this continuation.
 
 Accept and retain original uploaded files within explicit limits. Distinguish
 receipt from successful reading. Read supported documents and bounded ZIP
@@ -67,7 +68,7 @@ review. See the [standard-client boundary](docs/adr/0010-standard-chat-client-bo
 
 ## Candidate understanding and discovery
 
-Keep facts and preferences in each person's approved runtime files. Separate
+Keep facts and preferences in the owner's approved runtime files. Separate
 confirmed constraints from recommendations and inferred possibilities. Missing
 facts remain explicit gaps; collect what an operation needs before proceeding.
 Never manufacture qualifications, experience, achievements or preferences.
@@ -117,9 +118,8 @@ not repeat paid candidate experiments without a concrete repair and authorizatio
 
 ## Safety and authorization
 
-- Preserve per-person isolation and server-bound identity across every route,
-  tool, checkpoint, file and account connection. Model arguments cannot select
-  another person's identity.
+- Preserve the server-bound owner identity across every route, tool, checkpoint,
+  file and account connection. Model arguments cannot select another identity.
 - Keep candidate data on approved paid routes and out of hosted tracing. Use
   synthetic fixtures, never live candidate records, for tests.
 - Canonical operations enforce evidence, eligibility, review and package gates.
@@ -134,6 +134,17 @@ not repeat paid candidate experiments without a concrete repair and authorizatio
   automatically. A form map or draft is not evidence of a filled or submitted form.
 
 ## Completion and operational evidence
+
+Scheduled screening promotes postings for evaluation only. A successful evaluated
+result requires saved, valid candidate and evaluation artifacts bound to the same
+inputs; it does not imply document preparation or an application. Skipped work does
+not consume promotion allowance. Explicit selection starts preparation. Missing
+document identity must hold preparation before paid work without blocking evaluation.
+
+This continuation remains isolated with execution mode off. Neither source checks
+nor this contract authorize deployment or automatic assessment. Missing approved
+profile details require a new exact-input human confirmation; historical versions
+must not silently replace the current approved profile.
 
 An authenticated client must be able to start and resume durable conversations,
 answer typed questions, make authorized decisions, retrieve verified documents
