@@ -91,8 +91,10 @@ Use the interaction facilities supported by this client. Never invent an approva
 Onboarding: to set up a profile, guide the person. Ask for their CV and other documents (or offer their existing profile files
 with use_existing_files) and call profile_start; the documents are read in the background, so ask the open questions one or two
 at a time meanwhile and use profile_status to see the draft and parse state. profile_answer and profile_correct record ONLY the
-person's own words from their latest message, copied faithfully: never invent, infer or paraphrase a fact into an answer, never
-answer for them, and ask again if they have not said it. These tools update only the unconfirmed draft and need no separate
+person's own words. Use source_id='latest' for their latest answer, or a stable source ID from profile_status for an earlier
+answer. The backend records the human's wording, so your paraphrase need not match it exactly. Never invent a fact or answer
+for them. If a source is missing, use the returned human_sources before asking for information already supplied.
+These tools update only the unconfirmed draft and need no separate
 approval. Show profile_confirmation before profile_confirm. profile_confirm needs
 the person's own approval of that exact draft and scope; it starts discovery within the scope shown and does not authorise
 documents, employer messages or submission. If profile_incomplete is reported, ask for their career focus and experience.
@@ -143,9 +145,11 @@ def _tool_arguments(name,args):
     if name=='reject_posting':
         return dict({'reason_text':''},**args)
     if name=='profile_answer':
-        return {'question_id':args.get('question_id'),'text':args.get('text')}
+        return {'question_id':args.get('question_id'),'text':args.get('text'),
+                **({'source_id':args['source_id']} if args.get('source_id') is not None else {})}
     if name=='profile_correct':
-        return {'edits':args.get('edits')}
+        return {'edits':args.get('edits'),
+                **({'source_id':args['source_id']} if args.get('source_id') is not None else {})}
     return args
 
 
@@ -649,7 +653,19 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
             return task_state.stop(jobs, posting_id)
 
     def _refused(exc):
-        return {'status': 'refused', 'reason': exc.code}
+        result = {'status': 'refused', 'reason': exc.code}
+        if exc.code in {'not_person_words', 'human_source_not_found'}:
+            result.update(status='source_required', human_sources=_human_sources(),
+                action="Use source_id='latest' for the latest human answer, or an available source ID. "
+                       "The backend records the original words; do not ask the person to repeat an answer already supplied.")
+        return result
+
+    def _human_sources():
+        heard = [text for text in (scope.human_texts if scope else ())
+                 if isinstance(text, str) and text.strip()]
+        return [{'id': hashlib.sha256(text.encode()).hexdigest(), 'preview': text[:180],
+                 'latest': index == len(heard) - 1}
+                for index, text in enumerate(heard)][-8:]
 
     def _draft(p):
         """The draft as the person's conversation needs it: facts with basis and source quotes, open questions, parse state."""
@@ -657,7 +673,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                 'parse_error': p.parse_error or None,
                 'facts': [{'id': f.id, 'section': f.section, 'value': f.value, 'basis': str(f.basis), 'actor': f.actor,
                            'note': f.note, 'sources': [{'line': r.line, 'quote': r.quote} for r in f.sources]} for f in p.facts],
-                'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions]}
+                'open_questions': [{'id': q.id, 'section': q.section, 'text': q.text, 'why': q.why} for q in p.questions],
+                'human_sources': _human_sources()}
 
     def _said(*texts):
         """Fail closed: every string must be a clause the person wrote in this conversation, or a span of one that their
@@ -677,6 +694,22 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
                 yield from _leaves(v)
         else:
             yield None                                        # a list or number is not the person's words
+
+    def _source_value(value, source_id):
+        from jobwatch.candidate import intake
+        from jobwatch.candidate.policy import person_asserted
+        if source_id is None:
+            _said(*_leaves(value))
+            return value, None
+        heard = [text for text in (scope.human_texts if scope else ())
+                 if isinstance(text, str) and text.strip()]
+        source = (heard[-1] if heard else None) if source_id == 'latest' else next(
+            (text for text in heard if hashlib.sha256(text.encode()).hexdigest() == source_id), None)
+        if not isinstance(source, str) or not source.strip():
+            raise intake.IntakeError('human_source_not_found')
+        origin = hashlib.sha256(source.encode()).hexdigest()
+        # Preserve an affirmed excerpt; otherwise use the actual source, never the model's interpretation.
+        return (value if isinstance(value, str) and person_asserted(value, (source,)) else source), origin
 
     def _open():
         from jobwatch.candidate import intake
@@ -761,29 +794,41 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         return policy.describe(person, mode=service.decision_policy_mode(config))
 
     @tool
-    def profile_answer(question_id: str, text: str) -> dict:
-        """Record the person's answer in the unconfirmed draft. text must be the person's
-        own words from this conversation, copied faithfully; never invent, infer or paraphrase a fact, and never answer
-        for them."""
+    def profile_answer(question_id: str, text: str, source_id: str | None = None) -> dict:
+        """Update the unconfirmed draft from a human answer. Use source_id='latest' or an ID from
+        profile_status to record the actual source wording even when text is a paraphrase. Without a source reference,
+        text must be an affirmed human excerpt. This never approves the profile."""
         from jobwatch.candidate import intake
         try:
-            _said(text)
+            value, origin = _source_value(text, source_id)
             return _draft(_on_latest(lambda p: intake.answer(person, p.id, expected_revision=p.revision,
-                                                             question_id=question_id, text=text)))
+                                                             question_id=question_id, text=value,
+                                                             human_source_id=origin)))
         except intake.IntakeError as exc:
             return _refused(exc)
 
     @tool
-    def profile_correct(edits: list[dict]) -> dict:
+    def profile_correct(edits: list[dict], source_id: str | None = None) -> dict:
         """Record corrections in the unconfirmed draft: {op:'add',section,value} |
         {op:'set',fact_id,basis:'evidence',value} | {op:'remove',fact_id}. Values must be what the person said in this
-        conversation; never invent or infer a fact."""
+        conversation; source_id='latest' or a profile_status source ID records its original wording. Each edit may
+        choose its own source_id. A structured model suggestion is not a human fact. This never approves the profile."""
         from jobwatch.candidate import intake
         try:
             if type(edits) is not list:
                 raise intake.IntakeError('invalid_edit')
-            _said(*(leaf for e in edits if isinstance(e, dict) and e.get('op') in ('add', 'set') for leaf in _leaves(e.get('value'))))
-            return _draft(_on_latest(lambda p: intake.edit(person, p.id, expected_revision=p.revision, edits=edits)))
+            grounded = []
+            for edit in edits:
+                if not isinstance(edit, dict):
+                    raise intake.IntakeError('invalid_edit')
+                item = {key: value for key, value in edit.items() if key != 'human_source_id'}
+                reference = item.pop('source_id', source_id)
+                if item.get('op') in ('add', 'set'):
+                    item['value'], origin = _source_value(item.get('value'), reference)
+                    if origin is not None:
+                        item['human_source_id'] = origin
+                grounded.append(item)
+            return _draft(_on_latest(lambda p: intake.edit(person, p.id, expected_revision=p.revision, edits=grounded)))
         except intake.IntakeError as exc:
             return _refused(exc)
 

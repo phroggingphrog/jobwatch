@@ -57,6 +57,7 @@ CODES = ("unsupported_type", "too_large", "no_extractable_text", "upload_not_fou
          "proposal_changed", "proposal_not_draft", "invalid_edit", "fact_not_found", "question_not_found",
          "scope_changed", "adopt_first", "person_required", "already_adopted", "nothing_to_adopt", "profile_edited_by_hand",
          "proposal_in_progress", "profile_incomplete", "proposal_parsing", "parse_interrupted", "not_person_words",
+         "human_source_not_found",
          "gateway_not_allowed", "model_not_allowed", "model_unavailable", "parse_timeout",
          "profile_path_outside", "profile_file_unreadable", "profile_file_missing", "no_profile_version", "no_confirmed_scope",
          "scope_without_basis", "profile_unreadable", "ok")
@@ -721,10 +722,15 @@ def _new_id(facts) -> str:
     return "f%d" % (1 + max((int(f.id[1:]) for f in facts if re.fullmatch(r"f\d+", f.id)), default=0))
 
 
-def _person_fact(fid: str, section: str, value, basis: Basis = Basis.EVIDENCE) -> ProfileFact:
+def _person_fact(fid: str, section: str, value, basis: Basis = Basis.EVIDENCE,
+                 human_source_id: str | None = None) -> ProfileFact:
     # evidence from the person means "stated by the person": no document source, never actor 'parser'
+    if human_source_id is not None and (not isinstance(human_source_id, str)
+                                       or not re.fullmatch(r'[a-f0-9]{64}', human_source_id)):
+        raise IntakeError('invalid_edit')
+    note = _STATED if human_source_id is None else f'{_STATED}; human source {human_source_id}'
     return ProfileFact(id=fid, section=section, value=value if basis is Basis.EVIDENCE else "", basis=basis,
-                       sources=(), note=_STATED, actor="person")
+                       sources=(), note=note, actor="person")
 
 
 def _value(v):
@@ -762,7 +768,8 @@ def edit(person: str, proposal_id: str, *, expected_revision: int, edits: list[d
             if op == "add":
                 if e.get("section") not in SECTIONS:
                     raise IntakeError("invalid_edit")
-                facts.append(_person_fact(_new_id(facts), e["section"], _value(e.get("value"))))
+                facts.append(_person_fact(_new_id(facts), e["section"], _value(e.get("value")),
+                                          human_source_id=e.get('human_source_id')))
             elif op in ("set", "remove"):
                 i = next((i for i, f in enumerate(facts) if f.id == e.get("fact_id")), None)
                 if i is None:
@@ -772,14 +779,16 @@ def edit(person: str, proposal_id: str, *, expected_revision: int, edits: list[d
                 elif e.get("basis") != "evidence":      # only a statement by the person; inference is the parser's
                     raise IntakeError("invalid_edit")
                 else:
-                    facts[i] = _person_fact(facts[i].id, facts[i].section, _value(e.get("value")))
+                    facts[i] = _person_fact(facts[i].id, facts[i].section, _value(e.get("value")),
+                                            human_source_id=e.get('human_source_id'))
             else:
                 raise IntakeError("invalid_edit")
         return facts, cur.questions
     return _mutate(person, proposal_id, expected_revision, change)
 
 
-def answer(person: str, proposal_id: str, *, expected_revision: int, question_id: str, text: str) -> Proposal:
+def answer(person: str, proposal_id: str, *, expected_revision: int, question_id: str, text: str,
+           human_source_id: str | None = None) -> Proposal:
     """Answer an open question: the question is removed from the open list and its section gets the
     person's fact in place of the parser's 'unknown' placeholder (a later correction is an edit)."""
     def change(cur: Proposal):
@@ -787,7 +796,7 @@ def answer(person: str, proposal_id: str, *, expected_revision: int, question_id
         if q is None:
             raise IntakeError("question_not_found")
         facts = [f for f in cur.facts if not (f.section == q.section and f.basis is Basis.UNKNOWN and f.actor == "parser")]
-        facts.append(_person_fact(_new_id(cur.facts), q.section, _value(text)))
+        facts.append(_person_fact(_new_id(cur.facts), q.section, _value(text), human_source_id=human_source_id))
         return facts, [x for x in cur.questions if x.id != q.id]
     return _mutate(person, proposal_id, expected_revision, change)
 

@@ -60,7 +60,13 @@ contents; explain unreadable files without rejecting the entire conversation.
 Generated interfaces, uploaded files and model text never confer approval.
 
 Routine answers and corrections update draft profile state without per-answer
-confirmation. An authenticated human chat interaction may confirm an exact,
+confirmation or a requirement for the model to reproduce the person's words.
+The owner requested "remove the rigidity": a source-bound update records the
+authenticated human's original wording, preserving negation and provenance.
+Improving assessment corrections continue within configured budgets; repeated
+failures without progress remain bounded across restart. Final approval still
+binds the exact current draft and scope.
+An authenticated human chat interaction may confirm an exact,
 current, complete profile summary through the canonical confirmation path. Do not
 repeatedly request answers already captured. A model's paraphrase is not consent.
 Protected operations stay paused when the client cannot supply required human

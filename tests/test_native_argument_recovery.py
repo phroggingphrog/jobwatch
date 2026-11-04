@@ -78,7 +78,7 @@ def test_malformed_feedback_replays_after_checkpoint_loss_without_reset_or_repur
 def test_repeated_malformed_arguments_exhaust_persisted_boundary(tmp_path):
     bundle, ad, key, roles = build_case(tmp_path / 'evidence')
     choice = native_choices(roles)[0]
-    # Two corrections are allowed per tool: the third malformed call exhausts the persisted boundary,
+    # Two unchanged corrections are allowed per tool: the third malformed call exhausts the persisted boundary,
     # and the next run (same conn) refuses it again without another paid attempt.
     llm, seen = malformed_transport([choice, choice, choice, choice], {1, 2, 3, 4})
     with sqlite3.connect(':memory:', check_same_thread=False) as conn:
@@ -87,6 +87,136 @@ def test_repeated_malformed_arguments_exhaust_persisted_boundary(tmp_path):
                 evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
                     screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
     # The second run replays the same first request from the journal: it raises on the boundary, not on a new call.
+    assert len(seen) == 3
+
+
+def test_three_progressing_corrections_complete_without_a_fixed_total_cap(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    incomplete = []
+    for missing in (('facts', 'location_fit', 'legitimacy'), ('location_fit', 'legitimacy'), ('legitimacy',)):
+        item = copy.deepcopy(choices[0])
+        for field in missing:
+            item['arguments'].pop(field)
+        incomplete.append(item)
+    llm, seen = transport([*incomplete, *choices], reasoning=True)
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        args = dict(conn=conn, posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+        result = evaluate_autonomous(key, ad, budget(key), llm, **args)
+        assert result.matches[0].judgment.status == 'demonstrated'
+        assert len(seen) == 6
+        assert evaluate_autonomous(key, ad, budget(key), llm, **args) == result
+        assert len(seen) == 6
+
+
+def test_progressing_corrections_resume_after_checkpoint_loss_without_repurchase(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    incomplete = []
+    for missing in (('facts', 'location_fit', 'legitimacy'), ('location_fit', 'legitimacy'), ('legitimacy',)):
+        item = copy.deepcopy(choices[0])
+        for field in missing:
+            item['arguments'].pop(field)
+        incomplete.append(item)
+    llm, seen = transport([*incomplete[:2], OSError('synthetic interruption')], reasoning=True)
+    args = dict(posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+    b = budget(key)
+    path = tmp_path / 'checkpoint.sqlite'
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        with pytest.raises(RuntimeErrorSafe, match='model_unavailable'):
+            evaluate_autonomous(key, ad, b, llm, conn=conn, **args)
+        conn.execute('DELETE FROM chat_writes')
+        conn.execute('DELETE FROM chat_checkpoints')
+        conn.commit()
+    restored = JobBudget.restore(b.snapshot(), batch=BatchBudget('synthetic', token_ceiling=2_000_000))
+    resumed, requests = transport([incomplete[-1], *choices], reasoning=True)
+    with sqlite3.connect(path, check_same_thread=False) as conn:
+        result = evaluate_autonomous(key, ad, restored, resumed, conn=conn, **args)
+        assert result.matches[0].judgment.status == 'demonstrated'
+        assert requests[0]['messages'] == seen[-1]['messages']
+        assert len(seen) == 3 and len(requests) == 4
+        assert evaluate_autonomous(key, ad, restored, resumed, conn=conn, **args) == result
+        assert len(requests) == 4
+
+
+def test_unrelated_payload_edits_do_not_reset_missing_field_recovery(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    incomplete = []
+    for index in range(5):
+        item = copy.deepcopy(native_choices(roles)[0])
+        item['arguments'].pop('legitimacy')
+        item['arguments']['uncertainties'] = [f'Changed unrelated text {index}']
+        incomplete.append(item)
+    llm, seen = transport(incomplete)
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        args = dict(conn=conn, posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+        for _ in range(2):
+            with pytest.raises(RuntimeErrorSafe, match='missing_required_fields'):
+                evaluate_autonomous(key, ad, budget(key), llm, **args)
+    assert len(seen) == 3
+
+
+def test_valid_raw_json_ignores_unrelated_edits_after_parallel_malformed_call(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    incomplete = []
+    for index in range(5):
+        item = copy.deepcopy(choices[0])
+        item['arguments'].pop('legitimacy')
+        item['arguments']['uncertainties'] = [f'Unrelated text {index}']
+        incomplete.append(item)
+    llm, seen = transport([[incomplete[0], choices[1]], *incomplete[1:]], reasoning=True)
+    original = llm.transport
+    def send(*args, **kwargs):
+        status, payload = original(*args, **kwargs)
+        if len(seen) == 1:
+            payload['choices'][0]['message']['tool_calls'][1]['function']['arguments'] += '}'
+        return status, payload
+    llm.transport = send
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        with pytest.raises(RuntimeErrorSafe, match='missing_required_fields'):
+            evaluate_autonomous(key, ad, budget(key), llm, conn=conn, posting={},
+                                screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+    first_feedback = [json.loads(m['content']) for m in seen[1]['messages'] if m['role'] == 'tool']
+    assert {item['error'] for item in first_feedback} == {'missing_required_fields', 'invalid_tool_arguments_json'}
+    assert len(seen) == 3
+
+
+def test_rotating_unknown_evidence_ids_exhausts_persisted_no_progress(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    invalid_reads = [{'tool': 'read_candidate_evidence', 'arguments': {'evidence_ids': [f'unknown-{i}']}}
+                     for i in range(8)]
+    llm, seen = transport([choices[0], *invalid_reads])
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        args = dict(conn=conn, posting={}, screen={'outcome': 'admit'}, evidence_bundle=bundle, model='deepseek-flash')
+        with pytest.raises(RuntimeErrorSafe, match='unknown_evidence'):
+            evaluate_autonomous(key, ad, budget(key), llm, **args)
+        attempts = len(seen)
+        conn.execute('DELETE FROM chat_writes')
+        conn.execute('DELETE FROM chat_checkpoints')
+        conn.commit()
+        with pytest.raises(RuntimeErrorSafe, match='unknown_evidence'):
+            evaluate_autonomous(key, ad, budget(key), llm, **args)
+    assert attempts == len(seen) == 6
+
+
+def test_progress_cannot_override_the_configured_turn_limit(tmp_path):
+    bundle, ad, key, roles = build_case(tmp_path / 'evidence')
+    choices = native_choices(roles)
+    incomplete = []
+    for missing in (('facts', 'location_fit', 'legitimacy'), ('location_fit', 'legitimacy'), ('legitimacy',)):
+        item = copy.deepcopy(choices[0])
+        for field in missing:
+            item['arguments'].pop(field)
+        incomplete.append(item)
+    llm, seen = transport([*incomplete, *choices])
+    b = budget(key)
+    b.role_turn_limit = 3
+    with sqlite3.connect(':memory:', check_same_thread=False) as conn:
+        with pytest.raises(RuntimeErrorSafe, match='turn_limit'):
+            evaluate_autonomous(key, ad, b, llm, conn=conn, posting={}, screen={'outcome': 'admit'},
+                                evidence_bundle=bundle, model='deepseek-flash')
     assert len(seen) == 3
 
 
