@@ -11,29 +11,16 @@ from pipeline.agentic import connector_http
 from pipeline.agentic.api_store import Conflict
 from pipeline.agentic.runtime import RuntimeErrorSafe
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 TOKEN = 'discovery-test-' + 'x' * 40
 H = {'Authorization': 'Bearer ' + TOKEN}
 P = '/connector/discovery'
 
 
-def test_settings_are_typed_and_bound_to_authenticated_person(transport):
-    a, b, calls, module = transport
-    saved = {}
-    def get_settings(person, configured):
-        assert person == users.current() == configured['configured_person']
-        return {'daily_token_ceiling': saved.get(person, 2_000_000)}
-    def set_settings(person, configured, daily_token_ceiling):
-        assert person == users.current() == configured['configured_person']
-        saved[person] = daily_token_ceiling
-        return get_settings(person, configured)
-    module.get_settings, module.set_settings = get_settings, set_settings
-    assert a.get(P+'/settings').status_code == 401
-    assert a.post(P+'/settings', headers=H, json={'daily_token_ceiling': None}).json() == {'daily_token_ceiling': None}
-    assert a.get(P+'/settings', headers=H).json() == {'daily_token_ceiling': None}
-    assert b.get(P+'/settings', headers=H).json() == {'daily_token_ceiling': 2_000_000}
-    for body in ({'daily_token_ceiling': 0}, {'daily_token_ceiling': True},
-                 {'daily_token_ceiling': None, 'person': 'fixture-b'}):
-        assert a.post(P+'/settings', headers=H, json=body).status_code == 422
 
 
 @pytest.fixture
@@ -59,24 +46,11 @@ def transport(monkeypatch):
     monkeypatch.setitem(sys.modules, module.__name__, module)
     monkeypatch.setattr(agentic, 'discovery_ops', module, raising=False)
     monkeypatch.setattr(config_module, 'load_config', config)
-    a = TestClient(connector_http.create_app(token=TOKEN, person='fixture-a'))
+    a = TestClient(connector_http.create_app(token=TOKEN, person='owner'))
     b = TestClient(connector_http.create_app(token=TOKEN, person='fixture-b'))
     return a, b, calls, module
 
 
-def test_discovery_status_and_start_use_authenticated_person_and_person_config(transport):
-    a, b, calls, _ = transport
-    for client, person in ((a, 'fixture-a'), (b, 'fixture-b')):
-        status = client.get(P + '/status', headers=H)
-        assert status.status_code == 200
-        assert status.json()['incidents'] == [{'incident_id': person + '-incident'}]
-        queued = client.post(P + '/start', headers=H, json={'request_id': 'same-request'})
-        assert queued.status_code == 202 and queued.json() == {'run_id': person + '-same-request', 'state': 'queued'}
-        again = client.post(P + '/start', headers=H, json={'request_id': 'same-request'})
-        assert again.json() == queued.json()
-    assert all(call[1] == call[2] == call[3]['configured_person'] for call in calls)
-    assert calls[1][-1] == {}  # Starting a pass does not silently supply retry arguments.
-    assert users.current() == users.DEFAULT_USER
 
 
 def test_retry_forwards_only_the_selected_incident_and_context(transport):
@@ -85,7 +59,7 @@ def test_retry_forwards_only_the_selected_incident_and_context(transport):
             'expected_context': 'a' * 64}
     response = a.post(P + '/retry', headers=H, json=body)
     assert response.status_code == 202, response.text
-    assert calls == [('start', 'fixture-a', 'fixture-a', {'configured_person': 'fixture-a'}, 'retry-1',
+    assert calls == [('start', 'owner', 'owner', {'configured_person': 'owner'}, 'retry-1',
                       {'incident_id': 'paused-one', 'posting_id': 42, 'expected_context': 'a' * 64})]
 
 

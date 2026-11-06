@@ -171,13 +171,9 @@ SLOW_HARD_STOP_S = 2640      # slow unit (TimeoutStartSec=45min)
 MIN_AI_S = 60                # the AI step always gets at least this long
 
 
-# `--user all` runs people one after another inside one unit; each gets this share of the unit's time (1/people run).
-PEOPLE_SHARE: contextvars.ContextVar[float] = contextvars.ContextVar("jobwatch_people_share", default=1.0)
-
-
 def ai_budget(started: float, config: Config | None = None, tier: str = "fast") -> float:
     """Remaining unit time, capped by the reader limit when the owner set one."""
-    unit = (SLOW_UNIT_BUDGET_S if tier == "slow" else UNIT_BUDGET_S) * PEOPLE_SHARE.get()
+    unit = (SLOW_UNIT_BUDGET_S if tier == "slow" else UNIT_BUDGET_S)
     left = max(0, unit - (time.monotonic() - started))
     own = ((config.settings.get("reader") or {}).get("max_seconds") if config else None)
     return min(left, own) if isinstance(own, (int, float)) and own > 0 else left
@@ -188,7 +184,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         deadline: float | None = None, run_id: str | None = None) -> dict:
     started = time.monotonic()
     deadline = min(deadline if deadline is not None else float('inf'),
-                   time.time() + (SLOW_UNIT_BUDGET_S if tier == 'slow' else UNIT_BUDGET_S) * PEOPLE_SHARE.get())
+                   time.time() + (SLOW_UNIT_BUDGET_S if tier == 'slow' else UNIT_BUDGET_S))
     conn = dbm.connect(config.db_path)
     discovery_run_id = run_id
     run_id = dbm.start_run(conn, "run", only or tier, dry_run)

@@ -1,3 +1,4 @@
+import pytest
 import time
 
 from fastapi.testclient import TestClient
@@ -10,11 +11,16 @@ from pipeline.agentic.chat import job_connection
 from tests.test_discovery_operations import world  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_outer_deadline_retains_returned_discovery_summary_and_usage(world, monkeypatch):
     config, _ = world
 
     def return_summary(person, cfg, run_id, payload, **kwargs):
-        with users.use(person), job_connection(cfg, write=True) as conn:
+        with job_connection(cfg, write=True) as conn:
             incidents.begin_run(conn, run_id)
             incidents.end_run(conn, run_id, state='completed')
         current = execution.current()
@@ -27,7 +33,7 @@ def test_outer_deadline_retains_returned_discovery_summary_and_usage(world, monk
     monkeypatch.setattr('pipeline.agentic.discovery_ops.execute', return_summary)
     token = 'a' * 40
     headers = {'Authorization': 'Bearer ' + token}
-    with TestClient(create_api(credentials={token: Principal('fixture-a')}, config=config)) as client:
+    with TestClient(create_api(credentials={token: Principal('owner')}, config=config)) as client:
         started = client.post('/api/agent/discovery/start', headers=headers,
                               json={'request_id': 'partial-deadline'})
         assert started.status_code == 202
@@ -49,8 +55,8 @@ def test_outer_deadline_retains_returned_discovery_summary_and_usage(world, monk
         assert run['interactions'] == []
         assert run['artifacts'] == []
 
-    with APIStore('fixture-a') as store:
+    with APIStore('owner') as store:
         assert store.raw_run(ident)['state'] == 'failed'
-    with users.use('fixture-a'), job_connection(config) as conn:
+    with job_connection(config) as conn:
         state = conn.execute('SELECT state FROM agentic_invocations WHERE run_id=?', (ident,)).fetchone()
         assert state[0] == 'failed'

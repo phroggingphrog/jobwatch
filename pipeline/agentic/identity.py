@@ -31,18 +31,7 @@ def registry():
 
 
 def credentials():
-    if not os.environ.get('JOBWATCH_LIBRECHAT_IDENTITY_KEY'):
-        return {}
-    from pipeline.agentic.api import Principal
-    with registry() as conn:
-        rows = conn.execute('SELECT person,chat_key,human_key FROM identities').fetchall()
-    result = {}
-    for row in rows:
-        if row['person'] == users.DEFAULT_USER:
-            continue  # owner token rotation follows the deployment credentials, not a cached enrollment
-        result[row['chat_key']] = Principal(row['person'])
-        result[row['human_key']] = Principal(row['person'], frozenset({'read', 'interact', 'approve'}))
-    return result
+    return {}  # the owner's token follows the deployment credentials; nobody else is enrolled
 
 
 class Enrollment(BaseModel):
@@ -69,23 +58,9 @@ def mount(app, base_credentials):
             subject = Enrollment(subject=subject).subject
         except ValueError:
             raise HTTPException(401, 'authentication_required') from None
-        with registry() as conn:
-            conn.execute('BEGIN IMMEDIATE')
-            row = conn.execute('SELECT * FROM identities WHERE subject=?', (subject,)).fetchone()
-            if row is None:
-                owner = subject == owner_subject
-                person = users.DEFAULT_USER if owner else 'lc-' + hashlib.sha256(subject.encode()).hexdigest()[:24]
-                chat, human = (owner_run[0], owner_human[0]) if owner else (secrets.token_urlsafe(40), secrets.token_urlsafe(40))
-                conn.execute('INSERT INTO identities VALUES(?,?,?,?)', (subject, person, chat, human))
-                row = dict(person=person, chat_key=chat, human_key=human)
-            if subject == owner_subject:
-                conn.execute('UPDATE identities SET chat_key=?,human_key=? WHERE subject=?',
-                             (owner_run[0], owner_human[0], subject))
-                row = dict(person=users.DEFAULT_USER, chat_key=owner_run[0], human_key=owner_human[0])
-            # Finish initialization before publishing credentials, also on a retried enrollment.
-            users.create_user_dirs(row['person'])
-            conn.commit()
-            return {key: row[key] for key in ('person', 'chat_key', 'human_key')}
+        if subject != owner_subject:
+            raise HTTPException(401, 'authentication_required')   # one owner: no other subject is enrolled
+        return dict(person=users.DEFAULT_USER, chat_key=owner_run[0], human_key=owner_human[0])
 
     @app.post('/api/agent/librechat/enroll')
     def enroll(body: Enrollment, authorization: str | None = Header(default=None)):

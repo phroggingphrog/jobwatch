@@ -98,8 +98,7 @@ def respond(store, person, conversation, run, body, message, key, config):
             from pipeline.agentic.chat import _approval_binding
             from pipeline.agentic.contracts import AgenticError
             try:
-                with users.use(person):
-                    yes = item['binding'] == _approval_binding('profile_confirm', item['binding']['arguments'], config)
+                yes = item['binding'] == _approval_binding('profile_confirm', item['binding']['arguments'], config)
             except AgenticError:
                 yes = False
         response = {'decision': 'approve' if yes else 'reject', 'answer': None}

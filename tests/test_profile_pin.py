@@ -8,6 +8,11 @@ from jobwatch.apply import paths
 from jobwatch.candidate import person
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def _profile(folder, hours):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "profile.yaml").write_text(
@@ -32,16 +37,6 @@ def test_pin_cannot_redirect_approved_person_readers(tmp_path, monkeypatch):
     assert person.hours_limit_per_fortnight() == 48
 
 
-def test_pin_applies_to_a_non_default_person(tmp_path, monkeypatch):
-    monkeypatch.setenv("JOBWATCH_DATA_DIR", str(tmp_path))
-    users.create_user_dirs("friend")
-    frozen = _profile(tmp_path / "frozen", 20)
-    with users.use("friend"):
-        own = paths.profile_dir()
-        assert own == tmp_path / "users" / "friend" / "profile"
-        with paths.pin_profile_dir(frozen):
-            assert paths.profile_dir() == frozen
-        assert paths.profile_dir() == own
 
 
 def test_pinned_folder_is_read_only_to_code(tmp_path):

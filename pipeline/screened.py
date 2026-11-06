@@ -91,15 +91,19 @@ def retry_transport(conn, limit: int = 50) -> int:
     return done
 
 
-def _promoted_since(conn, hours: int = 24) -> int:
+def _promoted_ids(conn, hours: int = 24) -> set[int]:
+    """Postings promoted in the last day. A job held by the evaluator stays SHORTLISTED; counting every attempt used the
+    day's allowance on repeats of the same ~80 postings (2026-11-02: 176 attempts, 100 allowance, 0 READY)."""
     since = (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
-    return conn.execute("SELECT COUNT(*) FROM pipeline_events WHERE node='promote' AND at>=?", (since,)).fetchone()[0]
+    return {r[0] for r in conn.execute("SELECT DISTINCT posting_id FROM pipeline_events WHERE node='promote' AND at>=?",
+                                       (since,))}
 
 
 def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
     """Send the best SHORTLISTED jobs to the agentic evaluator: highest score first, newest id on ties."""
     cfg = screened_settings(config)
-    allowance = max(0, min(cfg["promote_per_run"], cfg["promote_per_day"] - _promoted_since(conn)))
+    recent = _promoted_ids(conn)
+    allowance = max(0, min(cfg["promote_per_run"], cfg["promote_per_day"] - len(recent)))
     out = {"promoted": 0, "allowance": allowance}
     if allowance <= 0:
         return out
@@ -110,7 +114,8 @@ def promote(conn, config, *, max_seconds=None, deadline=None) -> dict:
         "CAST(json_extract(data_json, '$.evaluate.overall') AS REAL) AS score FROM pipeline_state "
         "WHERE stage=? AND json_extract(data_json, '$.evaluate.overall') IS NOT NULL",
         (str(Stage.SHORTLISTED),)).fetchall()
-    rows = [row for row in rows if snapshot.get(row['track']) is None or snapshot.get(row['track']).promote]
+    rows = [row for row in rows if row['posting_id'] not in recent
+            and (snapshot.get(row['track']) is None or snapshot.get(row['track']).promote)]
     rows.sort(key=lambda row: (snapshot.get(row['track']).priority if snapshot.get(row['track']) else float('inf'),
                                -row['score'], -row['posting_id']))
     ids = [r["posting_id"] for r in rows[:allowance]]

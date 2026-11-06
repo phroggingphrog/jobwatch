@@ -71,9 +71,8 @@ def _uploads(person, raw):
         raise HTTPException(422, 'invalid_upload_references')
     from jobwatch import users
     from jobwatch.candidate import intake
-    with users.use(person):
-        # Canonical validation resolves only this authenticated person's private intake.
-        docs, _ = intake._load_docs(person, ids)
+    # Canonical validation resolves only this authenticated person's private intake.
+    docs, _ = intake._load_docs(person, ids)
     return ids, [sha for sha, _ in docs]
 
 
@@ -169,8 +168,7 @@ def mount(app, require, get_config, *, client_principal=None):
     def models(principal=Depends(read)):
         from pipeline.agentic.client_api import model_catalog
         from jobwatch import users
-        with users.use(principal.person):
-            catalog = model_catalog(principal.person, get_config(principal.person))
+        catalog = model_catalog(principal.person, get_config(principal.person))
         return {'object': 'list', 'data': [{'id': name, 'object': 'model', 'created': 0, 'owned_by': 'jobwatch'}
             for name in dict.fromkeys([MODEL, *[row['id'] for row in catalog['options']]])]}
 
@@ -181,8 +179,7 @@ def mount(app, require, get_config, *, client_principal=None):
         from jobwatch import users
         # The authenticated LibreChat server saves the explicit selector choice
         # through the human-scoped model API before forwarding this request.
-        with users.use(principal.person):
-            selected_model = model_choice.get_model('chat', principal.person)
+        selected_model = model_choice.get_model('chat', principal.person)
         if body.model not in (MODEL, selected_model) or not _ID.fullmatch(x_jobwatch_conversation):
             raise HTTPException(422, 'invalid_client_request')
         human_chat = bool(getattr(request.state, 'human_chat', False))

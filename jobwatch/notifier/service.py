@@ -86,8 +86,6 @@ def stored_channels(conn, person=None) -> list[ChannelConfig]:
 def _alias(conn, person) -> ChannelConfig | None:
     """The older install-wide settings, as an equivalent channel for the owner only."""
     from jobwatch import settings, users
-    if person != users.DEFAULT_USER:
-        return None
     if not (settings.get(legacy.SSH_ENV) and settings.get(legacy.FILE_ENV)):
         return None
     return ChannelConfig(legacy.ALIAS_CHANNEL, "ssh_append",
@@ -260,7 +258,7 @@ def deliver(conn, event: Event, *, person=None, now=None) -> DeliveryResult:
             conn.execute("UPDATE notify_outbox SET last_error=? WHERE id=?", (receipt.detail, oid))
         receipts.append(receipt)
     conn.commit()
-    return DeliveryResult("delivered" if any(r.ok for r in receipts) or (not receipts and previously_delivered)
+    return DeliveryResult("delivered" if any(r.ok for r in receipts) or previously_delivered
                           else "failed", receipts)
 
 

@@ -81,7 +81,6 @@ def prepare_person(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *args: 'claude/sonnet')
-    users.create_user_dirs('fixture-mcp')
     root = users.user_dir('fixture-mcp')
     with sqlite3.connect(root / 'jobwatch.db') as conn:
         # create_user_dirs() already migrated the real schema; keep this idempotent.

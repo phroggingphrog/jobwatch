@@ -14,6 +14,11 @@ from jobwatch.outcomes.mcp import McpClient, ToolNotAllowed
 from jobwatch.outcomes.sync import company_terms, run_outcomes
 from jobwatch.web.actions import decide_proposal
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 UTC = timezone.utc
 NOW = datetime(2026, 10, 6, 1, 0, tzinfo=UTC)          # 12:00 Melbourne
 APPLIED = datetime(2026, 10, 1, 0, 0, tzinfo=UTC)
@@ -273,15 +278,3 @@ def test_mcp_non_loopback_urls_rejected(url):
         McpClient(url)
 
 
-def test_friend_without_google_never_reads_owner_mailboxes(env, monkeypatch):
-    """A non-owner person with no Gmail connection gets no scan (not the owner's local MCP mail)."""
-    from jobwatch import users
-    import jobwatch.outcomes.sync as sync
-    config, conn, mid, tmp_path = env
-    built = []
-    monkeypatch.setattr(sync, "McpClient", lambda *a, **k: built.append(a) or synthetic_mail())
-    with users.use("friend"):
-        stats = run_outcomes(config, now=NOW, conn=conn, printer=lambda *_: None)
-    assert built == [] and stats["messages_scanned"] == 0 and stats["proposals"] == 0
-    assert stats["error"] is None and "Gmail" in stats["skipped"]
-    assert conn.execute("SELECT count(*) FROM outcome_proposals").fetchone()[0] == 0

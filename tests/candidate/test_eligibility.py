@@ -3,6 +3,11 @@ import pytest
 from jobwatch.candidate.eligibility import evaluate_eligibility
 from .policy_fixtures import fact, policy_of
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 def check(text, *facts, **job):
     return evaluate_eligibility({'title': 'Example role', **job}, policy=policy_of(*facts), ad_text=text)
 
@@ -194,15 +199,6 @@ def test_missing_location_or_commute_cannot_become_verified_eligibility():
     assert result.status == 'held' and 'commute_distance' in result.questions
 
 
-def test_omitted_policy_resolves_only_the_current_person_on_each_call(monkeypatch):
-    from jobwatch import users
-    policies = {'synthetic-a': policy_of(fact('work_rights', {'citizen': True})),
-                'synthetic-b': policy_of(fact('work_rights', {'citizen': False}))}
-    monkeypatch.setattr('jobwatch.candidate.policy.policy_for', policies.get)
-    text = 'Applicants must be Australian citizens only.'
-    for person, status in (('synthetic-a', 'eligible'), ('synthetic-b', 'excluded'), ('synthetic-a', 'eligible')):
-        with users.use(person):
-            assert evaluate_eligibility({}, ad_text=text).status == status
 
 
 def test_inferred_rights_cannot_certify_a_restriction():

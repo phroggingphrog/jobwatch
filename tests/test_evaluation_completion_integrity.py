@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from pipeline.agentic import service
+from pipeline.agentic.persistence import latest_result
 from jobwatch.util.llm import LLM
 from tests.test_agentic_service import SyntheticGateway
 from tests.baseline_support import frozen, world  # noqa: F401
@@ -111,3 +112,34 @@ def test_valid_artifact_bound_to_another_run_is_not_reused(frozen, kind):
         payload['run_key'] = 'f' * 64
     replace_artifact(frozen, kind, payload)
     assert not current(frozen)
+
+
+@pytest.mark.parametrize('kind', ['evaluation', 'candidate'])
+def test_evaluated_projection_requires_saved_artifacts(frozen, kind):
+    assert latest_result(frozen.conn, 42)['status'] == 'evaluated'
+    _, run_key = artifact_row(frozen, kind)
+    frozen.conn.execute('DELETE FROM agentic_artifacts WHERE run_key=? AND kind=?', (run_key, kind))
+    frozen.conn.commit()
+    result = latest_result(frozen.conn, 42, parse=frozenset())
+    assert result['stored_status'] == 'evaluated'
+    assert (result['status'], result['reason']) == ('held', 'artifact_invalid')
+
+
+@pytest.mark.parametrize('kind', ['evaluation', 'candidate'])
+def test_evaluated_projection_refuses_invalid_schema(frozen, kind):
+    replace_artifact(frozen, kind, {'invalid': True})
+    result = latest_result(frozen.conn, 42, parse=frozenset())
+    assert (result['status'], result['reason']) == ('held', 'artifact_invalid')
+
+
+@pytest.mark.parametrize('kind', ['evaluation', 'candidate'])
+def test_evaluated_projection_refuses_wrong_bindings(frozen, kind):
+    path, _ = artifact_row(frozen, kind)
+    payload = json.loads(Path(path).read_bytes())
+    if kind == 'evaluation':
+        payload['run_key']['posting_id'] += 1
+    else:
+        payload['evidence_hash'] = 'f' * 64
+    replace_artifact(frozen, kind, payload)
+    result = latest_result(frozen.conn, 42, parse=frozenset())
+    assert (result['status'], result['reason']) == ('held', 'artifact_invalid')

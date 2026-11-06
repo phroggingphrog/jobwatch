@@ -34,7 +34,7 @@ def career_dir() -> Path:
     letters and CV are never used for another (owner: "my own cover letter examples and cv is strictly for my use")."""
     from jobwatch import users
     from jobwatch.apply.paths import data_dir
-    own = get_setting("JOBWATCH_CAREER_DIR") if users.current() == users.DEFAULT_USER else ""
+    own = get_setting("JOBWATCH_CAREER_DIR")
     return Path(os.path.expanduser(own)) if own else data_dir() / "career"
 
 

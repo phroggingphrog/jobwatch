@@ -25,3 +25,26 @@ def test_evaluation_completion_persists_artifacts_without_drafting(world, monkey
     assert conn.execute('SELECT COUNT(*) FROM drafts').fetchone()[0] == 0
     assert not {'submit_draft', 'submit_review'} & set(gateway.calls)
     assert str(Stage.EVALUATED) == 'evaluated'
+    calls = len(gateway.calls)
+    charged = conn.execute('SELECT SUM(charged) FROM agentic_batches').fetchone()[0]
+    replay = service.agentic_batch_run([42], config, conn, evidence_bundle=bundle,
+        llm=LLM(transport=gateway, keys=['synthetic']), operation='evaluate')
+    assert replay['evaluated'] == 1
+    assert len(gateway.calls) == calls
+    assert conn.execute('SELECT SUM(charged) FROM agentic_batches').fetchone()[0] == charged
+
+
+def test_missing_document_identity_does_not_block_evaluation(world, monkeypatch):
+    conn, config, bundle, add = world
+    add(43)
+    monkeypatch.setattr('pipeline.agentic.draft.packaging_blocker', lambda profile: 'profile_identity_missing')
+    gateway = SyntheticGateway(bundle)
+    summary = service.agentic_batch_run([43], config, conn, evidence_bundle=bundle,
+        llm=LLM(transport=gateway, keys=['synthetic']), operation='evaluate')
+    assert summary['evaluated'] == 1
+    calls = len(gateway.calls)
+    prepared = service.agentic_batch_run([43], config, conn, evidence_bundle=bundle,
+        llm=LLM(transport=gateway, keys=['synthetic']), operation='prepare')
+    assert prepared['held'] == 1
+    assert latest_result(conn, 43)['reason'] == 'profile_identity_missing'
+    assert len(gateway.calls) == calls

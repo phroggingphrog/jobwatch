@@ -17,6 +17,11 @@ from test_reader import CFG, FakeGateway, make_llm, model, world, confirmed_cand
 
 
 @pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
+@pytest.fixture(autouse=True)
 def synthetic_restricted_rights(confirmed_candidate):
     """Scanner batteries explicitly use confirmed restricted rights, never an inherited owner profile.
 
@@ -1449,17 +1454,3 @@ def test_missing_approved_rights_hold_instead_of_inventing_a_contradiction(text,
     assert run('A senior full-time vacancy in Sydney NSW.', seniority='senior', hours='full_time_only')['verdict'] == 'show'
 
 
-def test_rights_policy_stays_with_the_current_person_in_scanner_batteries(monkeypatch):
-    from jobwatch import users
-    from jobwatch.candidate.policy import build_policy
-    profiles = {person: build_policy({'version': 1, 'facts': [{'section': 'work_rights', 'basis': 'evidence',
-        'value': {'citizen': citizen, 'permanent_resident': False}}]})
-        for person, citizen in (('synthetic-citizen', True), ('synthetic-temporary', False))}
-    monkeypatch.setattr('jobwatch.candidate.policy.policy_for', lambda person, **kw: profiles[person])
-    text = 'Applicants must be Australian citizens only.'
-    with users.use('synthetic-citizen'):
-        accepted = run(text)
-    with users.use('synthetic-temporary'):
-        declined = run(text)
-    assert accepted['verdict'] == 'show'
-    assert (declined['verdict'], declined['hide_reason']) == ('hide', 'work_rights_incompatible')

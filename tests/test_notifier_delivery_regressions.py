@@ -42,3 +42,19 @@ def test_deliver_reports_prior_deduplicated_success(monkeypatch):
     assert result.status == 'delivered'
     assert result.receipts == []
     assert sent == ['synthetic']
+
+
+def test_prior_success_remains_delivered_when_another_channel_fails(monkeypatch):
+    conn = sqlite3.connect(':memory:')
+    monkeypatch.setitem(channels.KINDS, 'fake', FakeChannel)
+    selected = [service.ChannelConfig('good', 'fake')]
+    monkeypatch.setattr(service, 'channels_for', lambda *args, **kwargs: selected)
+    monkeypatch.setattr(FakeChannel, 'sender', staticmethod(lambda lines: True))
+    event = notifier.Event(notifier.FAILURE, 'synthetic', 'partial-success')
+    assert notifier.deliver(conn, event, person='synthetic', now=100).status == 'delivered'
+    selected.append(service.ChannelConfig('bad', 'fake'))
+    monkeypatch.setattr(FakeChannel, 'sender', staticmethod(lambda lines: False))
+    result = notifier.deliver(conn, event, person='synthetic', now=101)
+    assert result.status == 'delivered'
+    assert len(result.receipts) == 1 and not result.receipts[0].ok
+    assert conn.execute("SELECT attempts FROM notify_outbox WHERE channel='good'").fetchone()[0] == 1

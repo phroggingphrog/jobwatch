@@ -145,10 +145,9 @@ class JobwatchACPAgent:
                               cancelled=session.cancel.is_set)
 
         def call() -> dict:
-            with users.use(session.person):
-                return dispatch(person=session.person, thread_id=session.thread_id, message=message,
-                                decisions=decisions, human_decision=bool(decisions), config=load_config(),
-                                execution=execution, expected_checkpoint=session.checkpoint)
+            return dispatch(person=session.person, thread_id=session.thread_id, message=message,
+                            decisions=decisions, human_decision=bool(decisions), config=load_config(),
+                            execution=execution, expected_checkpoint=session.checkpoint)
 
         future = asyncio.ensure_future(asyncio.to_thread(call))
         future.add_done_callback(lambda _f: queue.put_nowait(None))

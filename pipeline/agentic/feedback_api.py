@@ -86,14 +86,13 @@ def mount(app,require,get_config):
 
     @contextmanager
     def jobs(principal,*,write=False):
-        with users.use(principal.person):
-            config=get_config(principal.person)
-            if not job_database(config).exists():
-                raise HTTPException(404,detail={'error':'not_found'})
-            with job_connection(config,write=write) as conn:
-                if write:
-                    db.migrate(conn)
-                yield conn,config
+        config=get_config(principal.person)
+        if not job_database(config).exists():
+            raise HTTPException(404,detail={'error':'not_found'})
+        with job_connection(config,write=write) as conn:
+            if write:
+                db.migrate(conn)
+            yield conn,config
 
     def request_key(key):
         if not key or len(key)>200 or not key.strip():
@@ -102,9 +101,8 @@ def mount(app,require,get_config):
 
     @app.get('/api/agent/feedback')
     def history(limit:int=Query(default=100,ge=1,le=200),principal=Depends(read)):
-        with users.use(principal.person):
-            if not job_database(get_config(principal.person)).exists():
-                return dict(events=[],reasons={k:v.model_dump(mode='json') for k,v in feedback.REJECTION_REASONS.items()})
+        if not job_database(get_config(principal.person)).exists():
+            return dict(events=[],reasons={k:v.model_dump(mode='json') for k,v in feedback.REJECTION_REASONS.items()})
         with jobs(principal) as (conn,config):
             return dict(events=feedback.list_events(conn,limit=limit),
                         reasons={k:v.model_dump(mode='json') for k,v in feedback.REJECTION_REASONS.items()})
@@ -125,13 +123,11 @@ def mount(app,require,get_config):
 
     @app.get('/api/agent/profile/rules')
     def rule_list(principal=Depends(read)):
-        with users.use(principal.person):
-            return rules.listing()
+        return rules.listing()
 
     @app.post('/api/agent/profile/rules',status_code=201)
     def rule_proposal(body:RuleProposal,key:str=Header(alias='Idempotency-Key'),principal=Depends(interact)):
-        with users.use(principal.person):
-            return rules.propose(get_config(principal.person),**body.model_dump(),request_id=request_key(key),actor='person')
+        return rules.propose(get_config(principal.person),**body.model_dump(),request_id=request_key(key),actor='person')
 
     @app.post('/api/agent/profile/rules/{proposal_id}/confirm')
     def rule_confirm(proposal_id:str,body:RuleConfirmation,principal=Depends(approve)):
@@ -140,10 +136,9 @@ def mount(app,require,get_config):
 
     @app.get('/api/agent/selections')
     def selections(principal=Depends(read)):
-        with users.use(principal.person):
-            config=get_config(principal.person)
-            if not job_database(config).exists():
-                return {'selections':[]}
+        config=get_config(principal.person)
+        if not job_database(config).exists():
+            return {'selections':[]}
         with jobs(principal) as (conn,config):
             if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='selection_requests'").fetchone():
                 return {'selections':[]}

@@ -26,7 +26,7 @@ def _context(conn, config, posting_id):
 
 
 def status(person, config):
-    with users.use(person), (job_connection(config) if job_database(config).exists() else nullcontext(None)) as conn:
+    with (job_connection(config) if job_database(config).exists() else nullcontext(None)) as conn:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")} if conn else set()
         items = incidents.list_incidents(conn) if conn else []
         for item in items:
@@ -62,48 +62,45 @@ def status(person, config):
 
 
 def get_settings(person, config):
-    with users.use(person):
-        return discovery_settings.get_settings(person, config)
+    return discovery_settings.get_settings(person, config)
 
 
 def set_settings(person, config, daily_token_ceiling, **job_limits):
-    with users.use(person):
-        return discovery_settings.set_settings(person, config, daily_token_ceiling, **job_limits)
+    return discovery_settings.set_settings(person, config, daily_token_ceiling, **job_limits)
 
 
 def start(person, config, request_id, *, incident_id=None, posting_id=None, expected_context=None,
           max_assessments=None):
     service.validate_max_assessments(max_assessments)
-    with users.use(person):
-        payload = {'discovery': True}
-        if max_assessments is not None:
-            payload['max_assessments'] = max_assessments
-        if incident_id is not None:
-            payload.update(incident_id=incident_id, posting_id=posting_id, expected_context=expected_context)
-        # A replay reads its immutable receipt, even when the admitted work has
-        # released the incident or the person has since changed their profile.
-        with APIStore(person) as store:
-            existing = store.discovery_receipt(payload, request_id)
-            if existing:
-                return {'run_id': existing, 'state': store.raw_run(existing)['state']}
-        if intake.discovery_scope(person) is None:
-            raise Conflict('profile_not_ready')
-        if incident_id is not None:
-            with job_connection(config, write=True) as conn:
-                if _context(conn, config, posting_id) != expected_context:
-                    raise Conflict('retry_inputs_changed')
-                item = next((i for i in incidents.list_incidents(conn)
-                             if i['incident_id'] == incident_id and i.get('posting_id') == posting_id), None)
-                if item is None:
-                    raise Conflict('incident_not_found')
-        with APIStore(person) as store:
-            ident = store.enqueue_discovery(payload, request_id, skill_version())
-            return {'run_id': ident, 'state': store.raw_run(ident)['state']}
+    payload = {'discovery': True}
+    if max_assessments is not None:
+        payload['max_assessments'] = max_assessments
+    if incident_id is not None:
+        payload.update(incident_id=incident_id, posting_id=posting_id, expected_context=expected_context)
+    # A replay reads its immutable receipt, even when the admitted work has
+    # released the incident or the person has since changed their profile.
+    with APIStore(person) as store:
+        existing = store.discovery_receipt(payload, request_id)
+        if existing:
+            return {'run_id': existing, 'state': store.raw_run(existing)['state']}
+    if intake.discovery_scope(person) is None:
+        raise Conflict('profile_not_ready')
+    if incident_id is not None:
+        with job_connection(config, write=True) as conn:
+            if _context(conn, config, posting_id) != expected_context:
+                raise Conflict('retry_inputs_changed')
+            item = next((i for i in incidents.list_incidents(conn)
+                         if i['incident_id'] == incident_id and i.get('posting_id') == posting_id), None)
+            if item is None:
+                raise Conflict('incident_not_found')
+    with APIStore(person) as store:
+        ident = store.enqueue_discovery(payload, request_id, skill_version())
+        return {'run_id': ident, 'state': store.raw_run(ident)['state']}
 
 
 def execute(person, config, run_id, payload, *, seconds=600):
     service.validate_max_assessments(payload.get('max_assessments'))
-    with users.use(person), job_connection(config, write=True) as conn:
+    with job_connection(config, write=True) as conn:
         deadline = time.time() + min(780, max(0, seconds))
         service.AgenticStore(conn).ensure()
         incidents.reconcile_known_failures(conn)

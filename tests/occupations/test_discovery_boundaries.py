@@ -116,23 +116,22 @@ def test_prepare_run_uses_unpaid_confirmed_scope_when_reference_changes(tmp_path
         refreshed.append(person)
         return original_refresh(person, cfg, llm=llm, **kwargs)
 
-    with users.use(person):
-        write_approved(person, [fact('experience', 'Reconcile supplier ledgers', fid='ledger')])
-        connection = db.connect(config.db_path)
-        try:
-            fields = hypotheses.field_hypotheses(person, config=config, llm=llm, policy=policy, conn=connection)
-            original_plan = search_plan(policy, fields)
-            save_plan(person, original_plan)
-            before = len(calls)
-            current_reference[0] = current_reference[0].model_copy(update={'versions': {'anzsco2022': 'toy-2', 'onet': 'toy-1'}})
-            assert hypotheses.cached_hypotheses(person, config=config) is None
-            assert load_plan(person) == original_plan
-            monkeypatch.setattr(discovery, 'refresh', refresh)
-            prepared = discovery.prepare_run(connection, config)
-            assert refreshed == []
-            assert len(calls) == before
-            assert hypotheses.cached_hypotheses(person, config=config) is None
-            assert prepared.extra['search_plan'].profile_version == original_plan.profile_version
-            assert prepared.extra['search_plan'].policy_hash == original_plan.policy_hash
-        finally:
-            connection.close()
+    write_approved(person, [fact('experience', 'Reconcile supplier ledgers', fid='ledger')])
+    connection = db.connect(config.db_path)
+    try:
+        fields = hypotheses.field_hypotheses(person, config=config, llm=llm, policy=policy, conn=connection)
+        original_plan = search_plan(policy, fields)
+        save_plan(person, original_plan)
+        before = len(calls)
+        current_reference[0] = current_reference[0].model_copy(update={'versions': {'anzsco2022': 'toy-2', 'onet': 'toy-1'}})
+        assert hypotheses.cached_hypotheses(person, config=config) is None
+        assert load_plan(person) == original_plan
+        monkeypatch.setattr(discovery, 'refresh', refresh)
+        prepared = discovery.prepare_run(connection, config)
+        assert refreshed == []
+        assert len(calls) == before
+        assert hypotheses.cached_hypotheses(person, config=config) is None
+        assert prepared.extra['search_plan'].profile_version == original_plan.profile_version
+        assert prepared.extra['search_plan'].policy_hash == original_plan.policy_hash
+    finally:
+        connection.close()

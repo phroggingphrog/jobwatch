@@ -8,6 +8,11 @@ from jobwatch.candidate.policy import policy_for
 from tests.baseline_support import world
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_add_withdraw_retry_and_immutable_history(world):
     _, config, _, _ = world
     person = users.current()
@@ -34,7 +39,7 @@ def test_add_withdraw_retry_and_immutable_history(world):
     assert intake.discovery_scope(person) is not None
 
 
-def test_digest_races_payload_conflicts_and_identity(world):
+def test_digest_races_payload_conflicts_and_actor(world):
     _, config, _, _ = world
     a = rules.propose(config, kind='location', value='Sydney', request_id='a', actor='person')
     b = rules.propose(config, kind='title_term', value='Manager', request_id='b', actor='person')
@@ -44,9 +49,8 @@ def test_digest_races_payload_conflicts_and_identity(world):
         rules.propose(config, kind='location', value='Perth', request_id='a', actor='person')
     with pytest.raises(rules.RuleError, match='person_required'):
         rules.confirm(config, a['id'], rule_digest=a['digest'], actor='model')
-    with users.use('other-person'):
-        with pytest.raises(rules.RuleError, match='not_found'):
-            rules.confirm(config, a['id'], rule_digest=a['digest'], actor='person')
+    with pytest.raises(rules.RuleError, match='not_found'):
+        rules.confirm(config, 'f' * 32, rule_digest=a['digest'], actor='person')
     rules.confirm(config, a['id'], rule_digest=a['digest'], actor='person')
     with pytest.raises(rules.RuleError, match='profile_changed'):
         rules.confirm(config, b['id'], rule_digest=b['digest'], actor='person')

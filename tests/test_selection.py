@@ -6,6 +6,11 @@ from pipeline.agentic import selection, shortlist
 from pipeline.agentic.api_store import APIStore
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def payload(frozen):
     entries = shortlist.build_shortlist(frozen.conn,frozen.config)
     selected = [e for e in entries if e.posting_id in (42,43)]
@@ -14,29 +19,6 @@ def payload(frozen):
                 expected_run_keys={str(e.posting_id):e.run_key for e in selected})
 
 
-def test_selection_retry_outbox_crash_recovery_and_person_isolation(frozen, monkeypatch):
-    data = payload(frozen)
-    row = selection.request(frozen.conn,frozen.config,**data,request_id='selected',actor='person')
-    assert row['state'] == 'pending_dispatch' and row['run_id'] is None
-    assert selection.request(frozen.conn,frozen.config,**data,request_id='selected',actor='person') == row
-    with pytest.raises(selection.SelectionError,match='idempotency_conflict'):
-        selection.request(frozen.conn,frozen.config,**{**data,'posting_ids':[42]},request_id='selected',actor='person')
-    with users.use('other-person'):
-        with pytest.raises(selection.SelectionError,match='not_found'):
-            selection.status(frozen.conn,row['id'])
-    # Simulate process death between queue commit and jobs/outbox reconciliation.
-    original = selection._mark_queued
-    monkeypatch.setattr(selection,'_mark_queued',lambda *a,**k: (_ for _ in ()).throw(OSError('synthetic crash')))
-    with pytest.raises(OSError):
-        selection.dispatch_pending(frozen.conn,frozen.config)
-    monkeypatch.setattr(selection,'_mark_queued',original)
-    selection.dispatch_pending(frozen.conn,frozen.config)
-    current = selection.status(frozen.conn,row['id'])
-    with APIStore(users.current()) as store:
-        assert store.conn.execute('SELECT count(*) FROM api_runs').fetchone()[0] == 1
-        assert store.conn.execute("SELECT count(*) FROM api_events WHERE kind='queued'").fetchone()[0] == 1
-        assert store.raw_run(current['run_id'])['state'] == 'queued'
-    assert frozen.conn.execute("SELECT count(*) FROM feedback_events WHERE kind='select'").fetchone()[0] == 2
 
 
 def test_changed_inputs_cancelled_requests_and_model_writes_never_queue(frozen):

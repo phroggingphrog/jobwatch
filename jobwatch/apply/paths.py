@@ -56,7 +56,7 @@ def profile_dir() -> Path:
         return pinned
     from .. import users
     from ..settings import get
-    env = get("JOBWATCH_PROFILE_DIR") if users.current() == users.DEFAULT_USER else ""
+    env = get("JOBWATCH_PROFILE_DIR")
     return Path(os.path.expanduser(env)) if env else data_dir() / "profile"
 
 

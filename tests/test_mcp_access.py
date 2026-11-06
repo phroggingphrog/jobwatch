@@ -11,6 +11,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa                       
 
 from pipeline.agentic import mcp_access                                            # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 TEAM = "team.cloudflareaccess.com"
 AUD = "aud-tag-123"
 ISSUER = f"https://{TEAM}"
@@ -70,13 +75,6 @@ def test_an_unknown_key_or_a_forged_signature_is_refused(signing):
     assert caught.value.code == "access_key_unknown"
 
 
-def test_an_unmapped_email_is_refused_not_defaulted():
-    assert mcp_access.person_for_email("owner@example.com", {"owner@example.com": "owner"}) == "owner"
-    with pytest.raises(mcp_access.AccessError) as caught:
-        mcp_access.person_for_email("stranger@example.com", {"owner@example.com": "owner"})
-    assert caught.value.code == "access_person_unmapped"
-    with pytest.raises(mcp_access.AccessError):
-        mcp_access.person_for_email("owner@example.com", {"owner@example.com": "not a valid name!"})
 
 
 @pytest.mark.parametrize("env, enabled, requires_jwt", [

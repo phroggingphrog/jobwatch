@@ -29,7 +29,7 @@ def fingerprint(value):
 
 class APIStore:
     def __init__(self, person, *, readonly=False):
-        if not users.valid_name(person):
+        if not bool(person):
             raise ValueError('invalid_person')
         root = users.user_dir(person) / 'career-chat'
         path = root / 'state.sqlite'

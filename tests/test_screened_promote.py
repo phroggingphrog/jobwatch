@@ -67,3 +67,20 @@ def test_promotion_prioritizes_category_then_score_without_minimum(tmp_path, mon
     assert result["promoted"] == 3
     events = conn.execute("SELECT posting_id FROM pipeline_events WHERE node='promote' ORDER BY id").fetchall()
     assert [event[0] for event in events] == [high, low, second]
+
+
+def test_a_posting_promoted_today_is_not_promoted_again_or_counted_twice(tmp_path, monkeypatch):
+    config = make_config(tmp_path=tmp_path, settings={"pipeline": {"screened": {"promote_per_run": 5, "promote_per_day": 3}}})
+    conn = dbm.connect(config.db_path)
+    store.ensure(conn)
+    ids = [shortlist(conn, f"again{i}", 4.5 - i / 10) for i in range(4)]
+    calls = []
+    def batch(snapshot_ids, cfg, c, **kw):
+        calls.append(list(snapshot_ids))
+        for pid in snapshot_ids:
+            kw['_on_started'](pid)
+        return {"processed": len(snapshot_ids)}
+    monkeypatch.setattr("pipeline.agentic.service.agentic_batch_run", batch)
+    screened.promote(conn, config, max_seconds=60, deadline=None)
+    again = screened.promote(conn, config, max_seconds=60, deadline=None)
+    assert calls == [ids[:3]] and again["promoted"] == 0 and again["allowance"] == 0

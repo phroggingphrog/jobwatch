@@ -248,6 +248,12 @@ def profile_from_snapshot(bundle) -> Profile:
         raise AgenticError("invalid_draft_evidence") from None
 
 
+def packaging_blocker(profile: Profile) -> str | None:
+    """Approved profile versions 2 and 3 had the CV header '# Profile' (no name, no contact), so every CV scored below
+    ATS grade A after a paid draft (2026-11-03). Name it before any paid read."""
+    return None if profile.name and profile.name.strip().lower() != "profile" else "profile_identity_missing"
+
+
 def _evaluation_hash(evaluation: AgenticEvaluation) -> str:
     return hashlib.sha256(evaluation.model_dump_json().encode("utf-8")).hexdigest()
 
@@ -349,6 +355,8 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
         raise AgenticError("invalid_draft_evidence")
     if kwargs.get("profile") is not None and kwargs["profile"] != profile:
         raise AgenticError("invalid_draft_evidence")
+    if (blocker := packaging_blocker(profile)):
+        raise AgenticError(blocker)
     posting = dict(kwargs.get("posting") or {"company": "", "title": evaluation.archetype})
     ad_text = kwargs.get("ad_text", "")
     if not isinstance(ad_text, str) or not ad_text.strip() or hashlib.sha256(ad_text.encode()).hexdigest() != run_key.ad_hash:
@@ -471,6 +479,9 @@ def draft_and_review(run_key: RunKey, evaluation: AgenticEvaluation, budget: Any
     letter_md = letter_markdown(printed, profile, posting, cv_tpl=cv_tpl)
     # career-ops ATS template in the owner's consultancy look; only an A-grade (>= 90) CV may be packaged
     if cv_info["ats"]["grade"] != "A":
+        import logging  # structural issue names only: no candidate text
+        logging.getLogger(__name__).warning("ats_check_failed posting=%s score=%s issues=%s", run_key.posting_id,
+                                            cv_info["ats"]["score"], cv_info["ats"]["issues"])
         raise AgenticError("ats_check_failed")
     letter_bytes, _ = render_pdf(letter_md, max_pages=1, letter=True)
     try:

@@ -63,23 +63,22 @@ def decode(parts):
 
 def receive(person, files):
     receipts, ids = [], []
-    with users.use(person):
-        root = users.user_dir(person) / 'chat-uploads'
-        for name, raw in files:
-            sha = hashlib.sha256(raw).hexdigest()
-            # Use the digest as the storage path, never a client filename/extension.
-            intake._write_private(root / sha, raw)
-            receipt = {'filename': name, 'sha256': sha, 'bytes': len(raw), 'readable': False,
-                       'reason': 'unsupported_reading'}
-            if Path(name).suffix.lower() in intake.EXTENSIONS:
-                try:
-                    info = intake.save_upload(person, name, raw, 'evidence')
-                    if not intake._load_docs(person, [info['upload_id']])[0]:
-                        raise intake.IntakeError('no_extractable_text')
-                    ids.append(info['upload_id'])
-                    receipt.update(readable=True, upload_id=info['upload_id'], reason='')
-                except intake.IntakeError as exc:
-                    receipt['reason'] = exc.code
-            intake._write_private(root / (sha + '.json'), json.dumps(receipt).encode())
-            receipts.append(receipt)
+    root = users.user_dir(person) / 'chat-uploads'
+    for name, raw in files:
+        sha = hashlib.sha256(raw).hexdigest()
+        # Use the digest as the storage path, never a client filename/extension.
+        intake._write_private(root / sha, raw)
+        receipt = {'filename': name, 'sha256': sha, 'bytes': len(raw), 'readable': False,
+                   'reason': 'unsupported_reading'}
+        if Path(name).suffix.lower() in intake.EXTENSIONS:
+            try:
+                info = intake.save_upload(person, name, raw, 'evidence')
+                if not intake._load_docs(person, [info['upload_id']])[0]:
+                    raise intake.IntakeError('no_extractable_text')
+                ids.append(info['upload_id'])
+                receipt.update(readable=True, upload_id=info['upload_id'], reason='')
+            except intake.IntakeError as exc:
+                receipt['reason'] = exc.code
+        intake._write_private(root / (sha + '.json'), json.dumps(receipt).encode())
+        receipts.append(receipt)
     return ids, receipts

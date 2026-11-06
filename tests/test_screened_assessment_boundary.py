@@ -17,7 +17,7 @@ def test_scheduled_promotion_is_evaluation_only(tmp_path, monkeypatch):
     result = screened.promote(conn, config)
     assert result['selected'] == 1
     assert result['promoted'] == 0
-    assert screened._promoted_since(conn) == 0
+    assert len(screened._promoted_ids(conn)) == 0
 
 
 def test_only_started_jobs_charge_promotion_allowance(tmp_path, monkeypatch):
@@ -34,4 +34,4 @@ def test_only_started_jobs_charge_promotion_allowance(tmp_path, monkeypatch):
     result = screened.promote(conn, config)
     assert result['selected'] == 2
     assert result['promoted'] == 1
-    assert screened._promoted_since(conn) == 1
+    assert len(screened._promoted_ids(conn)) == 1

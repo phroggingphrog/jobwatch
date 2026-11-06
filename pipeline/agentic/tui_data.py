@@ -80,11 +80,8 @@ class WebBackend(Backend):
         if self._client is None:
             from fastapi.testclient import TestClient
             from jobwatch.web import app as web_app
-            from jobwatch.web.auth_routes import COOKIE, _secret, make_cookie
             self._client = TestClient(web_app.create_app(self._cfg()), base_url='http://localhost',
                                       headers={'host': 'localhost', 'origin': 'http://localhost'})
-            if _secret():                     # web auth on: call the handlers as this person, like a signed-in browser
-                self._client.cookies.set(COOKIE, make_cookie(self.person))
         return self._client
 
     def _get(self, path: str, **params: Any) -> Any:
@@ -97,7 +94,7 @@ class WebBackend(Backend):
         from jobwatch import users
         from pipeline.agentic import task_state
         from pipeline.agentic.chat import job_connection
-        with users.use(self.person), job_connection(self._cfg()) as jobs:
+        with job_connection(self._cfg()) as jobs:
             return task_state.jobs_overview(jobs)
 
     def counts(self, rows: list[dict]) -> dict:

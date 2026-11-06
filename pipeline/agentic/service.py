@@ -34,7 +34,7 @@ from pipeline.agentic.location import LOCATION_REFERENCE_HASH, commute_km_for, k
 from pipeline.agentic.draft import DraftArtifacts, draft_and_review, profile_from_snapshot
 from pipeline.agentic import decision_log, discovery_settings, jev_skills, incidents
 from pipeline.agentic.forms import build_form_map
-from pipeline.agentic.persistence import PersistenceAdapter, latest_result
+from pipeline.agentic.persistence import PersistenceAdapter, completed_evaluation, latest_result
 from pipeline.agentic.runtime import (BatchBudget, CALL_SECONDS, UNLIMITED_JOB_TOKENS, CALL_SECONDS_REASONING, JobBudget, RuntimeErrorSafe,
                                       validate_model_payload)
 from pipeline.agentic.store import AgenticStore
@@ -547,6 +547,10 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
         incidents.mark_phase(conn, incident_run_id, 'liveness', posting_id=posting_id)
         # Cached READY rechecks are public-only and do not renew exhausted model budgets.
         saved_package = adapter.load_artifact(key.value, 'package_bundle')
+        if operation == 'prepare' and not cached_ready and saved_package is None:
+            from pipeline.agentic.draft import packaging_blocker
+            if (blocker := packaging_blocker(profile_from_snapshot(bundle))):
+                raise AgenticError(blocker)  # before any paid read: this profile cannot produce a package
         if cached_ready or saved_package is not None:
             remaining = min(60, cfg['job_seconds'], _invocation_deadline-time.time())
         else:
@@ -1023,15 +1027,8 @@ def _evaluation_current(conn, posting_id, captured, key, decision_policy):
     if not result or result.get('reason') != 'evaluation_complete' or result.get('run_key') != key.value:
         return False
     try:
-        from jobwatch.candidate.contracts import AnalysisResult
-        evaluation = validate_model_payload(AgenticEvaluation, result.get('evaluation'))
-        raw_candidate = result.get('candidate')
-        try:
-            candidate = validate_model_payload(CandidateAssessment, raw_candidate)
-        except AgenticError:
-            candidate = validate_model_payload(AnalysisResult, raw_candidate)
-        if (evaluation.run_key != key or candidate.run_key != key.candidate_hash
-                or candidate.evidence_hash != key.evidence_hash):
+        evaluation, _ = completed_evaluation(result)
+        if evaluation.run_key != key:
             return False
     except (AgenticError, ValueError, TypeError):
         return False

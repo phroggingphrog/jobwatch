@@ -126,7 +126,60 @@ class CompletionError(AgenticError):
         self.violations = tuple(violations)
 
 
-MAX_TOOL_CORRECTIONS = 2
+MAX_NO_PROGRESS_CORRECTIONS = 2
+
+
+def _correction_progress(previous, code, fields, payload, paths=(), violations=()):
+    """Keep progress across restarts without rewarding unrelated edits or recurring violations."""
+    previous = previous or {}
+    if isinstance(previous, int):
+        previous = {'no_progress': previous, 'exhausted': previous >= MAX_NO_PROGRESS_CORRECTIONS}
+    if previous.get('exhausted'):
+        raise RuntimeErrorSafe(code)
+    issues = violations or ((code, paths or fields),)
+    remaining = {error + ':' + field.split(':', 1)[0] for error, entries in issues for field in entries}
+    frontier = digest(sorted(remaining))
+    if isinstance(payload, str):
+        try:
+            decoded = json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(decoded, dict):
+                payload = decoded
+    if isinstance(payload, dict):
+        relevant = {}
+        for field in {field.split(':', 1)[0] for _, entries in issues for field in entries}:
+            value = payload
+            try:
+                for part in field.split(':', 1)[0].split('.'):
+                    value = value[int(part)] if isinstance(value, list) else value[part]
+                relevant[field] = {'value': value}
+            except (KeyError, IndexError, TypeError, ValueError):
+                relevant[field] = {'missing': True}
+        payload = relevant
+    signature = digest({'frontier': frontier, 'payload': payload})
+    old = set(previous.get('remaining', ()))
+    best = set(previous.get('best_remaining', old))
+    resolved = set(previous.get('resolved', ()))
+    seen = set(previous.get('seen', ()))
+    changed_frontiers = set(previous.get('changed_frontiers', ()))
+    changed = signature != previous.get('payload') and signature not in seen
+    progress = bool(best) and changed and not (remaining & resolved) and (
+        remaining < best or not (remaining & best))
+    # A changed value at the same failing field deserves one opportunity, not an
+    # unlimited allowance for rotating invalid quotes or malformed JSON strings.
+    changed_field = bool(old) and changed and remaining == old == best and not (remaining & resolved) \
+        and frontier not in changed_frontiers
+    no_progress = 0 if progress or changed_field else previous.get('no_progress', 0) + 1
+    if changed_field:
+        changed_frontiers.add(frontier)
+    if progress:
+        resolved.update(best - remaining)
+    return {'remaining': sorted(remaining), 'best_remaining': sorted(remaining if progress or not best else best),
+            'resolved': sorted(resolved), 'payload': signature,
+            'seen': sorted(seen | {signature}), 'changed_frontiers': sorted(changed_frontiers),
+            'no_progress': no_progress, 'exhausted': no_progress > MAX_NO_PROGRESS_CORRECTIONS}
 
 
 class CachedEmbeddings:
@@ -202,7 +255,7 @@ class NativeModel(BaseChatModel):
         return self.model_copy(update={'schemas': [convert_to_openai_tool(t) for t in tools]})
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        with users.use(self.person), execution.use(self.scope), self.counts['lock']:
+        with execution.use(self.scope), self.counts['lock']:
             self.budget.ensure_live()
             transcript = convert_to_openai_messages(messages)
             if len(transcript) != len(messages):
@@ -550,24 +603,24 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                         'For candidate source records use read_candidate_evidence with IDs from '
                         'the supplied inventory, or search_candidate_evidence_batch for unresolved requirements. '
                         'Primary records already returned remain in earlier tool messages. '
-                        'No candidate or host file was opened. Correct this operation once.')
+                        'No candidate or host file was opened. Correct this operation before retrying.')
             if code == 'invalid_tool_arguments_json':
                 return ('The tool arguments are malformed JSON. No part of this operation was executed. '
                         'Resubmit the complete arguments as one valid JSON object with all required '
-                        'schema fields and no trailing data. Correct the syntax once; do not invent facts.')
+                        'schema fields and no trailing data. Correct the syntax; do not invent facts.')
             return ('Correct only the identified fields using supplied source text and the tool schema. '
                     'Evidence IDs must come from the supplied inventory or search results. '
                     'Do not invent evidence. Keep unknowns explicit; none_stated work rights needs an empty quote. '
-                    'Report sections must each be at most 4000 characters. Retry this operation once.')
+                    'Report sections must each be at most 4000 characters. Retry only with a correction.')
 
-        def feedback(code, fields, journal_key, paths=(), violations=()):
+        def feedback(code, fields, journal_key, payload, paths=(), violations=()):
             prior = run.load(journal_key)
             if prior is not None:
                 return prior
-            # Per tool, not per tool and code: a new code used to buy another paid correction each time.
             boundary = 'corrections:' + name
-            count = run.load(boundary) or 0
-            if count >= MAX_TOOL_CORRECTIONS:
+            state = _correction_progress(run.load(boundary), code, fields, payload, paths, violations)
+            if state['exhausted']:
+                run.save(boundary, state)
                 raise RuntimeErrorSafe(code)
             answer = {'error': code, 'fields': fields, 'action': action_for(code)}
             if violations:
@@ -584,7 +637,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                 answer.setdefault('expected_keys', {})['report'] = list(REPORT_FIELDS)
             if 'requirements' in fields and name in {'complete_requirements', 'complete_requirement_set'}:
                 # A bare array is a shape error; a deep path is one entry that broke a rule. Saying "shape" for a
-                # citation failure tells the model to fix the wrong thing and wastes the one allowed correction.
+                # citation failure tells the model to fix the wrong thing on its next attempt.
                 entries = tuple(path for path in paths if path.startswith('requirements.'))
                 if entries:
                     answer['requirement_entries'] = (
@@ -602,11 +655,11 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                 answer.setdefault('expected_keys', {})['complete_requirement_set'] = list(
                     RequirementSet.model_json_schema().get('required', ()))
                 answer['next'] = 'After a valid requirement set, call complete_ad_facts with facts, location_fit and legitimacy.'
-            run.save_many({boundary: count + 1, journal_key: answer})
+            run.save_many({boundary: state, journal_key: answer})
             return answer
 
         def invoke(runtime: ToolRuntime, **args):
-            with users.use(run.person), execution.use(run.scope), run.lock:
+            with execution.use(run.scope), run.lock:
                 budget.ensure_live()
                 if run.load('evaluation') is not None:
                     raise RuntimeErrorSafe('terminal_already_selected')
@@ -616,8 +669,13 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                 prior_feedback = run.load(journal_key)
                 if prior_feedback is not None:
                     return prior_feedback
+                payload = args
+                for raw in message.additional_kwargs.get('jobwatch_raw_tool_calls', ()):
+                    if raw['id'] == runtime.tool_call_id:
+                        payload = raw['function']['arguments']
+                        break
                 def respond(code, fields, paths=(), violations=()):
-                    return feedback(code, fields, journal_key, paths, violations)
+                    return feedback(code, fields, journal_key, payload, paths, violations)
                 if runtime.tool_call_id in message.additional_kwargs.get('jobwatch_argument_errors', {}):
                     return respond('invalid_tool_arguments_json', ['arguments'])
                 if name in schemas:
@@ -789,7 +847,7 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
     cfg = {'configurable': {'thread_id': run.thread}, 'callbacks': [], 'recursion_limit': (1000000 if budget.role_turn_limit is None else 16 * budget.role_turn_limit + 100)}
 
     def invoke():
-        with users.use(run.person), execution.use(run.scope), tracing_context(enabled=False):
+        with execution.use(run.scope), tracing_context(enabled=False):
             saved = run.saver.get_tuple(cfg)
             # Canonical action access can outlive graph messages. Deduplicate only
             # records present in this transcript, so journal replay restores sources.

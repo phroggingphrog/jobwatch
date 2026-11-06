@@ -10,11 +10,17 @@ import pytest
 from tests.test_discovery_operations import world  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "owner-jobwatch.db"))
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def test_native_settings_persist_unlimited_without_accepting_client_identity(world):
     config, profile = world
     token_a, token_b = 'a'*40, 'b'*40
     headers_a, headers_b = {'Authorization': 'Bearer '+token_a}, {'Authorization': 'Bearer '+token_b}
-    credentials = {token_a: Principal('fixture-a'), token_b: Principal('fixture-b')}
+    credentials = {token_a: Principal('owner'), token_b: Principal('fixture-b')}
     with TestClient(create_api(credentials=credentials, config=config)) as client:
         path = '/api/agent/discovery/settings'
         assert client.get(path).status_code == 401
@@ -30,14 +36,14 @@ def test_native_settings_persist_unlimited_without_accepting_client_identity(wor
 
 def test_queued_retry_refuses_changed_budget_configuration(world):
     config, _ = world
-    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+    with job_connection(config, write=True) as conn:
         service.AgenticStore(conn).ensure()
         incident = incidents.report(conn, posting_id=42, run_id='previous', reason='model_unavailable')
-    context = ops.status('fixture-a', config)['incidents'][0]['retry_context']
+    context = ops.status('owner', config)['incidents'][0]['retry_context']
     payload = {'discovery': True, 'incident_id': incident['incident_id'], 'posting_id': 42,
                'expected_context': context}
-    ops.set_settings('fixture-a', config, None)
+    ops.set_settings('owner', config, None)
     with pytest.raises(Conflict, match='retry_inputs_changed'):
-        ops.execute('fixture-a', config, 'queued-before-setting-change', payload)
-    with users.use('fixture-a'), job_connection(config, write=True) as conn:
+        ops.execute('owner', config, 'queued-before-setting-change', payload)
+    with job_connection(config, write=True) as conn:
         assert incidents.is_paused(conn, 42)

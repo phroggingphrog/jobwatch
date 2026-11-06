@@ -15,35 +15,34 @@ from pipeline.agentic.execution import QWEN_EMBEDDING_MODEL
 def test_confirm_refresh_and_read_native_fields_and_plan(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(loaders,'load_reference_records',lambda **k:toy_reference())
     calls = []
-    with users.use('fixture-a'):
-        cfg = make_config(tmp_path=tmp_path,settings={'pipeline':{'execution_mode':'agentic',
-            'agentic':{'embedding_model':QWEN_EMBEDDING_MODEL}}})
-        confirm_discovery(cfg,'fixture-a')
-        conn = db.connect(cfg.db_path)
-        out = discovery.refresh('fixture-a',cfg,conn=conn,llm=approved_llm(hash_transport(calls)),seconds=20.)
-        assert out['hypotheses'] > 0
-        assert conn.execute('SELECT SUM(charged_tokens) FROM discovery_spend').fetchone()[0] > 0
-        before = len(calls)
-        assert discovery.refresh('fixture-a',cfg,conn=conn,llm=approved_llm(hash_transport(calls))) == out
-        assert len(calls) == before
-        from jobwatch.models import Posting
-        from jobwatch.dedupe import ingest
-        from jobwatch.util import adtext as adtext
-        from pipeline import store
-        store.ensure(conn)
-        text = 'Accountant reconciles supplier ledgers and prepares journals. ' * 16
-        pid,_ = ingest(conn,Posting(source='synthetic',source_id='1',url='https://example.invalid/1',
-            title='Accountant',company='Example Company',location='Sydney NSW',description=text))
-        adtext.save_text(conn,pid,text,'synthetic'); store.admit(conn,pid,'h',{}); conn.commit()
-        cfg.settings['pipeline']['discovery'] = {'similar_at':.01}
-        with discovery.context_for(conn,cfg,llm=approved_llm(hash_transport(calls))) as context:
-            assert context is not None
-            screen = discovery.screen_step(conn,cfg,context=context)
-        assert screen == {'judged':1,'archived':0,'uncertain':0}
-        assert store.get(conn,pid)['stage'] == 'ingested'
-        assert discovery.latest_judgment(conn,pid).relevant == 'yes'
-        before = len(calls)
-        conn.close()
+    cfg = make_config(tmp_path=tmp_path,settings={'pipeline':{'execution_mode':'agentic',
+        'agentic':{'embedding_model':QWEN_EMBEDDING_MODEL}}})
+    confirm_discovery(cfg,'fixture-a')
+    conn = db.connect(cfg.db_path)
+    out = discovery.refresh('fixture-a',cfg,conn=conn,llm=approved_llm(hash_transport(calls)),seconds=20.)
+    assert out['hypotheses'] > 0
+    assert conn.execute('SELECT SUM(charged_tokens) FROM discovery_spend').fetchone()[0] > 0
+    before = len(calls)
+    assert discovery.refresh('fixture-a',cfg,conn=conn,llm=approved_llm(hash_transport(calls))) == out
+    assert len(calls) == before
+    from jobwatch.models import Posting
+    from jobwatch.dedupe import ingest
+    from jobwatch.util import adtext as adtext
+    from pipeline import store
+    store.ensure(conn)
+    text = 'Accountant reconciles supplier ledgers and prepares journals. ' * 16
+    pid,_ = ingest(conn,Posting(source='synthetic',source_id='1',url='https://example.invalid/1',
+        title='Accountant',company='Example Company',location='Sydney NSW',description=text))
+    adtext.save_text(conn,pid,text,'synthetic'); store.admit(conn,pid,'h',{}); conn.commit()
+    cfg.settings['pipeline']['discovery'] = {'similar_at':.01}
+    with discovery.context_for(conn,cfg,llm=approved_llm(hash_transport(calls))) as context:
+        assert context is not None
+        screen = discovery.screen_step(conn,cfg,context=context)
+    assert screen == {'judged':1,'archived':0,'uncertain':0}
+    assert store.get(conn,pid)['stage'] == 'ingested'
+    assert discovery.latest_judgment(conn,pid).relevant == 'yes'
+    before = len(calls)
+    conn.close()
     token = 'r'*40
     with TestClient(create_api(credentials={token:Principal('fixture-a')},config=cfg)) as api:
         headers = {'Authorization':f'Bearer {token}'}

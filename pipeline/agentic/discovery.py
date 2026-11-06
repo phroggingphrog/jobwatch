@@ -60,22 +60,21 @@ def field_hypotheses(*args, **kwargs):
 
 
 def refresh(person, config, *, llm=None, conn=None, seconds=240.0):
-    with users.use(person):
-        scope, reason = intake.scope_state(person)
-        if scope is None:
-            raise DiscoveryError('no_confirmed_profile' if reason == 'no_profile_version' else reason)
-        scope = intake.discovery_scope(person)
-        if scope is None:
-            raise DiscoveryError('profile_changed_during_discovery')
-        policy = policy_for(person)
-        if policy is None:
-            raise DiscoveryError('no_policy')
-        hypotheses = field_hypotheses(person, llm=llm, config=config, policy=policy, conn=conn, seconds=seconds)
-        plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
-        save_plan(person, plan)
-        from jobwatch.occupations.loaders import load_reference_records
-        return dict(profile_version=policy.profile_version, hypotheses=len(hypotheses),
-                    plan_hash=plan.plan_hash, datasets=load_reference_records().versions)
+    scope, reason = intake.scope_state(person)
+    if scope is None:
+        raise DiscoveryError('no_confirmed_profile' if reason == 'no_profile_version' else reason)
+    scope = intake.discovery_scope(person)
+    if scope is None:
+        raise DiscoveryError('profile_changed_during_discovery')
+    policy = policy_for(person)
+    if policy is None:
+        raise DiscoveryError('no_policy')
+    hypotheses = field_hypotheses(person, llm=llm, config=config, policy=policy, conn=conn, seconds=seconds)
+    plan = search_plan(policy, hypotheses, extra_locations=scope.locations)
+    save_plan(person, plan)
+    from jobwatch.occupations.loaders import load_reference_records
+    return dict(profile_version=policy.profile_version, hypotheses=len(hypotheses),
+                plan_hash=plan.plan_hash, datasets=load_reference_records().versions)
 
 
 def _current_plan(person):
@@ -473,24 +472,23 @@ def main(argv=None):
     from jobwatch.config import load_config
     from jobwatch.occupations import datasets
     from pipeline.agentic.chat import job_connection, job_database
-    with users.use(args.user):
-        config = load_config()
-        connection = (job_connection(config, write=args.command == 'restore')
-                      if args.command != 'refresh' and job_database(config).exists() else nullcontext(None))
-        with connection as conn:
-            if args.command == 'refresh':
-                out = refresh(args.user, config, conn=conn)
-            elif args.command == 'restore':
-                out = {'restored': restore_archived(conn) if conn is not None else 0}
-            else:
-                plan = load_plan(args.user)
-                rows = conn.execute('SELECT relevant,similarity FROM posting_relevance').fetchall() if conn is not None and _has_table(conn, 'posting_relevance') else []
-                values = [r[1] for r in rows]
-                out = dict(flags={k: settings(config)[k] for k in ('search_plan','relevance','dedupe','ordering')},
-                    datasets=datasets.status(), plan_hash=plan.plan_hash if plan else None,
-                    counts={v: sum(r[0] == v for r in rows) for v in ('yes','no','uncertain')},
-                    similarity=dict(min=min(values), median=float(np.median(values)), max=max(values)) if values else None)
-            print(json.dumps(out, sort_keys=True))
+    config = load_config()
+    connection = (job_connection(config, write=args.command == 'restore')
+                  if args.command != 'refresh' and job_database(config).exists() else nullcontext(None))
+    with connection as conn:
+        if args.command == 'refresh':
+            out = refresh(args.user, config, conn=conn)
+        elif args.command == 'restore':
+            out = {'restored': restore_archived(conn) if conn is not None else 0}
+        else:
+            plan = load_plan(args.user)
+            rows = conn.execute('SELECT relevant,similarity FROM posting_relevance').fetchall() if conn is not None and _has_table(conn, 'posting_relevance') else []
+            values = [r[1] for r in rows]
+            out = dict(flags={k: settings(config)[k] for k in ('search_plan','relevance','dedupe','ordering')},
+                datasets=datasets.status(), plan_hash=plan.plan_hash if plan else None,
+                counts={v: sum(r[0] == v for r in rows) for v in ('yes','no','uncertain')},
+                similarity=dict(min=min(values), median=float(np.median(values)), max=max(values)) if values else None)
+        print(json.dumps(out, sort_keys=True))
     return 0
 
 

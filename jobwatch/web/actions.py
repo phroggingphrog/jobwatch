@@ -109,7 +109,7 @@ def _chain():
 
 def draft_job(posting_id: int) -> dict | None:
     with _LOCK:
-        j = _JOBS.get(users.scoped(posting_id))
+        j = _JOBS.get(posting_id)
         return dict(j) if j else None
 
 
@@ -123,7 +123,7 @@ def start_draft(conn, db_path, posting_id: int, *, config=None) -> dict:
     m = conn.execute("SELECT id FROM matches WHERE posting_id=?", (posting_id,)).fetchone()
     if m is None and not use_agentic:
         raise ActionError("Only matched jobs can be drafted (this job did not match a target arm).")
-    key = users.scoped(posting_id)
+    key = posting_id
     with _LOCK:
         j = _JOBS.get(key)
         if j and j["state"] == "running":

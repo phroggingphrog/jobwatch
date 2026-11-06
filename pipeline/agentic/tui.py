@@ -662,20 +662,19 @@ class JobwatchTUI(App):
     def _turn(self, message: str | None, decisions: list[dict] | None, recover: bool, files: list[dict] | None = None) -> None:
         started = time.monotonic()
         try:
-            with users.use(self.person):
-                upload_ids = None
-                if files:                     # same save path as the upload ticket; each file is checked (10 MB) first
-                    upload_ids = [self.backend.upload(a['path'], a['kind'])['upload_id'] for a in files]
-                execution = Execution(
-                    self.run_id or uuid.uuid4().hex,
-                    emit=lambda kind, data: self.events.put(('event', kind, data)),
-                    cancelled=lambda: self.cancel.is_set(),
-                )
-                result = dispatch(person=self.person, thread_id=self.thread_id, message=message,
-                                  decisions=decisions, human_decision=bool(decisions),
-                                  config=load_config(), execution=execution,
-                                  expected_checkpoint=self.checkpoint, recover=recover,
-                                  **({'upload_ids': upload_ids} if upload_ids else {}))
+            upload_ids = None
+            if files:                     # same save path as the upload ticket; each file is checked (10 MB) first
+                upload_ids = [self.backend.upload(a['path'], a['kind'])['upload_id'] for a in files]
+            execution = Execution(
+                self.run_id or uuid.uuid4().hex,
+                emit=lambda kind, data: self.events.put(('event', kind, data)),
+                cancelled=lambda: self.cancel.is_set(),
+            )
+            result = dispatch(person=self.person, thread_id=self.thread_id, message=message,
+                              decisions=decisions, human_decision=bool(decisions),
+                              config=load_config(), execution=execution,
+                              expected_checkpoint=self.checkpoint, recover=recover,
+                              **({'upload_ids': upload_ids} if upload_ids else {}))
             self.events.put(('done', result, time.monotonic() - started))
         except ValueError as exc:         # an attachment was refused before anything was sent
             self.events.put(('failed', f'attachment refused: {exc}', time.monotonic() - started))

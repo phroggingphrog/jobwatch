@@ -7,6 +7,11 @@ from pipeline.agentic.contracts import AgenticError
 from tests.baseline_support import world, frozen  # noqa:F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 def prepared(frozen):
     record=eval_data.freeze_cases(frozen.ro,frozen.config)
     eval_data.create_split(record.baseline_id)
@@ -50,11 +55,6 @@ def test_bounds_and_paid_budget_reject_before_clients(frozen):
     assert result['usage']['model_calls']==0
 
 
-def test_other_person_cannot_retrieve_frozen_inputs(frozen):
-    record=prepared(frozen)
-    users.create_user_dirs('friend')
-    with users.use('friend'),pytest.raises(AgenticError,match='baseline_not_found'):
-        evaluate_runs.replay(record.baseline_id)
 
 
 def test_relevance_mode_and_judgment_frozen_before_live_changes(frozen,monkeypatch):

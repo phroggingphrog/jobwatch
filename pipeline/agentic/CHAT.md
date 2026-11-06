@@ -1,5 +1,14 @@
 # Jobwatch native agent API (TASK-183)
 
+For the isolated `jobwatch-new` continuation, the server binds every operation to
+one owner. Sign-up and multi-person support are removed; references below to those
+historical configurations do not restore them. Bearer scopes, exact-input human
+confirmation, selected preparation and confirmed Submit remain required.
+Scheduled promotion evaluates only and persists `evaluated` success backed by
+valid saved candidate/evaluation artifacts. Document identity readiness applies
+to preparation, independently of evaluation. Services and automation remain off
+until a separate release decision.
+
 The owner chose: **"native API is my plan"**. Jobwatch runs the agent itself.
 A client uses authenticated HTTP endpoints; a website or external AI chat host is
 not required. LangChain model/tool interfaces, Deep Agents planning and specialist
@@ -207,20 +216,26 @@ focus), questions already answered stay closed, and the revision increments (a c
 `proposal_changed` and re-reads). A failed parse sets `parse_error` and the conversation continues with the answers.
 Tools (identity is bound by the server, never an argument): `profile_start(upload_ids, use_existing_files)` (the
 person's own `profile/` text files can be offered; symlinks are refused), `profile_status`, `profile_policy` (read only), `profile_answer`,
-`profile_correct` (both record only the person's own words from their latest message; the prompt forbids inventing
-or paraphrasing facts), `profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
+`profile_correct` (both record authenticated human wording; an optional source reference avoids model copy requirements),
+`profile_confirmation` (scope, daily limits, what it does not authorise; `profile_incomplete`
 when there is nothing to search for) and `profile_confirm`. Answers and corrections update only the unconfirmed
 draft without a separate approval. `profile_confirm` remains gated: human approval is bound to the exact
 `proposal_digest` and `scope_digest`. A changed draft or scope needs another review, and model text is never
 approval. Confirmation starts discovery within the scope shown; it authorises no documents, employer
 messages or submission. The legacy `/welcome` onboarding leaves unspecified level unknown; generated suggestions still require confirmation.
 
-`profile_answer` and `profile_correct` are refused with `not_person_words` unless every recorded string is (after casefold,
-whitespace collapse and edge-punctuation trim) a clause of the person's own message for the turn, or a span inside one of their
-clauses that their own words affirm: a negation, pending or aspirational word governing the span refuses it, so "I am not a
-citizen" never records "a citizen". The turn's words are the person's message (on a resumed turn: the last human message in the
-thread or a human answer to `ask_human`; none means refused). The check runs when the draft tool executes.
-`answer_question` applies the same test to the answer it records. `profile_start` reserves its background parse
+`profile_answer(question_id, text, source_id)` and `profile_correct(edits, source_id)` accept optional
+`source_id='latest'` or a stable human-source digest returned by `profile_status`. Sources resolve only from the
+server's authenticated human history in this conversation. `latest` means the latest nonempty human message, including
+an answer supplied on resume. The backend records an affirmed excerpt or the original source wording, never a model
+paraphrase or invented structured fact, and retains the source digest in the fact note. Corrections can supply a source
+per edit. Original negation remains intact. These operations update only the unconfirmed draft.
+
+Legacy updates without a reference still require affirmed human words. Missing provenance returns a recoverable
+`source_required` result (`not_person_words` or `human_source_not_found`) with a bounded source inventory and an action
+the model can take in the same turn; it must not make the person repeat an existing answer. Source references are not
+approval. Exact current draft/scope confirmation remains required and a draft change invalidates old approval.
+`answer_question` still requires affirmed human words for the answer it records. `profile_start` reserves its background parse
 against the turn's budget and may start one parse per turn. A draft left `parsing` by a dead worker (no live slot, file older
 than 2 x 180 s) reads back as `draft` with `parse_error` `parse_interrupted`, answers kept. The parse slot frees just after
 the draft turns `draft`, so an immediate new start can briefly see `proposal_in_progress`. A person-stated location does not
@@ -933,7 +948,8 @@ unknown dispatched usage remains charged rather than silently refunded.
 `candidate-understanding.sqlite` journals native candidate responses/access and
 checkpoints; canonical `candidate_digests` records retain the bound digest. Completion
 tools enforce canonical shape/size constraints and return field-specific correction
-feedback once per validation error boundary, retaining successful earlier work.
+feedback while corrections make progress, retaining successful earlier work. Persisted no-progress accounting stops
+repeated, cycling or unrelated changes; improving corrections continue within existing token, turn and time budgets.
 
 `evaluation_counts` records call count, charged tokens and wall time. Private count
 records additionally retain purpose, prompt/completion totals and numeric provider

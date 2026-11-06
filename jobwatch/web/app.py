@@ -75,15 +75,11 @@ def create_app(config: Config | None = None) -> FastAPI:
     sessions = RemoteBrowserSessions() if os.environ.get('JOBWATCH_NATIVE_BROWSER_URL') else BrowserSessionManager()
 
     def for_each_person(fn):
-        """Run background work once per person, as that person (their DB, folders and browser sessions)."""
-        for name in users.list_users():
-            if name != users.DEFAULT_USER and not users.db_path(name).exists():
-                continue                            # never create a DB from a background loop
-            try:
-                with users.use(name):
-                    fn()
-            except Exception:                       # one person's failure never stops the others
-                logging.getLogger(__name__).exception("background work failed for one person")
+        """Run background work, guarded so one failure never stops the loop."""
+        try:
+            fn()
+        except Exception:
+            logging.getLogger(__name__).exception("background work failed")
 
     @asynccontextmanager
     async def lifespan(app):
@@ -100,15 +96,12 @@ def create_app(config: Config | None = None) -> FastAPI:
                 except (AgenticError, CandidateError, sqlite3.Error, OSError):
                     pass
                 finally: conn.close()
-            for name in users.list_users():     # each person's own queue, run as that person (their DB, profile and drafts)
-                if name != users.DEFAULT_USER and not users.db_path(name).exists(): continue   # never create a DB here
-                try:
-                    with users.use(name):
-                        pending = BackgroundTasks()
-                        await asyncio.to_thread(schedule, pending)
-                        await pending()
-                except Exception:
-                    logging.getLogger(__name__).exception("interview recovery failed for one person")
+            try:
+                pending = BackgroundTasks()
+                await asyncio.to_thread(schedule, pending)
+                await pending()
+            except Exception:
+                logging.getLogger(__name__).exception("interview recovery failed")
         async def auto_fill_loop():
             while True:
                 await asyncio.sleep(60)
@@ -203,8 +196,6 @@ def create_app(config: Config | None = None) -> FastAPI:
         resp.headers["Referrer-Policy"] = "same-origin"
         resp.headers.setdefault("Cache-Control", "no-store")
         return resp
-
-    from .auth_routes import install_auth; install_auth(app)   # sign-in (off unless JOBWATCH_SESSION_SECRET)
 
     # -- helpers -----------------------------------------------------------------------------------
     def hx(request: Request) -> bool:
@@ -433,7 +424,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn,row['id'],channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and users.scoped(row['id'],channel) in followup_active:
+                        if state['status'] == 'missing' and (row['id'],channel) in followup_active:
                             state = {'status':'running','draft':None,'reason':None}
                 except (AgenticError,FollowupEventError,CandidateError): state = {'status':'unavailable','draft':None,'reason':None}
             name = '_followup_draft_status.html' if hx(request) else 'followup_draft.html'
@@ -459,7 +450,7 @@ def create_app(config: Config | None = None) -> FastAPI:
             except (AgenticError,FollowupEventError,CandidateError):
                 raise HTTPException(status_code=409,detail='Confirm the application dates, current job ad and profile before drafting.') from None
         finally:conn.close()
-        key=users.scoped(application_id,channel)      # application ids are per-person too
+        key=(application_id,channel)      # application ids are per-person too
         with followup_lock:
             if key in followup_active:
                 return RedirectResponse(f'/applications/{posting_id}/followup-draft?channel={channel}',status_code=303)
@@ -516,7 +507,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 state = load_report(conn, posting_id, config)
                 if state['status'] == 'queued': state = {'status': 'running', 'report': None}
                 with interview_lock:
-                    if state['status'] == 'missing' and users.scoped(posting_id) in interview_active:
+                    if state['status'] == 'missing' and posting_id in interview_active:
                         state = {'status': 'running', 'report': None}
             except (AgenticError, CandidateError):
                 state = {'status': 'unavailable', 'report': None}
@@ -595,7 +586,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail='Interview preparation could not be queued. Check the current sources and try again.') from None
             finally:
                 if conn is not None: conn.close()
-        key = users.scoped(posting_id)         # ids are per-person: one person's run must not block another's
+        key = posting_id         # ids are per-person: one person's run must not block another's
         with interview_lock:
             if key in interview_active:
                 return
@@ -844,7 +835,7 @@ def create_app(config: Config | None = None) -> FastAPI:
                 try:
                     state = load_draft(conn, row['id'], channel=channel)
                     with followup_lock:
-                        if state['status'] == 'missing' and users.scoped(row['id'], channel) in followup_active:
+                        if state['status'] == 'missing' and (row['id'], channel) in followup_active:
                             state = {'status': 'running', 'draft': None, 'reason': None}
                 except (AgenticError, FollowupEventError, CandidateError):
                     state = {'status': 'unavailable', 'draft': None, 'reason': None}

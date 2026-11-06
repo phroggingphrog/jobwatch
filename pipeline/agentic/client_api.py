@@ -213,8 +213,7 @@ def mount(app, require, get_config):
             return JSONResponse({'error': 'upload_changed'}, status_code=409, headers=headers)
         ticket(request.state.app_upload_token, 'upload', consume=True)
         def save():
-            with users.use(person):
-                return intake.save_upload(person, spec['filename'], data, spec['kind'])
+            return intake.save_upload(person, spec['filename'], data, spec['kind'])
         result = await asyncio.to_thread(save)
         return JSONResponse(result, status_code=201, headers=headers)
 
@@ -242,31 +241,29 @@ def mount(app, require, get_config):
 
     @app.get('/api/agent/client/profile')
     def profile(principal=Depends(read)):
-        with users.use(principal.person):
-            proposal = intake.open_proposal(principal.person)
-            result = {'current': intake.current_version(principal.person),
-                      'proposal': proposal.model_dump(mode='json') if proposal else None}
-            if proposal and proposal.status == 'draft':
-                try:
-                    confirmation = intake.confirmation(principal.person, proposal.id, get_config(principal.person))
-                    result['confirmation'] = {**confirmation, 'scope': confirmation['scope'].model_dump(mode='json')}
-                except intake.IntakeError:
-                    pass  # incomplete drafts still show questions and evidence
-            return result
+        proposal = intake.open_proposal(principal.person)
+        result = {'current': intake.current_version(principal.person),
+                  'proposal': proposal.model_dump(mode='json') if proposal else None}
+        if proposal and proposal.status == 'draft':
+            try:
+                confirmation = intake.confirmation(principal.person, proposal.id, get_config(principal.person))
+                result['confirmation'] = {**confirmation, 'scope': confirmation['scope'].model_dump(mode='json')}
+            except intake.IntakeError:
+                pass  # incomplete drafts still show questions and evidence
+        return result
 
     @app.post('/api/agent/client/browser/control')
     def browser_control(body: BrowserControlRequest, principal=Depends(approve)):
-        with users.use(principal.person):
-            if not hasattr(app.state, 'application_service'):
-                raise HTTPException(503, 'browser_unavailable')
-            service = app.state.application_service(principal.person)
-            job, _ = service.app_context(body.posting_id)
-            state = service.sessions.status(str(job['application_id']))
-            if state.get('state') != 'ready' or not state.get('review_protected'):
-                raise HTTPException(409, 'browser_not_ready')
-            value = _ticket(principal.person, 'browser', {'posting_id': body.posting_id,
-                'application_id': str(job['application_id']), 'target_id': state['target_id']})
-            return {'url': origin + '/api/agent/client/browser/action', 'ticket': value, 'expires_in': 300}
+        if not hasattr(app.state, 'application_service'):
+            raise HTTPException(503, 'browser_unavailable')
+        service = app.state.application_service(principal.person)
+        job, _ = service.app_context(body.posting_id)
+        state = service.sessions.status(str(job['application_id']))
+        if state.get('state') != 'ready' or not state.get('review_protected'):
+            raise HTTPException(409, 'browser_not_ready')
+        value = _ticket(principal.person, 'browser', {'posting_id': body.posting_id,
+            'application_id': str(job['application_id']), 'target_id': state['target_id']})
+        return {'url': origin + '/api/agent/client/browser/action', 'ticket': value, 'expires_in': 300}
 
     @app.post('/api/agent/client/browser/action')
     async def browser_action(request: Request):
@@ -281,16 +278,15 @@ def mount(app, require, get_config):
             if not hasattr(app.state, 'application_service'):
                 raise HTTPException(503, 'browser_unavailable')
             def perform():
-                with users.use(person):
-                    service = app.state.application_service(person)
-                    session = service.sessions.status(binding['application_id'])
-                    if session.get('target_id') != binding['target_id'] or not session.get('review_protected'):
-                        raise HTTPException(409, 'browser_session_changed')
-                    # A chat click on final Submit only goes through for the exact form the owner reviewed.
-                    sent = value.pop('confirm_digest', None)
-                    value['_chat'] = True
-                    value['_digest_ok'] = bool(sent) and service.review(binding['posting_id']).get('confirmed_digest') == sent
-                    service.sessions.action(binding['application_id'], value)
+                service = app.state.application_service(person)
+                session = service.sessions.status(binding['application_id'])
+                if session.get('target_id') != binding['target_id'] or not session.get('review_protected'):
+                    raise HTTPException(409, 'browser_session_changed')
+                # A chat click on final Submit only goes through for the exact form the owner reviewed.
+                sent = value.pop('confirm_digest', None)
+                value['_chat'] = True
+                value['_digest_ok'] = bool(sent) and service.review(binding['posting_id']).get('confirmed_digest') == sent
+                service.sessions.action(binding['application_id'], value)
             await asyncio.to_thread(perform)
             return JSONResponse({'ok': True}, headers=headers)
         except HTTPException as exc:
@@ -300,26 +296,24 @@ def mount(app, require, get_config):
 
     @app.get('/api/agent/client/models')
     def models(principal=Depends(read)):
-        with users.use(principal.person):
-            config = get_config(principal.person)
-            choices = configured_models(principal.person, config)
-            return {'roles': {role: {'label': label, 'model': choices[role]}
-                              for role, (label, _) in model_choice.ROLES.items()},
-                    'embedding': 'openrouter/qwen/qwen3-embedding-8b',
-                    **model_catalog(principal.person, config)}
+        config = get_config(principal.person)
+        choices = configured_models(principal.person, config)
+        return {'roles': {role: {'label': label, 'model': choices[role]}
+                          for role, (label, _) in model_choice.ROLES.items()},
+                'embedding': 'openrouter/qwen/qwen3-embedding-8b',
+                **model_catalog(principal.person, config)}
 
     @app.post('/api/agent/client/models')
     def set_models(body: ModelRequest, principal=Depends(approve)):
         from pipeline.agentic.service import configured_llm
-        with users.use(principal.person):
-            llm = configured_llm(get_config(principal.person))
-            try:
-                for role, model in body.picks.items():
-                    if role not in model_choice.ROLES:
-                        raise HTTPException(422, 'invalid_role')
-                    model_choice.check(model, role, principal.person)
-                    require_route(llm, model)
-                model_choice.set_models(body.picks, principal.person)
-            except (RuntimeErrorSafe, model_choice.ModelRefused):
-                raise HTTPException(422, 'model_route_not_allowed') from None
-            return models(principal)
+        llm = configured_llm(get_config(principal.person))
+        try:
+            for role, model in body.picks.items():
+                if role not in model_choice.ROLES:
+                    raise HTTPException(422, 'invalid_role')
+                model_choice.check(model, role, principal.person)
+                require_route(llm, model)
+            model_choice.set_models(body.picks, principal.person)
+        except (RuntimeErrorSafe, model_choice.ModelRefused):
+            raise HTTPException(422, 'model_route_not_allowed') from None
+        return models(principal)

@@ -65,14 +65,13 @@ def _list(value) -> list[str]:
 
 def _person_config(person: str):
     # Config eagerly reads per-person rules and searches, before a DB is opened.
-    with users.use(person):
-        return load_config()
+    return load_config()
 
 
 def application_overview(person: str, limit: int = 50) -> dict:
     limit = max(1, min(int(limit), 100))
     config = _person_config(person)
-    with users.use(person), job_connection(config) as conn:
+    with job_connection(config) as conn:
         rows = task_state.jobs_overview(conn, limit)
         assessments = _assessment_projection(conn, config, [row['posting_id'] for row in rows])
         for row in rows:
@@ -89,10 +88,9 @@ def application_overview(person: str, limit: int = 50) -> dict:
 def overview(person: str, limit: int = 50, *, refresh: bool = False) -> dict:
     """Project the current canonical shortlist; activity is never a recommendation."""
     config = _person_config(person)
-    with users.use(person):
-        if not job_database(config).exists():
-            return dict(shortlist._empty('not_built'), view='list', jobs=[], counts=task_state.overview_counts([]))
-    with users.use(person), job_connection(config, write=refresh) as conn:
+    if not job_database(config).exists():
+        return dict(shortlist._empty('not_built'), view='list', jobs=[], counts=task_state.overview_counts([]))
+    with job_connection(config, write=refresh) as conn:
         if refresh:
             shortlist.build_shortlist(conn, config)
         result = shortlist.load_latest(conn, config=config, limit=max(1, min(int(limit), 100)))
@@ -131,7 +129,7 @@ def prepare_selected(person: str, posting_id: int, *, expected_entry_id: str,
     if confirmed is not True:
         raise RuntimeErrorSafe('confirmation_required')
     config = _person_config(person)
-    with users.use(person), job_connection(config, write=True) as conn:
+    with job_connection(config, write=True) as conn:
         row = selection.request(conn, config, posting_ids=[posting_id],
             expected_entry_ids={str(posting_id): expected_entry_id},
             expected_run_keys={str(posting_id): expected_run_key}, request_id=request_id,
@@ -213,7 +211,7 @@ def detail(person: str, posting_id: int) -> dict:
     if type(posting_id) is not int or posting_id < 1:
         raise RuntimeErrorSafe('invalid_request')
     config = _person_config(person)
-    with users.use(person), job_connection(config) as conn:
+    with job_connection(config) as conn:
         conn.row_factory = sqlite3.Row
         post = conn.execute('SELECT title, company, location, url FROM postings WHERE id=?', (posting_id,)).fetchone()
         if post is None:
@@ -380,7 +378,7 @@ def _application_and_digest(conn, posting_id: int):
 
 def submit_digest(person: str, posting_id: int) -> str | None:
     """The reviewed fill's confirmation digest, or None when there is no reviewed fill to confirm."""
-    with users.use(person), job_connection(load_config()) as conn:
+    with job_connection(load_config()) as conn:
         return _application_and_digest(conn, posting_id)[1]
 
 
@@ -397,13 +395,12 @@ def submit_reviewed(person: str, posting_id: int, confirm_digest: str, shown_has
             # The form was edited after the fill and the person has now seen and confirmed exactly this edited form.
             if not hmac.compare_digest(confirm_digest, review_digest):
                 raise RuntimeErrorSafe('submit_digest_mismatch')
-            with users.use(person), job_connection(load_config()) as conn:
+            with job_connection(load_config()) as conn:
                 blocked = task_state.retry_blocked(conn, posting_id)       # a refused Submit must not confirm the edit
             if blocked:
                 raise RuntimeErrorSafe(blocked)
-            with users.use(person):
-                _live_form().rebind(person, posting_id, review_digest)
-    with users.use(person), job_connection(load_config(), write=True) as conn:
+            _live_form().rebind(person, posting_id, review_digest)
+    with job_connection(load_config(), write=True) as conn:
         application_id, current = _application_and_digest(conn, posting_id)
         if current is None:
             raise RuntimeErrorSafe('submit_not_ready')
@@ -422,7 +419,7 @@ def status(person: str, posting_id: int) -> dict:
     """Plain state card for one posting (same logic as the task_status tool)."""
     if type(posting_id) is not int or posting_id < 1:
         raise RuntimeErrorSafe('invalid_request')
-    with users.use(person), job_connection(load_config()) as conn:
+    with job_connection(load_config()) as conn:
         return task_state.task_card(conn, posting_id)
 
 
@@ -509,7 +506,7 @@ def _review(person: str, posting_id: int) -> tuple[dict, str | None, bool]:
     if type(posting_id) is not int or posting_id < 1:
         raise RuntimeErrorSafe('invalid_request')
     base = {'posting_id': posting_id, 'found': False, 'ready': False, 'answers': [], 'documents': []}
-    with users.use(person), job_connection(load_config()) as conn:
+    with job_connection(load_config()) as conn:
         conn.row_factory = sqlite3.Row
         post = conn.execute('SELECT title, company, url FROM postings WHERE id=?', (posting_id,)).fetchone()
         if post is None:
@@ -541,8 +538,7 @@ def _review(person: str, posting_id: int) -> tuple[dict, str | None, bool]:
             # No browser to read: these are the fill-time answers and the owner changed the form since. Not offered.
             return out | {'reason': 'edited_in_browser'}, None, False
     else:
-        with users.use(person):
-            live = live_reader.read(person, posting_id)
+        live = live_reader.read(person, posting_id)
         if not isinstance(live, dict) or live.get('status') == 'blocked' or not live.get('review_digest'):
             reason = str((live or {}).get('reason') or '')
             return out | {'reason': reason if reason in _LIVE_REFUSALS else 'browser_unavailable'}, None, False
@@ -670,7 +666,7 @@ def register(server: FastMCP, person_from_request) -> None:
         submitted, outcome unknown, failed, cancelled, not started. Read-only."""
         if type(posting_id) is not int or posting_id < 1:
             raise RuntimeErrorSafe('invalid_request')
-        with users.use(person_from_request()), job_connection(load_config()) as conn:
+        with job_connection(load_config()) as conn:
             card = task_state.task_card(conn, posting_id)
         return ToolResult(content=f"#{posting_id}: {card['state']}." + (' ' + card['message'] if card.get('message') else ''),
                           structured_content=card)

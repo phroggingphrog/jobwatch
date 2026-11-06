@@ -35,8 +35,7 @@ def generate_config(profile: dict, user: str) -> Path:
         raise ValueError("profile has no target_titles")
     loc = _loc(profile)
     city = loc.split(",")[0].strip()
-    with users.use(user):
-        cdir = users.user_dir() / "config"
+    cdir = users.user_dir() / "config"
     cdir.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     searches = {

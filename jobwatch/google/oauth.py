@@ -70,7 +70,7 @@ def check_state(state: str, now: float | None = None) -> str:
         data = json.loads(base64.urlsafe_b64decode(body))
         if (now or time.time()) - int(data["t"]) > STATE_TTL:
             raise ValueError("expired")
-        if not users.valid_name(data["u"]):
+        if not bool(data["u"]):
             raise ValueError("bad user")
         return data["u"]
     except (KeyError, TypeError, binascii_error) as exc:

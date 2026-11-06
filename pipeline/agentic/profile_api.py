@@ -66,8 +66,7 @@ def mount(app, require, get_config, llm_factory):
         return proposal.model_dump(mode='json')
 
     def call(person, fn, *args, **kwargs):
-        with users.use(person):                      # same per-person context the other handlers run in
-            return fn(person, *args, **kwargs)
+        return fn(person, *args, **kwargs)
 
     @app.post(UPLOAD_PATH, status_code=201)
     async def upload(request: Request, principal=Depends(run)):
@@ -130,12 +129,11 @@ def mount(app, require, get_config, llm_factory):
     def understanding(principal=Depends(read)):
         from jobwatch.candidate.presentation import current_understanding
         from pipeline.agentic.chat import job_database, job_connection
-        with users.use(principal.person):
-            config = get_config(principal.person)
-            if not job_database(config).exists():
-                return current_understanding(None)
-            with job_connection(config) as conn:
-                return current_understanding(conn)
+        config = get_config(principal.person)
+        if not job_database(config).exists():
+            return current_understanding(None)
+        with job_connection(config) as conn:
+            return current_understanding(conn)
 
     @app.get(PREFIX + '/versions')
     def versions(principal=Depends(read)):

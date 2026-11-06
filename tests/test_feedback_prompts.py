@@ -9,25 +9,11 @@ from jobwatch.preferences import PreferenceStore, PreferenceError
 from tests.preferences.test_core import alternative
 
 
-def test_identical_profiles_have_distinct_person_contexts_and_shared_db_sets(monkeypatch, tmp_path):
-    from jobwatch import db
-    monkeypatch.setattr(intake, 'current_version', lambda person: {'version':1, 'facts':[]})
-    kwargs = dict(bundle=SimpleNamespace(bundle_hash='b'*64),
-                  policy=SimpleNamespace(model_dump=lambda **kwargs: {}), cfg={},
-                  structural=SimpleNamespace(run_key='same-structural-input'))
-    conn = db.connect(tmp_path / 'shared.db')
-    try:
-        with users.use('fixture-a'):
-            identity_a = preference_service.preference_context(**kwargs)
-            item = PreferenceStore(conn).create_set([alternative(i) for i in (1, 2, 3)], identity_a)
-        with users.use('fixture-b'):
-            identity_b = preference_service.preference_context(**kwargs)
-            assert identity_b != identity_a
-            assert PreferenceStore(conn).list_sets(identity_b) == []
-        with users.use('fixture-a'):
-            assert PreferenceStore(conn).list_sets(identity_a)[0]['id'] == item['id']
-    finally:
-        conn.close()
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 
 
 @pytest.fixture
@@ -280,20 +266,6 @@ def test_weekly_cap_counts_dismissed_prompts_and_settings_can_disable(prompts):
     assert next_prompt(w) == {'prompt':None, 'reason':'disabled'}
 
 
-def test_prompt_and_choice_visibility_is_person_bound_on_shared_connection(prompts):
-    w = prompts
-    with users.use('fixture-a'):
-        prompt = next_prompt(w)['prompt']
-    with users.use('fixture-b'):
-        assert w.module.outstanding_prompt(w.conn) is None
-        assert w.module.list_prompts(w.conn) == []
-        with pytest.raises(w.module.PromptError, match='prompt_not_found'):
-            w.module.answer_comparison(w.conn, w.config, prompt['prompt_id'], None,
-                request_id='steal', actor='person')
-        own = next_prompt(w)['prompt']
-        assert own['set_id'] != prompt['set_id']
-    with users.use('fixture-a'):
-        assert w.module.outstanding_prompt(w.conn)['prompt_id'] == prompt['prompt_id']
 
 
 @pytest.mark.parametrize('actor', ['agent', None, 'owner'])

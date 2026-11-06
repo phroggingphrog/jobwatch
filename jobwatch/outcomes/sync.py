@@ -333,13 +333,6 @@ def run_outcomes(config, dry_run: bool = False, show: bool = False, printer=prin
     now = now or now_utc()
     try:
         stats["expired"] = expire(conn, int(conf["expire_days"]), now, dry_run)
-        if mcp is None and users.current() != users.DEFAULT_USER and google_oauth.load():
-            from jobwatch.google.gmail import GmailMcp      # a connected friend reads their own Gmail
-            mcp, conf = GmailMcp(), {**conf, "mailboxes": [{"account": "gmail", "mailbox": "all"}]}
-        elif mcp is None and users.current() != users.DEFAULT_USER:
-            # the local MCP mail server is the owner's mailboxes: never match them to a friend's applications
-            stats["skipped"] = "no Gmail connection for this person: mail scan skipped"
-            return stats
         mcp = mcp or McpClient(conf["mcp_url"])
         stats["tools"] = len(mcp.list_tools())
         proposals = scan(conn, mcp, conf, dry_run=dry_run, now=now, llm=llm, stats=stats)

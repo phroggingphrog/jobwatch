@@ -43,8 +43,7 @@ def test_overview_and_detail_show_the_application(app):
 def test_the_fill_stored_the_original_file_names(app):
     from jobwatch import users
     from jobwatch.apply import prepare
-    with users.use('owner'):
-        prepared = prepare.latest_preparation(users.user_dir(), '1')
+    prepared = prepare.latest_preparation(users.user_dir(), '1')
     assert prepared['document_names'] == {'cv': realapp.CV_NAME, 'letter': realapp.LETTER_NAME}
     assert app.form_value('motivation') == realapp.MOTIVATION
 

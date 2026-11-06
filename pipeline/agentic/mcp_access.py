@@ -102,7 +102,7 @@ def person_for_email(email: str, mapping: dict) -> str:
     from jobwatch import users
 
     person = (mapping or {}).get((email or "").strip().lower())
-    if not users.valid_name(person):
+    if not bool(person):
         raise AccessError("access_person_unmapped")
     return person
 

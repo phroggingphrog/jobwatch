@@ -300,3 +300,11 @@ def test_opted_in_private_failure_capture_is_owner_only(tmp_path, monkeypatch):
     assert {p.name for p in files} >= {"cv.pdf", "letter.pdf", "report.json"} and len(files) == 5
     assert all(p.stat().st_mode & 0o777 == 0o600 for p in files), [oct(p.stat().st_mode) for p in files]
     assert all(p.parent.stat().st_mode & 0o077 == 0 for p in files)
+
+
+def test_packaging_blocker_names_a_profile_without_a_name():
+    from types import SimpleNamespace
+    from pipeline.agentic.draft import packaging_blocker
+    assert packaging_blocker(SimpleNamespace(name="Profile")) == "profile_identity_missing"
+    assert packaging_blocker(SimpleNamespace(name="")) == "profile_identity_missing"
+    assert packaging_blocker(SimpleNamespace(name="A Person")) is None

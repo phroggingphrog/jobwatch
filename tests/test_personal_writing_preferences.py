@@ -1,6 +1,12 @@
 """Confirmed style choices never become another person's defaults."""
+import pytest
 from pipeline.agentic.writing_guide import writing_guide, writing_preferences, templates_for
 from pipeline.agentic.draft import _role
+
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 
 def approved(**options):
@@ -41,12 +47,10 @@ def test_other_person_and_global_career_examples_are_not_loaded(tmp_path, monkey
     outside = tmp_path / 'outside' / 'style' / 'examples'
     outside.mkdir(parents=True)
     (outside / 'owner.md').write_text('OTHER PERSON VOICE')
-    users.create_user_dirs('friend')
     local = users.user_dir('friend') / 'style' / 'examples'
     local.mkdir(parents=True, exist_ok=True)
     (local / 'friend.md').write_text('OWN APPROVED VOICE')
-    with users.use('friend'):
-        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
     assert 'OWN APPROVED VOICE' in str(guide)
     assert 'OTHER PERSON VOICE' not in str(guide)
 
@@ -106,15 +110,13 @@ def test_pdf_trimming_has_no_unconfirmed_six_skill_or_three_bullet_floor():
 def test_symlinked_style_directory_cannot_read_another_person(tmp_path, monkeypatch):
     from jobwatch import users
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    users.create_user_dirs('friend')
     other = tmp_path / 'other-person' / 'examples'
     other.mkdir(parents=True)
     (other / 'private.md').write_text('OTHER PERSON PRIVATE VOICE')
     style = users.user_dir('friend') / 'style'
     style.mkdir(exist_ok=True)
     (style / 'examples').symlink_to(other, target_is_directory=True)
-    with users.use('friend'):
-        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
+    guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
     assert 'human_examples' not in guide
 
 
@@ -170,27 +172,6 @@ def test_current_examples_override_archived_examples(tmp_path, monkeypatch):
     assert 'ARCHIVE VOICE' not in str(guide)
 
 
-def test_archive_library_refuses_traversal_symlinks_and_other_person(tmp_path, monkeypatch):
-    from jobwatch import users
-    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    users.create_user_dirs('friend')
-    career = users.user_dir('friend') / 'career'
-    (career / 'style').mkdir(parents=True)
-    (career / 'style' / 'style_references.csv').write_text(
-        'ref_id,kind,analysis_file,anon_file,layout_file\n'
-        'escape,cv,../../private.yaml,,\nlink,cv,style/link.yaml,,\n')
-    outside = tmp_path / 'private.yaml'
-    outside.write_text('ANOTHER PERSON SECRET')
-    (career / 'style' / 'link.yaml').symlink_to(outside)
-    owner_samples = tmp_path / 'career' / 'style' / 'examples'
-    owner_samples.mkdir(parents=True)
-    (owner_samples / 'letter.md').write_text('OWNER ONLY VOICE')
-    with users.use('friend'):
-        guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
-    assert guide['reference_library']['files'] == []
-    assert guide['reference_library']['unavailable'] >= 2
-    assert 'ANOTHER PERSON SECRET' not in str(guide) and 'OWNER ONLY VOICE' not in str(guide)
-    assert 'human_examples' not in guide
 
 
 def test_reference_text_and_total_output_are_bounded(tmp_path, monkeypatch):

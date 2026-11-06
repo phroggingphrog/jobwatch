@@ -17,6 +17,11 @@ from pipeline.nodes import ingest
 from tests.test_agentic_service import world  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 @pytest.fixture
 def reader(world, monkeypatch):
     conn, config, bundle, add = world
@@ -103,27 +108,6 @@ def test_invalid_reader_limit_dispatches_no_work(reader, limit):
     assert calls == []
 
 
-def test_limit_is_bound_to_receipt_and_person(reader):
-    _, config, _ = reader
-    person = users.current()
-    first = discovery_ops.start(person, config, 'bounded-receipt', max_assessments=1)
-    assert discovery_ops.start(person, config, 'bounded-receipt', max_assessments=1) == first
-    for limit in (None, 2):
-        with pytest.raises(Conflict, match='idempotency_conflict'):
-            discovery_ops.start(person, config, 'bounded-receipt', max_assessments=limit)
-    with APIStore(person) as queue:
-        assert json.loads(queue.raw_run(first['run_id'])['input_json']) == {'discovery': True, 'max_assessments': 1}
-        queue.finish(first['run_id'], {'processed': 1})
-    replay = discovery_ops.start(person, config, 'bounded-receipt', max_assessments=1)
-    assert replay == {'run_id': first['run_id'], 'state': 'completed'}
-    assert discovery_ops.start(person, config, 'unbounded-receipt')['run_id'] != first['run_id']
-    other = 'synthetic-other'
-    users.create_user_dirs(other)
-    with users.use(other):
-        from tests.test_agentic_service import confirm_discovery
-        confirm_discovery(config)
-    second = discovery_ops.start(other, config, 'bounded-receipt', max_assessments=2)
-    assert second['run_id'] != first['run_id']
 
 
 def test_authenticated_bounded_queue_reaches_reader_with_all_invocation_costs(reader, monkeypatch):

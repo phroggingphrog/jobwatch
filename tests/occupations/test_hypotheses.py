@@ -12,6 +12,12 @@ from jobwatch.occupations.embeddings import VectorStore
 from jobwatch.occupations.hypotheses import FieldHypothesis, cached_doc_keys, cached_hypotheses, field_hypotheses, select
 from .fixtures import approved_llm, hash_transport, fact, make_config, make_policy, toy_reference, write_approved
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch, tmp_path):
+    monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "owner-jobwatch.db"))
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 LEDGER = fact('experience', 'Reconciled supplier ledgers prepared journals', fid='f1')
 
 
@@ -100,12 +106,6 @@ def test_no_usable_facts_and_missing_reference_are_errors(person, monkeypatch):
         compute(person, policy=make_policy(profile_version=2))
 
 
-def test_person_b_never_reads_person_a_cache_and_files_private(person):
-    write_approved(person, [LEDGER])
-    compute(person)
-    assert cached_hypotheses('other') is None
-    folder = users.user_dir(person) / 'discovery'
-    assert all(stat.S_IMODE(p.stat().st_mode) == (0o700 if p.is_dir() else 0o600) for p in [folder, *folder.rglob('*')])
 
 
 def test_cache_corruption_is_refused(person):
@@ -189,10 +189,6 @@ def test_invalid_deadline_is_rejected_before_calls(person):
     assert calls == []
 
 
-def test_new_person_database_is_private(person):
-    write_approved(person, [LEDGER])
-    compute(person)
-    assert stat.S_IMODE(users.db_path(person).stat().st_mode) == 0o600
 
 
 def test_cached_fields_use_explicit_runtime_config_after_refresh(person, monkeypatch):

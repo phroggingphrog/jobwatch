@@ -8,6 +8,11 @@ from pipeline.agentic.runtime import RuntimeErrorSafe
 from pipeline.agentic import chatgpt_connector as cc
 from tests.test_mcp_server import PREPARED, reviewed, two_people, _requests, _interrupt, _clear_pending  # noqa: F401
 
+
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
 TOKEN = 'x' * 40
 H = {'Authorization': 'Bearer ' + TOKEN}
 FILLED = dict(PREPARED, attached_documents={'cv': 'a' * 64, 'letter': 'b' * 64}, review_answers=[
@@ -308,16 +313,6 @@ def test_a_refused_submit_records_no_confirmation_of_an_edited_form(live, client
     assert refused.status_code == 400 and refused.json()['error'] == 'submit_already_queued'
     assert live.rebound == [] and len(_requests('owner')) == 1
 
-def test_live_read_and_rebind_run_as_the_configured_person_not_the_default(live, two_people):
-    """guest is not the default user: the native browser key is chosen by users.current(), so both calls must be scoped."""
-    guest = TestClient(connector_http.create_app(token=TOKEN, person='guest'))
-    body = guest.get('/connector/jobs/1/review', headers=H).json()
-    assert body['review']['ready'] and body['review']['employer'] == 'Secret Co'
-    live.edit('Full name', 'Edited by guest')
-    fresh = guest.get('/connector/jobs/1/review', headers=H).json()
-    ok = guest.post('/connector/jobs/1/submit', headers=H,
-                    json={'confirm_digest': fresh['submit_digest'], 'shown_hash': fresh['review']['shown_hash']})
-    assert ok.status_code == 200 and live.rebound == [fresh['submit_digest']]
 
 
 def test_preparation_requires_literal_consent_and_exact_typed_inputs(client, monkeypatch):

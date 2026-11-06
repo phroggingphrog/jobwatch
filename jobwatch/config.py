@@ -80,9 +80,6 @@ class Config:
 
     @property
     def db_path(self) -> Path:
-        from . import users
-        if users.current() != users.DEFAULT_USER:       # another person: their own DB
-            return users.db_path()
         return Path(os.path.expanduser(_setting("JOBWATCH_DB") or self.settings["db_path"]))
 
     def employers_for(self, provider: str) -> list[dict]:
@@ -104,13 +101,11 @@ def load_config(config_dir: str | Path | None = None) -> Config:
         emp_path = None
     employers_doc = _load(emp_path) if emp_path else {}
     employers = employers_doc.get("employers", employers_doc) if isinstance(employers_doc, dict) else employers_doc
-    from . import users           # another person's own rules/searches (TASK-111)
-    ucdir = users.config_dir() if users.current() != users.DEFAULT_USER and not config_dir else None
     return Config(
         config_dir=cdir,
         settings=settings,
-        rules=_load((ucdir or cdir) / "rules.yaml"),
-        searches=_load((ucdir or cdir) / "searches.yaml"),
+        rules=_load(cdir / "rules.yaml"),
+        searches=_load(cdir / "searches.yaml"),
         feeds=_load(cdir / "feeds.yaml"),
         employers=[e for e in (employers or []) if isinstance(e, dict)],
         employers_path=emp_path,

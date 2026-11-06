@@ -14,6 +14,11 @@ from jobwatch.apply import browser as browser_service
 from tests.web.test_agentic import _client, OK
 
 
+@pytest.fixture(autouse=True)
+def _owner_folder_profile(monkeypatch):
+    monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
+
+
 class Browser:
     def __init__(self):
         self.opened = self.active = False
@@ -440,14 +445,6 @@ def test_a_stale_or_expired_chat_request_presses_nothing(tmp_path, monkeypatch):
     assert browser.confirms is None and _request(client, expired) == ('expired', None)
 
 
-def test_background_work_runs_once_per_person_as_that_person(tmp_path, monkeypatch):
-    from jobwatch import users
-    client, browser, _ = setup(tmp_path, monkeypatch)
-    users.create_user_dirs('friend')
-    (users.user_dir('friend') / 'jobwatch.db').touch()
-    seen = []
-    client.app.state.for_each_person(lambda: seen.append(users.current()))
-    assert seen == [users.DEFAULT_USER, 'friend']
 
 
 def test_a_submit_seen_while_no_prepare_page_is_open_is_still_recorded(tmp_path, monkeypatch):

@@ -23,8 +23,9 @@ direction takes precedence; preserve their words and do not silently narrow the 
   Deep Agents inside Jobwatch; MCP is optional and website integration is later.
 - Reuse canonical Jobwatch evidence, eligibility, review and package operations.
   Read [the backend contract](pipeline/agentic/CHAT.md) and actual call sites before editing.
-- Keep candidate facts and preferences in each person's approved runtime files.
-  Preserve per-person isolation, server-bound identity and exact-input approvals.
+- This isolated continuation serves one owner. Keep candidate facts and preferences
+  in the owner's approved runtime files. Preserve server-bound identity and
+  exact-input approvals; do not restore sign-up or multi-person support.
 - Never submit an application except through the owner's confirmed-Submit path
   (`jobwatch/apply/submit_confirm.py`); never contact an employer or treat model text as human
   approval. Keep candidate data on approved paid routes and out of hosted tracing.

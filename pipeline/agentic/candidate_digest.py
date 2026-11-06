@@ -397,7 +397,7 @@ def _prepare(conn, journal_conn, *, bundle, policy, cfg, structural, budget, llm
 
     def tool(name, schema, handler):
         def invoke(**args):
-            with users.use(run.person), execution.use(run.scope), run.lock:
+            with execution.use(run.scope), run.lock:
                 budget.ensure_live()
                 if run.load('digest') is not None:
                     raise RuntimeErrorSafe('terminal_already_selected')
@@ -447,7 +447,7 @@ def _prepare(conn, journal_conn, *, bundle, policy, cfg, structural, budget, llm
     graph_config = {'configurable': {'thread_id': run.thread}, 'callbacks': [],
         'recursion_limit': 1000000 if budget.role_turn_limit is None else 16 * budget.role_turn_limit + 100}
     def invoke():
-        with users.use(run.person), execution.use(run.scope), tracing_context(enabled=False):
+        with execution.use(run.scope), tracing_context(enabled=False):
             checkpoint = run.saver.get_tuple(graph_config)
             graph.invoke(None if checkpoint else {
                 'messages': [HumanMessage(content=json.dumps(context, sort_keys=True))],
