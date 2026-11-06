@@ -687,7 +687,7 @@ def test_real_deepagents_research_checkpoints_on_file_database(world, monkeypatc
     summary = agentic_batch_run([46], config, conn, evidence_bundle=bundle,
                                llm=LLM(transport=ResearchGateway(bundle), keys=['synthetic']), operation='evaluate')
     assert checkpoint_errors == []
-    assert summary['ready'] == 0 and summary['archived'] == 0 and summary['held'] == 1
+    assert summary['ready'] == 0 and summary['archived'] == 0 and summary['held'] == 0 and summary['evaluated'] == 1
     assert latest_result(conn, 46)['reason'] == 'evaluation_complete'
     assert len(queries) == 1 and queries[0][1] != main_thread
     cp = json.loads(conn.execute('SELECT checkpoint_json FROM agentic_runs').fetchone()[0])

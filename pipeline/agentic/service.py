@@ -457,7 +457,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                     batch: BatchBudget | None = None, candidate_cache: dict | None = None,
                     expected_run_key: str | None = None, _batch_registry: dict | None = None,
                     _invocation_deadline: float | None = None, operation: str = 'prepare',
-                    _skip_reasons=None, collector_run_id=None, _discovery_run_id=None) -> Stage | None:
+                    _skip_reasons=None, collector_run_id=None, _discovery_run_id=None,
+                    _on_started=None) -> Stage | None:
     if operation not in ('evaluate', 'prepare'):
         raise AgenticError('invalid_operation')
     def skip(reason, next_eligible_at=None):
@@ -541,6 +542,8 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
     stage, reason, final_status = Stage.DLQ, 'execution_failed', 'held'
     try:
         activity('started')  # inside the try: a failure here must still release the claim
+        if _on_started is not None:
+            _on_started(posting_id)
         incidents.mark_phase(conn, incident_run_id, 'liveness', posting_id=posting_id)
         # Cached READY rechecks are public-only and do not renew exhausted model budgets.
         saved_package = adapter.load_artifact(key.value, 'package_bundle')
@@ -761,7 +764,9 @@ def run_agentic_job(posting_id: int, config, conn: sqlite3.Connection, *, policy
                 stage = Stage.ARCHIVED if decision.route == 'archive' else Stage.DLQ
                 reason, final_status = decision.reason, 'archived' if decision.route == 'archive' else 'held'
             elif operation == 'evaluate':
-                reason = 'evaluation_complete'
+                if adapter.load_artifact(key.value, 'candidate') is None or adapter.load_artifact(key.value, 'evaluation') is None:
+                    raise AgenticError('artifact_invalid')
+                stage, reason, final_status = Stage.EVALUATED, 'evaluation_complete', 'evaluated'
             else:
                 if saved_package is None:
                     budget.ensure_live()
@@ -848,7 +853,7 @@ def _approved_evidence(person: str):
 def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=None, deadline=None,
                       run_id=None, token_allowance=None, token_allowance_reason='daily_budget',
                       expected_run_keys=None, **kwargs):
-    summary = {'processed': 0, 'ready': 0, 'archived': 0, 'held': 0, 'skipped': 0,
+    summary = {'processed': 0, 'ready': 0, 'evaluated': 0, 'archived': 0, 'held': 0, 'skipped': 0,
                'deferred': [], 'skipped_reasons': {}}
     if not enabled(config):
         return summary
@@ -941,7 +946,7 @@ def agentic_batch_run(snapshot_ids, config, conn, *, batch_id=None, max_seconds=
             summary['deferred'].extend(skips or [{'posting_id': pid, 'reason': 'not_admitted', 'next_eligible_at': None}])
             continue
         summary['processed'] += 1
-        summary[{Stage.READY: 'ready', Stage.ARCHIVED: 'archived', Stage.DLQ: 'held'}[stage]] += 1
+        summary[{Stage.READY: 'ready', Stage.EVALUATED: 'evaluated', Stage.ARCHIVED: 'archived', Stage.DLQ: 'held'}[stage]] += 1
         if stage == Stage.READY:
             _tell_owner_ready(conn, pid)
         if run_id is not None:
@@ -1016,6 +1021,19 @@ def _evaluation_current(conn, posting_id, captured, key, decision_policy):
     """Skip paid reassessment only for unchanged completed inputs and fresh liveness."""
     result = latest_result(conn, posting_id, parse=frozenset({'evaluation','candidate'}))
     if not result or result.get('reason') != 'evaluation_complete' or result.get('run_key') != key.value:
+        return False
+    try:
+        from jobwatch.candidate.contracts import AnalysisResult
+        evaluation = validate_model_payload(AgenticEvaluation, result.get('evaluation'))
+        raw_candidate = result.get('candidate')
+        try:
+            candidate = validate_model_payload(CandidateAssessment, raw_candidate)
+        except AgenticError:
+            candidate = validate_model_payload(AnalysisResult, raw_candidate)
+        if (evaluation.run_key != key or candidate.run_key != key.candidate_hash
+                or candidate.evidence_hash != key.evidence_hash):
+            return False
+    except (AgenticError, ValueError, TypeError):
         return False
     if not observation_current(latest_observation(conn, posting_id),posting_id=posting_id,
             url=captured[0]['url'],ad_hash=key.ad_hash):

@@ -120,7 +120,7 @@ def test_missing_confirmed_policy_stays_neutral_and_writes_no_policy_decision(wo
     monkeypatch.setattr(intake, 'current_version', lambda person: None)
     assert service.decision_policy_for(with_flag(config, 'profile')) is None
     stage, result = evaluate(world, with_flag(config, 'profile'))
-    assert stage == Stage.DLQ and result['reason'] == 'evaluation_complete'     # no donor preference substitutes for a missing confirmation
+    assert stage == Stage.EVALUATED and result['reason'] == 'evaluation_complete'     # no donor preference substitutes for a missing confirmation
     assert not table_exists(conn)
 
 
@@ -142,7 +142,7 @@ def test_changed_confirmed_exclusion_gets_a_new_run_and_preserves_the_old_decisi
     current['value'] = released
     stage, second = evaluate(world, with_flag(config, 'legacy'), llm=llm)
     assert second['run_key'] != first['run_key']
-    assert stage == Stage.DLQ and second['reason'] == 'evaluation_complete'
+    assert stage == Stage.EVALUATED and second['reason'] == 'evaluation_complete'
     assert len(gateway.calls) > calls   # a new exact-input run must not reuse old bound outputs
     assert decision_log.latest(conn, first['run_key']) == first_log
     newest = decision_log.latest(conn, second['run_key'])
@@ -175,7 +175,7 @@ def test_gate_current_is_the_only_live_gate_call(world, monkeypatch):           
     summary = service.agentic_batch_run([42], on, conn, evidence_bundle=bundle,
                                         llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']),
                                         operation='evaluate')
-    assert summary['held'] == 1
+    assert summary['evaluated'] == 1 and summary['held'] == 0
     assert len(via_gate_current) == 1 and len(decide_kwargs) == 1
     for name in ('posting', 'ad_text', 'decision_policy', 'policy'):
         assert name in via_gate_current[0]
@@ -238,7 +238,7 @@ def test_personal_classifier_signals_stay_advisory_for_all_confirmed_profiles(wo
         add(pid, f'Synthetic Employer {pid}')
         monkeypatch.setattr(service, 'policy_for', lambda person, **kwargs: dp)
         stage, result = evaluate(world, with_flag(config, 'legacy' if pid == 42 else 'profile'), pid=pid)
-        assert stage == Stage.DLQ and result['reason'] == 'evaluation_complete'
+        assert stage == Stage.EVALUATED and result['reason'] == 'evaluation_complete'
         assert decision_log.latest(conn, result['run_key'])['route'] == 'draft'
     # Injection remains an ad-integrity control, separate from personal preference classification.
     answers['injection'] = 0.99

@@ -14,6 +14,17 @@ from pipeline.schemas import Stage
 from tests.test_agentic_service import SyntheticGateway, world
 
 
+def test_evaluated_projection_is_not_a_hold(world):
+    conn, config, bundle, add = world
+    add(42)
+    assert run_agentic_job(42, config, conn, evidence_bundle=bundle,
+                          llm=LLM(transport=SyntheticGateway(bundle), keys=['synthetic']),
+                          operation='evaluate') == Stage.EVALUATED
+    result = queries.agentic_models(conn, [42])[42]
+    assert result['status'] == 'evaluated'
+    assert result['hold'] == '' and result['has_evaluation']
+
+
 @pytest.mark.parametrize('reason,label', [
     ('draft_daily_limit', 'Daily drafting limit reached'),
     ('draft_batch_limit', 'Drafting limit for this run reached'),
