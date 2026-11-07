@@ -1,8 +1,23 @@
 # Proposal
 
+## Source reconciliation (2026-11-08)
+
+The native assessment, bounded invocation, recovery and digest-view source is
+already represented in `main` at `0ea4fe0`. This follow-up verifies the
+`candidate-digest-native-assessment` contracts; it does not replace the
+screen-first admission path or depend on package cleanup. The main spec inventory
+is no longer empty. Earlier source revisions and paid failures below are
+historical evidence, not current runtime observations.
+
+The existing task record still leaves canonical provider acceptance,
+zero-paid completed reuse and release observation open. This reconciliation
+neither reruns them nor proves they have never occurred elsewhere. Current
+`INTENT.md` requires assessment to remain off in this continuation; paid attempts,
+routing changes, deployment and activation require separate explicit authorization.
+
 ## Why
 
-The native assessment at `dd24c7a` still has no successful real-provider acceptance. The latest warm-digest run stopped at a candidate filename passed to the skill reader after six native calls; passing offline checks did not produce a canonical evaluation or establish the 3–6-call target.
+The historical native assessment at `dd24c7a` had no successful real-provider acceptance. The latest warm-digest run stopped at a candidate filename passed to the skill reader after six native calls; passing offline checks did not produce a canonical evaluation or establish the 3–6-call target.
 
 ## What Changes
 
@@ -25,7 +40,7 @@ system-message replacement must not erase Jobwatch's runtime instructions.
 
 ### Modified Capabilities
 
-None. The main spec inventory is empty. The in-flight `candidate-digest-native-assessment` change owns candidate understanding, deterministic screening and canonical job assessment. This follow-up supplies acceptance evidence for its unfinished task 4.5 and release tasks 5.1–5.3; it does not replace those domain contracts or certify their unchecked tasks.
+No main capability modifications were declared by the original proposal. The inventory was empty at that time; it now contains durable specs. The in-flight `candidate-digest-native-assessment` change owns candidate understanding, deterministic screening and canonical job assessment. This follow-up supplies acceptance evidence for its unfinished task 4.5 and release tasks 5.1–5.3; it does not replace those domain contracts or certify their unchecked tasks.
 
 ## Impact
 

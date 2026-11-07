@@ -1,5 +1,19 @@
 # Tasks
 
+## Reconciled status (2026-11-08)
+
+Source is present in `main` at `0ea4fe0`. Checked entries preserve historical
+implementation/check records; they are not new test results. Task 4.5 and section
+5 remain open evidence gaps, followed up by `native-assessment-acceptance`, not
+instructions to rebuild the native evaluator. Screen-first admission feeds this
+slice; package consolidation is independent.
+
+Provider attempts and release steps are conditional on fresh explicit owner
+authorization under current `INTENT.md`. This checklist authorizes no spending,
+routing changes, service activation or deployment. Old service SHAs, experiment
+results and timer observations below are historical, not current runtime facts.
+TASK-279 is historical tracking provenance; follow current issue guidance.
+
 ## 1. Preserve evidence and align completion contracts
 
 - [x] 1.1 Reconcile existing assessment WIP without losing unrelated changes; record starting revision, runtime pause and rollback materials on TASK-279 and verify collect-only timers remain available.
@@ -20,7 +34,7 @@
 
 ## 4. Native evaluation and measurements
 
-- [x] 4.1 Integrate current candidate digest into the single native DeepSeek evaluation agent, removing redundant context/tools and enforcing extraction-before-matching; verify actual native message shapes, frozen coverage and exact citations in focused tests.
+- [x] 4.1 Integrate current candidate digest into the single native DeepSeek evaluation agent, removing redundant context/tools and requiring frozen requirements before requirement-directed matching/completion, while permitting approved primary reads before ad registration; verify actual native message shapes, frozen coverage and exact citations in focused tests.
 - [x] 4.2 Preserve digest/job/classifier/embedding/orchestration accounting and configured Unlimited controls; verify numeric usage, unknown charges, safe resume and purpose counts without an artificial efficiency cap.
 - [x] 4.3 Run one controlled evaluate-only real posting after offline checks; record calls/tokens/time, digest cold/reused cost, citations and gate outcome. If it fails, report the specific blocker and retain checkpoints rather than declaring acceptance.
 - [x] 4.4 Prove reasoning-bearing interrupted recovery and checkpoint-loss journal replay; remove redundant ad reads, return primary evidence once per transcript and give unknown IDs bounded targeted feedback without granting source access. Keep evaluation-code invalidation independent of reusable candidate understanding.

@@ -25,7 +25,7 @@ The system SHALL archive a posting with reason `posting_closed` when the ad fetc
 - **THEN** the posting is archived with reason `posting_closed`
 
 ### Requirement: Every screened posting reaches a terminal or retryable state
-The system SHALL move each screened posting to exactly one of SHORTLISTED, ARCHIVED or DLQ, and SHALL NOT leave it held without a stage.
+The system SHALL retain an explicit durable stage and outcome for each admitted posting. Completed screening SHALL yield SHORTLISTED, ARCHIVED, a configured side track or DLQ; budget-deferred work MAY remain in an explicit resumable stage. Held or deferred work MUST NOT be reported as a completed canonical evaluation.
 
 #### Scenario: Gate passes
 - **WHEN** the canonical gate returns eligible
@@ -36,11 +36,16 @@ The system SHALL move each screened posting to exactly one of SHORTLISTED, ARCHI
 - **THEN** the posting moves to DLQ with the validation error text
 
 ### Requirement: Agentic evaluation is limited to promoted postings
-The system SHALL call agentic evaluation only for SHORTLISTED postings with score >= `min_score`, at most `promote_per_run` per run and `promote_per_day` per 24 h, highest score first.
+The system SHALL select SHORTLISTED postings from promotion-enabled categories by category priority, descending score and newest posting ID, within `promote_per_run` and `promote_per_day` allowances. Scores SHALL remain advisory; legacy `min_score` MUST NOT impose an exclusion. Promotion SHALL request evaluation only. Only actual assessment starts SHALL consume allowance; skipped dispatches SHALL NOT.
 
-#### Scenario: Five shortlisted, limit three
-- **WHEN** five postings are SHORTLISTED with scores 4.5, 4.2, 4.0, 3.5, 2.9 and `promote_per_run` is 3
-- **THEN** only the first three are passed to agentic evaluation and the others stay SHORTLISTED
+#### Scenario: Five shortlisted in the same category, limit three
+- **WHEN** five eligible postings share category priority with scores 4.5, 4.2, 4.0, 3.5, 2.9 and `promote_per_run` is 3
+- **THEN** the first three are selected for evaluation and the others stay SHORTLISTED
+- **AND** the score 2.9 alone does not exclude its posting from later promotion
+
+#### Scenario: Selected work is skipped before assessment
+- **WHEN** a selected posting does not actually start assessment
+- **THEN** that dispatch consumes no promotion allowance and does not authorize document preparation
 
 ### Requirement: Search queries are title-shaped
 The system SHALL send a focus item to a job board only when it has 1-6 words and matches the title pattern; other items SHALL be dropped and counted.
@@ -49,7 +54,7 @@ The system SHALL send a focus item to a job board only when it has 1-6 words and
 - **WHEN** a focus item is a sentence with punctuation or more than six words
 - **THEN** it is not sent as a query and `dropped_focus` is incremented
 
-### Requirement: Transport failures retry once
+### Requirement: Transport failures retry within bounded attempts
 The system SHALL re-queue an unresolved dead letter whose error is a transport failure, older than 6 h and with fewer than 4 attempts, at most 50 per run.
 
 #### Scenario: Provider outage

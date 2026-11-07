@@ -1,5 +1,20 @@
 # Tasks
 
+## Reconciled status (2026-11-08)
+
+Source is present in `main` at `0ea4fe0`; checked entries retain historical
+implementation/check records, not fresh verification. Unchecked acceptance,
+completed-reuse and release entries remain open because this reconciliation
+supplies no new provider or runtime evidence. Tasks 4 and 5 are conditional on
+fresh explicit authorization under current `INTENT.md`; they do not authorize
+paid attempts, routing changes, deployment or automatic assessment activation.
+
+All service SHAs, timer states, worktree paths and counts in the outcome sections
+below are historical observations at their named revisions/dates. They do not
+establish the currently loaded service or today's effective configuration.
+The original change is `candidate-digest-native-assessment`; TASK-279 remains a
+historical tracking reference, subject to current issue-tracking guidance.
+
 ## 1. Establish offline completion readiness
 
 - [x] 1.1 Verify development revision/import paths, actual server-bound person, effective DeepSeek native protocol, current read-only digest and containment/accounting state; record count-only preflight and existing source/rollback references on TASK-279 without model calls or configuration writes.

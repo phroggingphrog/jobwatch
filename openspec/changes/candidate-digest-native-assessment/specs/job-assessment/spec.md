@@ -16,7 +16,7 @@ The system SHALL apply approved candidate policy and current digest through dete
 - **THEN** the system preserves the uncertainty or exception rather than declaring unsupported incompatibility
 
 ### Requirement: Native evidence-bound evaluation
-Admitted jobs SHALL use native tool calling to produce canonical evaluation directly, without the old multi-role evaluator or an added model supervisor. Requirements SHALL be frozen before candidate matching; canonical source citations, coverage and eligibility SHALL remain enforced.
+Admitted jobs SHALL use native tool calling to produce canonical evaluation directly, without the old multi-role evaluator or an added model supervisor. Approved primary evidence MAY be read before ad registration. Requirements SHALL be frozen before requirement-directed matching and canonical completion; canonical source citations, actual evidence access, coverage and eligibility SHALL remain enforced. Split extraction and dense search SHALL NOT be mandatory when direct primary reads suffice.
 
 #### Scenario: Direct native assessment
 - **WHEN** an admitted posting is evaluated

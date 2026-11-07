@@ -1,8 +1,23 @@
 # Tasks: screen-first pipeline
 
-Executor rules: work only in `~/projects/.worktrees/jobwatch-screen-first` (branch `spec/screen-first-pipeline`).
-Run each step's check before the next step. If a check fails twice, stop and write the failure on Backlog TASK-424.
-Never run against `~/.local/share/jobwatch-native` until step 7. Never POST or click on the live board.
+## Source reconciliation (2026-11-08)
+
+The screened pipeline is already implemented in `main` at `0ea4fe0`:
+`jobwatch/execution_mode.py` accepts `screened`, `jobwatch/run.py` dispatches it,
+`pipeline/screened.py` implements the flow, and `config/jobwatch.yaml` selects it.
+Repository configuration is not proof of the effective configuration or imported
+revision of a running service. No service was inspected during this reconciliation.
+
+The checked tasks below retain historical implementation records, not fresh test
+results or instructions to recreate the code verbatim. In particular, current
+promotion uses track priority and evaluate-only dispatch, counts actual starts,
+and leaves skipped work outside the promotion allowance. Current `INTENT.md`
+controls assessment, preparation and containment boundaries.
+
+Work in the current isolated workspace. Use synthetic fixtures for validation,
+not copies of live candidate records. No paid runs, service activation, timer
+changes or deployment are authorized by this checklist. TASK-424 is a historical
+tracking reference; use the repository's current issue-tracking guidance.
 
 ## 1. Execution mode
 - [x] 1.1 `jobwatch/execution_mode.py`: add `'screened'` to the allowed tuple in `effective_mode`.
@@ -60,15 +75,10 @@ Never run against `~/.local/share/jobwatch-native` until step 7. Never POST or c
       `{posting_id,title,company,reason,decided_at}` from `prescreen_decisions` (stage `metadata`, outcome `skip`) joined to `postings`.
 - [x] 7.2 `jobwatch/web/queries.py`: add `dropped_by_title(conn, days=7)` returning the same rows; render a read-only
       table on the page that already uses prescreen data in that file (follow its existing template pattern). No buttons.
-- [x] 7.3 Check: CLI on a DB copy: `cp ~/.local/share/jobwatch-native/jobwatch.db /tmp/jw-copy.db` then
-      `JOBWATCH_DATA_DIR=<dir of copy> uv run jobwatch pipeline dropped --days 7 | head`. Web: serve the copy on port 8971
-      and take a server-side screenshot of the page.
+- [x] 7.3 Historical dropped-view verification was recorded against a database copy. This mark does not establish current CLI/web acceptance. Any new check must use synthetic fixtures, not live candidate records.
 
-## 8. Dry run on a copy, then release
-- [ ] 8.1 Full tests: `uv run pytest -q` all pass.
-- [ ] 8.2 On the DB copy with `execution_mode: screened` in a copied config: `uv run jobwatch run --tier fast --limit 50`.
-      Record counts: prescreened, fetched, closed, extracted, scored, shortlisted, promoted, dlq, agentic ready/held.
-      Acceptance: no posting left without a stage; promoted <= 3; zero model calls on prescreened/closed postings.
-- [ ] 8.3 Write the counts and the commit SHA on TASK-424. Move it to Waiting for owner with "Ready to go live".
-- [ ] 8.4 Go-live (owner approval only): merge branch to `main`, update `~/apps/jobwatch-release` through the existing
-      release step, set `pipeline.execution_mode: screened`. Undo: set it back to `agentic`.
+## 8. Remaining verification and release evidence
+- [ ] 8.1 Record required local checks and review for the exact release candidate. Use focused synthetic checks during source work and reserve the full reconciled suite for release; no fresh results are claimed here.
+- [ ] 8.2 Validate the screened flow with a synthetic database and stubbed providers. Record prescreened, fetched, closed, extracted, scored, shortlisted, selected, actually promoted, deferred and DLQ outcomes. Require zero model calls for clear prescreen skips and closed ads, evaluate-only promotion within configured allowances, and no preparation without explicit selection. Record deferred/retryable states without calling them completed evaluations.
+- [ ] 8.3 Record source revision, actual check results and unresolved acceptance/runtime gaps in the current linked issue. Preserve TASK-424 as historical provenance; do not label source implementation as deployed or ready for activation.
+- [ ] 8.4 Only under separate owner authorization, follow the current `INTENT.md` release boundary: verify the exact runtime candidate/configuration and rollback, complete canonical provider acceptance and unchanged-input reuse through the related assessment changes, and observe one bounded reader outcome before restoring automatic assessment. Do not rerun a main merge or enable `screened` merely because this historical task exists. Rollback preserves new records and approvals; keep assessment off when runtime acceptance is unverified.

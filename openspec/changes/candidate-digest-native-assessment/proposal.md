@@ -1,8 +1,23 @@
 # Proposal
 
+## Source reconciliation (2026-11-08)
+
+Candidate understanding, deterministic screening and native assessment are already
+represented in `main` at `0ea4fe0`; this is not a proposal to rebuild them.
+Screen-first supplies admission and promotion, while
+`native-assessment-acceptance` follows up canonical provider acceptance and reuse
+proof. Package consolidation is independent. The main spec inventory is no longer
+empty. The unchecked acceptance and release tasks remain evidence gaps, not proof
+of absent source or a current service observation.
+
+Historical service revisions and failed experiments below retain their original
+provenance. They do not establish today's deployed revision, process state or
+provider outcome. Current `INTENT.md` controls: no paid attempts, deployment,
+routing changes or automatic assessment activation follow from these artifacts.
+
 ## Why
 
-The deployed wrapper retains repeated assessment loops and expensive context. Existing paid runs exposed late incompatible validation, schema friction and an artificial call cap; the owner also requires proper model-aware candidate understanding before filtering.
+The historical deployed wrapper retained repeated assessment loops and expensive context. Existing paid runs exposed late incompatible validation, schema friction and an artificial call cap; the owner also requires proper model-aware candidate understanding before filtering.
 
 ## What Changes
 
@@ -21,7 +36,7 @@ The deployed wrapper retains repeated assessment loops and expensive context. Ex
 
 ### Modified Capabilities
 
-None; the initial OpenSpec capability inventory is empty. Existing source contracts and INTENT remain authoritative.
+No main capability modifications were declared initially; the capability inventory was empty when this proposal was written, not at reconciliation. Existing source contracts and INTENT remain authoritative.
 
 ## Impact
 

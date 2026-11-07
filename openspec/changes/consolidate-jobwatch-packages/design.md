@@ -1,6 +1,15 @@
 ## Context
 
-See proposal.md for scope. `INTENT.md` records multiple historical directions; its later standard LibreChat/native Artifacts direction controls the cleanup. `pipeline/agentic/CHAT.md` documents native API authentication and exact-input approval boundaries. The checkout contains unrelated modified guidance and untracked configuration; these must remain outside cleanup commits.
+See proposal.md for scope. Current `INTENT.md` is the normative single-owner,
+native-API-first contract; historical directions live in the linked owner history.
+LibreChat/native Artifacts are compatibility clients, not a dependency of the
+backend. `pipeline/agentic/CHAT.md` defines authentication and exact-input approvals.
+
+At `main:0ea4fe0`, the domain packages, collection rename, command dispatch and
+README topic split are already present. Reconcile remaining verification rather
+than repeating source moves. Earlier references to a dirty checkout or a specific
+refactor branch are historical, not observations of the current workspace.
+Preserve unrelated changes if any are present.
 
 ## Goals / Non-Goals
 
@@ -23,6 +32,12 @@ Preserve behavior and test coverage of retained code. Make module ownership expl
 
 ## Migration Plan
 
-No deployment occurs. Implement in the five user-requested stages, reconcile each writer before testing, and commit each stage separately after a full test run. Parent owns full-suite execution and commit scope; specialists own focused checks only. For module moves, smoke-test public imports and CLI help using synthetic inputs, never live candidate records. For documentation, check relative links and run the explicitly requested full suite despite normal documentation-only exemptions.
+No deployment occurs. The five source scopes are already represented in main;
+recover applicable review/check evidence and verify remaining compatibility gaps
+rather than recreating moves or requiring five historical commits. Use focused
+synthetic import, CLI and resource checks for source changes, and the full
+reconciled suite only for release. Documentation-only reconciliation requires
+artifact/link checks, not application tests. Current repository check policy
+supersedes the older per-step full-suite instructions.
 
 Rollback is `git revert` of individual cleanup commits in reverse order; no runtime data rollback is needed. Planning artifacts do not authorize deployment.

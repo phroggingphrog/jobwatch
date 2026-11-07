@@ -2,9 +2,20 @@
 
 Product pivots left obsolete embedded UI paths and overlapping module/CLI names. Consolidate the source layout without changing current LibreChat/native Artifacts behavior or human approval and submit-confirmation semantics.
 
-## What Changes
+## Source status (2026-11-08)
 
-Implement five ordered steps. Run focused checks for each implementation scope and the full reconciled local suite once after all writers finish. Keep unrelated working-tree changes out of any commits. The owner's 2026-10-28 continuation authorizes completing this cleanup, not deployment or paid candidate experiments:
+`main` at `0ea4fe0` already contains the domain packages, `jobwatch/run.py`,
+`jobwatch/commands/` dispatch and linked README topic split. These are landed
+source changes, not prerequisites still to implement for assessment. Remaining
+tasks reconcile compatibility, review and verification evidence; file presence
+alone does not prove those checks passed or any service was deployed. The
+historical scope below is retained to explain the changes, not to repeat them.
+The current native API is primary; LibreChat/native Artifacts are compatibility
+clients, not an architectural dependency.
+
+## Implemented scope and remaining verification
+
+Reconcile the five original scopes. Run focused checks for each implementation scope and the full reconciled local suite once after all writers finish. Keep unrelated working-tree changes out of any commits. The owner's 2026-10-28 continuation authorizes completing this cleanup, not deployment or paid candidate experiments:
 
 1. Trace imports and remove or archive superseded GenUI/MCP App cards only where disconnected from current LibreChat/native Artifacts paths; update obsolete tests.
 2. Group interview, follow-up, Google integrations and utility modules into subpackages; update all callers.
@@ -26,4 +37,4 @@ None. Existing product behavior remains unchanged except removal of explicitly s
 
 ## Impact
 
-Affected: `jobwatch/`, `pipeline/agentic/`, `client/genui/`, tests, scripts, packaging entry points, README and topic documentation. Existing unrelated working-tree edits must not be staged. Work is isolated on `refactor/package-consolidation`; no deployment is authorized.
+Affected: `jobwatch/`, `pipeline/agentic/`, `client/genui/`, tests, scripts, packaging entry points, README and topic documentation. Existing unrelated working-tree edits must not be staged. The original work used `refactor/package-consolidation`; that branch is historical provenance, not a required current workspace. No deployment is authorized.
