@@ -12,7 +12,8 @@ until a separate release decision.
 A bounded screened refresh re-observes evaluated postings before their public liveness
 evidence expires. An unchanged ad renews liveness without a model call; a changed ad,
 a closed ad or a changed profile/config/input key queues the existing `evaluate`
-operation only. Preparation still requires an explicit selection and confirmed Submit.
+operation only. Preparation still requires an explicit selection and confirmed Submit. Configure the
+bound under `pipeline.screened.refresh_per_run` (default 5) and `refresh_after_hours` (default 12).
 
 The owner chose: **"native API is my plan"**. Jobwatch runs the agent itself.
 A client uses authenticated HTTP endpoints; a website or external AI chat host is
