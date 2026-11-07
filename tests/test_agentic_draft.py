@@ -61,7 +61,7 @@ def _bundle(tmp_path):
     from jobwatch.candidate.evidence import snapshot_evidence
     root = tmp_path / "private-profile"
     root.mkdir(exist_ok=True)
-    (root / "cv.md").write_text("# Synthetic Candidate\n\n## Experience\n- Automated reporting with Python\n")
+    (root / "cv.md").write_text("# Synthetic Candidate\nSynthetic Candidate | synthetic@example.invalid\n## Experience\n- Automated reporting with Python\n")
     return snapshot_evidence(root)
 
 def test_drafter_review_and_pdf_package_are_verified(tmp_path, monkeypatch):
@@ -302,9 +302,11 @@ def test_opted_in_private_failure_capture_is_owner_only(tmp_path, monkeypatch):
     assert all(p.parent.stat().st_mode & 0o077 == 0 for p in files)
 
 
-def test_packaging_blocker_names_a_profile_without_a_name():
+def test_packaging_blocker_names_a_profile_without_a_name_or_contact():
     from types import SimpleNamespace
     from pipeline.agentic.draft import packaging_blocker
     assert packaging_blocker(SimpleNamespace(name="Profile")) == "profile_identity_missing"
     assert packaging_blocker(SimpleNamespace(name="")) == "profile_identity_missing"
-    assert packaging_blocker(SimpleNamespace(name="A Person")) is None
+    assert packaging_blocker(SimpleNamespace(name="A Person", header_lines=[])) == "profile_contact_missing"
+    assert packaging_blocker(SimpleNamespace(name="A Person",
+        header_lines=["# A Person", "A Person | a.person@example.invalid"])) is None

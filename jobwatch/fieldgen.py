@@ -29,6 +29,7 @@ def _loc(profile: dict) -> str:
 
 
 def generate_config(profile: dict, user: str) -> Path:
+    users.require_owner(user)
     titles = [str(t).strip() for t in profile.get("target_titles") or [] if str(t).strip()]
     avoid = [str(t).strip() for t in profile.get("avoid_titles") or [] if str(t).strip()]
     if not titles:

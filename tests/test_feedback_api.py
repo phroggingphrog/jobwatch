@@ -22,7 +22,7 @@ def headers(token=HUMAN,key='one'):
 def client(frozen):
     credentials={AGENT:Principal(users.current(),frozenset({'read','run'})),
         HUMAN:Principal(users.current(),frozenset({'read','interact','approve'})),
-        OTHER:Principal('other-person',frozenset({'read','interact','approve'}))}
+        OTHER:Principal(users.current(),frozenset({'read','interact','approve'}))}
     shortlist.build_shortlist(frozen.conn,frozen.config)
     with TestClient(create_api(credentials=credentials,config=frozen.config,
                              llm_factory=lambda person:pytest.fail('unpaid operation called a model'))) as api:
@@ -41,7 +41,7 @@ def test_reject_restore_history_scopes_and_immediate_shortlist(client,frozen):
     assert client.post(path,json=body,headers=headers()).json()['event']==result.json()['event']
     other=client.get('/api/agent/feedback',headers=headers(OTHER))
     assert other.status_code==200,other.text
-    assert other.json()['events']==[]
+    assert [e['kind'] for e in other.json()['events']]==['reject']  # one owner sees the same events
     restore=client.post('/api/agent/shortlist/42/restore',json={'expected_rejection_id':result.json()['event']['id']},
                         headers=headers(key='restore'))
     assert restore.status_code==200,restore.text
@@ -56,7 +56,7 @@ def test_rule_confirmation_stales_evaluations_without_model_calls(client,frozen)
     draft=result.json()
     path='/api/agent/profile/rules/'+draft['id']+'/confirm'
     assert client.post(path,json={'rule_digest':draft['digest']},headers=headers(AGENT)).status_code==403
-    assert client.post(path,json={'rule_digest':draft['digest']},headers=headers(OTHER)).status_code==404
+    assert client.post('/api/agent/profile/rules/' + '0'*16 + '/confirm',json={'rule_digest':draft['digest']},headers=headers(OTHER)).status_code==404
     result=client.post(path,json={'rule_digest':draft['digest']},headers=headers())
     assert result.status_code==200,result.text
     assert result.json()['shortlist']['entries']==[]

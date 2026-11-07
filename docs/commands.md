@@ -26,6 +26,8 @@ jobwatch --user <name> baseline label <baseline_id> <case_id> ...       # the ow
 - Exit code: 1 when **every** collector in the run errored (systemd marks the unit failed);
   partial failures exit 0 and show up in `jobwatch health` and the Sources page. There is no failure push.
 - Environment overrides: `JOBWATCH_DB`, `JOBWATCH_CONFIG_DIR`, `JOBWATCH_EMPLOYERS`.
+- Config precedence: an explicit `--config-dir`/`JOBWATCH_CONFIG_DIR` is an exact directory; otherwise the owner's
+  runtime `config/` is read first and the repository defaults fill files it does not contain.
 
 ## Profile workflow
 

@@ -826,7 +826,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--person', help='Jobwatch person; defaults to the current one')
     parser.add_argument('--thread', help='thread id to continue')
     args = parser.parse_args(argv)
-    person = args.person or users.current()
+    person = users.require_owner(args.person or users.current())
     JobwatchTUI(person, args.thread, home=True).run()
     return 0
 

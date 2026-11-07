@@ -46,8 +46,9 @@ def mount(app, base_credentials):
     owner_subject = os.environ.get('JOBWATCH_LIBRECHAT_OWNER_SUBJECT', '')
     if len(secret) < 32 or not owner_subject:
         raise ValueError('librechat_identity_configuration_required')
-    owner_run = [key for key,p in base_credentials.items() if p.person == users.DEFAULT_USER and 'run' in p.scopes]
-    owner_human = [key for key,p in base_credentials.items() if p.person == users.DEFAULT_USER and 'approve' in p.scopes]
+    owner = users.current()
+    owner_run = [key for key,p in base_credentials.items() if p.person == owner and 'run' in p.scopes]
+    owner_human = [key for key,p in base_credentials.items() if p.person == owner and 'approve' in p.scopes]
     if len(owner_run) != 1 or len(owner_human) != 1:
         raise ValueError('librechat_owner_credentials_required')
 
@@ -60,7 +61,7 @@ def mount(app, base_credentials):
             raise HTTPException(401, 'authentication_required') from None
         if subject != owner_subject:
             raise HTTPException(401, 'authentication_required')   # one owner: no other subject is enrolled
-        return dict(person=users.DEFAULT_USER, chat_key=owner_run[0], human_key=owner_human[0])
+        return dict(person=owner, chat_key=owner_run[0], human_key=owner_human[0])
 
     @app.post('/api/agent/librechat/enroll')
     def enroll(body: Enrollment, authorization: str | None = Header(default=None)):

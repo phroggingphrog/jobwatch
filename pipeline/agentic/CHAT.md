@@ -9,6 +9,12 @@ valid saved candidate/evaluation artifacts. Document identity readiness applies
 to preparation, independently of evaluation. Services and automation remain off
 until a separate release decision.
 
+A bounded screened refresh re-observes evaluated postings before their public liveness
+evidence expires. An unchanged ad renews liveness without a model call; a changed ad,
+a closed ad or a changed profile/config/input key queues the existing `evaluate`
+operation only. Preparation still requires an explicit selection and confirmed Submit. Configure the
+bound under `pipeline.screened.refresh_per_run` (default 5) and `refresh_after_hours` (default 12).
+
 The owner chose: **"native API is my plan"**. Jobwatch runs the agent itself.
 A client uses authenticated HTTP endpoints; a website or external AI chat host is
 not required. LangChain model/tool interfaces, Deep Agents planning and specialist
@@ -28,8 +34,8 @@ Load credentials through the service's private environment/secret manager:
 |---|---|
 | `JOBWATCH_AGENT_TOKEN` | Random bearer secret of at least 32 characters; read/run scope. |
 | `JOBWATCH_AGENT_APPROVAL_TOKEN` | Different random bearer secret; read/interact/approve scopes. Keep it in the trusted user-interaction client, away from model tools. |
-| `JOBWATCH_AGENT_PERSON` | Server-configured Jobwatch person; defaults to the existing default account. |
-| `JOBWATCH_AGENT_CREDENTIALS_FILE` | Optional mode-0600 JSON array of `{token, person, scopes}` for multiple accounts; replaces the simple environment mapping. |
+| `JOBWATCH_AGENT_PERSON` | Must name the single owner (`owner`); any other value refuses startup. Defaults to the owner. |
+| `JOBWATCH_AGENT_CREDENTIALS_FILE` | Optional mode-0600 JSON array of `{token, person, scopes}`. It may hold several owner tokens with different scopes; every row must name the owner. A non-owner row refuses startup. When LibreChat enrollment is enabled, exactly one owner run token and one owner approve token are required. |
 
 The existing Jobwatch settings supply the gateway, model choices and data paths.
 The approved loopback gateway must be configured; generic external-provider
@@ -77,11 +83,11 @@ POST bodies are bounded to 64 KiB; message text to 16,000 characters; answers to
 4,000. Bodies reject extra fields. Validation and error responses omit submitted
 content. Private responses use no-store. Idempotency keys are scoped to the thread;
 reusing a key with different inputs returns 409. Only one active run per thread
-is admitted, and a person's queued work is bounded.
+is admitted, and the owner's queued work is bounded.
 
 ## Profile intake and approval
 
-The person comes only from the bearer token; ids belonging to another person return 404. Uploads and
+The owner comes only from the bearer token; ids outside that owner context return 404. Uploads and
 proposals stay private and separate from the approved profile until confirmed. Nothing here prepares
 documents or submits; confirmation only starts discovery within the scope shown. Submitting is a separate step: the owner's own click, or Jobwatch pressing Submit after the owner confirms that exact reviewed form (board button or chat `submit_application`).
 
@@ -260,8 +266,9 @@ defers remaining work to another invocation; it is not a new system-error incide
 
 ## Runtime and recovery
 
-One worker per data root owns a process file lock. It serializes paid runs and
-fairly checks configured people. Run creation persists before execution; requests
+One worker per data root owns a process file lock and polls one owner queue, not one queue
+per token. It serializes paid runs and
+checks the owner's queue fairly. Run creation persists before execution; requests
 return promptly. The existing per-person dispatcher lock also prevents overlapping
 MCP/direct callers; contention is reported as a deferral rather than waiting while
 holding an API request open.
@@ -343,14 +350,14 @@ opt-in via `JOBWATCH_CAPTURE_PRIVATE_FAILURES=true`; those private files must ne
 be uploaded or committed. Existing raw files are preserved, not automatically deleted.
 
 For local deterministic AgentEvals checks, install the dev extra and run:
-`uv run --no-sync jobwatch-agent --person <person> --evaluate-run <run-id> --expected-tools <tool> ...`.
+`uv run --no-sync jobwatch-agent --person owner --evaluate-run <run-id> --expected-tools <tool> ...`.
 This compares tool trajectories without a model judge, candidate text or hosted
 tracing. It does not measure writing quality.
 
 ## Backup, release and undo
 
 Create a consistent private state backup with
-`jobwatch-agent --person <person> --backup <new-private-file>`.
+`jobwatch-agent --person owner --backup <new-private-file>`.
 The command refuses to overwrite a destination. Include the person's existing jobs
 DB, evidence and immutable artifact directory in normal backups as well. Restore
 state while the agent service is stopped, keep the pre-restore file, and restore
@@ -373,7 +380,8 @@ installation, use the authenticated schema, and check one actual API interaction
 
 The focused native tests use synthetic data and deterministic gateway transports,
 including an enabled pipeline and real generated PDF bytes. They cover question /
-approval / rejection, idempotency, stale decisions, account isolation, downloads,
+approval / rejection, idempotency, stale decisions, owner-scope separation and non-owner
+rejection, downloads,
 restart recovery and uncertain-operation handling. They do not establish live-model
 writing quality or actual browser form behavior. The existing full test suite and
 `jobwatch check --code` remain release checks.

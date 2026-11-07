@@ -45,16 +45,21 @@ def test_token_file_0600_with_mock(env, monkeypatch):
     monkeypatch.setattr(g.requests, "post", lambda *a, **k: R())
     g.exchange_code("code")
     p = g.token_path()
-    assert p.parent.name == "friend"
+    assert p.parent == users.user_dir()
     assert stat.S_IMODE(p.stat().st_mode) == 0o600
     assert json.loads(p.read_text())["refresh_token"] == "r"
 
 
 def test_state_tamper_rejected(env):
     s = g.make_state()
-    assert g.check_state(s) == "friend"
+    assert g.check_state(s) == "owner"
     body, sig = s.rsplit(".", 1)
     flipped = ("1" if sig[0] == "0" else "0") + sig[1:]        # a real change: "0" over a leading "0" tampered nothing
-    for bad in (body + "." + flipped, "x" + s, "junk", g.make_state("friend", now=1)):
+    for bad in (body + "." + flipped, "x" + s, "junk"):
         with pytest.raises(ValueError):
             g.check_state(bad)
+
+
+def test_non_owner_google_state_is_refused(env):
+    with pytest.raises(ValueError, match="owner_required"):
+        g.make_state("friend")

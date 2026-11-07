@@ -183,7 +183,9 @@ def create_app(*, token: str | None = None, person: str | None = None, oauth: bo
                public_url: str | None = None, passphrase: str | None = None,
                oauth_state: str | Path | None = None) -> FastAPI:
     token = token if token is not None else os.environ.get('JOBWATCH_CONNECTOR_TOKEN')
-    person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.DEFAULT_USER)
+    person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.current())
+    if person != users.current():
+        raise RuntimeErrorSafe('connector_person_not_owner')
     if not token or len(token) < 32 or not bool(person):
         raise RuntimeErrorSafe('connector_configuration_required')
     # OAuth login is OFF unless JOBWATCH_CONNECTOR_OAUTH=1 (or oauth=True) and it is fully configured: a public URL (the

@@ -135,6 +135,18 @@ def latest_observation(conn, posting_id):
     except ValueError:return None
 
 
+def record_observation(conn, observation, *, run_key, generation):
+    """Persist an unclaimed liveness observation for an already-evaluated posting.
+
+    The claim-bound PersistenceAdapter.record_observation() stays the path for new work;
+    this helper only renews an existing run's public evidence without a model call.
+    """
+    conn.execute('INSERT INTO agentic_posting_observations '
+                 '(posting_id,run_key,generation,observation_json) VALUES(?,?,?,?)',
+                 (observation.posting_id, str(run_key), int(generation), observation.model_dump_json()))
+    conn.commit()
+
+
 def observation_current(observation, *, posting_id, url, ad_hash, max_age_seconds=86400, now=None):
     if observation is None or observation.status!='active':return False
     now = now or datetime.now(timezone.utc)

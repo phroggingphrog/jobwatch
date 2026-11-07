@@ -36,7 +36,7 @@ def client(monkeypatch):
                 {'type': 'question', 'question': 'Your availability?', 'binding': {}}]}
         return {'status': 'complete', 'answer': 'Synthetic Jobwatch response', 'outcomes': []}
     app = create_api(credentials={RUN: Principal('owner'),
-        DECIDE: Principal('owner', frozenset({'read','interact','approve'})), OTHER: Principal('fixture-b')},
+        DECIDE: Principal('owner', frozenset({'read','interact','approve'})), OTHER: Principal('owner')},
         config={'pipeline': {'execution_mode': 'agentic'}}, dispatcher=dispatch)
     with TestClient(app) as c:
         c.calls = calls
@@ -170,7 +170,7 @@ def test_native_attachment_references_survive_enqueue_and_worker(client):
                         files={'file': ('cv.txt', data)}, data={'kind': 'evidence'}).json()['upload_id']
     assert client.post('/v1/chat/completions', headers={**headers(), 'X-Jobwatch-Uploads': again}, json=request).json()['id'] == response.json()['id']
     assert len(client.calls) == 1
-    assert client.post('/v1/chat/completions', headers={**headers(OTHER), 'X-Jobwatch-Uploads': uid}, json=request).status_code == 404
+    assert client.post('/v1/chat/completions', headers={**headers(OTHER), 'X-Jobwatch-Uploads': uid}, json=request).status_code == 200  # one owner
     assert client.post('/v1/chat/completions', headers=headers(conversation='empty'), json=request).status_code == 422
     assert client.post('/v1/chat/completions', headers={**headers(), 'X-Jobwatch-Uploads': 'not-an-id'}, json=request).status_code == 422
 
@@ -246,6 +246,11 @@ def test_no_client_identity_or_system_instruction_replay(client):
     assert turn(client, conversation='../../other').status_code == 422
     assert turn(client, model='external-model').status_code == 422
 
+
+def test_non_owner_credentials_are_rejected_at_startup():
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    with pytest.raises(RuntimeErrorSafe, match='api_principal_not_owner'):
+        create_api(credentials={'c' * 40: Principal('fixture-b')})
 
 def test_controls_are_static_and_do_not_embed_credentials(client):
     response = client.get('/agent')

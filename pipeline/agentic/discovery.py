@@ -469,6 +469,9 @@ def main(argv=None):
     parser.add_argument('command', choices=('refresh', 'status', 'restore'))
     parser.add_argument('--user', required=True)
     args = parser.parse_args(argv)
+    from jobwatch import users
+    if args.user != users.current():
+        parser.error('only the single Jobwatch owner is supported')
     from jobwatch.config import load_config
     from jobwatch.occupations import datasets
     from pipeline.agentic.chat import job_connection, job_database

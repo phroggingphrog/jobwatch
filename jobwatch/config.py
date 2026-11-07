@@ -1,9 +1,14 @@
 """Load the YAML config files. Paths can be overridden with environment variables:
 
-JOBWATCH_CONFIG_DIR  directory holding jobwatch.yaml, rules.yaml, searches.yaml, feeds.yaml
-JOBWATCH_EMPLOYERS   employers file (default <config>/employers.yaml, falling back to
-                     employers.example.yaml when the real registry is absent)
+JOBWATCH_CONFIG_DIR  exact config directory holding jobwatch.yaml, rules.yaml,
+                     searches.yaml, feeds.yaml (no owner-runtime overlay)
+JOBWATCH_EMPLOYERS   employers file (default: the first employers.yaml, then
+                     employers.example.yaml, across the active config sources)
 JOBWATCH_DB          SQLite path (default from jobwatch.yaml, ~/.local/share/jobwatch/jobwatch.db)
+
+Without an explicit argument or JOBWATCH_CONFIG_DIR, the owner's runtime config directory
+(users.config_dir()) is the first source and the repository defaults fill only the files it
+does not contain. An explicit directory or JOBWATCH_CONFIG_DIR remains exact.
 """
 from __future__ import annotations
 
@@ -87,26 +92,43 @@ class Config:
                 if e.get("enabled", True) and str(e.get("provider", "")).lower() == provider]
 
 
+def _config_sources(config_dir: str | Path | None) -> list[Path]:
+    """Explicit argument/env are exact; the default owner layer overlays repository defaults."""
+    if config_dir is not None:
+        return [Path(config_dir).expanduser()]
+    env = os.environ.get("JOBWATCH_CONFIG_DIR")
+    if env:
+        return [Path(env).expanduser()]
+    from . import users
+    runtime = users.config_dir()
+    return [runtime, DEFAULT_CONFIG_DIR] if runtime is not None else [DEFAULT_CONFIG_DIR]
+
+def _first_file(sources: list[Path], name: str) -> Path | None:
+    return next((source / name for source in sources if (source / name).is_file()), None)
+
+def _load_first(sources: list[Path], name: str) -> Any:
+    path = _first_file(sources, name)
+    return _load(path) if path is not None else {}
+
 def load_config(config_dir: str | Path | None = None) -> Config:
-    cdir = Path(config_dir or os.environ.get("JOBWATCH_CONFIG_DIR") or DEFAULT_CONFIG_DIR).expanduser()
-    settings = _merge(DEFAULT_SETTINGS, _load(cdir / "jobwatch.yaml"))
+    sources = _config_sources(config_dir)
+    cdir = sources[0]
+    settings = _merge(DEFAULT_SETTINGS, _load_first(sources, "jobwatch.yaml"))
     emp_env = os.environ.get("JOBWATCH_EMPLOYERS")
     if emp_env:
         emp_path: Path | None = Path(emp_env).expanduser()
-    elif (cdir / "employers.yaml").is_file():
-        emp_path = cdir / "employers.yaml"
-    elif (cdir / "employers.example.yaml").is_file():
-        emp_path = cdir / "employers.example.yaml"
     else:
-        emp_path = None
+        emp_path = next((path for source in sources
+                         for path in (source / "employers.yaml", source / "employers.example.yaml")
+                         if path.is_file()), None)
     employers_doc = _load(emp_path) if emp_path else {}
     employers = employers_doc.get("employers", employers_doc) if isinstance(employers_doc, dict) else employers_doc
     return Config(
         config_dir=cdir,
         settings=settings,
-        rules=_load(cdir / "rules.yaml"),
-        searches=_load(cdir / "searches.yaml"),
-        feeds=_load(cdir / "feeds.yaml"),
+        rules=_load_first(sources, "rules.yaml"),
+        searches=_load_first(sources, "searches.yaml"),
+        feeds=_load_first(sources, "feeds.yaml"),
         employers=[e for e in (employers or []) if isinstance(e, dict)],
         employers_path=emp_path,
     )

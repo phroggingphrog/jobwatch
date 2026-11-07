@@ -55,7 +55,8 @@ def _key() -> bytes:
 
 
 def make_state(user: str | None = None, now: float | None = None) -> str:
-    body = base64.urlsafe_b64encode(json.dumps({"u": user or users.current(),
+    person = users.require_owner(user or users.current())
+    body = base64.urlsafe_b64encode(json.dumps({"u": person,
                                                 "t": int(now or time.time())}).encode()).decode()
     return body + "." + hmac.new(_key(), body.encode(), hashlib.sha256).hexdigest()
 
@@ -72,7 +73,7 @@ def check_state(state: str, now: float | None = None) -> str:
             raise ValueError("expired")
         if not bool(data["u"]):
             raise ValueError("bad user")
-        return data["u"]
+        return users.require_owner(data["u"])
     except (KeyError, TypeError, binascii_error) as exc:
         raise ValueError("bad state") from exc
 

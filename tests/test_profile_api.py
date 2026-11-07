@@ -41,14 +41,13 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
-    for person in ('owner', 'fixture-b'):
-        model_choice.set_models({'reader': 'claude/sonnet'}, person)      # the approved paid route for candidate text
+    model_choice.set_models({'reader': 'claude/sonnet'}, 'owner')      # the approved paid route for candidate text
     fake = FakeLLM()
     fake.next = {'facts': [{'section': 'experience', 'value': 'Accounts Assistant, Ledger Co', 'basis': 'evidence',
                             'upload': 1, 'sources': [{'line': 5, 'quote': 'Ledger Co, Accounts Assistant, 2021 - 2023'}]}],
                  'questions': [{'section': 'work_rights', 'text': 'What are your work rights?', 'why': 'Matching.'}]}
     credentials = {RUN: Principal('owner'), APPROVE: Principal('owner', frozenset({'read', 'interact', 'approve'})),
-                   OTHER: Principal('fixture-b', frozenset({'read', 'run', 'interact', 'approve'}))}
+                   OTHER: Principal('owner', frozenset({'read', 'run', 'interact', 'approve'}))}
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: fake)
     with TestClient(app) as client:
         client.fake = fake
@@ -102,7 +101,8 @@ def test_full_profile_flow_over_http(env):
     assert r.status_code == 201 and r.json() == {'version': 1}
     assert c.get(P + '/', headers=h()).json()['version'] == 1
     assert [v['version'] for v in c.get(P + '/versions', headers=h()).json()['versions']] == [1]
-    assert not (users.user_dir('fixture-b') / 'profile-versions').exists()
+    with pytest.raises(ValueError, match='owner_required'):
+        users.user_dir('fixture-b')
 
 
 def test_confirm_needs_approve_scope(env):
@@ -182,8 +182,7 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
-    for person in ('owner', 'fixture-b'):
-        model_choice.set_models({'reader': 'claude/sonnet'}, person)
+    model_choice.set_models({'reader': 'claude/sonnet'}, 'owner')
     started, release, seen = threading.Event(), threading.Event(), []
 
     class Blocking:
@@ -194,7 +193,7 @@ def test_one_proposal_in_flight_per_person(tmp_path, monkeypatch):
             started.set()
             assert release.wait(10)
             return FakeLLM().chat(*a, **kw)
-    credentials = {RUN: Principal('owner'), OTHER: Principal('fixture-b')}
+    credentials = {RUN: Principal('owner'), OTHER: Principal('owner')}
     app = create_api(credentials=credentials, config={'agentic': {'enabled': False}}, llm_factory=lambda p: Blocking())
     with TestClient(app) as c:
         ids = {t: upload(c, token=t).json()['upload_id'] for t in (RUN, OTHER)}
@@ -406,5 +405,5 @@ def test_current_understanding_is_shared_read_only_and_server_scoped(env, monkey
     second = env.get(P + '/understanding', headers=h(OTHER))
     assert first.status_code == second.status_code == 200
     assert first.json()['candidate'] is None
-    assert observed == ['owner', 'fixture-b']
+    assert observed == ['owner', 'owner']
     assert env.fake.calls == []

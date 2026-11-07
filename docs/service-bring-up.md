@@ -71,7 +71,7 @@ agent rather than as a refusal.
 ```
 JOBWATCH_AGENT_TOKEN=<32+ random characters>        # read/run scope
 JOBWATCH_AGENT_APPROVAL_TOKEN=<a different 32+>     # read/interact/approve scope
-JOBWATCH_AGENT_PERSON=<the Jobwatch person>
+JOBWATCH_AGENT_PERSON=owner                            # the only supported principal
 ```
 
 The two secrets must differ; equal values are refused. **The client a person types into

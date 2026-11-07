@@ -96,7 +96,7 @@ def test_dry_run_collection_uses_unpaid_scope_but_never_refreshes_discovery(tmp_
 
 def test_prepare_run_uses_unpaid_confirmed_scope_when_reference_changes(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
-    person = 'boundary-person'
+    person = 'owner'
     policy = make_policy()
     config = make_config(settings={'pipeline': {'agentic': {'enabled': True, 'search_plan': True,
         'embedding_model': 'openrouter/qwen/qwen3-embedding-8b'}}}, tmp_path=tmp_path)

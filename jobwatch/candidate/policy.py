@@ -171,11 +171,28 @@ _NEG_WORDS = frozenset({"no", "not", "never", "avoid", "without"})
 # A negated, pending or aspirational word before a citizenship or residence claim makes it no claim.
 _PENDING = re.compile(r"\b(?:not|no|non|never|neither|nor|yet|applying|applied|pending|will|become|becoming|hope|hoping|"
                       r"aim|aiming)\b|n['\u2019]t\b", re.I)
+# Negation before a contrast does not govern the positive clause after it.
+_CONTRAST = re.compile(r"\b(?:but|however|although|though|yet|whereas)\b|;", re.I)
 
+def _governing_segment(text: str, end: int) -> str:
+    """The clause after the last contrast marker before ``end``; negation there governs the span."""
+    start = max((match.end() for match in _CONTRAST.finditer(text, 0, end)), default=0)
+    return text[start:end]
 
 def _affirmed(pattern: re.Pattern, text: str) -> bool:
-    """True when the pattern matches with no negation, pending or aspirational word in the four words before it."""
-    return any(not _PENDING.search(" ".join(text[:m.start()].split()[-4:])) for m in pattern.finditer(text))
+    """True when the pattern matches with no negation governing its segment and no pending word immediately before it.
+
+    A four-word window missed long-distance negation ("I have no experience at all with payroll software").
+    Checking the whole segment catches it while contrast markers keep a later positive clause usable.
+    """
+    for match in pattern.finditer(text):
+        segment = _governing_segment(text, match.start())
+        if _NEGATION.search(_NOT_FAR.sub(" ", segment)):
+            continue
+        if _PENDING.search(" ".join(text[:match.start()].split()[-4:])):
+            continue
+        return True
+    return False
 
 
 def _clauses(text: str) -> list[str]:

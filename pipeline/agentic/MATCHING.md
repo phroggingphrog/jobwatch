@@ -142,8 +142,8 @@ Policy behavior is described in the README's decision policy section and
 The native CLI compares already captured outputs without dispatching paid work:
 
 ```
-jobwatch-agent --person PERSON --matching-comparison /absolute/private/comparison.json
-jobwatch-agent --person PERSON --matching-comparison /absolute/private/comparison.json --blind-output-dir /absolute/private/new-review-dir
+jobwatch-agent --person owner --matching-comparison /absolute/private/comparison.json
+jobwatch-agent --person owner --matching-comparison /absolute/private/comparison.json --blind-output-dir /absolute/private/new-review-dir
 ```
 
 Both paths must be inside that person's private runtime directory. Export refuses

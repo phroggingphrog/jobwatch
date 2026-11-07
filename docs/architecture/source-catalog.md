@@ -1,6 +1,8 @@
 # Jobwatch source catalog
 
-Static enumeration on 2026-10-27. Live baseline: `9111a0d`; pending checkout: `7a37865` plus uncommitted corrections. Source inventory is not runtime reachability or test evidence. No runtime data was read.
+Static enumeration on 2026-10-27. Live baseline: `9111a0d`; pending checkout: `7a37865` plus uncommitted corrections.
+Identity entries were corrected on 2026-11-07 for the single-owner continuation; the rest of this catalog remains the
+original historical snapshot rather than a current reachability claim. Source inventory is not runtime reachability or test evidence. No runtime data was read.
 
 [Architecture and assessment cost trace](codebase-map.md)
 
@@ -796,7 +798,7 @@ Symbols: `register` (L20), `handle` (L30), `_names` (L36), `_list` (L42), `_set_
 
 ### [jobwatch/users.py](../../jobwatch/users.py)
 
-Symbols: `valid_name` (L23), `current` (L27), `scoped` (L31), `use` (L38), `base_dir` (L49), `user_dir` (L55), `db_path` (L64), `config_dir` (L68), `list_users` (L74), `create_user_dirs` (L82).
+Symbols: `DEFAULT_USER` (L11), `OwnerError` (L13), `current` (L20), `require_owner` (L23), `base_dir` (L29), `user_dir` (L34), `db_path` (L38), `config_dir` (L41).
 
 Local imports: `pipeline`.
 

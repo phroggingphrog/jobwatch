@@ -173,3 +173,9 @@ def test_the_access_header_becomes_the_bearer_the_verifier_checks():
     scope = {"type": "http", "headers": [(b"authorization", b"Bearer mine")]}
     asyncio.run(_AccessHeaderMiddleware(app)(scope, None, None))
     assert seen["headers"][b"authorization"] == b"Bearer mine"
+
+
+def test_a_mapping_cannot_name_a_non_owner_principal():
+    with pytest.raises(mcp_access.AccessError, match="access_person_unsupported"):
+        mcp_access.person_for_email("stranger@example.com", {"stranger@example.com": "fixture-b"})
+    assert mcp_access.person_for_email("owner@example.com", {"owner@example.com": "owner"}) == "owner"

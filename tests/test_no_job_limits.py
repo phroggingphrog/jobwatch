@@ -147,10 +147,10 @@ def test_saving_only_the_daily_value_keeps_job_limits_and_old_files_still_read(d
     discovery_settings.set_settings('owner', CONFIG, 1234, job_seconds=None)
     discovery_settings.set_settings('owner', CONFIG, None)         # what an older client posts
     assert discovery_settings.get_settings('owner', CONFIG)['job_seconds'] is None
-    path = discovery_settings._path('sue')
+    path = discovery_settings._path('owner')  # a legacy file for the same owner
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text('{"daily_token_ceiling":500}')
-    assert discovery_settings.get_settings('sue', CONFIG)['job_seconds'] == 900
+    assert discovery_settings.get_settings('owner', CONFIG)['job_seconds'] == 900
 
 
 @pytest.mark.parametrize('field', ['job_token_ceiling', 'job_seconds', 'job_max_turns'])
@@ -264,7 +264,8 @@ def test_cheap_assessment_profile_moves_only_the_evaluator_role(tmp_path, monkey
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     model_choice.apply_profile('cheap-assessment', 'owner')
     assert model_choice.chosen('owner') == {'evaluator': 'deepseek-flash'}
-    assert model_choice.chosen('sue') == {}
+    with pytest.raises(ValueError, match='owner_required'):
+        model_choice.chosen('sue')
     assert model_choice.get_model('writer', 'owner') != 'deepseek-flash'           # drafting is untouched
     cfg = service._config({})
     assert cfg['evaluator_model'] == 'deepseek-flash' and cfg['worker_model'] != 'deepseek-flash'

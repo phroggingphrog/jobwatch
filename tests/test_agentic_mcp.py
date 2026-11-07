@@ -81,7 +81,7 @@ def prepare_person(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *args: 'claude/sonnet')
-    root = users.user_dir('fixture-mcp')
+    root = users.user_dir()
     with sqlite3.connect(root / 'jobwatch.db') as conn:
         # create_user_dirs() already migrated the real schema; keep this idempotent.
         conn.execute('CREATE TABLE IF NOT EXISTS postings(id INTEGER PRIMARY KEY)')
@@ -130,7 +130,7 @@ def test_read_tool_result_reaches_the_model(tmp_path, monkeypatch):
         {'answer': 'Used the external lookup.'},
     ])
     llm.base_url = model_choice.SERVER_URL
-    result = dispatch(person='fixture-mcp', thread_id='mcp-read', message='Look it up',
+    result = dispatch(person='owner', thread_id='mcp-read', message='Look it up',
                       config=stub_config(script, count), llm=llm)
     assert result['status'] == 'complete'
     assert result['tools'] == ['stub__lookup']
@@ -144,7 +144,7 @@ def test_write_tool_pauses_and_never_runs(tmp_path, monkeypatch):
     prepare_person(tmp_path, monkeypatch)
     llm, _ = transport_llm([choice('stub__mutate', value='x')])
     llm.base_url = model_choice.SERVER_URL
-    result = dispatch(person='fixture-mcp', thread_id='mcp-write', message='Change it',
+    result = dispatch(person='owner', thread_id='mcp-write', message='Change it',
                       config=stub_config(script, count), llm=llm)
     assert result['status'] == 'interrupted'
     assert result['interrupts'][0]['action_requests'][0]['name'] == 'stub__mutate'

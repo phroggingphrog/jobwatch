@@ -482,3 +482,18 @@ def test_person_asserted_keeps_the_negation_that_governs_a_span():
     assert person_asserted(' citizen. ', plain) and person_asserted('Excel', plain)
     assert not person_asserted('Permanent resident', plain)
     assert not person_asserted('citizen', ['I hope to become a citizen one day'])
+
+
+def test_person_asserted_rejects_long_distance_governing_negation():
+    from jobwatch.candidate.policy import person_asserted
+    said = ['I have no experience at all with payroll software']
+    assert person_asserted('payroll software', said) is False
+    assert person_asserted('I have no experience at all with payroll software', said) is True
+    assert person_asserted('Excel', ['I have no experience with payroll software, but I know Excel'])
+
+
+def test_person_asserted_keeps_a_positive_clause_after_contrast():
+    from jobwatch.candidate.policy import person_asserted
+    said = ['I am not an Australian citizen; however, I have unrestricted work rights.']
+    assert person_asserted('a citizen', said) is False
+    assert person_asserted('unrestricted work rights', said) is True

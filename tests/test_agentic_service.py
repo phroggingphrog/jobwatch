@@ -124,7 +124,7 @@ class SyntheticGateway:
 def world(tmp_path, monkeypatch):
     root = tmp_path / 'data'
     profile = root / 'profile'; profile.mkdir(parents=True)
-    (profile / 'cv.md').write_text('# Synthetic Candidate\n\n## Experience\n- ' + PROOF + '\n')
+    (profile / 'cv.md').write_text('# Synthetic Candidate\nSynthetic Candidate | synthetic@example.invalid\n## Experience\n- ' + PROOF + '\n')
     (profile / 'career_ops_profile.md').write_text('Pursue entry level accounting and finance practice in Melbourne.')
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(root)); monkeypatch.setenv('JOBWATCH_PROFILE_DIR', str(profile))
     config = make_config(tmp_path=tmp_path, settings={'pipeline': {'agentic': {'enabled': True, 'job_token_ceiling': 250_000}}})
@@ -1550,7 +1550,7 @@ def test_profile_confirmation_reports_an_empty_scope_as_incomplete(world, monkey
     from pipeline.agentic import chat
     conn, config, bundle, add = world
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
-    person = 'blank'
+    person = 'owner'
     empty = LLM(transport=lambda *a: (200, {'choices': [{'message': {'content': '{"facts": [], "questions": []}'}}], 'usage': {}}),
                 keys=['synthetic'], base_url=model_choice.SERVER_URL)
     up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
@@ -1700,7 +1700,7 @@ def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, mon
     from pipeline.agentic import chat
     conn, config, bundle, add = world
     monkeypatch.setattr(model_choice, 'get_model', lambda role, *a: 'openai/sol')
-    person = 'twice'
+    person = 'owner'
     up = intake.save_upload(person, 'cv.txt', ONBOARD_CV, 'cv')['upload_id']
     start = {'tool': 'profile_start', 'arguments': {'upload_ids': [up], 'use_existing_files': False}}
     llm, seen = _onboarding_llm([start, start, {'answer': 'Started.'}])

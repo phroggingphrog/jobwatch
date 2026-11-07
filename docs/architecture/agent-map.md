@@ -49,9 +49,9 @@ The native evaluator in `autonomous.py` uses a constrained Deep Agent tool graph
 
 ## Data stores and authorization
 
-- `jobwatch/db.py` stores postings, ad capture, collection state and prescreen tables. `jobwatch/users.py` selects the current person. Profile and evidence services read approved, versioned per-person data.
-- `pipeline/agentic/store.py`, `persistence.py`, and `private_sqlite.py` store bounded run claims, budgets, checkpoints, artifacts and package status. `api_store.py` stores API threads, runs, interactions, events and artifact references. Chat state and advisory memories are person-namespaced.
-- `pipeline/agentic/identity.py`, API credentials, MCP token verification and the `users.use(person)` context bind the server-side identity. Requests cannot select another person through a free-form `person` field.
+- `jobwatch/db.py` stores postings, ad capture, collection state and prescreen tables. `jobwatch/users.py` names the single owner and refuses any other principal. Profile and evidence services read the owner's approved, versioned data.
+- `pipeline/agentic/store.py`, `persistence.py`, and `private_sqlite.py` store bounded run claims, budgets, checkpoints, artifacts and package status. `api_store.py` stores API threads, runs, interactions, events and artifact references. Chat state and advisory memories live in the owner's private store.
+- `pipeline/agentic/identity.py`, API credentials, MCP token verification and `users.require_owner` bind the server-side identity. Requests cannot select another person through a free-form `person` field; non-owner credentials and adapter persons refuse startup.
 - `pipeline/agentic/chat.py` binds approval to operation and exact inputs. Native HTTP scopes separate reading, work, interaction and approval. MCP binds encrypted interaction state to principal and operation. ACP and TUI map person approval to explicit user actions.
 - Candidate data uses approved paid routes. Hosted tracing and arbitrary tool filesystem access are restricted. Public research is separate from candidate evidence.
 - Model proposals are not human decisions. Application preparation is not Submit. Only `submit_confirm` carries final Submit authority after an exact human approval and live-state recheck.
