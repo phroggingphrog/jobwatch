@@ -17,8 +17,16 @@ full reconciled suite once after the writers finish, not after every move.
 
 Evidence: `INTENT.md`, `docs/adr/0011-owner-direction-history.md`,
 `docs/agents/architecture-inventory.md` and its link from `docs/agents/domain.md`.
-The original implementation tasks below remain open; no full-suite or release
-claim is implied by this documentation-only reconciliation.
+## Source reconciliation (2026-11-08)
+
+`main` at `0ea4fe0` already contains `jobwatch/interview/`, `jobwatch/followup/`,
+`jobwatch/google/`, `jobwatch/util/`, `jobwatch/run.py`, business implementations
+under `jobwatch/commands/`, dispatch from `jobwatch/cli.py`, and a linked README
+topic split. Do not repeat these moves. The remaining unchecked tasks below are
+verification gaps, not claims that these source changes are absent. Static file
+and dispatch inspection does not establish complete compatibility, historical
+commit scope, passing tests or runtime deployment. No application tests were run
+for this documentation reconciliation.
 
 ## 1. Audit and remove superseded UI directions
 
@@ -28,23 +36,23 @@ claim is implied by this documentation-only reconciliation.
 
 ## 2. Consolidate domain and utility packages
 
-- [ ] 2.1 Move interview, follow-up, Google integration and utility modules into their domain packages; update imports, dynamic references, scripts and tests; verify old-path searches and import smoke tests.
-- [ ] 2.2 Run the full test suite and commit this step separately; verify rename-aware diffs preserve behavior and leave approval/submit-confirmation logic untouched.
+- [ ] 2.1 Verify the domain/utility package moves already present in main: check imports, dynamic references, scripts, tests and synthetic import smoke checks; repair only demonstrated gaps through a separately authorized implementation change.
+- [ ] 2.2 Recover or record focused verification and rename-aware review evidence for the landed moves, including unchanged approval/submit-confirmation behavior. Do not require recreating historical commits or a full suite per move.
 
 ## 3. Resolve collection orchestrator naming
 
-- [ ] 3.1 Rename jobwatch/pipeline.py to jobwatch/run.py and update all importers and references; verify no old collection-module references remain and collection CLI smoke tests pass.
-- [ ] 3.2 Run the full test suite and commit this step separately; verify only orchestrator naming changes are staged.
+- [ ] 3.1 Verify the existing `jobwatch/run.py` collection orchestrator and updated dispatch; distinguish obsolete collection-module references from the retained top-level agentic `pipeline/` package, and record synthetic CLI/import checks.
+- [ ] 3.2 Recover or record review evidence for the landed naming change, without repeating the rename or claiming a fresh full-suite result.
 
 ## 4. Unify business CLI entry points
 
-- [ ] 4.1 Trace existing CLI invocation contracts and deployment callers, then move implementations under jobwatch/commands/ with common dispatch; retain documented thin wrappers only where required; verify help, argument parsing and deployment command compatibility with synthetic fixtures.
-- [ ] 4.2 Run the full test suite and commit this step separately; verify native API transport entry points and human approval/submission behavior remain unchanged.
+- [ ] 4.1 Verify the existing `jobwatch/commands/` implementations and common dispatch against actual invocation contracts and deployment callers; check retained wrappers, help and argument semantics with synthetic fixtures rather than moving already consolidated code again.
+- [ ] 4.2 Recover or record focused CLI compatibility and review evidence, including retained native API transport entry points and unchanged human approval/submission behavior.
 
 ## 5. Split README topics
 
-- [ ] 5.1 Move existing README topic content into docs/ and leave a short linked overview; verify content preservation and relative links, including links affected by module moves.
-- [ ] 5.2 Run the full test suite and commit this step separately; verify the five ordered cleanup commits, clean cleanup-owned paths, and unchanged approval/submit-confirmation logic.
+- [ ] 5.1 Verify content preservation and working relative links for the existing README overview and `docs/` topic files, including links affected by module moves. Do not repeat the split.
+- [ ] 5.2 Reconcile the final source and required local evidence. Documentation-only reconciliation needs no application suite; reserve a full reconciled suite for release. Historical five-commit ordering is not a prerequisite to recognizing landed source, and does not prove approval/submit-confirmation behavior or deployment.
 
 ## Workflow follow-up
 

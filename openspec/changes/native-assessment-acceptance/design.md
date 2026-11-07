@@ -1,6 +1,21 @@
 # Design
 
-## Context
+## Current interpretation (2026-11-08)
+
+Implementation and follow-up repairs are present in `main` at `0ea4fe0`. Read the
+older source/service identifiers below as dated provenance, not a fresh inspection
+or instructions to reconcile a missing feature branch. In particular, the
+historical lack of an invocation limit described below motivated the now-landed
+`max_assessments` control. Provider acceptance, completed reuse and live reader
+observation remain unchecked in this change's evidence record.
+
+Current `INTENT.md` and explicit owner restrictions govern execution. The release
+plan below is conditional, not authorization to spend, change routing, start
+services or restore automatic assessment. Do not infer present timer/process
+state from historical notes. Verify exact deployed revision and effective
+configuration separately if the owner authorizes operational work.
+
+## Historical context
 
 See proposal.md and the current assessment-failure report. Source `dd24c7a` has native candidate understanding, deterministic screening, a single native Evaluation graph, private response journaling, DeepSeek reasoning preservation and evidence-payload deduplication. Its final skill-path guidance repair is tested offline only. The last provider run used a warm digest, six native model calls, one embedding operation and one unknown-usage classifier: 67,327 charged tokens, 75.01 seconds, no canonical evaluation.
 

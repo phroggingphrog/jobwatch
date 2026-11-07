@@ -1,6 +1,21 @@
 # Design
 
-## Context
+## Current interpretation (2026-11-08)
+
+The digest/native-assessment source is already present in `main` at `0ea4fe0`.
+`native-assessment-acceptance` records later recovery and protocol refinements.
+Its informed native evaluator may read approved primary evidence before ad
+registration; validated registration still precedes requirement-directed matching
+and final canonical completion. Split extraction and dense search are optional
+strategies, not mandatory orchestration steps.
+
+The historical revisions and service observations below do not identify a current
+running process. Acceptance/reuse and release tasks remain unverified in these
+records. Current `INTENT.md` controls containment: no paid attempts, routing
+changes, deployment or activation are authorized by this artifact. Treat the
+migration plan as conditional future work requiring fresh explicit authorization.
+
+## Historical context
 
 See proposal.md and docs/architecture/assessment-failures.md. Live9111a0d wraps the legacy evaluator; pending7a37865 plus edits replaces it but removed separate candidate understanding. Four DeepSeek experiments failed. A saved live summary passes its terminal schema yet fails the canonical4000-character section limit.
 
@@ -18,7 +33,7 @@ Non-goals: all career stages at once, automatic statistical refitting, new provi
 
 3. Keep prescreen deterministic and consistent across collector, reader and direct API paths. Use clause-aware keyword patterns, explicit years parsing and existing distance calculations where available. Replace implicit level-to-years heuristics with explainable parameters supported by approved actual experience and strategy; actual experience alone is not an invented absolute job threshold. Preserve negation, optional years, program exceptions, remote restrictions and unknown locations. Existing approved policy can be projected automatically; new personal exclusion choices require confirmation.
 
-4. Keep the pending single native Evaluation graph and DeepSeek assessment-only routing. Remove irrelevant filesystem tools, redundant supplied-ad reads and repeated inventory payloads. Focus extraction tools on coherent outputs, bind hashes/identity in code where possible, freeze requirements and batch retrieval. Share canonical validators with completion tools. Schema/citation faults get compact field-specific feedback with at most one correction per affected boundary before a useful held checkpoint; do not rerun the full job or weaken citations. No hard six-call cap and no legacy fallback.
+4. Keep the pending single native Evaluation graph and DeepSeek assessment-only routing. Remove irrelevant filesystem tools, redundant supplied-ad reads and repeated inventory payloads. Focus extraction tools on coherent outputs and bind hashes/identity in code where possible. Permit approved primary reads before registration; freeze requirements before requirement-directed matching and completion. Batch retrieval is available when needed, not mandatory. Share canonical validators with completion tools. Schema/citation faults get compact field-specific feedback with at most one correction per affected boundary before a useful held checkpoint; do not rerun the full job or weaken citations. No hard six-call cap and no legacy fallback.
 
 5. Preserve models as calculations accessed by agents, not extra general supervisors. Persist digest counts separately; show cold cost, reused per-job cost and amortized cost. Include public classifiers and embeddings as distinct paid-operation purposes and orchestration/child calls in totals. Unknown usage remains conservatively charged, clearly distinguished from actual measured tokens.
 
