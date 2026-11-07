@@ -20,15 +20,31 @@ function node(tag, text, parent) {
 }
 function button(text, parent, action) {
   const b = node('button', text, parent); b.type = 'button';
+  b.id = JSON.stringify([parent.id, text, parent.querySelectorAll('button').length]);
   b.onclick = async () => { b.disabled = true; try { await action(); await refresh(); }
     catch (error) { el('status').textContent = error.message; } finally { b.disabled = false; } };
 }
 async function refresh() {
   if (busy) return;
   busy = true;
+  el('connect').disabled = true;
+  el('status').textContent = 'Refreshing recent work…';
+  el('runs').setAttribute('aria-busy', 'true');
   try {
     const value = await (await api('/api/agent/client/runs')).json();
-    const list = el('runs'); list.replaceChildren();
+    const confirmations = new Map();
+    for (const run of value.runs) {
+      for (const item of run.interactions.filter(i => !i.answered && i.operation === 'profile_confirm' && i.type === 'approval')) {
+        const prefix = '/api/agent/profile/proposals/' + encodeURIComponent(item.binding?.arguments?.proposal_id);
+        confirmations.set(item.id, await Promise.all([prefix, prefix + '/confirmation'].map(async path =>
+          (await api(path)).json())));
+      }
+    }
+    const list = el('runs');
+    const focused = list.contains(document.activeElement) ? document.activeElement : null;
+    const selection = focused?.tagName === 'TEXTAREA' ? [focused.selectionStart, focused.selectionEnd] : null;
+    const drafts = new Map(Array.from(list.querySelectorAll('textarea'), answer => [answer.id, answer.value]));
+    list.replaceChildren();
     for (const run of value.runs) {
       const article = node('article', '', list); article.id = 'run=' + run.id;
       node('h3', run.state + ' · ' + run.id, article);
@@ -40,10 +56,7 @@ async function refresh() {
         const send = body => api(path, {method: 'POST', decision: true, body});
         if (item.type === 'approval') {
           if (item.operation === 'profile_confirm') {
-            const proposalId = item.binding?.arguments?.proposal_id;
-            const prefix = '/api/agent/profile/proposals/' + encodeURIComponent(proposalId);
-            const proposal = await (await api(prefix)).json();
-            const shown = await (await api(prefix + '/confirmation')).json();
+            const [proposal, shown] = confirmations.get(item.id);
             node('pre', JSON.stringify({profile: proposal, confirmation: shown}, null, 2), article);
             if (shown.proposal_digest !== item.binding.proposal_digest || shown.scope_digest !== item.binding.scope_digest) {
               node('p', 'The profile or search scope changed. Ask Jobwatch for a new confirmation.', article);
@@ -57,6 +70,8 @@ async function refresh() {
         } else {
           const label = node('label', item.question || 'Your answer', article);
           const answer = node('textarea', '', label); answer.maxLength = 4000;
+          answer.id = 'answer=' + item.id;
+          answer.value = drafts.get(answer.id) || '';
           button('Send answer', article, () => send({decision: 'answer', answer: answer.value}));
           button('Decline to answer', article, () => send({decision: 'decline'}));
         }
@@ -74,16 +89,25 @@ async function refresh() {
         button('Retry retained run', article, () => api('/api/agent/runs/' + run.id + '/retry', {method: 'POST'}));
     }
     if (!value.runs.length) node('p', 'No work yet. Start a conversation with Jobwatch in LibreChat.', list);
+    if (focused) {
+      const replacement = el(focused.id);
+      (replacement || el('status')).focus();
+      if (selection && replacement) replacement.setSelectionRange(...selection);
+    }
     el('status').textContent = 'Connected. Refresh to see new progress.';
   } catch (error) { el('status').textContent = error.message; }
-  finally { busy = false; }
+  finally { busy = false; el('connect').disabled = false; el('runs').removeAttribute('aria-busy'); }
 }
 el('connect').onclick = refresh;
 el('upload').onclick = async () => {
+  if (el('upload').disabled) return;
+  el('upload').disabled = true;
+  el('uploaded').textContent = 'Uploading document…';
   try {
     const file = el('file').files[0]; if (!file) throw new Error('Choose a document.');
     const data = new FormData(); data.append('file', file); data.append('kind', el('kind').value);
     const uploaded = await (await api('/api/agent/profile/uploads', {method: 'POST', body: data})).json();
     el('uploaded').textContent = 'Uploaded. Tell Jobwatch in LibreChat: Use upload ' + uploaded.upload_id + ' to start my profile.';
-  } catch (error) { el('status').textContent = error.message; }
+  } catch (error) { el('uploaded').textContent = error.message; }
+  finally { el('upload').disabled = false; }
 };

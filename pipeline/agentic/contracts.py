@@ -21,6 +21,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer, model_validator
 
 from jobwatch.candidate.contracts import digest
+from jobwatch.util.json_objects import unique_object
 from pipeline.schemas import JobFacts
 
 HEX = re.compile(r"^[0-9a-f]{64}$")
@@ -532,16 +533,8 @@ class Reservation(StrictFrozen):
 def parse_budget_checkpoint_json(payload: str) -> "BudgetCheckpoint":
     """Parse the checkpoint wire representation emitted by model_dump_json()."""
     try:
-        def reject_duplicate_keys(pairs):
-            result = {}
-            for key, value in pairs:
-                if key in result:
-                    raise ValueError("duplicate key")
-                result[key] = value
-            return result
-
         data = json.loads(payload, parse_constant=lambda _value: (_ for _ in ()).throw(ValueError()),
-                          object_pairs_hook=reject_duplicate_keys)
+                          object_pairs_hook=unique_object)
         if type(data) is not dict or type(data.get("reservations")) is not list:
             _safe_raise("invalid_checkpoint")
         data["reservations"] = tuple(data["reservations"])

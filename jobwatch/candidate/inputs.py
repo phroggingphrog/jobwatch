@@ -8,7 +8,8 @@ from ._private_io import read_regular_file
 from .contracts import CandidateError, Mapping
 from .mapping import validate_mappings
 from .suggestions import suggest_mappings
-from .reference import load_reference, _unique_object
+from .reference import load_reference
+from jobwatch.util.json_objects import unique_object
 
 
 def load_inputs(bundle, config: dict):
@@ -30,7 +31,7 @@ def load_inputs(bundle, config: dict):
         if type(mapping_path) is not str or not mapping_path.strip():
             raise ValueError
         raw = read_regular_file(Path(mapping_path), 4 * 1024 * 1024)
-        data = json.loads(raw.decode('utf-8'), object_pairs_hook=_unique_object)
+        data = json.loads(raw.decode('utf-8'), object_pairs_hook=unique_object)
         if type(data) is not list:
             raise ValueError
         mappings = tuple(Mapping.model_validate(record) for record in data)

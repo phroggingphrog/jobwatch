@@ -6,10 +6,10 @@
 <label>Chat key <input id="run-key" type="password" autocomplete="off"></label>
 <label>Decision key <input id="approval-key" type="password" autocomplete="off"></label>
 <button id="connect" type="button">Connect / refresh</button>
-<p id="status" role="status"></p>
+<p id="status" role="status" tabindex="-1"></p>
 <section><h2>Profile documents</h2>
 <label>Document <input id="file" type="file" accept=".pdf,.docx,.txt,.md"></label>
 <label>Kind <select id="kind"><option value="cv">CV</option><option value="letter">Letter</option><option value="evidence">Other evidence</option></select></label>
-<button id="upload" type="button">Upload privately to Jobwatch</button><p id="uploaded"></p></section>
+<button id="upload" type="button">Upload privately to Jobwatch</button><p id="uploaded" role="status"></p></section>
 <section><h2>Recent work and pending decisions</h2><div id="runs"></div></section>
 </main><script src="/agent/controls.js" defer></script></html>

@@ -440,14 +440,20 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                 raise ValueError
         except ValueError:
             raise HTTPException(422, 'invalid_event_cursor') from None
-        with APIStore(principal.person) as store:
-            store.raw_run(run_id)
+        def check_run():
+            with APIStore(principal.person) as store:
+                store.raw_run(run_id)
+
+        def read_batch(cursor):
+            with APIStore(principal.person) as store:
+                state = store.raw_run(run_id)['state']  # state first: events committed after it are read below or next loop
+                return state, store.events(run_id, cursor)
+
+        await asyncio.to_thread(check_run)
         async def stream():
             cursor = after
             while not await request.is_disconnected():
-                with APIStore(principal.person) as store:
-                    state = store.raw_run(run_id)['state']  # state first: events committed after it are read below or next loop
-                    batch = store.events(run_id, cursor)
+                state, batch = await asyncio.to_thread(read_batch, cursor)
                 for item in batch:
                     cursor = item['id']
                     yield f'id: {cursor}\nevent: {item["type"]}\ndata: {encoded(item)}\n\n'

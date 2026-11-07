@@ -54,9 +54,11 @@ class APIStore:
                 input_json TEXT NOT NULL, result_json TEXT, error TEXT,
                 created REAL NOT NULL, updated REAL NOT NULL, cancel_requested INTEGER NOT NULL DEFAULT 0);
             CREATE INDEX IF NOT EXISTS api_runs_thread ON api_runs(thread_id,created);
+            CREATE INDEX IF NOT EXISTS api_runs_state_created ON api_runs(state,created);
             CREATE TABLE IF NOT EXISTS api_interactions(
                 id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES api_runs(id), position INTEGER NOT NULL,
                 payload TEXT NOT NULL, response TEXT, expires REAL NOT NULL, resume_run TEXT);
+            CREATE INDEX IF NOT EXISTS api_interactions_run_position ON api_interactions(run_id,position);
             CREATE TABLE IF NOT EXISTS api_events(
                 id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL REFERENCES api_runs(id),
                 created REAL NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
