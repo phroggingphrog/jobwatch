@@ -20,6 +20,17 @@ A client uses authenticated HTTP endpoints; a website or external AI chat host i
 not required. LangChain model/tool interfaces, Deep Agents planning and specialist
 work, and LangGraph persistence/HITL run inside the backend.
 
+The optional `/agent` controls preserve unsent answers and keyboard focus when
+refreshing retained work. Profile confirmation reads are paired concurrently,
+while interactions are processed sequentially to bound requests to two at a time;
+exact proposal/scope digests are still checked before approval controls appear.
+Uploads disable their action while pending and announce completion or failure.
+The controls keep their existing light palette using shared CSS color tokens.
+
+Synthetic controls browser checks: `python -m pytest tests/test_controls_ui.py -q`
+with the existing browser extra and installed Playwright Chromium. To use an
+installed Chrome instead, set `JOBWATCH_TEST_BROWSER_CHANNEL=chrome`.
+
 ## Install and start
 
 From an isolated checkout, install the locked runtime with `uv sync --frozen`.
@@ -84,6 +95,13 @@ POST bodies are bounded to 64 KiB; message text to 16,000 characters; answers to
 content. Private responses use no-store. Idempotency keys are scoped to the thread;
 reusing a key with different inputs returns 409. Only one active run per thread
 is admitted, and the owner's queued work is bounded.
+
+SSE existence checks and event polling run SQLite work off the HTTP event loop,
+with each connection opened and closed in its worker thread. Queue claims use a
+`(state, created)` index and interaction reads use `(run_id, position)`, avoiding
+history-wide scans during idle polling and run-status reads. These additive
+indexes are installed when the writable API store next opens; no service activation
+is required by this source change.
 
 ## Profile intake and approval
 

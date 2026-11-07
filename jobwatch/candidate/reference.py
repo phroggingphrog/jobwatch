@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from jobwatch.util.json_objects import unique_object as _unique_object
 
 from ._private_io import PathEscapeError, read_regular_file
 from .contracts import CandidateError, ReferenceBundle, content_hash
@@ -31,14 +31,6 @@ def _open_reference(path: Path) -> bytes | None:
         raise _error()
     return None if missing else raw
 
-
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate key")
-        result[key] = value
-    return result
 
 
 def _parse_reference(raw: bytes, reference_hash: str) -> ReferenceBundle:
