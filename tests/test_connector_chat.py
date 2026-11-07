@@ -25,8 +25,7 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
     monkeypatch.setattr(model_choice, 'SERVER_URL', 'http://127.0.0.1:20128/v1')
     monkeypatch.setattr(model_choice, 'get_model', lambda role: 'claude/sonnet')
-    for person in ('owner', 'fixture-b'):
-        model_choice.set_models({'reader': 'claude/sonnet'}, person)
+    model_choice.set_models({'reader': 'claude/sonnet'}, 'owner')
     fake = FakeLLM()
     fake.next = {'facts': [{'section': 'experience', 'value': 'Accounts Assistant, Ledger Co', 'basis': 'evidence',
                             'upload': 1, 'sources': [{'line': 5, 'quote': 'Ledger Co, Accounts Assistant, 2021 - 2023'}]}],
@@ -37,12 +36,11 @@ def world(tmp_path, monkeypatch):
     monkeypatch.setattr(chatgpt_connector, 'dispatch', lambda **kw: pytest.fail('Onboarding must not call chat dispatch'))
     upload = intake.save_upload('owner', 'cv.txt', CV, 'cv')
     client = TestClient(connector_http.create_app(token=TOKEN, person='owner'))
-    other = TestClient(connector_http.create_app(token=TOKEN, person='fixture-b'))
-    return client, other, upload, config, fake
+    return client, upload, config, fake
 
 
 def draft(world):
-    client, _, upload, _, _ = world
+    client, upload, config, fake = world
     reply = client.post(P + '/start', headers=H, json={'upload_ids': [upload['upload_id']]})
     assert reply.status_code == 200, reply.text
     assert reply.json()['status'] == 'parsing'
@@ -68,7 +66,7 @@ def approval(shown):
 
 
 def test_direct_onboarding_reads_edits_answers_reviews_and_confirms_without_chat(world):
-    client, _, _, _, fake = world
+    client, upload, config, fake = world
     assert client.get(P + '/status', headers=H).json()['status'] == 'not_started'
     prop = draft(world)
     count = len(fake.calls)
@@ -92,7 +90,7 @@ def test_direct_onboarding_reads_edits_answers_reviews_and_confirms_without_chat
     current = client.get(P + '/status', headers=H).json()
     assert current['status'] == 'confirmed' and current['proposal'] is None and current['current_version']['version'] == 1
     assert len(fake.calls) == count
-    assert intake.current_version('fixture-b') is None
+    assert intake.current_version('owner')['version'] == 1
 
 
 def test_confirm_requires_explicit_true_and_exact_draft_and_scope(world):
@@ -116,7 +114,7 @@ def test_confirm_requires_explicit_true_and_exact_draft_and_scope(world):
 
 
 def test_scope_configuration_change_invalidates_the_review(world):
-    client, _, _, config, _ = world
+    client, upload, config, fake = world
     shown = review(world, draft(world))
     config['agentic']['batch_token_ceiling'] += 1
     response = client.post(P + '/confirm', headers=H, json=approval(shown))

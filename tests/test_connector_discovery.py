@@ -47,14 +47,13 @@ def transport(monkeypatch):
     monkeypatch.setattr(agentic, 'discovery_ops', module, raising=False)
     monkeypatch.setattr(config_module, 'load_config', config)
     a = TestClient(connector_http.create_app(token=TOKEN, person='owner'))
-    b = TestClient(connector_http.create_app(token=TOKEN, person='fixture-b'))
-    return a, b, calls, module
+    return a, calls, module
 
 
 
 
 def test_retry_forwards_only_the_selected_incident_and_context(transport):
-    a, _, calls, _ = transport
+    a, calls, _ = transport
     body = {'request_id': 'retry-1', 'incident_id': 'paused-one', 'posting_id': 42,
             'expected_context': 'a' * 64}
     response = a.post(P + '/retry', headers=H, json=body)
@@ -64,7 +63,7 @@ def test_retry_forwards_only_the_selected_incident_and_context(transport):
 
 
 def test_discovery_routes_require_authentication_and_refuse_identity_or_budget_overrides(transport):
-    a, _, calls, _ = transport
+    a, calls, _ = transport
     retry = {'request_id': 'r', 'incident_id': 'i', 'posting_id': 1, 'expected_context': 'a' * 64}
     assert a.get(P + '/status').status_code == 401
     for route, body in (('/start', {'request_id': 'r'}), ('/retry', retry)):
@@ -75,7 +74,7 @@ def test_discovery_routes_require_authentication_and_refuse_identity_or_budget_o
 
 
 def test_discovery_schema_rejects_missing_or_wrong_typed_retry_values(transport):
-    a, _, calls, _ = transport
+    a, calls, _ = transport
     retry = {'request_id': 'r', 'incident_id': 'i', 'posting_id': 1, 'expected_context': 'a' * 64}
     for body in ({}, {'request_id': ''}, {'request_id': 7}):
         assert a.post(P + '/start', headers=H, json=body).status_code == 422
@@ -88,7 +87,7 @@ def test_discovery_schema_rejects_missing_or_wrong_typed_retry_values(transport)
 
 
 def test_discovery_conflicts_and_safe_refusals_keep_fixed_error_codes(transport):
-    a, _, _, module = transport
+    a, _, module = transport
 
     def conflict(*args, **kwargs):
         raise Conflict('retry_context_changed')
@@ -104,3 +103,8 @@ def test_discovery_conflicts_and_safe_refusals_keep_fixed_error_codes(transport)
     module.start = refused
     response = a.post(P + '/start', headers=H, json={'request_id':'r'})
     assert response.status_code == 400 and response.json() == {'error': 'scope_required'}
+
+
+def test_connector_startup_rejects_a_non_owner_person():
+    with pytest.raises(RuntimeErrorSafe, match='connector_person_not_owner'):
+        connector_http.create_app(token=TOKEN, person='fixture-b')

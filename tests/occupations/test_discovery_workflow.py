@@ -17,13 +17,13 @@ def test_confirm_refresh_and_read_native_fields_and_plan(tmp_path, monkeypatch, 
     calls = []
     cfg = make_config(tmp_path=tmp_path,settings={'pipeline':{'execution_mode':'agentic',
         'agentic':{'embedding_model':QWEN_EMBEDDING_MODEL}}})
-    confirm_discovery(cfg,'fixture-a')
+    confirm_discovery(cfg,'owner')
     conn = db.connect(cfg.db_path)
-    out = discovery.refresh('fixture-a',cfg,conn=conn,llm=approved_llm(hash_transport(calls)),seconds=20.)
+    out = discovery.refresh('owner',cfg,conn=conn,llm=approved_llm(hash_transport(calls)),seconds=20.)
     assert out['hypotheses'] > 0
     assert conn.execute('SELECT SUM(charged_tokens) FROM discovery_spend').fetchone()[0] > 0
     before = len(calls)
-    assert discovery.refresh('fixture-a',cfg,conn=conn,llm=approved_llm(hash_transport(calls))) == out
+    assert discovery.refresh('owner',cfg,conn=conn,llm=approved_llm(hash_transport(calls))) == out
     assert len(calls) == before
     from jobwatch.models import Posting
     from jobwatch.dedupe import ingest
@@ -44,7 +44,7 @@ def test_confirm_refresh_and_read_native_fields_and_plan(tmp_path, monkeypatch, 
     before = len(calls)
     conn.close()
     token = 'r'*40
-    with TestClient(create_api(credentials={token:Principal('fixture-a')},config=cfg)) as api:
+    with TestClient(create_api(credentials={token:Principal('owner')},config=cfg)) as api:
         headers = {'Authorization':f'Bearer {token}'}
         fields = api.get('/api/agent/discovery/fields',headers=headers).json()
         plan = api.get('/api/agent/discovery/plan',headers=headers).json()
@@ -55,13 +55,13 @@ def test_confirm_refresh_and_read_native_fields_and_plan(tmp_path, monkeypatch, 
         relevance = api.get(f'/api/agent/discovery/postings/{pid}/relevance',headers=headers).json()
     from jobwatch import config
     monkeypatch.setattr(config,'load_config',lambda:cfg)
-    assert discovery.main(['refresh','--user','fixture-a']) == 0
+    assert discovery.main(['refresh','--user','owner']) == 0
     cli_refresh = json.loads(capsys.readouterr().out)
     assert cli_refresh == out
-    assert discovery.main(['status','--user','fixture-a']) == 0
+    assert discovery.main(['status','--user','owner']) == 0
     status = json.loads(capsys.readouterr().out)
     assert status['counts']['yes'] == 1
-    assert discovery.main(['restore','--user','fixture-a']) == 0
+    assert discovery.main(['restore','--user','owner']) == 0
     restored = json.loads(capsys.readouterr().out)
     assert restored == {'restored':0}
     print('SYNTHETIC_DISCOVERY_EXAMPLE=' + json.dumps(dict(refresh=cli_refresh,fields=fields,plan=plan,relevance=relevance,status=status,restore=restored),sort_keys=True))

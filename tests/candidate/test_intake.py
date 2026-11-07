@@ -1105,3 +1105,25 @@ def test_every_parse_path_refuses_a_gateway_that_is_not_the_local_one(person, up
     assert code(lambda: intake.propose(person, [upload_id], other)) == 'gateway_not_allowed'
     assert code(lambda: intake.start_proposal(person, [upload_id], other)) == 'gateway_not_allowed'
     assert intake.open_proposal(person) is None and not intake._inflight      # no draft, no slot held
+
+
+def test_docx_confirmation_writes_textual_evidence_and_keeps_the_original(person, fake_llm):
+    from jobwatch.candidate.evidence import snapshot_evidence
+    data = _docx(SYNTHETIC_CV.splitlines())
+    up = intake.save_upload(person, 'cv.docx', data, 'cv')
+    fake_llm.reply({'facts': [
+        fact('experience', 'Accounts Assistant, Ledger Co', 'evidence', [Q(5, 'Ledger Co, Accounts Assistant, 2021 - 2023')]),
+        fact('experience', 'Prepared journals', 'evidence', [Q(7, 'Prepared month-end journals')]),
+        fact('education', 'Diploma of Accounting', 'evidence', [Q(10, 'Diploma of Accounting, Example College, 2020')]),
+        fact('career_focus', 'Accounts officer', 'inference')], 'questions': []})
+    prop = intake.propose(person, [up['upload_id']], fake_llm)
+    n = ok(person, prop)
+    d = vdir(person, n)
+    approved = json.loads((d / 'approved.json').read_text())
+    canonical = (d / 'evidence' / 'master_resume.md').read_text()
+    assert canonical == SYNTHETIC_CV.rstrip('\n')
+    assert approved['evidence_provenance']['master_resume.md'] == {
+        'upload_sha256': up['sha256'], 'extension': '.docx', 'kind': 'cv', 'source': 'extracted_text'}
+    original = users.user_dir(person) / 'intake' / 'uploads' / (up['sha256'] + '.docx')
+    assert original.read_bytes() == data
+    assert snapshot_evidence(d / 'evidence').bundle_hash == approved['evidence_bundle_hash']

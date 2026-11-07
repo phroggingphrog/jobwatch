@@ -249,9 +249,20 @@ def profile_from_snapshot(bundle) -> Profile:
 
 
 def packaging_blocker(profile: Profile) -> str | None:
-    """Approved profile versions 2 and 3 had the CV header '# Profile' (no name, no contact), so every CV scored below
-    ATS grade A after a paid draft (2026-11-03). Name it before any paid read."""
-    return None if profile.name and profile.name.strip().lower() != "profile" else "profile_identity_missing"
+    """Reject a missing identity or contact before any paid preparation.
+
+    Approved profile versions 2 and 3 had the CV header '# Profile' (no name, no contact), so every CV
+    scored below ATS grade A after a paid draft (2026-11-03). A named profile without an email loses the
+    contact check too, so both are checked here, before preparation, never during evaluation.
+    """
+    if not (profile.name and profile.name.strip().lower() != "profile"):
+        return "profile_identity_missing"
+    from jobwatch.apply.careerops_cv import contact_from_header
+    header = getattr(profile, "header_lines", None) or []
+    email = contact_from_header(header[-1] if header else "").get("email", "")
+    if not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", email):
+        return "profile_contact_missing"
+    return None
 
 
 def _evaluation_hash(evaluation: AgenticEvaluation) -> str:

@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import make_config
-from jobwatch import users
+from jobwatch import users, db
 from pipeline.agentic import discovery_ops as ops, incidents, service
 from pipeline.agentic.api import Principal, create_api
 from pipeline.agentic.api_store import APIStore, Conflict
@@ -13,7 +13,6 @@ from pipeline.agentic.chat import job_connection
 
 @pytest.fixture(autouse=True)
 def _owner_folder_profile(monkeypatch, tmp_path):
-    monkeypatch.setenv("JOBWATCH_DB", str(tmp_path / "owner-jobwatch.db"))
     monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
 
@@ -21,6 +20,7 @@ def _owner_folder_profile(monkeypatch, tmp_path):
 def world(tmp_path, monkeypatch):
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     config = make_config(tmp_path=tmp_path)
+    db.connect(config.db_path).close()
     profile = {'version': 1, 'facts': []}
     scope = SimpleNamespace(daily_assessments=40, daily_token_ceiling=2_000_000,
         model_dump=lambda **k: {'basis': ['Synthetic accounting'], 'locations': ['Victoria'],

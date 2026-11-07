@@ -21,7 +21,7 @@ PREFIX = '/api/agent/discovery'
 
 @pytest.fixture
 def api():
-    credentials = {A:Principal('owner',frozenset({'read','run'})), B:Principal('fixture-b'),
+    credentials = {A:Principal('owner',frozenset({'read','run'})), B:Principal('owner'),
                    NO_READ:Principal('owner',frozenset({'run'}))}
     with TestClient(create_api(credentials=credentials,config={'pipeline':{'execution_mode':'off'}})) as client:
         yield client

@@ -14,7 +14,7 @@ def headers(token=A): return {'Authorization':'Bearer '+token}
 @pytest.fixture
 def client(frozen):
     credentials={A:Principal(users.current(),frozenset({'read','run'})),
-        B:Principal('other-fixture',frozenset({'read','run'})),
+        B:Principal(users.current(),frozenset({'read','run'})),
         READ:Principal(users.current(),frozenset({'read'}))}
     with TestClient(create_api(credentials=credentials,config=frozen.config,
         llm_factory=lambda person:pytest.fail('shortlist called a model'))) as api:
@@ -58,7 +58,7 @@ def test_change_inside_throttle_window_rebuilds_and_never_returns_stale(client,f
 
 
 def test_no_database_returns_not_built_without_creating_one():
-    with TestClient(create_api(credentials={A:Principal('no-db-fixture')},config={'pipeline':{'execution_mode':'off'}})) as api:
+    with TestClient(create_api(credentials={A:Principal(users.current())},config={'pipeline':{'execution_mode':'off'}})) as api:
         result=api.get(PREFIX,headers=headers())
         assert result.status_code==200 and result.json()['status']=='not_built'
         assert not users.db_path().exists()

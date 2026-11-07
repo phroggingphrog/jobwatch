@@ -1020,14 +1020,12 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
         files = projection.project(approved)
         cur_upload_shas = set(cur.uploads)
         meta = None
-        original_bytes = b""
         if cur_upload_shas:
             try:
                 upload_index = _read_json(_root(person) / "uploads.json", {})
                 meta = next((item for item in upload_index.values() if item.get("sha256") in cur_upload_shas), None)
                 if meta is None:
                     raise FileNotFoundError
-                original_bytes = read_regular_file(_root(person) / "uploads" / (meta["sha256"] + meta["ext"]), MAX_UPLOAD_BYTES)
             except (OSError, ValueError, KeyError):
                 raise IntakeError("unreadable_document") from None
         root = ensure_dir(_versions_root(person))
@@ -1057,10 +1055,24 @@ def confirm(person: str, proposal_id: str, *, proposal_digest: str, scope_digest
                     shutil.copytree(pdir, stage / "evidence", dirs_exist_ok=True,
                                     ignore=shutil.ignore_patterns(".tmp-*", "interests_and_criteria.yaml"))
             if meta and not any((stage / "evidence" / name).exists() for name in ("cv.md", "master_resume.md")):
-                name = "cv.md" if meta["ext"] in (".md", ".txt") else "master_resume.md"
-                _write_private(stage / "evidence" / name, original_bytes)
-                if name == "cv.md":
-                    (stage / "evidence" / "cv.md").rename(stage / "evidence" / "master_resume.md")
+                # Canonical evidence is text, never the uploaded PDF/DOCX bytes. The original
+                # stays in intake/uploads for provenance and re-extraction.
+                try:
+                    text_bytes = read_regular_file(
+                        _root(person) / "text" / (meta["sha256"] + ".txt"), MAX_TEXT_BYTES)
+                except FileNotFoundError:
+                    try:
+                        text_bytes = read_regular_file(
+                            _root(person) / "uploads" / (meta["sha256"] + meta["ext"]),
+                            MAX_UPLOAD_BYTES).decode("utf-8").encode("utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        raise IntakeError("unreadable_document") from None
+                _write_private(stage / "evidence" / "master_resume.md", text_bytes)
+                approved["evidence_provenance"] = {
+                    "master_resume.md": {"upload_sha256": meta["sha256"], "extension": meta["ext"],
+                                         "kind": meta.get("kind"), "source": "extracted_text"}}
+            elif last.get("evidence_provenance"):
+                approved["evidence_provenance"] = last["evidence_provenance"]
             bundle = snapshot_evidence(stage / "evidence")
             approved["evidence_bundle_hash"] = bundle.bundle_hash
             approved["file_sha256"] = {k: hashlib.sha256(v).hexdigest() for k, v in sorted(

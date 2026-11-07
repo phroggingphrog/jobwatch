@@ -1,4 +1,5 @@
 """Synthetic evaluation completion must not imply application preparation."""
+import pytest
 from jobwatch.util.llm import LLM
 from pipeline.agentic import service
 from pipeline.agentic.persistence import latest_result
@@ -34,10 +35,11 @@ def test_evaluation_completion_persists_artifacts_without_drafting(world, monkey
     assert conn.execute('SELECT SUM(charged) FROM agentic_batches').fetchone()[0] == charged
 
 
-def test_missing_document_identity_does_not_block_evaluation(world, monkeypatch):
+@pytest.mark.parametrize('blocker', ['profile_identity_missing', 'profile_contact_missing'])
+def test_missing_document_identity_or_contact_does_not_block_evaluation(world, monkeypatch, blocker):
     conn, config, bundle, add = world
     add(43)
-    monkeypatch.setattr('pipeline.agentic.draft.packaging_blocker', lambda profile: 'profile_identity_missing')
+    monkeypatch.setattr('pipeline.agentic.draft.packaging_blocker', lambda profile: blocker)
     gateway = SyntheticGateway(bundle)
     summary = service.agentic_batch_run([43], config, conn, evidence_bundle=bundle,
         llm=LLM(transport=gateway, keys=['synthetic']), operation='evaluate')
@@ -46,5 +48,5 @@ def test_missing_document_identity_does_not_block_evaluation(world, monkeypatch)
     prepared = service.agentic_batch_run([43], config, conn, evidence_bundle=bundle,
         llm=LLM(transport=gateway, keys=['synthetic']), operation='prepare')
     assert prepared['held'] == 1
-    assert latest_result(conn, 43)['reason'] == 'profile_identity_missing'
+    assert latest_result(conn, 43)['reason'] == blocker
     assert len(gateway.calls) == calls

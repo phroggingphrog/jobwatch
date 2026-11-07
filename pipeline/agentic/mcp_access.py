@@ -98,12 +98,14 @@ def verify_access_jwt(token: str, *, keys: dict, audience: str | None, issuer: s
 
 
 def person_for_email(email: str, mapping: dict) -> str:
-    """The Jobwatch person this address may act as. An unmapped address is refused, never defaulted."""
+    """The owner this address may act as. An unmapped or non-owner address is refused, never defaulted."""
     from jobwatch import users
 
     person = (mapping or {}).get((email or "").strip().lower())
     if not bool(person):
         raise AccessError("access_person_unmapped")
+    if person != users.current():
+        raise AccessError("access_person_unsupported")
     return person
 
 

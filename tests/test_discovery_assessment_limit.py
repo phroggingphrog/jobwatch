@@ -134,7 +134,7 @@ def test_authenticated_bounded_queue_reaches_reader_with_all_invocation_costs(re
     monkeypatch.setattr(service, 'agentic_batch_run', assess)
     other_token = 'b' * 40
     with TestClient(create_api(config=config, credentials={token: Principal(person),
-                                                          other_token: Principal('synthetic-other')})) as client:
+                                                          other_token: Principal('owner')})) as client:
         assert client.post('/api/agent/discovery/start', json={'request_id': 'unauth', 'max_assessments': 1}).status_code == 401
         for limit in (0, -1, 21, True, '1', 1.0):
             assert client.post('/api/agent/discovery/start', headers=headers,
@@ -147,7 +147,7 @@ def test_authenticated_bounded_queue_reaches_reader_with_all_invocation_costs(re
         assert response.status_code == 202
         run_id = response.json()['run_id']
         assert client.get('/api/agent/runs/' + run_id,
-            headers={'Authorization': 'Bearer ' + other_token}).status_code == 404
+            headers={'Authorization': 'Bearer ' + other_token}).status_code == 200
         for _ in range(500):
             run = client.get('/api/agent/runs/' + run_id, headers=headers).json()
             if run['state'] not in ('queued', 'running'):

@@ -31,7 +31,8 @@ def test_top_three_by_score_are_promoted(tmp_path, monkeypatch):
     out = screened.promote(conn, config, max_seconds=60, deadline=None)
     assert calls == [ids[:3]] and out["promoted"] == 3
     assert conn.execute("SELECT COUNT(*) FROM pipeline_events WHERE node='promote'").fetchone()[0] == 3
-    assert screened.screened_settings(config) == {"promote_per_run": 3, "promote_per_day": 10, "min_score": 3.0}
+    assert screened.screened_settings(config) == {"promote_per_run": 3, "promote_per_day": 10, "min_score": 3.0,
+                                                "refresh_per_run": 5, "refresh_after_hours": 12}
 
 
 def test_promotion_prioritizes_category_then_score_without_minimum(tmp_path, monkeypatch):

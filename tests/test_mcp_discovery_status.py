@@ -19,10 +19,10 @@ TOKEN = 'x' * 40
 
 def test_registry_and_dispatch_share_rest_operation(monkeypatch):
     seen = []
-    monkeypatch.setattr(mcp_server, '_person_from_request', lambda: 'fixture-a')
+    monkeypatch.setattr(mcp_server, '_person_from_request', lambda: 'owner')
     monkeypatch.setattr(connector_http, 'discovery_status_operation',
                         lambda person: seen.append(person) or {'enabled': False})
-    server = mcp_server.create_server(token=TOKEN, person='fixture-a')
+    server = mcp_server.create_server(token=TOKEN, person='owner')
 
     async def check():
         async with Client(server) as client:
@@ -34,14 +34,14 @@ def test_registry_and_dispatch_share_rest_operation(monkeypatch):
             result = await client.call_tool('discovery_status', {})
             assert result.structured_content == {'enabled': False}
     asyncio.run(check())
-    assert seen == ['fixture-a']
+    assert seen == ['owner']
 
 
 def test_authentication_and_scope_reject_before_status(monkeypatch):
     def forbidden(*args):
         pytest.fail('unauthenticated status dispatched')
     monkeypatch.setattr(connector_http, 'discovery_status_operation', forbidden)
-    server = mcp_server.create_server(token=TOKEN, person='fixture-a')
+    server = mcp_server.create_server(token=TOKEN, person='owner')
     assert server.auth.required_scopes == ['jobwatch']
 
     async def check():
@@ -69,7 +69,7 @@ def test_status_never_creates_or_changes_runtime_files(tmp_path, monkeypatch, in
         conn.commit()
         conn.execute('PRAGMA journal_mode=DELETE')
         conn.close()
-        with APIStore('fixture-a') as store:
+        with APIStore('owner') as store:
             store.enqueue_discovery({'discovery': True}, 'fixture-request', 'fixture-skill')
             store.conn.execute('PRAGMA journal_mode=DELETE')
     def snapshot():
@@ -78,8 +78,8 @@ def test_status_never_creates_or_changes_runtime_files(tmp_path, monkeypatch, in
     before = snapshot()
     monkeypatch.setattr(connector_http, 'discovery_status_operation',
                         lambda person: discovery_ops.status(person, config))
-    monkeypatch.setattr(mcp_server, '_person_from_request', lambda: 'fixture-a')
-    server = mcp_server.create_server(token=TOKEN, person='fixture-a')
+    monkeypatch.setattr(mcp_server, '_person_from_request', lambda: 'owner')
+    server = mcp_server.create_server(token=TOKEN, person='owner')
     async def check():
         async with Client(server) as client:
             result = await client.call_tool('discovery_status', {})
@@ -91,8 +91,14 @@ def test_status_never_creates_or_changes_runtime_files(tmp_path, monkeypatch, in
 
 def test_readonly_api_store_cannot_write(tmp_path, monkeypatch):
     monkeypatch.setattr(users, 'base_dir', lambda: tmp_path)
-    with APIStore('fixture-a'):
+    with APIStore('owner'):
         pass
-    with APIStore('fixture-a', readonly=True) as store:
+    with APIStore('owner', readonly=True) as store:
         with pytest.raises(sqlite3.OperationalError, match='readonly'):
             store.conn.execute('DELETE FROM api_runs')
+
+
+def test_mcp_startup_rejects_a_non_owner_person():
+    from pipeline.agentic.runtime import RuntimeErrorSafe
+    with pytest.raises(RuntimeErrorSafe, match='mcp_person_not_owner'):
+        mcp_server.create_server(token=TOKEN, person='fixture-b')

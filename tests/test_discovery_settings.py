@@ -51,7 +51,7 @@ def test_default_is_finite_and_inherits_confirmed_scope(data_dir, monkeypatch):
     assert discovery_settings.get_settings('owner', CONFIG)['daily_token_ceiling'] == 1234
     _, _, _ = _confirmed_profile('owner', ceiling=876)
     assert discovery_settings.get_settings('owner', CONFIG)['daily_token_ceiling'] == 876
-    assert discovery_settings._path('owner').parent == data_dir / 'users' / 'owner' / 'config'
+    assert discovery_settings._path('owner').parent == data_dir / 'config'
 
 
 

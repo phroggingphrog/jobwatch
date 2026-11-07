@@ -68,6 +68,8 @@ def _person_from_request() -> str:
     person = token.subject if token else None
     if not bool(person):
         raise RuntimeErrorSafe('mcp_auth_required')
+    if person != users.current():
+        raise RuntimeErrorSafe('owner_required')
     return person
 
 
@@ -265,7 +267,9 @@ def create_server(*, token: str | None = None, person: str | None = None, access
             log.warning('mcp: access key set unavailable (%s); falling back to the static token', exc.code)
             access = mcp_access.settings_from_env({'JOBWATCH_MCP_ACCESS': 'off'}, fetch=False)
     token = token if token is not None else os.environ.get('JOBWATCH_MCP_TOKEN')
-    person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.DEFAULT_USER)
+    person = person if person is not None else os.environ.get('JOBWATCH_MCP_PERSON', users.current())
+    if person != users.current():
+        raise RuntimeErrorSafe('mcp_person_not_owner')
     # A static token stays mandatory unless Access is the front door; without either, no server starts.
     if not bool(person) or (not access.enabled and (not token or len(token) < 32)) \
             or (access.enabled and not access.requires_jwt and token and len(token) < 32):

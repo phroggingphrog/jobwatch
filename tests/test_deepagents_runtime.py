@@ -96,11 +96,10 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
     ]
     llm, seen = transport_llm(choices)
     llm.base_url = model_choice.SERVER_URL
-    for person in ('owner', 'fixture-b'):
-        root = users.user_dir(person)
-        root.mkdir(parents=True)
-        with sqlite3.connect(root / 'jobwatch.db') as conn:
-            conn.execute('CREATE TABLE postings(id INTEGER PRIMARY KEY)')
+    root = users.user_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(root / 'jobwatch.db') as conn:
+        conn.execute('CREATE TABLE postings(id INTEGER PRIMARY KEY)')
     cfg = {'agentic': {'enabled': False}}
     def turn(person='owner', thread_id='conversation', **kwargs):
         return dispatch(person=person, thread_id=thread_id, config=cfg, llm=llm, **kwargs)
@@ -116,11 +115,9 @@ def test_backend_chat_dispatch_synthetic(tmp_path, monkeypatch):
     memory = turn(thread_id='new-thread', message='Recall my preference')
     print('MEMORY', json.dumps(memory))
     assert 'Synthetic preference: concise answers.' in json.dumps(seen[-1])
-    other = turn(person='fixture-b', message='Hello')
-    print('ISOLATION', json.dumps(other))
-    assert other['tools'] == [] and 'Synthetic preference' not in json.dumps(seen[-1])
-    assert 'Inspect job 7' not in json.dumps(seen[-1])
-    print('RESULT: planning, skill read, specialist, SQLite reopen/resume, approval, defer, cross-thread memory and person isolation exercised; synthetic transport only.')
+    with pytest.raises(ValueError, match='owner_required'):
+        turn(person='fixture-b', message='Hello')
+    print('RESULT: planning, skill read, specialist, SQLite reopen/resume, approval, defer, cross-thread memory and owner-only refusal exercised; synthetic transport only.')
 
 
 @pytest.mark.parametrize('message', ['Please use my attached CV.', ''])
@@ -146,16 +143,16 @@ def test_chat_receives_owned_upload_references_without_changing_human_words(tmp_
     assert result['tools'] == [] and result['interactions'] == []
     assert upload['upload_id'] in seen[0][1]['messages'][0]['content']
     assert 'Synthetic document evidence only.' not in json.dumps(seen)
-    assert execution.human_texts == (message,)
+    assert execution.human_texts == ((message,) if message else ())
     assert intake.current_version('owner') is None
     followup = dispatch(person='owner', thread_id='uploaded', message='Use the document I attached.',
                         config={'agentic': {'enabled': False}}, llm=llm)
     assert followup['status'] == 'complete'
     assert upload['upload_id'] in seen[1][1]['messages'][0]['content']
-    with pytest.raises(RuntimeErrorSafe, match='upload_not_found'):
+    with pytest.raises(ValueError, match='owner_required'):
         dispatch(person='fixture-b', thread_id='foreign', message='Use a file.',
                  upload_ids=[upload['upload_id']], config={'agentic': {'enabled': False}}, llm=llm)
-    assert len(seen) == 2  # cross-person references fail before a model sees them
+    assert len(seen) == 2  # non-owner references fail before a model sees them
 
 
 def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
@@ -175,7 +172,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
     cfg = {'agentic': {'enabled': False}}
     key, approval, other = 'fixture-run-' + 'a' * 40, 'fixture-approval-' + 'b' * 40, 'fixture-other-' + 'c' * 40
     credentials = {key: Principal('owner'),
-        approval: Principal('owner', frozenset({'read','interact','approve'})), other: Principal('fixture-b')}
+        approval: Principal('owner', frozenset({'read','interact','approve'})), other: Principal('owner')}
     llm, seen = transport_llm([
         choice('ask_human', question='What is your synthetic preference?'),
         choice('run_career_ops', posting_id=7),
@@ -184,11 +181,10 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
         {'answer': 'Recovered synthetic request.'},
     ])
     llm.base_url = model_choice.SERVER_URL
-    for person in ('owner','fixture-b'):
-        root = users.user_dir(person)
-        root.mkdir(parents=True)
-        with sqlite3.connect(root / 'jobwatch.db') as conn:
-            conn.execute('CREATE TABLE postings(id INTEGER PRIMARY KEY)')
+    root = users.user_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(root / 'jobwatch.db') as conn:
+        conn.execute('CREATE TABLE postings(id INTEGER PRIMARY KEY)')
     def app():
         return create_api(credentials=credentials, config=cfg, llm_factory=lambda p: llm)
     def headers(token=key, idem='synthetic-request'):
@@ -221,7 +217,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
         ident = first.json()['id']
         assert client.post(route, json={'message':'Prepare synthetic job 7'}, headers=headers()).json()['id'] == ident
         assert client.post(route, json={'message':'changed'}, headers=headers()).status_code == 409
-        assert client.get('/api/agent/runs/' + ident, headers=headers(other)).status_code == 404
+        assert client.get('/api/agent/runs/' + ident, headers=headers(other)).status_code == 200  # same owner
         invalid = client.post(route, json={'message':'x','person':'private-marker'}, headers=headers())
         assert invalid.status_code == 422 and 'private-marker' not in invalid.text
         question = wait(client, ident)
@@ -266,7 +262,7 @@ def test_native_api_conversation_approval_and_recovery(tmp_path, monkeypatch):
             store.conn.execute('INSERT INTO api_artifacts VALUES(?,?,?,?,?)',
                 ('fixture-artifact', completed['id'], 'cv', str(pdf), hashlib.sha256(pdf.read_bytes()).hexdigest()))
         assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers()).content == pdf.read_bytes()
-        assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers(other)).status_code == 404
+        assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers(other)).status_code == 200  # same owner
         pdf.write_bytes(b'changed')
         assert client.get('/api/agent/artifacts/fixture-artifact', headers=headers()).status_code == 409
 
@@ -967,7 +963,7 @@ def test_api_health_remains_available_while_polling_blocks(tmp_path, monkeypatch
         release.wait(5)
         return original(self)
     monkeypatch.setattr(APIStore, 'claim_next', blocked)
-    app = create_api(credentials={'s' * 40: Principal('fixture-poll')}, config={})
+    app = create_api(credentials={'s' * 40: Principal('owner')}, config={})
     try:
         with TestClient(app) as client:
             assert entered.wait(2)

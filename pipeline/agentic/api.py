@@ -40,15 +40,20 @@ class Principal:
 
 def credentials_from_env():
     credentials = {}
+    owner = users.current()
     source = os.environ.get('JOBWATCH_AGENT_CREDENTIALS_FILE')
     if source:
         path = Path(source).expanduser()
         if path.stat().st_mode & 0o077:
             raise RuntimeErrorSafe('credential_file_permissions')
         for row in json.loads(path.read_text()):
+            if row.get('person') != owner:
+                raise RuntimeErrorSafe('api_principal_not_owner')
             credentials[row['token']] = Principal(row['person'], frozenset(row['scopes']))
     else:
-        person = os.environ.get('JOBWATCH_AGENT_PERSON', users.DEFAULT_USER)
+        person = os.environ.get('JOBWATCH_AGENT_PERSON', owner)
+        if person != owner:
+            raise RuntimeErrorSafe('api_principal_not_owner')
         token = os.environ.get('JOBWATCH_AGENT_TOKEN')
         approval = os.environ.get('JOBWATCH_AGENT_APPROVAL_TOKEN')
         if token:
@@ -77,16 +82,17 @@ class InteractionResponse(_Body):
 
 def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=dispatch, browser_sessions=None):
     credentials = credentials if credentials is not None else credentials_from_env()
+    owner = users.current()
     if not credentials or any(not isinstance(token, str) or len(token) < 32 or not bool(p.person)
             or not p.scopes <= {'read', 'run', 'interact', 'approve'} for token, p in credentials.items()):
         raise RuntimeErrorSafe('api_credentials_invalid')
+    if any(p.person != owner for p in credentials.values()):
+        raise RuntimeErrorSafe('api_principal_not_owner')
     from pipeline.agentic import identity
 
-    def all_credentials():
-        return {**credentials, **identity.credentials()}
-
     def known_people():
-        return sorted({p.person for p in all_credentials().values()})
+        # One owner, one durable queue: multiple scoped tokens never create a second poll.
+        return [owner]
 
     people = known_people()
     hashes = [(hashlib.sha256(t.encode()).digest(), p) for t, p in credentials.items()]
@@ -208,7 +214,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
 
     def claim_work(person):
         # Configuration parsing and SQLite reconciliation must not block the
-        # HTTP event loop while the durable worker polls every account.
+        # HTTP event loop while the durable owner queue is polled.
         cfg = get_config(person)
         if job_database(cfg).exists():
             with job_connection(cfg, write=True) as jobs:
@@ -512,6 +518,8 @@ def main(argv=None):
     parser.add_argument('--matching-comparison', metavar='PRIVATE_JSON', help='Compare saved, owner-reviewed matcher outputs offline; no models')
     parser.add_argument('--blind-output-dir', metavar='NEW_PRIVATE_DIR', help='Export anonymized matching packet and separate arm key instead of scoring')
     args = parser.parse_args(argv)
+    if args.person != users.current():
+        parser.error('only the single Jobwatch owner is supported')
     if args.blind_output_dir and not args.matching_comparison:
         parser.error('--blind-output-dir requires --matching-comparison')
     if args.matching_comparison:

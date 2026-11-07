@@ -127,3 +127,39 @@ def test_human_source_from_another_thread_cannot_supply_an_answer(onboarding):
         message='I can start next Tuesday')
     assert not stated(person, prop.id)
     assert 'human_source_not_found' in _tool_texts(seen)
+
+
+def test_negated_excerpt_preserves_the_full_human_wording(onboarding):
+    person, prop, config = onboarding
+    said = 'I have no experience at all with payroll software'
+    llm, _ = _onboarding_llm([
+        {'tool': 'profile_correct', 'arguments': {'edits': [
+            {'op': 'add', 'section': 'skill', 'value': 'payroll software'}], 'source_id': 'latest'}},
+        {'answer': 'Saved the full wording.'}])
+    chat.dispatch(person=person, thread_id='negated-source', config=config, llm=llm, message=said)
+    facts = stated(person, prop.id)
+    assert facts and facts[-1].value == said
+    assert hashlib.sha256(said.encode()).hexdigest() in facts[-1].note
+
+
+def test_ask_human_answer_survives_into_a_later_turn(onboarding):
+    person, prop, config = onboarding
+    said = 'I can start next Monday'
+    first_llm, _ = _onboarding_llm([
+        {'tool': 'ask_human', 'arguments': {'question': 'When can you start?'}},
+        {'answer': 'Noted.'}])
+    first = chat.dispatch(person=person, thread_id='durable-source', config=config, llm=first_llm,
+        message='Help finish my profile')
+    assert first['status'] == 'interrupted'
+    chat.dispatch(person=person, thread_id='durable-source', config=config, llm=first_llm,
+        decisions=[{'type': 'respond', 'message': said}], human_decision=True,
+        expected_checkpoint=first['checkpoint_id'])
+    second_llm, seen = _onboarding_llm([
+        {'tool': 'profile_answer', 'arguments': {'question_id': question(prop),
+            'text': 'Available from next Monday', 'source_id': hashlib.sha256(said.encode()).hexdigest()}},
+        {'answer': 'Saved.'}])
+    result = chat.dispatch(person=person, thread_id='durable-source', config=config, llm=second_llm,
+        message='Thanks, use what I told you.')
+    assert result['status'] == 'complete'
+    assert stated(person, prop.id)[0].value == said
+    assert 'human_source_not_found' not in _tool_texts(seen)

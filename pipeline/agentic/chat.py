@@ -978,6 +978,7 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
     """
     if not bool(person) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', thread_id or ''):
         raise RuntimeErrorSafe('invalid_request')
+    users.require_owner(person)
     if (message is None and decisions is None) or (message is not None and
             (type(message) is not str or (not message.strip() and not upload_ids and not attachment_receipts) or len(message) > 16000)):
         raise RuntimeErrorSafe('invalid_request')
@@ -1043,6 +1044,9 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                     # Server-owned attachment references stay outside the model's writable memories.
                     attachment_namespace = ('career-chat-uploads', person)
                     saved_uploads = store.get(attachment_namespace, thread_id)
+                    # Authenticated human testimony is server-authored, not a message role the model
+                    # can forge, so ask_human answers survive later turns and restarts.
+                    human_namespace = ('career-chat-human-sources', person)
                     previous_uploads = (saved_uploads.value.get('upload_ids') or []) if saved_uploads else []
                     available_uploads = list(dict.fromkeys((upload_ids or []) + previous_uploads))[:20]
                     previous_receipts = (saved_uploads.value.get('receipts') or []) if saved_uploads else []
@@ -1151,16 +1155,30 @@ def dispatch(*, person: str, thread_id: str, message: str | None = None,
                         value = {'messages': [{'role': 'user', 'content': message}]}
                         if not previous.values:
                             value['files'] = {p: create_file_data(content) for p, content in skill_files().items()}
-                    # What the person wrote, set by the server for the profile tools: every human message in the thread
-                    # (their own words wherever in the conversation they said them), this turn's message and any human
-                    # answer to ask_human. Nothing here comes from the model.
-                    past = tuple(t for t in (_human_text(m) for m in (previous.values or {}).get('messages', [])
-                                             if getattr(m, 'type', None) == 'human') if t)[-50:]
-                    if message is not None:
-                        execution.human_texts = past + (message,)
+                    # What the person wrote, set by the server for the profile tools: the durable
+                    # authenticated source list, this turn's message and any human answer to ask_human.
+                    # Nothing here comes from the model or from a tool message.
+                    saved_human = store.get(human_namespace, thread_id)
+                    if saved_human is not None:
+                        past = tuple(t for t in (saved_human.value.get('texts') or [])
+                                     if isinstance(t, str) and t.strip())[-50:]
                     else:
-                        execution.human_texts = past + tuple(
-                            d['message'] for d in (decisions or []) if d.get('type') == 'respond' and type(d['message']) is str)
+                        # Legacy threads predate the durable source list: seed once from their real
+                        # HumanMessages, then never depend on message role again.
+                        past = tuple(t for t in (_human_text(m) for m in (previous.values or {}).get('messages', [])
+                                                 if getattr(m, 'type', None) == 'human') if t)[-50:]
+                    current = []
+                    if message is not None and message.strip():
+                        current.append(message)
+                    current.extend(d['message'] for d in (decisions or [])
+                                   if d.get('type') == 'respond' and type(d.get('message')) is str
+                                   and d['message'].strip())
+                    sources = list(past)
+                    for text in current:
+                        if not sources or sources[-1] != text:
+                            sources.append(text)
+                    execution.human_texts = tuple(sources[-50:])
+                    store.put(human_namespace, thread_id, {'texts': list(execution.human_texts)})
                     execution.check()
                     if upload_ids or attachment_receipts:
                         store.put(attachment_namespace, thread_id, {'upload_ids': available_uploads, 'receipts': available_receipts})

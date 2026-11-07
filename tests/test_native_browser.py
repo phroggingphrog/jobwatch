@@ -20,7 +20,7 @@ from tests.web.test_agentic import _client
 def _owner_folder_profile(monkeypatch):
     monkeypatch.setenv("JOBWATCH_PROFILE_DIR", "")   # the owner's own data folder, not the conftest-pinned example profile
 
-CHAT, HUMAN, FRIEND = 'a'*40, 'b'*40, 'c'*40
+CHAT, HUMAN = 'a'*40, 'b'*40
 
 
 def auth(key=HUMAN):
@@ -50,7 +50,7 @@ def native(tmp_path,monkeypatch,manager,submission_site):
     from jobwatch.apply.paths import safe_write_text
     safe_write_text(run_dir.parent/'latest.json',json.dumps({'run_id':prepared['run_id']}))
     app=create_api(credentials={CHAT:Principal('owner'),HUMAN:Principal('owner',frozenset({'read','approve','interact'})),
-                   FRIEND:Principal('friend',frozenset({'read','approve','interact'}))},config=cfg,browser_sessions=manager)
+                   },config=cfg,browser_sessions=manager)
     client=TestClient(app)
     return client,manager,submission_site,prepared
 

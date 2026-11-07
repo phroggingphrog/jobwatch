@@ -47,9 +47,9 @@ def test_other_person_and_global_career_examples_are_not_loaded(tmp_path, monkey
     outside = tmp_path / 'outside' / 'style' / 'examples'
     outside.mkdir(parents=True)
     (outside / 'owner.md').write_text('OTHER PERSON VOICE')
-    local = users.user_dir('friend') / 'style' / 'examples'
+    local = users.user_dir() / 'style' / 'examples'
     local.mkdir(parents=True, exist_ok=True)
-    (local / 'friend.md').write_text('OWN APPROVED VOICE')
+    (local / 'owner.md').write_text('OWN APPROVED VOICE')
     guide = writing_guide('', '', '', approved=approved(use_style_examples=True))
     assert 'OWN APPROVED VOICE' in str(guide)
     assert 'OTHER PERSON VOICE' not in str(guide)
@@ -113,7 +113,7 @@ def test_symlinked_style_directory_cannot_read_another_person(tmp_path, monkeypa
     other = tmp_path / 'other-person' / 'examples'
     other.mkdir(parents=True)
     (other / 'private.md').write_text('OTHER PERSON PRIVATE VOICE')
-    style = users.user_dir('friend') / 'style'
+    style = users.user_dir() / 'style'
     style.mkdir(exist_ok=True)
     (style / 'examples').symlink_to(other, target_is_directory=True)
     guide = writing_guide('', '', '', approved=approved(use_style_examples=True))

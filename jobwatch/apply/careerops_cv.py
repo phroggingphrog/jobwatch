@@ -126,7 +126,7 @@ def _education(blocks: list, ev: dict) -> list[dict]:
     return out
 
 
-def _contact(line: str) -> dict:
+def contact_from_header(line: str) -> dict:
     parts = [p.strip() for p in line.split("|")]
     email = next((p for p in parts if "@" in p), "")
     phone = next((p for p in parts if re.fullmatch(r"[+\d][\d ()-]{6,}", p)), "")
@@ -170,7 +170,7 @@ def cv_html(content: dict, profile, cv_tpl: str = "cv_consult_default") -> str:
     ev = profile.by_id
     page = (TEMPLATES / "cv-template.ats.html").read_text(encoding="utf-8")
     page = page.replace("</style>", EXTRA_CSS + "\n</style>", 1)
-    contact = _contact(profile.header_lines[-1] if profile.header_lines else "")
+    contact = contact_from_header(profile.header_lines[-1] if profile.header_lines else "")
     sections: dict[str, str] = {}
 
     entry, blocks = _partial("competencies")
