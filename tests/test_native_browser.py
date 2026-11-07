@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from jobwatch import users
+from jobwatch import users, db
 from jobwatch.config import Config, DEFAULT_CONFIG_DIR, DEFAULT_SETTINGS, _merge
 from jobwatch.apply import browser as workflow, prepare
 from jobwatch.apply import submit_confirm
@@ -35,6 +35,12 @@ def native(tmp_path,monkeypatch,manager,submission_site):
     monkeypatch.setenv('JOBWATCH_APP_ORIGIN','https://chat.example.test')
     manager.data_root=None
     seed=_client(tmp_path,monkeypatch)
+    _conn=db.connect(seed.data/'jobwatch.db')
+    try:
+        _conn.execute('UPDATE postings SET url=?,url_hash=? WHERE id=1',(submission_site[0],'local-restart'))
+        _conn.commit()
+    finally:
+        _conn.close()
     cfg=Config(config_dir=DEFAULT_CONFIG_DIR,settings=_merge(DEFAULT_SETTINGS,{'db_path':str(seed.data/'jobwatch.db')}),
                rules={},searches={},feeds={},employers=[])
     manifest={'pdfs':{'cv':'a'*64,'letter':'b'*64},'verification':{'review':True}}
@@ -127,9 +133,12 @@ def test_website_adapter_uses_shared_native_session_not_pages(native,monkeypatch
     assert sessions.status('1')['state']=='ready'
     assert sent and all(value=='Bearer '+HUMAN for value in sent)
     from fastapi import HTTPException
+    # Single owner: the surviving form of "no fallback to another credential" is that the adapter
+    # refuses when no approval-scoped key exists, rather than borrowing the chat token.
+    monkeypatch.delenv('JOBWATCH_AGENT_APPROVAL_TOKEN')
     with pytest.raises(HTTPException) as exc:
         sessions.status('1')
-    assert exc.value.status_code==503  # no fallback to owner's credential
+    assert exc.value.status_code==503
 
 
 def test_unreadable_custom_form_stays_blocked(native):

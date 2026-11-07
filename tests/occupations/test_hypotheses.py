@@ -28,7 +28,7 @@ def person(tmp_path, monkeypatch):
     monkeypatch.setattr(hypotheses, 'reference_store', lambda model=None: VectorStore(tmp_path / 'reference', model or 'synthetic'))
     monkeypatch.setattr(hypotheses, 'policy_for', lambda p: make_policy(profile_version=hypotheses.intake.current_version(p)['version']) if hypotheses.intake.current_version(p) else None)
     monkeypatch.setattr(hypotheses, 'load_config', make_config)
-    return 'synthetic'
+    return users.current()          # the single owner: path helpers refuse any other name
 
 
 def compute(person, calls=None, **kwargs):

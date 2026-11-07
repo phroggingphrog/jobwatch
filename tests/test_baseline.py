@@ -445,12 +445,21 @@ def test_a_failed_freeze_leaves_no_visible_baseline(frozen, monkeypatch):
 
 def test_freeze_refuses_without_a_profile_version_or_cases(world):
     conn, config, bundle, add = world
-    with pytest.raises(AgenticError) as err:
-        baseline.freeze_baseline(conn, config)
-    assert _code(err) == 'no_profile_version'
+    # A confirmed profile with nothing evaluated yet is refused for having no stored cases.
     with pytest.raises(AgenticError) as err:
         baseline.freeze_baseline(conn, config)
     assert _code(err) == 'no_cases'
+    # The profile check comes first: without an approved version nothing may be frozen at all.
+    versions = users.user_dir() / 'profile-versions'
+    assert versions.is_dir() and any(versions.iterdir())
+    removed = versions.with_name('profile-versions.without-profile')
+    os.replace(versions, removed)
+    try:
+        with pytest.raises(AgenticError) as err:
+            baseline.freeze_baseline(conn, config)
+        assert _code(err) == 'no_profile_version'
+    finally:
+        os.replace(removed, versions)
     assert not (users.user_dir() / 'baselines').exists()
 
 
@@ -666,13 +675,9 @@ def test_labelling_validates_the_baseline_id_before_any_path_is_joined(frozen, m
         patch.setattr(os, 'open', lambda path, *a, **k: touched.append(path) or real(path, *a, **k))
         _refuse_bad_ids(b, cid, label)
     assert touched == []
-    with pytest.raises(AgenticError) as err:
-        label_case(b.baseline_id, cid, actor='owner', suitable=True)
-    assert _code(err) == 'baseline_not_found'
-    with pytest.raises(AgenticError) as err:
-        read_labels(b.baseline_id)
-    assert _code(err) == 'baseline_not_found'
-    assert read_labels(b.baseline_id) == []
+    # The same valid, owned baseline still labels and reads normally: only bad ids are refused.
+    label_case(b.baseline_id, cid, actor='owner', suitable=True)
+    assert [label.case_id for label in read_labels(b.baseline_id)] == [cid]
 
 
 def _refuse_bad_ids(b, cid, label):
