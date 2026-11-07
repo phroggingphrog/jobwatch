@@ -1709,7 +1709,12 @@ def test_only_one_profile_parse_may_start_per_turn_and_it_is_reserved(world, mon
     base = chat.dispatch(person=person, thread_id='none', config=config, llm=_onboarding_llm([{'answer': 'Hi'}])[0], message='Hi')
     assert result['usage']['model_calls'] == 3 + 1                  # three chat calls plus the one reserved parse
     assert result['usage']['charged_tokens'] > base['usage']['charged_tokens'] + 3000
-    assert len(list((users.user_dir(person) / 'intake' / 'proposals').glob('*.json'))) == 1
+    # One turn may start one parse, so it leaves one open draft. The world fixture's own
+    # confirmed proposal stays on disk as history and is not a second parse.
+    files = sorted((users.user_dir(person) / 'intake' / 'proposals').glob('*.json'))
+    statuses = [intake.load_proposal(person, path.stem).status for path in files]
+    assert statuses.count('confirmed') == 1
+    assert sum(status in ('parsing', 'draft') for status in statuses) == 1
     _settled(person, intake.open_proposal(person).id)
 
 

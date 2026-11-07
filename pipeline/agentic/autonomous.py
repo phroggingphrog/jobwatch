@@ -683,11 +683,15 @@ def evaluate_autonomous(key, ad_text, budget, llm, *, conn, posting, screen, **k
                         if not isinstance(prior, ToolMessage) or prior.name not in schemas or not isinstance(prior.content, str):
                             continue
                         try:
-                            payload = json.loads(prior.content)
+                            # A separate name: this scan only collects emitted evidence ids. Reusing
+                            # `payload` replaced the submitted arguments with an earlier tool message,
+                            # so corrections were scored against the previous feedback and the
+                            # no-progress bound restarted instead of holding.
+                            emitted = json.loads(prior.content)
                         except ValueError:
                             continue
-                        if isinstance(payload, dict):
-                            emitted_evidence.update(item['id'] for item in payload.get('items', ())
+                        if isinstance(emitted, dict):
+                            emitted_evidence.update(item['id'] for item in emitted.get('items', ())
                                 if isinstance(item, dict) and isinstance(item.get('id'), str))
                 try:
                     if name == 'complete_requirements':

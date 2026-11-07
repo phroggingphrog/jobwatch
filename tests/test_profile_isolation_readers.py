@@ -43,11 +43,13 @@ def test_candidate_insights_use_approved_evidence(monkeypatch):
     assert calls == ['synthetic-user']
 
 
-def test_preference_current_runs_use_approved_evidence(monkeypatch):
+def test_preference_current_runs_use_approved_evidence(tmp_path, monkeypatch):
     from jobwatch import preference_service
     expected = Bundle()
     calls = []
-    monkeypatch.setattr(users, 'current', lambda: 'synthetic-user')
+    # The single owner is the only valid person; the reader must still receive that bound name
+    # rather than a hard-coded one, and must never read a live profile here.
+    monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path / 'data'))
     monkeypatch.setattr(preference_service.approved_reader, 'evidence', lambda person: calls.append(person) or expected)
     monkeypatch.setattr(preference_service.service, 'load_inputs', lambda *args: ())
     monkeypatch.setattr(preference_service.service, 'analyse_candidate', lambda *args: object())
@@ -58,7 +60,7 @@ def test_preference_current_runs_use_approved_evidence(monkeypatch):
     import sqlite3
     conn = sqlite3.connect(':memory:')
     assert preference_service.current_runs(conn, None)[1] is expected
-    assert calls == ['synthetic-user']
+    assert calls == [users.current()]
 
 
 def test_render_profile_reads_approved_settings_without_live_fallback(monkeypatch):

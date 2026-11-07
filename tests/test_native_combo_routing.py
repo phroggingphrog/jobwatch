@@ -79,7 +79,10 @@ def test_combo_prompt_changes_job_identity_but_not_current_digest(world, monkeyp
     assert rotated[0]['run_key'] != changed[0]['run_key']
     assert cd.current_digest(conn, **args).identity == ready.identity
     assert len(calls) == 2
-    assert mc.native_assessment_route(base) == {'model': base, 'prompt_hash': None}
+    # Single owner: there is no second person to isolate from. What survives is that the rotated
+    # unpublished prompt revision is what the route reports; dispatch itself still refuses it
+    # (test_unpublished_prompt_revision_cannot_dispatch).
+    assert mc.native_assessment_route(base) == {'model': COMBO, 'prompt_hash': '2' * 64}
 
 
 def test_evaluation_version_changes_job_identity_but_reuses_candidate_digest(world, monkeypatch):
