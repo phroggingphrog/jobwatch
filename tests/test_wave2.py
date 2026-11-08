@@ -3,7 +3,8 @@ import fcntl
 
 import pytest
 
-from conftest import FakeHttp, FakeResponse, fixture_json, fixture_text, make_config, make_ctx
+from conftest import (FakeHttp, FakeResponse, fixture_json, fixture_text, make_config, make_ctx,
+                      owner_config_available)
 from jobwatch import cli
 from jobwatch import db as dbm
 from jobwatch import run as pipeline
@@ -11,6 +12,9 @@ from jobwatch.collectors import (ats_atlassian, ats_oracle, ats_phenom, ats_succ
                                  jsonld_pages, rss)
 from jobwatch.filters import Rules
 from jobwatch.models import Posting
+
+needs_owner_config = pytest.mark.skipif(not owner_config_available("rules.yaml"),
+                                        reason="owner-private config/rules.yaml is absent")
 
 
 def emp(provider, **kw):
@@ -103,6 +107,7 @@ def test_careers_vic_parse_and_grades():
     assert admin.classification == "VPS 2" and admin.state is None          # "Interstate" location
 
 
+@needs_owner_config
 def test_careers_vic_rules_use_grade():
     rules = Rules(make_config().rules)
     out = {p.title: p for p in careers_vic.parse_page(fixture_text("careers_vic_page.html"))}
@@ -149,7 +154,7 @@ def test_careers_vic_pages_fast_vs_deep_and_stop_at_known():
 
 def test_careers_vic_robots():
     ctx = make_ctx(FakeHttp({"careers.vic.gov.au": "x"}, disallow=("careers.vic",)),
-                   [emp("careers_vic")])
+                   [emp("careers_vic")], searches={"respect_robots": True})
     assert careers_vic.collect(ctx) == [] and "robots" in ctx.errors[0]
 
 
@@ -174,7 +179,8 @@ def test_phenom_robots_and_not_phenom():
                    [emp("phenom", careers_url="https://x.example/au/en/search-results")])
     assert ats_phenom.collect(ctx) == [] and "phApp.ddo" in ctx.errors[0]
     ctx2 = make_ctx(FakeHttp({"x.example": "y"}, disallow=("x.example",)),
-                    [emp("phenom", careers_url="https://x.example/au/en/search-results")])
+                    [emp("phenom", careers_url="https://x.example/au/en/search-results")],
+                    searches={"respect_robots": True})
     assert ats_phenom.collect(ctx2) == [] and "robots" in ctx2.errors[0]
 
 
@@ -213,6 +219,7 @@ def test_jsonld_listing_without_urls_gets_distinct_ids():
 
 
 # ---------------------------------------------------------------- arm map
+@needs_owner_config
 def test_registry_arm_map():
     rules = Rules(make_config().rules)
     assert rules.rule_arms_for(["business_analyst", "reception"]) == \
@@ -248,6 +255,7 @@ def test_cli_run_exits_1_when_every_collector_errors(tmp_path, monkeypatch):
     assert cli.main(["run", "--tier", "fast", "--dry-run"]) == 0
 
 
+@needs_owner_config
 def test_unknown_location_vic_employer_but_title_names_other_state():
     rules = Rules(make_config().rules, [{"name": "bp Australia", "state": "VIC"}])
     p = Posting(source="x", source_id="1", url="https://x/1", company="bp Australia", location="",
@@ -257,6 +265,7 @@ def test_unknown_location_vic_employer_but_title_names_other_state():
     assert rules.evaluate(p).matched
 
 
+@needs_owner_config
 def test_wave2_precision_excludes():
     rules = Rules(make_config().rules)
     def ev(t):

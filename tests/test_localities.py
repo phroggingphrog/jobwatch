@@ -3,7 +3,17 @@ import yaml
 from jobwatch.filters import Rules
 from jobwatch.models import Posting
 
-RULES = Rules(yaml.safe_load(open("config/rules.yaml")))
+from pathlib import Path
+
+FIXTURES = Path(__file__).parent / "fixtures"
+RULES = Rules({
+    "location": {
+        "vic_patterns": [r"\bmelbourne\b", r"\bvic\b"],
+        "remote_patterns": [r"\bremote\b"],
+        "other_state_patterns": [r"\bnsw\b", r"\bsydney\b"],
+        "vic_localities_file": str(FIXTURES / "vic_localities_test.txt"),
+    },
+})
 
 
 def _p(loc):

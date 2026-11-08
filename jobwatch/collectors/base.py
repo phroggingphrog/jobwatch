@@ -50,6 +50,21 @@ class CollectorContext:
     def full(self, results: list) -> bool:
         return self.limit is not None and len(results) >= self.limit
 
+    def respect_robots(self, name: str | None = None, default: bool = True) -> bool:
+        """The owner's robots.txt policy from searches.yaml/feeds.yaml.
+
+        A top-level switch wins, then the named source section, then `default`. Only the
+        owner's own config is read here; a third-party source plugin still needs
+        `allow_robots_override: true` for the same setting (source_plugins.collect).
+        """
+        for document in (self.config.searches or {}, self.config.feeds or {}):
+            if not isinstance(document, dict):
+                continue
+            for section in (document, document.get(name) if name else None):
+                if isinstance(section, dict) and isinstance(section.get("respect_robots"), bool):
+                    return section["respect_robots"]
+        return default
+
     def error(self, where: str, exc: Exception | str) -> None:
         msg = f"{where}: {exc}"
         log.warning(msg)

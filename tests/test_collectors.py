@@ -1,9 +1,13 @@
+import pytest
 import pandas as pd
 
-from conftest import FakeHttp, fixture_json, fixture_text, make_ctx
+from conftest import FakeHttp, fixture_json, fixture_text, make_ctx, owner_config_available
 from jobwatch.collectors import (ats_ashby, ats_employmenthero, ats_greenhouse, ats_lever, ats_pageup,
                                  ats_scouttalent, ats_smartrecruiters, ats_workable, ats_workday,
                                  jobspy_src, jsonld_pages, reddit, rss, seek)
+
+needs_owner_config = pytest.mark.skipif(not owner_config_available("rules.yaml"),
+                                        reason="owner-private config/rules.yaml is absent")
 
 
 def emp(provider, **kw):
@@ -55,6 +59,7 @@ def test_workable():
     assert out[0].work_type == "casual" and out[0].state == "VIC"
 
 
+@needs_owner_config
 def test_smartrecruiters_detail_only_for_relevant_titles():
     http = FakeHttp({"exampleco/postings/744000000000001": fixture_json("smartrecruiters_detail.json"),
                      "/companies/exampleco/postings": fixture_json("smartrecruiters.json")})
@@ -129,7 +134,8 @@ def test_scouttalent_ignores_other_tenants_and_robots():
     ctx = make_ctx(FakeHttp({"applynow.net.au": fixture_text("scouttalent_index.html")}),
                    [emp("scouttalent", tenant="someoneelse")])
     assert ats_scouttalent.collect(ctx) == []
-    ctx2 = make_ctx(FakeHttp({"applynow.net.au": "x"}, disallow=("applynow",)), [emp("scouttalent")])
+    ctx2 = make_ctx(FakeHttp({"applynow.net.au": "x"}, disallow=("applynow",)), [emp("scouttalent")],
+                    searches={"respect_robots": True})
     assert ats_scouttalent.collect(ctx2) == [] and "robots" in ctx2.errors[0]
 
 
@@ -140,7 +146,7 @@ def test_jsonld_pages_follow_links_and_robots():
         "/jobs/103-civil-engineer": fixture_text("jsonld_detail_engineer.html"),
     }, disallow=("103-civil",))
     e = emp("jsonld", name="Example Council", careers_url="https://careers.example.vic.gov.au/careers")
-    ctx = make_ctx(http, [e])
+    ctx = make_ctx(http, [e], searches={"respect_robots": True})
     out = jsonld_pages.collect(ctx)
     titles = [p.title for p in out]
     assert titles == ["Customer Service Officer", "Payroll Officer"]

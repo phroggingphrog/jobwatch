@@ -57,7 +57,7 @@ def parse_list(page: str, employer: dict) -> list[Posting]:
 
 
 def fetch_one(cfg: CollectorContext, employer: dict):
-    page = cfg.http.get_text(list_url(employer), robots=True)
+    page = cfg.http.get_text(list_url(employer), robots=cfg.respect_robots("ats_recruitmenthub"))
     jobs = parse_list(page, employer)
     cfg.count_raw(len(jobs))
     return jobs

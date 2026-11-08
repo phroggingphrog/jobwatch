@@ -25,6 +25,7 @@ git clone <this repo> ~/apps/jobwatch && cd ~/apps/jobwatch
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e '.[dev]'
 mkdir -p ~/.config/jobwatch && cp .env.example ~/.config/jobwatch/settings.env   # then edit it
+.venv/bin/jobwatch init-config   # seed private config from the tracked neutral examples
 .venv/bin/jobwatch init-db
 .venv/bin/jobwatch web                      # http://127.0.0.1:8960
 ```

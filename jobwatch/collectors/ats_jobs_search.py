@@ -62,7 +62,7 @@ def parse_list(page: str, employer: dict) -> tuple[list[Posting], int | None]:
 
 
 def fetch_one(cfg: CollectorContext, employer: dict):
-    page = cfg.http.get_text(employer["careers_url"], robots=True)
+    page = cfg.http.get_text(employer["careers_url"], robots=cfg.respect_robots("ats_jobs_search"))
     jobs, total = parse_list(page, employer)
     cfg.count_raw(len(jobs))
     if total is not None and total > len(jobs):

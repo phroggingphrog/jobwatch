@@ -1,0 +1,6 @@
+# Example locality list (one name per line). Copy to vic_localities.txt and add your own.
+# Suburb-only locations are matched against these names when no other state is named.
+Example City
+Example North
+Example South
+Sampletown

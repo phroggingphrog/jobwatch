@@ -8,10 +8,38 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 UTC = timezone.utc
+
+# The stored raw payload is capped so one large provider response cannot grow SQLite
+# without limit. The cap applies to the serialized JSON, and an over-cap payload is
+# replaced by a valid envelope (never sliced mid-string) that keeps the ad text
+# needed for full-ad recovery plus its original size.
+RAW_JSON_LIMIT = 200_000
+RAW_AD_TEXT_LIMIT = 20_000     # matches adtext.MAX_TEXT: the reader never uses more of one ad
+
+
+def _lever_ad_text(raw: dict) -> str:
+    """A Lever posting's whole ad: the opening, every list and the closing."""
+    parts = [raw.get("descriptionPlain")]
+    for item in raw.get("lists") or []:
+        if isinstance(item, dict):
+            parts += [item.get("text"), item.get("content")]
+    parts.append(raw.get("additionalPlain"))
+    return "\n".join(p for p in parts if isinstance(p, str) and p.strip())
+
+
+# Where a collector keeps the whole ad in its raw payload. Shared by the cap in Posting.raw_json
+# and the reader in jobwatch.util.adtext, so a truncated envelope keeps the field that matters.
+SOURCE_AD_TEXT: dict[str, Callable[[dict], object]] = {
+    "ats_greenhouse": lambda raw: raw.get("content"),
+    "ats_ashby": lambda raw: raw.get("descriptionPlain"),
+    "ats_workable": lambda raw: raw.get("description"),
+    "ats_workday": lambda raw: (raw.get("detail") or {}).get("jobDescription"),
+    "ats_lever": _lever_ad_text,
+}
 
 # Query parameters that only track the click; dropped from canonical URLs.
 TRACKING_PARAMS = re.compile(
@@ -62,7 +90,23 @@ class Posting:
         return asdict(self)
 
     def raw_json(self) -> str:
-        return json.dumps(self.raw, default=str, ensure_ascii=False)
+        text = json.dumps(self.raw, default=str, ensure_ascii=False)
+        if len(text) <= RAW_JSON_LIMIT:
+            return text
+        raw = self.raw if isinstance(self.raw, dict) else {}
+        envelope = {"_truncated": {"original_chars": len(text), "limit": RAW_JSON_LIMIT}}
+        pick = SOURCE_AD_TEXT.get(self.source)
+        try:
+            ad = pick(raw) if pick else None
+        except (AttributeError, TypeError):
+            ad = None
+        if isinstance(ad, str) and ad:
+            envelope["_ad"] = ad[:RAW_AD_TEXT_LIMIT]
+        for key in ("classification", "site"):
+            value = raw.get(key)
+            if isinstance(value, str) and value:
+                envelope[key] = value[:500]
+        return json.dumps(envelope, ensure_ascii=False)
 
 
 def now_utc() -> datetime:

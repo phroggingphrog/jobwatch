@@ -56,7 +56,7 @@ from typing import Callable, NamedTuple
 from urllib.parse import quote, urljoin, urlsplit
 
 from jobwatch import db as dbm
-from jobwatch.models import fold, html_to_text, now_utc
+from jobwatch.models import SOURCE_AD_TEXT, fold, html_to_text, now_utc
 
 log = logging.getLogger(__name__)
 _FETCH_DEADLINE = contextvars.ContextVar('jobwatch_ad_fetch_deadline', default=None)
@@ -779,33 +779,19 @@ def would_request(run: Callable[[Ref], str], ref: Ref) -> bool:
     return False
 
 
-# The whole ad the collector already holds in raw_json (its `description` is only the first COLLECTOR_CAP characters).
-# No request: this is our own stored data.
-def _lever_text(raw: dict) -> str:
-    """A Lever posting's whole ad: the opening, every list (responsibilities, requirements ...) and the closing."""
-    parts = [raw.get("descriptionPlain")]
-    for item in raw.get("lists") or []:
-        if isinstance(item, dict):
-            parts += [item.get("text"), item.get("content")]
-    parts.append(raw.get("additionalPlain"))
-    return "\n".join(p for p in parts if isinstance(p, str) and p.strip())
-
-
-_RAW_TEXT: dict[str, Callable[[dict], object]] = {
-    "ats_greenhouse": lambda raw: raw.get("content"),
-    "ats_ashby": lambda raw: raw.get("descriptionPlain"),
-    "ats_workable": lambda raw: raw.get("description"),
-    "ats_workday": lambda raw: (raw.get("detail") or {}).get("jobDescription"),
-    "ats_lever": lambda raw: _lever_text(raw),
-}
-
-
+# The whole ad a collector already holds in raw_json lives in models.SOURCE_AD_TEXT, shared with the
+# payload cap so a truncated envelope keeps exactly the field this reader needs.
 def _raw_text(source: str, raw_json) -> str:
-    pick = _RAW_TEXT.get(source)
-    if not pick or not raw_json:
+    if not raw_json:
         return ""
     raw = raw_json if isinstance(raw_json, dict) else _json(raw_json) if isinstance(raw_json, str) else None
     if not isinstance(raw, dict):
+        return ""
+    if raw.get("_truncated") is not None:      # bounded envelope: the ad text is kept explicitly
+        ad = raw.get("_ad")
+        return html_to_text(ad, limit=MAX_TEXT) if isinstance(ad, str) else ""
+    pick = SOURCE_AD_TEXT.get(source)
+    if not pick:
         return ""
     try:
         value = pick(raw)
@@ -869,7 +855,7 @@ def local_text(conn, posting) -> tuple[str, str]:
         row = conn.execute("SELECT description FROM postings WHERE id=?", (posting["id"],)).fetchone()
         desc = row["description"] if row else ""
     raw = _field(posting, "raw_json")
-    if raw is None and posting["source"] in _RAW_TEXT:
+    if raw is None and posting["source"] in SOURCE_AD_TEXT:
         raw = _row_extras(conn, posting)[1]
     return classify(None, desc, posting["source"], raw)
 

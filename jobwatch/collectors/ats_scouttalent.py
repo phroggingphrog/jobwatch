@@ -73,7 +73,7 @@ def parse_index(page: str, employer: dict) -> list[Posting]:
 
 
 def fetch_one(cfg: CollectorContext, employer: dict):
-    page = cfg.http.get_text(f"https://{employer['tenant']}.applynow.net.au/", robots=True)
+    page = cfg.http.get_text(f"https://{employer['tenant']}.applynow.net.au/", robots=cfg.respect_robots("ats_scouttalent"))
     cfg.count_raw(len(_BLOCK.findall(page)))
     return parse_index(page, employer)
 

@@ -1,8 +1,13 @@
 import pytest
 
 from conftest import make_config
+from jobwatch.config import DEFAULT_CONFIG_DIR
 from jobwatch.filters import Rules
 from jobwatch.models import Posting
+
+if not (DEFAULT_CONFIG_DIR / "rules.yaml").is_file():
+    pytest.skip("owner-private config/rules.yaml is absent; these assertions describe the owner's targets",
+                allow_module_level=True)
 
 EMPLOYERS = [{"name": "Example Council", "state": "VIC"}, {"name": "Sydney Co", "state": "NSW"}]
 

@@ -77,7 +77,7 @@ def fetch_one(cfg: CollectorContext, employer: dict):
     parts = urlsplit(url)
     origin = f"{parts.scheme}://{parts.netloc}"
     job_base = origin + re.sub(r"/search-results.*$", "", parts.path).rstrip("/")
-    state = page_state(cfg.http.get_text(url, robots=True))
+    state = page_state(cfg.http.get_text(url, robots=cfg.respect_robots("ats_phenom")))
     jobs, total = list(state["jobs"]), state["total"]
     max_pages = int(employer.get("max_pages", 10))
     widgets = f"{origin}/widgets"

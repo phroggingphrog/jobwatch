@@ -48,7 +48,7 @@ def test_pulse_robots_and_bad_json_are_errors_not_crashes():
     ctx = make_ctx(http, [council("pulse", tenant="x")])
     assert ats_pulse.collect(ctx) == [] and "did not return JSON" in ctx.errors[0]
     http = FakeHttp({"pulsesoftware.com": {"Jobs": []}}, disallow=("pulsesoftware.com",))
-    ctx = make_ctx(http, [council("pulse", tenant="x")])
+    ctx = make_ctx(http, [council("pulse", tenant="x")], searches={"respect_robots": True})
     assert ats_pulse.collect(ctx) == [] and "robots" in ctx.errors[0]
 
 
@@ -191,9 +191,13 @@ def test_scouttalent_shared_host_needs_ref_prefix():
 def test_merged_council_registry_is_wellformed():
     """The council wave is merged into config/employers.yaml. This used to read an untracked
     employers.councils.pending.yaml and skipped in every checkout, so it never ran at all."""
+    import pytest
     import yaml
     from jobwatch.config import DEFAULT_CONFIG_DIR
-    catalog = yaml.safe_load((DEFAULT_CONFIG_DIR / "employers.yaml").read_text())
+    registry_file = DEFAULT_CONFIG_DIR / "employers.yaml"
+    if not registry_file.is_file():
+        pytest.skip("owner-private employer registry is not present in this checkout")
+    catalog = yaml.safe_load(registry_file.read_text())
     entries = [e for e in catalog["employers"] if e.get("sector") == "council"]
     names = [e["name"] for e in entries]
     assert len(names) == len(set(names)) >= 35

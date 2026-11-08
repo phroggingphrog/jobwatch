@@ -1,0 +1,35 @@
+# Example RSS/Atom feeds and Reddit settings for a fresh checkout. Copy to feeds.yaml
+# and add your own sources. The real feeds.yaml is owner-private and gitignored.
+#
+# 2026-11-09 owner decision: every configured source sets respect_robots: false.
+respect_robots: false
+
+feeds:
+  - name: Example employer feed
+    url: https://example.invalid/jobs.rss
+    company: Example Co
+    enabled: false
+    respect_robots: false
+  - name: Example council feed
+    url: https://example.invalid/council.rss
+    company: Example Council
+    default_location: Example City
+    enabled: false
+    respect_robots: false
+
+reddit:
+  enabled: false
+  respect_robots: false
+  user_agent: "linux:jobwatch:0.1 (personal job-alert reader; low-volume RSS polling)"
+  requests_per_run: 3
+  min_interval_seconds: 3
+  max_wait_seconds: 65
+  feeds:
+    - {sub: examplecity, stream: auto, location: "Example City"}
+    - {sub: examples, stream: chatter}
+  hiring_keywords: ['\[hiring\]', '\bnow hiring\b', '\bposition available\b']
+  hiring_location: ['example city', '\bremote\b']
+  not_hiring: ['\bfor hire\b', 'anyone hiring']
+  chatter_themes:
+    interviews: ['interview']
+    rejections: ['\breject', 'unsuccessful']

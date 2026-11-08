@@ -100,6 +100,8 @@ def _main(argv: list[str], *, deadline=None) -> int:
     p_dig.add_argument("--dry-run", action="store_true")
     sub.add_parser("health", help="show per-collector health")
     sub.add_parser("init-db", help="create/migrate the SQLite database")
+    p_init = sub.add_parser("init-config", help="seed the owner config from the tracked neutral examples")
+    p_init.add_argument("--config-dir", dest="config_target", help="owner config directory to write")
     exts = _extensions()
     for ext in exts:
         ext.register(sub)
@@ -125,6 +127,17 @@ def _main(argv: list[str], *, deadline=None) -> int:
             conn.close()
         return 0
 
+    if args.cmd == "init-config":
+        from . import users
+        from .config import init_config
+        target = args.config_target or users.config_dir() or (users.user_dir() / "config")
+        created = init_config(target)
+        if created:
+            for path in created:
+                print(f"created {path}")
+        else:
+            print(f"no change: {target} already has every real config file")
+        return 0
     if args.cmd == "init-db":
         conn = dbm.connect(config.db_path)
         version = conn.execute("PRAGMA user_version").fetchone()[0]

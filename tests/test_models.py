@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from jobwatch.models import (Posting, canonical_url, html_to_text, is_australian, relative_posted,
-                             salary_from_text, state_of, work_type_of)
+from jobwatch.models import (RAW_JSON_LIMIT, Posting, canonical_url, html_to_text, is_australian,
+                             relative_posted, salary_from_text, state_of, work_type_of)
 
 
 def test_canonical_url_strips_tracking():
@@ -81,20 +81,52 @@ def test_posting_defaults_and_truncation():
     assert len(p.description) == 2000 and p.posted_at_source == "observed" and p.posted_at
 
 
-@pytest.mark.parametrize('size', [199_970, 200_000, 200_001])
-def test_raw_payload_round_trips_without_losing_fields(size):
-    raw = {'metadata': '雪"\\' * (size // 3), 'closing': 'Applications close Friday.'}
-    posting = Posting(source='synthetic', source_id='1', url='https://example.invalid/1',
-                      title='Synthetic vacancy', raw=raw)
-    serialized = posting.raw_json()
-    try:
-        restored = json.loads(serialized)
-    except json.JSONDecodeError:
-        pytest.fail('Stored raw payload must remain valid JSON at the old size boundary')
+def _raw_sized(total: int) -> dict:
+    """A raw dict whose JSON encoding is exactly `total` characters (plain ASCII, no escapes)."""
+    overhead = len(json.dumps({"_sized": ""}))
+    raw = {"_sized": "x" * (total - overhead)}
+    assert len(json.dumps(raw, ensure_ascii=False)) == total
+    return raw
+
+
+@pytest.mark.parametrize('total', [1_000, RAW_JSON_LIMIT - 1, RAW_JSON_LIMIT])
+def test_raw_payload_under_or_at_cap_round_trips_intact(total):
+    raw = _raw_sized(total)
+    restored = json.loads(Posting(source="synthetic", source_id="1", url="https://example.invalid/1",
+                                  title="Synthetic vacancy", raw=raw).raw_json())
     assert restored == raw
+    assert "_truncated" not in restored
 
 
-def test_large_raw_payload_preserves_full_ad_after_storage(tmp_path):
+def test_unicode_and_escape_heavy_payload_round_trips_below_cap():
+    raw = {"metadata": '雪"\\\n\t\u2028' * 4_000, "closing": "Applications close Friday.", "nested": {"ü": [1, 2]}}
+    assert len(json.dumps(raw, ensure_ascii=False)) < RAW_JSON_LIMIT
+    assert json.loads(Posting(source="synthetic", source_id="1", url="https://example.invalid/1",
+                              title="Synthetic vacancy", raw=raw).raw_json()) == raw
+
+
+def test_raw_payload_over_cap_is_valid_bounded_json_and_marked_truncated():
+    raw = {"metadata": "x" * (RAW_JSON_LIMIT + 5_000), "closing": "Applications close Friday."}
+    serialized = Posting(source="synthetic", source_id="1", url="https://example.invalid/1",
+                         title="Synthetic vacancy", raw=raw).raw_json()
+    restored = json.loads(serialized)
+    assert len(serialized) <= RAW_JSON_LIMIT
+    assert len(json.dumps(raw, ensure_ascii=False)) > RAW_JSON_LIMIT
+    assert restored["_truncated"]["original_chars"] > RAW_JSON_LIMIT
+    assert restored["_truncated"]["limit"] == RAW_JSON_LIMIT
+
+
+def test_truncated_payload_is_distinguishable_from_a_complete_one():
+    complete = json.loads(Posting(source="synthetic", source_id="1", url="https://example.invalid/1",
+                                  title="Synthetic vacancy", raw={"a": "b"}).raw_json())
+    truncated = json.loads(Posting(source="synthetic", source_id="2", url="https://example.invalid/2",
+                                   title="Synthetic vacancy",
+                                   raw={"a": "x" * RAW_JSON_LIMIT}).raw_json())
+    assert "_truncated" not in complete
+    assert "original_chars" in truncated["_truncated"]
+
+
+def test_truncated_envelope_preserves_full_ad_after_storage(tmp_path):
     from jobwatch import db
     from jobwatch.dedupe import ingest
     from jobwatch.util import adtext
@@ -103,7 +135,7 @@ def test_large_raw_payload_preserves_full_ad_after_storage(tmp_path):
     posting = Posting(source='ats_greenhouse', source_id='synthetic:1',
                       url='https://example.invalid/1', title='Synthetic vacancy',
                       description=full_ad,
-                      raw={'metadata': 'x' * 200_001, 'content': full_ad})
+                      raw={'metadata': 'x' * (RAW_JSON_LIMIT + 1), 'content': full_ad})
     with db.connect(tmp_path / 'jobs.db') as conn:
         posting_id, _ = ingest(conn, posting)
         saved = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,)).fetchone()

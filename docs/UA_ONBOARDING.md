@@ -153,8 +153,10 @@ Runtime YAML, systemd units, release scripts and operator tooling.
 - `scripts/seed_profile.py` — Explicit local profile import that copies only named inputs and never logs their text.
 - `tools/build_occupation_reference.py` — Rebuilds the public occupation reference from pinned, hash-verified official downloads.
 - `.github/workflows/backend.yml` — Hosted CI workflow; the owner has disabled CI and it is not a completion requirement.
-- `config/employers.yaml` — Employer registry used by the ATS collectors.
-- `config/feeds.yaml` — RSS and Atom feed sources for the generic feed collector.
+- `config/employers.yaml` — Employer registry used by the ATS collectors. Owner-private
+  and gitignored; `config/employers.example.yaml` is the tracked neutral example.
+- `config/feeds.yaml` — RSS and Atom feed sources for the generic feed collector
+  (owner-private; `config/feeds.example.yaml` is tracked).
 
 ### Tests & Verification
 
@@ -244,7 +246,10 @@ Nodes: `jobwatch/run.py`, `jobwatch/collectors/base.py`, `jobwatch/dedupe.py`, `
 
 ### 3. Understand the execution-mode switch
 
-Only one AI mode is effective per install. config/jobwatch.yaml currently sets execution_mode: screened; the switch lives in execution_mode.py and dispatches to screened, graph, reader or the agentic service.
+Only one AI mode is effective per install. The owner's private config/jobwatch.yaml sets
+execution_mode: screened; the tracked config/jobwatch.example.yaml defaults to off for a
+fresh clone. The switch lives in execution_mode.py and dispatches to screened, graph,
+reader or the agentic service.
 
 Nodes: `jobwatch/execution_mode.py`, `config/jobwatch.yaml`, `pipeline/screened.py`, `pipeline/graph.py`, `jobwatch/reader.py`
 

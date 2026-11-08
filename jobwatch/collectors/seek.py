@@ -79,7 +79,7 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
                       "pageSize": conf.get("page_size", 22), "sortmode": "ListedDate", "locale": "en-AU"}
             params.update(extra)
             try:
-                if conf.get("respect_robots") and not cfg.http.allowed(API):
+                if cfg.respect_robots("seek") and not cfg.http.allowed(API):
                     cfg.error("seek", "robots.txt disallows /api/jobsearch/ (seek.respect_robots: true)")
                     return results
                 data = cfg.http.get_json(API, params=params, user_agent=BROWSER_UA)
