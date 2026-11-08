@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 
-Status: Implemented, locally verified and independently reviewed; delivered in PR #25. See [the release evidence](../audits/2026-10-23-evaluation-monitoring.md) for actual results and the verification incident.
+Status: Implemented, locally verified and independently reviewed; delivered in PR #25. See [the release evidence](../audits/2026-10-23-evaluation-monitoring.md) for actual results and the verification incident. The former `--user` CLI selector is superseded by the single-owner continuation; current commands use the server-bound owner without it.
 
 ## Context
 
@@ -19,7 +19,7 @@ Phase 7 (#22) adds a reproducible comparison of the canonical Jobwatch gate and 
 7. **Write private, deterministic reports.** Reports contain IDs, closed status/route/label enums, numeric counts and metrics, and hashes/version provenance. They exclude candidate or advertisement text, owner notes, arbitrary reasons and errors, and raw owner labels. JSON and Markdown are deterministic for the same inputs; content-addressed files are written once under private directories (directories mode `0700`, files mode `0600`). A content conflict fails rather than overwriting prior evidence.
 8. **Constrain optional fitting.** `--fit` is an optional local fit over frozen, genuine owner choices in development cases only. It uses the canonical sampler and unchanged acceptance gates. It does not manufacture choices from suitability labels, access holdout choices, update the active preference fit, or activate a production model. Eligibility and acceptance remain distinct from activation.
 
-The CLI shape is `jobwatch --user <person> evaluate ...`. The baseline and all frozen files are scoped to that selected person. Run one person's command at a time; `--user all` is not appropriate for these operations.
+The historical CLI shape was `jobwatch --user <person> evaluate ...`. The baseline and all frozen files are scoped to that selected person. The current single-owner continuation uses owner-bound commands without a person selector; the historical selector and multi-person iteration are not supported.
 
 ## Consequences
 

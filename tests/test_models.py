@@ -1,4 +1,7 @@
+import json
 from datetime import datetime, timezone
+
+import pytest
 
 from jobwatch.models import (Posting, canonical_url, html_to_text, is_australian, relative_posted,
                              salary_from_text, state_of, work_type_of)
@@ -76,6 +79,37 @@ def test_posting_defaults_and_truncation():
                 location="Melbourne VIC", description="x" * 5000)
     assert p.url == "https://x.com/a" and p.title == "A & B" and p.state == "VIC"
     assert len(p.description) == 2000 and p.posted_at_source == "observed" and p.posted_at
+
+
+@pytest.mark.parametrize('size', [199_970, 200_000, 200_001])
+def test_raw_payload_round_trips_without_losing_fields(size):
+    raw = {'metadata': '雪"\\' * (size // 3), 'closing': 'Applications close Friday.'}
+    posting = Posting(source='synthetic', source_id='1', url='https://example.invalid/1',
+                      title='Synthetic vacancy', raw=raw)
+    serialized = posting.raw_json()
+    try:
+        restored = json.loads(serialized)
+    except json.JSONDecodeError:
+        pytest.fail('Stored raw payload must remain valid JSON at the old size boundary')
+    assert restored == raw
+
+
+def test_large_raw_payload_preserves_full_ad_after_storage(tmp_path):
+    from jobwatch import db
+    from jobwatch.dedupe import ingest
+    from jobwatch.util import adtext
+
+    full_ad = 'Synthetic employer requires careful evidence review. ' * 80
+    posting = Posting(source='ats_greenhouse', source_id='synthetic:1',
+                      url='https://example.invalid/1', title='Synthetic vacancy',
+                      description=full_ad,
+                      raw={'metadata': 'x' * 200_001, 'content': full_ad})
+    with db.connect(tmp_path / 'jobs.db') as conn:
+        posting_id, _ = ingest(conn, posting)
+        saved = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,)).fetchone()
+        text, kind = adtext.classify(None, saved['description'], saved['source'], saved['raw_json'])
+    assert kind == 'full'
+    assert text == full_ad.strip()
 
 
 def test_html_to_text_double_escaped():

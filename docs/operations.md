@@ -18,6 +18,10 @@ not proof of current service activation or end-to-end acceptance.
 | `runs` | Run stats |
 | `state` | Rotation cursors and seed lists |
 
+Raw payloads are stored as complete JSON so full-ad recovery can read provider fields;
+only the description snippet is capped at 2000 characters. Existing malformed payloads
+from older collection runs are not repaired by this source change.
+
 Dedup works by canonical-URL hash first, then by a normalised (company, title, city) key within
 30 days. Non-matching postings unseen for 90 days are deleted at the end of each run.
 
@@ -31,9 +35,9 @@ systemctl --user daemon-reload
 systemctl --user enable --now jobwatch-fast.timer jobwatch-slow.timer jobwatch-outcomes.timer jobwatch-digest.timer
 ```
 
-- `jobwatch-fast.timer`: every 20 min (+ up to 60 s jitter) runs `jobwatch --user all run --tier fast`.
-- `jobwatch-slow.timer`: every 2 h at :10 (+ up to 15 min jitter) runs `jobwatch --user all run --tier slow`.
-- Discovery is off for a person until their current profile is confirmed with its search scope shown, and while the live `profile/` files differ from that confirmed version (a hand edit after confirming pauses it until the files match again; `jobwatch profile adopt` alone does not turn it on, and a scope with nothing to search for is refused as `profile_incomplete`; onboard with a proposal built on the current version and confirm it). Unconfirmed people are skipped; `--user all` splits the unit's time over those who run.
+- `jobwatch-fast.timer`: every 20 min (+ up to 60 s jitter) runs `jobwatch run --tier fast`.
+- `jobwatch-slow.timer`: every 2 h at :10 (+ up to 15 min jitter) runs `jobwatch run --tier slow`.
+- Commands always use the single server-bound owner; there is no `--user` selector. Discovery is off until the owner's current profile is confirmed with its search scope shown, and while the live `profile/` files differ from that confirmed version (a hand edit after confirming pauses it until the files match again; `jobwatch profile adopt` alone does not turn it on, and a scope with nothing to search for is refused as `profile_incomplete`; onboard with a proposal built on the current version and confirm it).
 - `jobwatch-outcomes.timer`: 07:00, 09:00 … 21:00 Melbourne runs `jobwatch outcomes`.
 - `jobwatch-digest.timer`: Monday 08:00 Melbourne runs `jobwatch digest` (the text goes to the journal).
 

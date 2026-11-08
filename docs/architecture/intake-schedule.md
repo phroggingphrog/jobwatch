@@ -117,13 +117,15 @@ State transitions must be append-only events or auditable updates. `expired` and
 
 ## 5. Scheduling and time budgets
 
-Verified timer definitions and current status:
+Historical timer observations (not current deployment evidence). Commands below use
+the current single-owner CLI; no `--user` selector is supported. Services remain off
+for this continuation until a separately authorized release:
 
 | Timer | Schedule and action | Current status |
 |---|---|---|
-| `jobwatch-native-fast` | Every 20 minutes, with up to 60 seconds jitter. Runs `jobwatch --user all run --tier fast --collect-only`. | Active and enabled when checked. |
-| `jobwatch-native-slow` | Every 2 hours, with up to 15 minutes jitter. Runs `jobwatch --user all run --tier slow --collect-only`. | Active and enabled when checked. |
-| `jobwatch-native-reader` | Every 15 minutes at minute 7, with up to 30 seconds jitter. Runs `jobwatch --user all read`. | Inactive and disabled when checked. |
+| `jobwatch-native-fast` | Every 20 minutes, with up to 60 seconds jitter. Runs `jobwatch run --tier fast --collect-only`. | Active and enabled when checked. |
+| `jobwatch-native-slow` | Every 2 hours, with up to 15 minutes jitter. Runs `jobwatch run --tier slow --collect-only`. | Active and enabled when checked. |
+| `jobwatch-native-reader` | Every 15 minutes at minute 7, with up to 30 seconds jitter. Runs `jobwatch read`. | Inactive and disabled when checked. |
 
 A direct `systemctl --user list-timers` showed only fast and slow timers. The reader unit file exists but is disabled. The reader timer must not be activated as part of this design task.
 
