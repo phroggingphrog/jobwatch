@@ -271,9 +271,9 @@ confirmed scope (`approved.json` has `scope` and `scope_digest`) and the live `p
 that version recorded (assessment reads them live, so a hand edit after confirming pauses discovery until the files match
 again; `confirm` refuses to overwrite such an edit with `profile_edited_by_hand`). A version made by `jobwatch profile adopt` has no scope, so
 it authorises nothing: an adopted owner onboards through a proposal with `base_version` set to the current version (guided in chat,
-optionally from their existing files via `profile_start` with `use_existing_files`, or over the API), then confirms the scope shown. `jobwatch run` and `read` skip a person
-without one (`--user all` still runs everyone else) and `after_collect` returns `{"skipped":"no_confirmed_profile"}`.
-Confirming writes a new version, so an open draft proposal built on the previous version answers `proposal_changed`. A scope with an empty basis (an adopted version has no facts) is refused with `profile_incomplete` by `confirm`, and never authorises discovery; the manual `review`, `pipeline run|sort` and `python -m pipeline.agentic.cli` commands skip with the same reason. `--user all` splits a unit's time over the people who run.
+optionally from their existing files via `profile_start` with `use_existing_files`, or over the API), then confirms the scope shown. `jobwatch run` and `read` skip the owner
+without one and `after_collect` returns `{"skipped":"no_confirmed_profile"}`.
+Confirming writes a new version, so an open draft proposal built on the previous version answers `proposal_changed`. A scope with an empty basis (an adopted version has no facts) is refused with `profile_incomplete` by `confirm`, and never authorises discovery; the manual `review`, `pipeline run|sort` and `python -m pipeline.agentic.cli` commands skip with the same reason. The unit runs for the single server-bound owner; there is no person selector.
 Each person-local day it evaluates at most `scope.daily_assessments` jobs and stops once the day's charged tokens reach
 `scope.daily_token_ceiling` when finite; the rest stay queued for the next day (`{"deferred":"daily_budget"}`).
 Per-person `config/discovery.json` can override that operational daily token limit;

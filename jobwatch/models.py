@@ -62,7 +62,7 @@ class Posting:
         return asdict(self)
 
     def raw_json(self) -> str:
-        return json.dumps(self.raw, default=str, ensure_ascii=False)[:200_000]
+        return json.dumps(self.raw, default=str, ensure_ascii=False)
 
 
 def now_utc() -> datetime:

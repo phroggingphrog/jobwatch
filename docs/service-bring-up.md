@@ -83,12 +83,11 @@ token where model tools run and the approval token only in the trusted client, a
 ```bash
 cd ~/apps/jobwatch
 uv run --no-sync jobwatch check --code
-uv run --no-sync jobwatch --user <person> init-db
+uv run --no-sync jobwatch init-db
 ```
 
-`--user` is removed from the arguments before parsing (`jobwatch/cli.py:61`), so it comes
-**before** the subcommand; `--user all` loops over every person, and omitting it acts as
-the default person in a different data directory.
+Commands use the single server-bound owner and configured data directory. The former
+`--user` selector and multi-person iteration are not supported.
 
 **Gate:** `check --code` is clean and `init-db` reports the schema without errors.
 
@@ -127,7 +126,7 @@ an approval interaction, answered through
 `POST /api/agent/interactions/{id}/responses`, before `profile_confirm`.
 
 **Gate:** `profile.yaml` and `approved.json` exist for that person, the recorded facts
-are the person's own words, and `uv run --no-sync jobwatch --user <person> profile-check`
+are the person's own words, and `uv run --no-sync jobwatch profile-check`
 is clean (that subcommand lives in `jobwatch/apply/cli_ext.py` and reports counts only;
 it never prints evidence).
 
@@ -140,8 +139,8 @@ refused on purpose, so "a citizen" is never recorded from "I am not a citizen".
 
 ```bash
 cd ~/apps/jobwatch
-uv run --no-sync jobwatch --user <person> run --tier fast
-uv run --no-sync jobwatch --user <person> read
+uv run --no-sync jobwatch run --tier fast
+uv run --no-sync jobwatch read
 uv run --no-sync jobwatch health
 ```
 
@@ -175,8 +174,8 @@ systemctl --user enable --now jobwatch-agent.service
 Enable in this order, reading `journalctl --user -u <unit> -n 50` after each before
 adding the next: `jobwatch-agent` → `jobwatch-web` → `jobwatch-reader.timer` (15 min) →
 `jobwatch-fast.timer` (20 min) → `jobwatch-slow.timer` (2 h) → `jobwatch-outcomes.timer`
-→ `jobwatch-digest.timer` (weekly). The timers run `--user all`, so every confirmed
-person is collected for.
+→ `jobwatch-digest.timer` (weekly). The timers use the single server-bound owner;
+collection remains gated on that owner's current confirmed profile.
 
 Both services bind loopback, and the agent API refuses anything else, so remote access
 goes through the existing reverse proxy over HTTPS. There is no CORS configuration and no
@@ -193,12 +192,12 @@ Freeze a baseline and begin:
 
 ```bash
 cd ~/apps/jobwatch
-uv run --no-sync jobwatch --user <person> evaluate cases --limit 500
-uv run --no-sync jobwatch --user <person> evaluate cases --list
-uv run --no-sync jobwatch --user <person> evaluate split <baseline-id>
-uv run --no-sync jobwatch --user <person> evaluate replay <baseline-id> --limit 500 --seconds 300
-uv run --no-sync jobwatch --user <person> evaluate monitor <baseline-id> --limit 500 --seconds 300
-uv run --no-sync jobwatch --user <person> evaluate report <baseline-id> <result-id>
+uv run --no-sync jobwatch evaluate cases --limit 500
+uv run --no-sync jobwatch evaluate cases --list
+uv run --no-sync jobwatch evaluate split <baseline-id>
+uv run --no-sync jobwatch evaluate replay <baseline-id> --limit 500 --seconds 300
+uv run --no-sync jobwatch evaluate monitor <baseline-id> --limit 500 --seconds 300
+uv run --no-sync jobwatch evaluate report <baseline-id> <result-id>
 ```
 
 `evaluate` also takes `label`, for recording a genuine terminal human judgment, and
