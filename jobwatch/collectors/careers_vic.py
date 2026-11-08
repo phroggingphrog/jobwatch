@@ -84,7 +84,7 @@ def collect(cfg: CollectorContext, since=None) -> list[Posting]:
     results: list[Posting] = []
     for page in range(pages):
         try:
-            text = cfg.http.get_text(LIST_URL, params={"keywords": "", "page": page}, robots=True)
+            text = cfg.http.get_text(LIST_URL, params={"keywords": "", "page": page}, robots=cfg.respect_robots("careers_vic"))
         except Exception as exc:   # HttpError / Blocked: record and stop paging
             cfg.error(f"Careers.Vic page {page + 1}", exc)
             break

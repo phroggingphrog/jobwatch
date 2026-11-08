@@ -250,7 +250,7 @@ def fetch_one(cfg: CollectorContext, employer: dict):
     out: list[Posting] = []
     seen_urls: set[str] = set()
     for base in urls:
-        page = cfg.http.get_text(base, robots=True)
+        page = cfg.http.get_text(base, robots=cfg.respect_robots("jsonld_pages"))
         jobs = job_postings(page)
         cfg.count_raw(len(jobs))
         if employer.get("url_pattern"):
@@ -273,7 +273,7 @@ def fetch_one(cfg: CollectorContext, employer: dict):
                     continue
                 cap -= 1
                 try:
-                    detail = cfg.http.get_text(link, robots=True)
+                    detail = cfg.http.get_text(link, robots=cfg.respect_robots("jsonld_pages"))
                 except HttpError as exc:
                     cfg.error(f"{employer.get('name')} {urlsplit(link).path}", exc)
                     if exc.status in (403, 429) or exc.status >= 500:

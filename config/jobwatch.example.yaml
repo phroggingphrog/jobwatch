@@ -1,0 +1,39 @@
+# Example runtime settings for a fresh checkout. Copy to jobwatch.yaml and edit.
+# The real jobwatch.yaml is owner-private and gitignored; this file only shows the schema.
+# Overridable with env: JOBWATCH_DB, JOBWATCH_CONFIG_DIR, JOBWATCH_EMPLOYERS.
+db_path: ~/.local/share/jobwatch/jobwatch.db
+timezone: Australia/Melbourne
+http:
+  timeout: 20        # seconds per request (hard max 20)
+  min_delay: 1.5     # seconds between requests to the same host (clamped to 1-2)
+alerts:
+  max_age_hours: 72
+retention_days: 90
+reader:
+  enabled: false     # opt in after the profile is confirmed
+pipeline:
+  # Safe default for a new install: no automatic model work until explicitly enabled.
+  execution_mode: off   # off | reader | pipeline | agentic | screened
+  threshold: 3.5
+  ingest_limit: 20
+  fetch_budget: 25
+  drafts_per_run: 0
+  drafts_per_day: 0
+  concurrency: 2
+  screened:
+    promote_per_run: 0
+    promote_per_day: 0
+    min_score: 3.0
+  agentic:
+    enabled: false
+    credential_index: 1
+    job_token_ceiling: 1500000
+    batch_token_ceiling: 2000000
+    research_enabled: false
+    max_batch_jobs: 20
+    concurrency: 2
+    decision_policy: profile
+mcp_client:
+  # Optional external MCP tools are off unless the owner configures them.
+  enabled: false
+  servers: []

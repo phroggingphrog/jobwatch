@@ -56,7 +56,7 @@ def parse_jobs(data: dict, employer: dict) -> list[Posting]:
 
 
 def fetch_one(cfg: CollectorContext, employer: dict):
-    text = cfg.http.get_text(api_url(employer), robots=True, headers={"Accept": "application/json"})
+    text = cfg.http.get_text(api_url(employer), robots=cfg.respect_robots("ats_pulse"), headers={"Accept": "application/json"})
     try:
         data = json.loads(text)
     except ValueError as exc:

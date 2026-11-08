@@ -1,5 +1,8 @@
 import types
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import yaml
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -53,8 +56,11 @@ def fake(monkeypatch):
     return state
 
 
+RULES = yaml.safe_load((Path(__file__).parent / "fixtures" / "rules_test.yaml").read_text())
+
+
 def cfg(tmp_path):
-    return make_config(settings={"tiers": {"fast": ["fake"], "slow": []}}, tmp_path=tmp_path)
+    return make_config(settings={"tiers": {"fast": ["fake"], "slow": []}}, tmp_path=tmp_path, rules=RULES)
 
 
 def test_run_alerts_once_then_dedupes(tmp_path, fake):

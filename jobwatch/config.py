@@ -9,6 +9,11 @@ JOBWATCH_DB          SQLite path (default from jobwatch.yaml, ~/.local/share/job
 Without an explicit argument or JOBWATCH_CONFIG_DIR, the owner's runtime config directory
 (users.config_dir()) is the first source and the repository defaults fill only the files it
 does not contain. An explicit directory or JOBWATCH_CONFIG_DIR remains exact.
+
+The owner's real config files are gitignored; only neutral `*.example.*` files are tracked.
+`_first_file` prefers a real file in any source and falls back to the matching example, so a
+fresh clone starts from neutral values while an existing install keeps its own files.
+`jobwatch init-config` copies the examples into an owner directory without overwriting.
 """
 from __future__ import annotations
 
@@ -103,8 +108,40 @@ def _config_sources(config_dir: str | Path | None) -> list[Path]:
     runtime = users.config_dir()
     return [runtime, DEFAULT_CONFIG_DIR] if runtime is not None else [DEFAULT_CONFIG_DIR]
 
+def _example_name(name: str) -> str:
+    """`rules.yaml` -> `rules.example.yaml`; `vic_localities.txt` -> `vic_localities.example.txt`."""
+    path = Path(name)
+    return f"{path.stem}.example{path.suffix}"
+
+def init_config(directory: Path, *, examples: Path = DEFAULT_CONFIG_DIR) -> list[Path]:
+    """Copy the tracked neutral examples into an owner directory that has no real file yet.
+
+    Used for a fresh clone: the real files are gitignored, so `jobwatch init-config` seeds the
+    owner's runtime directory and never overwrites a file the owner already edited.
+    """
+    directory = Path(directory).expanduser()
+    directory.mkdir(parents=True, exist_ok=True)
+    created: list[Path] = []
+    for example in sorted(examples.glob("*.example.*")):
+        target = directory / example.name.replace(".example", "", 1)
+        if target.exists():
+            continue
+        target.write_bytes(example.read_bytes())
+        created.append(target)
+    return created
+
 def _first_file(sources: list[Path], name: str) -> Path | None:
-    return next((source / name for source in sources if (source / name).is_file()), None)
+    """A real owner file anywhere in the sources, else the tracked neutral example.
+
+    The owner's real config files are gitignored, so a fresh clone has only the examples.
+    Keeping the example fallback here means both checkouts load the same file names and no
+    second path mechanism is introduced.
+    """
+    for candidate in (name, _example_name(name)):
+        found = next((source / candidate for source in sources if (source / candidate).is_file()), None)
+        if found is not None:
+            return found
+    return None
 
 def _load_first(sources: list[Path], name: str) -> Any:
     path = _first_file(sources, name)

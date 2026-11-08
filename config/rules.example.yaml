@@ -1,0 +1,45 @@
+# Example match rules for a fresh checkout. Copy to rules.yaml and replace the arms and
+# location block with your own targets; the real rules.yaml is owner-private and gitignored.
+#
+# A posting MATCHES when its title matches an arm keyword, its location passes the location
+# rules, and no seniority/off-target exclude fires. Flags are warnings, never filters.
+
+arms:
+  - id: software_engineer
+    anzsco: "2613"
+    tier: core
+    keywords: [software engineer, software developer, full stack developer, backend developer,
+               graduate software engineer]
+  - id: registered_nurse
+    anzsco: "2544"
+    tier: core
+    keywords: [registered nurse, enrolled nurse, graduate nurse]
+
+location:
+  # Example city only. Replace with the city/state wording your sources use.
+  vic_patterns: ['\bexample city\b']
+  remote_patterns: ['\bremote\b', 'work from home', '\bwfh\b', 'anywhere in australia',
+                    '(?:^|[-/,|(]\s*)national(?=\s*(?:$|[-/,|)]))']
+  allow_unknown_from_vic_employer: true
+  # Suburb-only locations: a newline-separated list of unique locality names.
+  vic_localities_file: config/vic_localities.example.txt
+  other_state_patterns: ['\bnew zealand\b', '\bauckland\b']
+
+seniority:
+  exclude_title: ['\bsenior\b', '\bsnr\b', '\blead\b', '\bprincipal\b', '\bhead of\b',
+                  '\bdirector\b', '\bchief\b', '\bmanager\b']
+  exclude_title_global: ['\binternship\b']
+  exempt_phrases: []
+  exclude_classification: []
+  exclude_min_years: null
+
+flags:
+  experience_flag_min_years: 3
+  entry_level: ['\bgraduate\b', '\bjunior\b', '\bentry[- ]level\b', '\bintern(ship)?\b']
+  entry_classification: []
+  work_rights_required: ['\bcitizen\b', '\bpermanent resident\b', '\bwork rights\b',
+                         '\bsecurity clearance\b']
+  work_rights_ignore: ['\bno (?:need|requirement) to be\b', '\bnot required to be\b']
+  full_time_only:
+    title_or_type: ['\bfull[ -]?time\b', '\bpermanent\b']
+    unless: ['\bpart[ -]?time\b', '\bcasual\b', '\bcontract\b']

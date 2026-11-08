@@ -41,13 +41,15 @@ def generate_config(profile: dict, user: str) -> Path:
 
     searches = {
         "location": loc,
+        # Owner decision 2026-11-09: generated sources never enforce robots.txt.
+        "respect_robots": False,
         "seek": {"enabled": True, "where": city or "All Australia", "date_range": 2, "max_pages": 2,
                  "page_size": 22, "searches_per_run": 8, "respect_robots": False, "keywords": titles},
         "jobspy": {"enabled": True, "sites": ["linkedin", "indeed", "google"], "location": loc,
                    "hours_old": 6, "results_wanted": 20, "searches_per_run": 4, "pause_seconds": 2,
-                   "searches": [{"term": t} for t in titles]},
+                   "respect_robots": False, "searches": [{"term": t} for t in titles]},
         "jora": {"enabled": True, "where": city, "age": "24h", "searches_per_run": 4, "delay_s": 4,
-                 "keywords": titles},
+                 "respect_robots": False, "keywords": titles},
     }
     arms = [{"id": _slug(t), "anzsco": "", "tier": "core", "keywords": [t.lower()]} for t in titles]
     rules = {

@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from jobwatch.collectors.base import CollectorContext
-from jobwatch.config import Config, DEFAULT_SETTINGS, DEFAULT_CONFIG_DIR, _merge
+from jobwatch.config import Config, DEFAULT_SETTINGS, DEFAULT_CONFIG_DIR, _first_file, _merge
 from jobwatch.filters import Rules
 from jobwatch.util.http import HttpError
 
@@ -76,9 +76,20 @@ class FakeHttp:
         return not any(d in url for d in self.disallow)
 
 
-def make_config(employers=None, searches=None, feeds=None, settings=None, tmp_path=None):
-    rules = yaml.safe_load((DEFAULT_CONFIG_DIR / "rules.yaml").read_text())
-    feeds_doc = feeds if feeds is not None else yaml.safe_load((DEFAULT_CONFIG_DIR / "feeds.yaml").read_text())
+def owner_config_available(name: str) -> bool:
+    """False in a fresh clone: the real owner files are private and gitignored."""
+    return (DEFAULT_CONFIG_DIR / name).is_file()
+
+
+def _repo_config(name, default):
+    """The owner file when present, else its tracked neutral example (see jobwatch.config._first_file)."""
+    path = _first_file([DEFAULT_CONFIG_DIR], name)
+    return yaml.safe_load(path.read_text()) if path is not None else default
+
+
+def make_config(employers=None, searches=None, feeds=None, settings=None, tmp_path=None, rules=None):
+    rules = rules if rules is not None else _repo_config("rules.yaml", {})
+    feeds_doc = feeds if feeds is not None else _repo_config("feeds.yaml", {})
     base = _merge(DEFAULT_SETTINGS, settings or {})
     if tmp_path is not None:
         base["db_path"] = str(tmp_path / "test.db")

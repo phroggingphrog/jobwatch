@@ -7,13 +7,42 @@ not proof of current service activation or end-to-end acceptance.
 
 ## Config files (`config/`)
 
-| File | What it holds |
-|---|---|
-| `jobwatch.yaml` | DB path, timezone, HTTP timeout/delay, `alerts.max_age_hours`, retention, tier membership |
-| `rules.yaml` | Arms (keywords per ANZSCO arm, per-arm excludes), location rules, seniority/off-target excludes, flag patterns |
-| `searches.yaml` | Seek keywords (`where`, `date_range`, pages, rotation) and JobSpy searches (sites, `hours_old`, `results_wanted`) |
-| `feeds.yaml` | Generic RSS/Atom job feeds, and Reddit feeds, hiring/chatter keywords, digest themes |
-| `employers.yaml` | Employer registry, maintained separately. If it is missing, `employers.example.yaml` is used |
+| File | Tracked? | What it holds |
+|---|---|---|
+| `jobwatch.yaml` | private | DB path, timezone, HTTP timeout/delay, `alerts.max_age_hours`, retention, tier membership |
+| `rules.yaml` | private | Arms (keywords per ANZSCO arm, per-arm excludes), location rules, seniority/off-target excludes, flag patterns |
+| `searches.yaml` | private | Seek keywords (`where`, `date_range`, pages, rotation) and JobSpy searches (sites, `hours_old`, `results_wanted`) |
+| `feeds.yaml` | private | Generic RSS/Atom job feeds, and Reddit feeds, hiring/chatter keywords, digest themes |
+| `employers.yaml` | private | Employer registry, maintained separately |
+| `vic_localities.txt` | private | Newline-separated locality names for suburb-only location matching |
+| `*.example.*` | tracked | Neutral examples for the same schemas. `employers.example.yaml` is the registry example |
+
+The real files are owner-private and listed in `.gitignore`; only the neutral
+`config/*.example.*` files are tracked. Removing them from the index does not remove
+them from earlier commits, so purging history is a separate decision.
+
+### Fresh clone
+
+```bash
+jobwatch init-config       # copy every config/*.example.* to its real name
+jobwatch init-db
+```
+
+`init-config` writes to the owner config directory: `JOBWATCH_CONFIG_DIR` when set,
+otherwise `<JOBWATCH_DATA_DIR>/config` (default `~/.local/share/jobwatch/config`). It
+never overwrites a real file that already exists. The loader reads a real file from the
+owner directory or the repository first and falls back to the matching example, so a
+checkout with only examples still starts, and an existing install keeps using its files
+where they are (`jobwatch.config._config_sources`, `_first_file`).
+
+### robots.txt policy
+
+`respect_robots: false` is the owner's explicit decision (2026-11-09) for every
+configured source; the shipped examples state it at the top level and per source, and
+`jobwatch/fieldgen.py` generates the same. Built-in collectors read it through
+`CollectorContext.respect_robots()`. A third-party source plugin that sets
+`respect_robots: false` still needs `allow_robots_override: true`, and an unconfigured
+plugin keeps the safe default of respecting `robots.txt`.
 
 ### `employers.yaml` schema
 

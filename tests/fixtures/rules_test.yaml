@@ -1,0 +1,19 @@
+# Test-only rules: the behaviours asserted by tests that need stable arms and geography.
+# Deliberately not the owner's private config.
+arms:
+  - id: payroll_clerk
+    tier: core
+    keywords: [payroll officer, bookkeeper, payroll]
+  - id: call_centre
+    tier: core
+    keywords: [receptionist, customer service officer]
+location:
+  vic_patterns: ['\bmelbourne\b', '\bvic\b', '\bgeelong\b']
+  remote_patterns: ['\bremote\b']
+  allow_unknown_from_vic_employer: false
+  other_state_patterns: ['\bnsw\b', '\bsydney\b']
+seniority:
+  exclude_title: ['\bsenior\b', '\bmanager\b']
+  exclude_title_global: []
+  exempt_phrases: []
+flags: {}

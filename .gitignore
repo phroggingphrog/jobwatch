@@ -19,3 +19,12 @@ settings.env
 agentic-failures/
 career-chat/
 drafts/
+
+# Owner-private config: track only the neutral *.example.* files and copy them to these
+# names (see docs/configuration.md). The real files stay on disk for an existing install.
+config/jobwatch.yaml
+config/rules.yaml
+config/searches.yaml
+config/feeds.yaml
+config/employers.yaml
+config/vic_localities.txt

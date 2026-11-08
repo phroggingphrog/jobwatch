@@ -1,0 +1,60 @@
+# Example search configuration for a fresh checkout. Copy to searches.yaml and edit.
+# The real searches.yaml holds the owner's targets and is gitignored.
+#
+# 2026-11-09 owner decision: every configured source sets respect_robots: false.
+# Built-in sources read this key directly; a third-party source plugin still needs
+# allow_robots_override: true (see docs/configuration.md) and an unconfigured plugin
+# keeps the safe default of respecting robots.txt.
+
+location: "Example City"
+respect_robots: false      # owner decision 2026-11-09 (top-level default)
+
+seek:
+  enabled: false
+  where: "Example City"
+  date_range: 2
+  max_pages: 2
+  page_size: 22
+  searches_per_run: 8
+  respect_robots: false      # owner decision 2026-11-09; set true to honour robots.txt
+  keywords:
+    - software engineer
+    - registered nurse
+
+adzuna:
+  enabled: false
+  app_id_file: ~/.config/jobwatch/adzuna-app-id
+  app_key_file: ~/.config/jobwatch/adzuna-app-key
+  where: "Example City"
+  results_per_page: 25
+  pages: 1
+  max_days_old: 2
+  searches_per_run: 3
+  respect_robots: false      # owner decision 2026-11-09
+  searches:
+    - software engineer
+    - registered nurse
+
+jobspy:
+  enabled: false
+  sites: [linkedin, indeed]
+  location: "Example City"
+  hours_old: 6
+  results_wanted: 20
+  searches_per_run: 4
+  pause_seconds: 2
+  respect_robots: false      # owner decision 2026-11-09
+  searches:
+    - {term: "software engineer"}
+    - {term: "registered nurse"}
+
+jora:
+  enabled: false
+  where: "Example City"
+  age: 24h
+  searches_per_run: 4
+  delay_s: 4
+  respect_robots: false      # owner decision 2026-11-09
+  keywords:
+    - software engineer
+    - registered nurse
