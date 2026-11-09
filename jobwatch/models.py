@@ -101,7 +101,7 @@ class Posting:
         except (AttributeError, TypeError):
             ad = None
         if isinstance(ad, str) and ad:
-            envelope["_ad"] = ad[:RAW_AD_TEXT_LIMIT]
+            envelope["_ad"] = html_to_text(ad, limit=RAW_AD_TEXT_LIMIT)
         for key in ("classification", "site"):
             value = raw.get(key)
             if isinstance(value, str) and value:
