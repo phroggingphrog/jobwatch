@@ -13,7 +13,7 @@ reader:
   enabled: false     # opt in after the profile is confirmed
 pipeline:
   # Safe default for a new install: no automatic model work until explicitly enabled.
-  execution_mode: off   # off | reader | pipeline | agentic | screened
+  execution_mode: "off"   # off | reader | pipeline | agentic | screened
   threshold: 3.5
   ingest_limit: 20
   fetch_budget: 25

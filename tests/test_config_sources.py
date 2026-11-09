@@ -2,8 +2,43 @@
 from pathlib import Path
 
 import yaml
+import pytest
 
 from jobwatch import config as config_module
+
+
+@pytest.mark.parametrize('seed_owner_files', [False, True])
+def test_shipped_config_disables_execution_with_a_valid_mode(tmp_path, seed_owner_files):
+    from jobwatch.execution_mode import effective_mode
+
+    directory = config_module.DEFAULT_CONFIG_DIR
+    if seed_owner_files:
+        config_module.init_config(tmp_path)
+        directory = tmp_path
+    assert effective_mode(config_module.load_config(directory)) == 'off'
+
+
+@pytest.mark.parametrize('selection', ['default', 'env', 'global', 'subcommand', 'global_over_env', 'subcommand_over_global'])
+def test_init_config_cli_uses_the_selected_directory(tmp_path, monkeypatch, selection):
+    from jobwatch import cli, users
+
+    arguments = ['init-config']
+    target = users.user_dir() / 'config'
+    if selection in ('env', 'global_over_env', 'subcommand_over_global'):
+        target = tmp_path / 'env-config'
+        monkeypatch.setenv('JOBWATCH_CONFIG_DIR', str(target))
+    if selection in ('global', 'global_over_env', 'subcommand_over_global'):
+        target = tmp_path / 'global-config'
+        arguments = ['--config-dir', str(target), *arguments]
+    if selection in ('subcommand', 'subcommand_over_global'):
+        target = tmp_path / 'subcommand-config'
+        arguments += ['--config-dir', str(target)]
+
+    assert cli.main(arguments) == 0
+    assert (target / 'jobwatch.yaml').is_file()
+    assert (target / 'rules.yaml').is_file()
+    if selection != 'default':
+        assert not (users.user_dir() / 'config').exists()
 
 
 def _write(path: Path, document: dict) -> None:

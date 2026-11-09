@@ -144,6 +144,64 @@ def test_truncated_envelope_preserves_full_ad_after_storage(tmp_path):
     assert text == full_ad.strip()
 
 
+@pytest.mark.parametrize('source,field', [
+    ('ats_greenhouse', 'content'), ('ats_workable', 'description'),
+    ('ats_workday', 'jobDescription'),
+])
+def test_truncated_envelope_normalizes_html_before_limiting_ad(tmp_path, source, field):
+    from jobwatch import db
+    from jobwatch.dedupe import ingest
+    from jobwatch.util import adtext
+
+    html = ''.join(f'<span class="{"x" * 100}">Requirement {i}.</span>' for i in range(180))
+    html += '<p>MANDATORY LICENCE AT END</p>'
+    expected = html_to_text(html, limit=adtext.MAX_TEXT)
+    assert len(html) > 20_000 and 2_000 < len(expected) < adtext.MAX_TEXT
+    payload = {field: html}
+    raw = {'detail': payload} if source == 'ats_workday' else payload
+    raw['metadata'] = 'x' * (RAW_JSON_LIMIT + 1)
+    posting = Posting(source=source, source_id='synthetic:html',
+                      url='https://example.invalid/html', title='Synthetic vacancy',
+                      description=html, raw=raw)
+    with db.connect(tmp_path / 'jobs.db') as conn:
+        posting_id, _ = ingest(conn, posting)
+        saved = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,)).fetchone()
+        text, kind = adtext.classify(None, saved['description'], saved['source'], saved['raw_json'])
+    assert kind == 'full'
+    assert text == expected
+    assert text.endswith('MANDATORY LICENCE AT END')
+
+
+def test_truncated_envelope_keeps_escaped_eligibility_requirements(tmp_path):
+    from jobwatch import db
+    from jobwatch.dedupe import ingest
+    from jobwatch.util import adtext
+
+    body = ('<p>' + 'Synthetic employer requires careful evidence review. ' * 80
+            + 'Applicants must be aged &lt;25 and hold a mandatory driving licence. Salary &gt;$50,000.</p>')
+    posting = Posting(source='ats_greenhouse', source_id='synthetic:comparison',
+                      url='https://example.invalid/comparison', title='Synthetic vacancy',
+                      description=body, raw={'metadata': 'x' * (RAW_JSON_LIMIT + 1), 'content': body})
+    with db.connect(tmp_path / 'jobs.db') as conn:
+        posting_id, _ = ingest(conn, posting)
+        saved = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,)).fetchone()
+        text, kind = adtext.classify(None, saved['description'], saved['source'], saved['raw_json'])
+    assert kind == 'full'
+    assert text.endswith('Applicants must be aged <25 and hold a mandatory driving licence. Salary >$50,000.')
+
+
+def test_legacy_truncated_envelope_still_normalizes_html():
+    from jobwatch.util import adtext
+
+    body = ('<p>Synthetic employer requires careful evidence review.</p>' * 80
+            + '<p>Applicants must be aged &lt;25 and hold a mandatory driving licence. Salary &gt;$50,000.</p>')
+    envelope = json.dumps({'_truncated': {'original_chars': RAW_JSON_LIMIT + 1}, '_ad': body})
+    text, kind = adtext.classify(None, 'Short teaser', 'ats_greenhouse', envelope)
+    assert kind == 'full'
+    assert text == html_to_text(body, limit=adtext.MAX_TEXT)
+    assert text.endswith('Applicants must be aged <25 and hold a mandatory driving licence. Salary >$50,000.')
+
+
 def test_html_to_text_double_escaped():
     assert html_to_text("&lt;p&gt;Hello&lt;/p&gt;&lt;p&gt;World &amp;amp; co&lt;/p&gt;") == "Hello\nWorld & co"
 

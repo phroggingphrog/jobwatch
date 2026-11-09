@@ -117,7 +117,6 @@ def _main(argv: list[str], *, deadline=None) -> int:
         from pipeline.agentic import incidents
         conn = dbm.connect(config.db_path)
         try:
-            import os
             result = os.environ.get('SERVICE_RESULT', 'success')
             if result != 'success':
                 incidents.reconcile_service_exit(conn, unit=args.unit,
@@ -130,7 +129,8 @@ def _main(argv: list[str], *, deadline=None) -> int:
     if args.cmd == "init-config":
         from . import users
         from .config import init_config
-        target = args.config_target or users.config_dir() or (users.user_dir() / "config")
+        target = (args.config_target or args.config_dir or os.environ.get("JOBWATCH_CONFIG_DIR")
+                  or (users.user_dir() / "config"))
         created = init_config(target)
         if created:
             for path in created:
@@ -182,7 +182,6 @@ def _main(argv: list[str], *, deadline=None) -> int:
         for problem in _check_profile():
             print("profile check:", problem)
         from pipeline.agentic import incidents
-        import os
         run_id = 'reader-' + uuid.uuid4().hex
         deadline = deadline if deadline is not None else time.time()+UNIT_BUDGET_S
         incidents.reconcile_known_failures(conn)
@@ -213,7 +212,6 @@ def _main(argv: list[str], *, deadline=None) -> int:
             _print_run(summary)
             return 0
         from pipeline.agentic import incidents
-        import os
         conn = dbm.connect(config.db_path)
         run_id = 'collector-' + uuid.uuid4().hex
         unit = os.environ.get('JOBWATCH_SERVICE_UNIT', 'manual')
