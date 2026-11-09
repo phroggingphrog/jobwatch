@@ -172,6 +172,36 @@ def test_truncated_envelope_normalizes_html_before_limiting_ad(tmp_path, source,
     assert text.endswith('MANDATORY LICENCE AT END')
 
 
+def test_truncated_envelope_keeps_escaped_eligibility_requirements(tmp_path):
+    from jobwatch import db
+    from jobwatch.dedupe import ingest
+    from jobwatch.util import adtext
+
+    body = ('<p>' + 'Synthetic employer requires careful evidence review. ' * 80
+            + 'Applicants must be aged &lt;25 and hold a mandatory driving licence. Salary &gt;$50,000.</p>')
+    posting = Posting(source='ats_greenhouse', source_id='synthetic:comparison',
+                      url='https://example.invalid/comparison', title='Synthetic vacancy',
+                      description=body, raw={'metadata': 'x' * (RAW_JSON_LIMIT + 1), 'content': body})
+    with db.connect(tmp_path / 'jobs.db') as conn:
+        posting_id, _ = ingest(conn, posting)
+        saved = conn.execute('SELECT * FROM postings WHERE id=?', (posting_id,)).fetchone()
+        text, kind = adtext.classify(None, saved['description'], saved['source'], saved['raw_json'])
+    assert kind == 'full'
+    assert text.endswith('Applicants must be aged <25 and hold a mandatory driving licence. Salary >$50,000.')
+
+
+def test_legacy_truncated_envelope_still_normalizes_html():
+    from jobwatch.util import adtext
+
+    body = ('<p>Synthetic employer requires careful evidence review.</p>' * 80
+            + '<p>Applicants must be aged &lt;25 and hold a mandatory driving licence. Salary &gt;$50,000.</p>')
+    envelope = json.dumps({'_truncated': {'original_chars': RAW_JSON_LIMIT + 1}, '_ad': body})
+    text, kind = adtext.classify(None, 'Short teaser', 'ats_greenhouse', envelope)
+    assert kind == 'full'
+    assert text == html_to_text(body, limit=adtext.MAX_TEXT)
+    assert text.endswith('Applicants must be aged <25 and hold a mandatory driving licence. Salary >$50,000.')
+
+
 def test_html_to_text_double_escaped():
     assert html_to_text("&lt;p&gt;Hello&lt;/p&gt;&lt;p&gt;World &amp;amp; co&lt;/p&gt;") == "Hello\nWorld & co"
 

@@ -102,6 +102,7 @@ class Posting:
             ad = None
         if isinstance(ad, str) and ad:
             envelope["_ad"] = html_to_text(ad, limit=RAW_AD_TEXT_LIMIT)
+            envelope["_ad_format"] = "plain_text"
         for key in ("classification", "site"):
             value = raw.get(key)
             if isinstance(value, str) and value:

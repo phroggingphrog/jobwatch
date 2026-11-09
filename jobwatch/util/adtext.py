@@ -789,6 +789,8 @@ def _raw_text(source: str, raw_json) -> str:
         return ""
     if raw.get("_truncated") is not None:      # bounded envelope: the ad text is kept explicitly
         ad = raw.get("_ad")
+        if isinstance(ad, str) and raw.get("_ad_format") == "plain_text":
+            return ad[:MAX_TEXT]
         return html_to_text(ad, limit=MAX_TEXT) if isinstance(ad, str) else ""
     pick = SOURCE_AD_TEXT.get(source)
     if not pick:
