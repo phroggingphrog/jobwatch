@@ -2,7 +2,7 @@
 
 This checkout is the isolated `jobwatch-new` single-owner continuation. Execution
 is off and no service activation is part of source work. The older multi-person
-implementation and acceptance notes are historical; INTENT.md was removed pending a revamp.
+implementation and acceptance notes are historical.
 For this copy, load the private `../env` before invoking runtime commands. It pins
 settings loading away from the retired installation. Keep that file outside Git.
 
@@ -42,7 +42,6 @@ local storage does not mean all processing is offline.
 - [Application and reader workflows](docs/application-workflows.md)
 - [Detailed setup](SETUP.md)
 - [Glossary](GLOSSARY.md) and [architecture decisions](docs/adr/)
-- [Profile-preference audit and evidence limits](docs/archive/audits/2026-10-22-profile-preferences.md)
 
 No package move or source change activates services or authorizes a deployment.
 Use synthetic fixtures for local checks and verify the owner's actual deployment

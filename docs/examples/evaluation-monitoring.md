@@ -109,4 +109,4 @@ A partial or bounded replay is explicitly `partial_replay`; it cannot support a 
 
 Undo a source release by reverting its reviewed source changes. Preserve baseline inputs, labels, split, holdout access log, replay results, fits and reports as historical evidence. Do not erase them as part of source rollback.
 
-This illustrative example describes CLI source behavior. The [release evidence](../audits/2026-10-23-evaluation-monitoring.md) records **3804 passed, 11 skipped**, two real synthetic R/JAGS checks and resolved independent review. It also discloses the smoke-harness installed-database access incident; no claim of zero installed-state access is made. Synthetic examples demonstrate shapes, not recommendation quality or deployment.
+This illustrative example describes CLI source behavior. The release evidence records **3804 passed, 11 skipped**, two real synthetic R/JAGS checks and resolved independent review. It also discloses the smoke-harness installed-database access incident; no claim of zero installed-state access is made. Synthetic examples demonstrate shapes, not recommendation quality or deployment.

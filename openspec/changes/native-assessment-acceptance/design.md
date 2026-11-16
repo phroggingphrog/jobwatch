@@ -9,7 +9,7 @@ historical lack of an invocation limit described below motivated the now-landed
 `max_assessments` control. Provider acceptance, completed reuse and live reader
 observation remain unchecked in this change's evidence record.
 
-Current `INTENT.md` and explicit owner restrictions govern execution. The release
+The owner's current direction and explicit restrictions govern execution. The release
 plan below is conditional, not authorization to spend, change routing, start
 services or restore automatic assessment. Do not infer present timer/process
 state from historical notes. Verify exact deployed revision and effective

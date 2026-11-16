@@ -117,9 +117,5 @@ quality figure. Tags, groups and synthetic checks do not stand in for those labe
   while the replacement policy is validated) and brief 5 (identical frozen inputs,
   required categories, no leakage across splits, explicit missing labels, no claim
   without evidence).
-- [INTENT.md](../../INTENT.md), "Preserve the inherited holistic score as a
-  comparison baseline".
-- The code map, section 1, in
-  [the codemap](../superpowers/plans/reference/2026-10-21-codemap.md).
 - [ADR 0002](0002-profile-intake-and-approval.md) and
   [the backend contract](../../pipeline/agentic/CHAT.md).

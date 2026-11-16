@@ -9,7 +9,7 @@ instructions to rebuild the native evaluator. Screen-first admission feeds this
 slice; package consolidation is independent.
 
 Provider attempts and release steps are conditional on fresh explicit owner
-authorization under current `INTENT.md`. This checklist authorizes no spending,
+authorization under the owner's current direction. This checklist authorizes no spending,
 routing changes, service activation or deployment. Old service SHAs, experiment
 results and timer observations below are historical, not current runtime facts.
 TASK-279 is historical tracking provenance; follow current issue guidance.

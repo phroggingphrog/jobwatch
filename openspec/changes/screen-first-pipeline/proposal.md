@@ -43,7 +43,7 @@ remain open until supported by current evidence and separate authorization.
 
 ## Rollback and containment
 
-Follow current `INTENT.md`: source reconciliation does not authorize deployment,
+Follow the owner's current direction: source reconciliation does not authorize deployment,
 paid assessment or timer activation. Keep assessment off where acceptance is
 unverified. Any authorized release must preserve the effective runtime settings,
 exact prior revision, approvals and new records, and verify its actual rollback

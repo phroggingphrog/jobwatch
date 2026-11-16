@@ -19,4 +19,4 @@ the owner direction or issue. An accepted design is distinct from verified deliv
 
 Do not introduce separate bounded contexts or service boundaries merely because
 an agent framework offers them. Explain any proposed split against
-[INTENT.md](../../INTENT.md) and record the agreed decision before implementation.
+the owner's direction and record the agreed decision before implementation.

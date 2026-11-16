@@ -95,8 +95,5 @@ approval, and an agent-generated answer is never recorded as a person's choice.
   exclusions are rules; agent answers are never recorded as user choices).
 - Owner's words: "Remove person-specific assumptions from application code.
   Preserve genuine eligibility constraints."
-- [INTENT.md](../../INTENT.md), "Evidence matching overhaul".
-- The code map, section 2, in
-  [the codemap](../superpowers/plans/reference/2026-10-21-codemap.md).
 - [ADR 0002](0002-profile-intake-and-approval.md), [ADR 0003](0003-frozen-baseline.md)
   and [the backend contract](../../pipeline/agentic/CHAT.md).

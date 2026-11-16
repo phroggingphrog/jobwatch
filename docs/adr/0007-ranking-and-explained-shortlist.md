@@ -1,12 +1,12 @@
 # ADR 0007: Evidence-based ranking and explained shortlist
 
-**Status:** Accepted and implemented on the Phase 5 branch; independently reviewed, with an intermittent browser-test validation gap recorded in the [source verification report](../audits/2026-10-22-shortlist-release.md) (2026-10-22).
+**Status:** Accepted and implemented on the Phase 5 branch; independently reviewed, with an intermittent browser-test validation gap recorded in the source verification report (2026-10-22).
 
 ## Context
 
-Jobwatch must surface plausible opportunities while showing the evidence, unknowns and practical conditions behind each one. The inherited holistic score cannot serve as the sole suitability rule: it can reject supported employment-first opportunities and obscure missing evidence. Preference predictions are distinct from eligibility and require genuine owner choices. The approved design follows the matching direction in [INTENT.md](../../INTENT.md) and the owner's instruction to “Preserve it as a comparison baseline.” Phase 5 delivery is tracked in [GitHub issue #16](https://github.com/phroggingphrog/jobwatch/issues/16), with matching evaluation in [issue #6](https://github.com/phroggingphrog/jobwatch/issues/6).
+Jobwatch must surface plausible opportunities while showing the evidence, unknowns and practical conditions behind each one. The inherited holistic score cannot serve as the sole suitability rule: it can reject supported employment-first opportunities and obscure missing evidence. Preference predictions are distinct from eligibility and require genuine owner choices. The approved design follows the owner's instruction to “Preserve it as a comparison baseline.” Phase 5 delivery is tracked in [GitHub issue #16](https://github.com/phroggingphrog/jobwatch/issues/16), with matching evaluation in [issue #6](https://github.com/phroggingphrog/jobwatch/issues/6).
 
-The binding implementation contract is the [Phase 5 execution plan](../superpowers/plans/2026-10-22-phase-5-execution.md). The older [Plan 4](../superpowers/plans/2026-10-21-plan-4-ranking-shortlist.md) and [cross-plan contract](../superpowers/plans/2026-10-21-cross-plan-contract.md) remain historical background where they conflict with this accepted design.
+The binding implementation contract was the Phase 5 execution plan. The older Plan 4 and cross-plan contract were historical background where they conflicted with this accepted design.
 
 ## Decision
 
@@ -26,7 +26,7 @@ The binding implementation contract is the [Phase 5 execution plan](../superpowe
 
 The first-day order is provisional and available without preference answers. Preference fits can reorder within label tiers only after their provenance and validity checks pass. Historical choices and fits do not silently become current under a changed feature schema; migration is explicit and preserves the original record and split. `status_held` has no learned effect until actual owner choices contain held alternatives. The R/JAGS toolchain was verified with synthetic fits under the unchanged acceptance gates. Ranking, shortlist read/build/refresh make no model calls.
 
-The remaining evaluation is governed by Phase 5's plan and GitHub issues [#16](https://github.com/phroggingphrog/jobwatch/issues/16) and [#6](https://github.com/phroggingphrog/jobwatch/issues/6). Independent source review is complete. The [source verification report](../audits/2026-10-22-shortlist-release.md) records 3653 passing tests, 11 skips and one intermittent browser failure in the complete run, plus the passing browser-module rerun. Synthetic checks establish mechanics and invariants, not recommendation quality. Source verification does not establish merge or deployment.
+The remaining evaluation is governed by Phase 5's plan and GitHub issues [#16](https://github.com/phroggingphrog/jobwatch/issues/16) and [#6](https://github.com/phroggingphrog/jobwatch/issues/6). Independent source review is complete. The source verification report records 3653 passing tests, 11 skips and one intermittent browser failure in the complete run, plus the passing browser-module rerun. Synthetic checks establish mechanics and invariants, not recommendation quality. Source verification does not establish merge or deployment.
 
 ## Non-goals
 
@@ -36,8 +36,5 @@ The remaining evaluation is governed by Phase 5's plan and GitHub issues [#16](h
 
 ## References
 
-- [INTENT.md: Evidence matching overhaul](../../INTENT.md)
-- [Phase 5 execution plan](../superpowers/plans/2026-10-22-phase-5-execution.md)
-- [Original Plan 4 (historical background)](../superpowers/plans/2026-10-21-plan-4-ranking-shortlist.md)
 - [GitHub issue #16: Phase 5 ranking and explained shortlist](https://github.com/phroggingphrog/jobwatch/issues/16)
 - [GitHub issue #6: matching evaluation](https://github.com/phroggingphrog/jobwatch/issues/6)

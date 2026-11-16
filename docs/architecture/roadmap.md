@@ -41,7 +41,7 @@ JobWatch is not a bulk application bot, a chatbot with extra prompts, or a colle
 
 Use the references as design foundations, not as permission to copy every architectural decision.
 
-The original Career Ops implementation is a methodological reference. Its local-first CLI workflow and global fit thresholds are not automatically JobWatch's implementation contracts. Career Ops prohibits application submission outright; JobWatch permits it only through `jobwatch/apply/submit_confirm.py`, bound to exact reviewed inputs and the owner's confirmed action, with no blanket auto-submit permission (`INTENT.md`).
+The original Career Ops implementation is a methodological reference. Its local-first CLI workflow and global fit thresholds are not automatically JobWatch's implementation contracts. Career Ops prohibits application submission outright; JobWatch permits it only through `jobwatch/apply/submit_confirm.py`, bound to exact reviewed inputs and the owner's confirmed action, with no blanket auto-submit permission.
 
 ## 3. Architecture principles
 
@@ -451,10 +451,6 @@ Future infrastructure upgrades should be proposed separately with evidence that 
 
 ### Primary product references
 
-- [JobWatch INTENT.md](https://github.com/phroggingphrog/jobwatch/blob/main/INTENT.md) — authoritative product direction.
-- [JobWatch architecture inventory](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/codebase-map.md) — implemented module ownership and recorded limitations.
-- [JobWatch Career Ops comparison](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/career-ops-comparison.md) — comparison against a pinned donor revision.
-- [JobWatch native assessment failures](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/assessment-failures.md) — known protocol, validation and cost failures.
 - [JobWatch candidate digest lifecycle](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/candidate-digest.md) — reusable candidate understanding design.
 - [TASK-279 / Issue #31](https://github.com/phroggingphrog/jobwatch/issues/31) — immediate native assessment recovery.
 
@@ -478,7 +474,7 @@ This document describes intended architecture and development direction. It must
 
 Maintain these separately:
 
-- **Product intent:** `INTENT.md`.
+- **Product intent:** the owner's direction.
 - **Architecture:** this reference and accepted architecture decisions.
 - **Implementation:** source code and tests.
 - **Work in progress:** issues, OpenSpec tasks and reviewed change records.

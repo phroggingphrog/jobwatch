@@ -3,8 +3,9 @@
 Status: historical record, not the current product specification.
 
 This preserves the previous INTENT.md verbatim below, including superseded
-instructions and exact owner quotations. Use [current intent](../../INTENT.md)
-for normative requirements. This record does not establish implementation or deployment.
+instructions and exact owner quotations. INTENT.md has since been removed pending
+a revamp, so no current normative intent file exists. This record does not
+establish implementation or deployment.
 
 ---
 
@@ -98,7 +99,7 @@ Owner follow-up on 2026-10-22:
 Personal preferences must come from each person's confirmed profile, not inherited
 geographic, career, seniority or writing assumptions in shared code. Missing facts
 stay unknown. The collector/ingest regional prefilter now reads the confirmed
-policy. The [source audit](docs/archive/audits/2026-10-22-profile-preferences.md) preserves
+policy. The source audit preserves
 the original findings and records their source repairs across active and retained
 paths, separately from reference data and technical controls. Its verification
 limits still apply; source repairs do not establish live recommendation quality.
@@ -295,7 +296,7 @@ facts and practical conditions remain distinct. Neutral priors stay neutral, and
 a valid genuine-choice fit can personalise within evidence tiers. The owner selected
 explicit historical-choice migration tooling that preserves original records; no live
 migration or fitting follows from implementation. The approved scope and interfaces
-are recorded in the [Phase 5 plan](docs/archive/superpowers/plans/2026-10-22-phase-5-execution.md).
+are recorded in the Phase 5 plan.
 
 ## Contextual inline interfaces
 

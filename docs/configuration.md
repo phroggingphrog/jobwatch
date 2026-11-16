@@ -1,6 +1,6 @@
 # Configuration and collection
 
-[Project overview](../README.md) · [Current intent](../INTENT.md)
+[Project overview](../README.md)
 
 Reference material moved from README; commands describe available source interfaces,
 not proof of current service activation or end-to-end acceptance.

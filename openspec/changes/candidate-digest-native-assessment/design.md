@@ -11,13 +11,13 @@ strategies, not mandatory orchestration steps.
 
 The historical revisions and service observations below do not identify a current
 running process. Acceptance/reuse and release tasks remain unverified in these
-records. Current `INTENT.md` controls containment: no paid attempts, routing
+records. The owner's current direction controls containment: no paid attempts, routing
 changes, deployment or activation are authorized by this artifact. Treat the
 migration plan as conditional future work requiring fresh explicit authorization.
 
 ## Historical context
 
-See proposal.md and docs/architecture/assessment-failures.md. Live9111a0d wraps the legacy evaluator; pending7a37865 plus edits replaces it but removed separate candidate understanding. Four DeepSeek experiments failed. A saved live summary passes its terminal schema yet fails the canonical4000-character section limit.
+See proposal.md. Live9111a0d wraps the legacy evaluator; pending7a37865 plus edits replaces it but removed separate candidate understanding. Four DeepSeek experiments failed. A saved live summary passes its terminal schema yet fails the canonical4000-character section limit.
 
 ## Goals / Non-Goals
 

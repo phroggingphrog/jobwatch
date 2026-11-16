@@ -2,7 +2,7 @@
 
 Date: 2026-10-23
 
-Status: Implemented, locally verified and independently reviewed; delivered in PR #25. See [the release evidence](../audits/2026-10-23-evaluation-monitoring.md) for actual results and the verification incident. The former `--user` CLI selector is superseded by the single-owner continuation; current commands use the server-bound owner without it.
+Status: Implemented, locally verified and independently reviewed; delivered in PR #25. The release evidence recorded the actual results and the verification incident. The former `--user` CLI selector is superseded by the single-owner continuation; current commands use the server-bound owner without it.
 
 ## Context
 
@@ -33,10 +33,8 @@ Complete Phase 7 only after the required local checks and independent review pas
 
 ## References
 
-- [Jobwatch intent](../../INTENT.md)
 - [Backend contract](../../pipeline/agentic/CHAT.md)
 - [Frozen evaluation and monitoring example](../examples/evaluation-monitoring.md)
-- [Phase 7 plan and issue #22](../superpowers/plans/2026-10-23-finish-backend-roadmap.md)
 - `pipeline/agentic/eval_data.py`
 - `pipeline/agentic/evaluate_runs.py`
 - `pipeline/agentic/eval_metrics.py`

@@ -206,7 +206,7 @@ Feedback history and selection status are scoped to the authenticated person.
 This Phase 6 example does not expose evaluation reports or holdout results;
 private Phase 7 reports remain outside this implementation scope.
 
-The [release audit](../audits/2026-10-23-feedback-selection.md) records actual
+The release audit records actual
 native API/chat package checks, independent review and the complete local suite:
 **3758 passed, 11 skipped**. Synthetic checks establish workflow behavior, not
 real recommendation quality.

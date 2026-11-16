@@ -32,7 +32,7 @@ schema: spec-driven
 #         - Summarize the archive outcome before finishing
 
 context: |
-  Follow this repository's AGENTS.md and INTENT.md, plus /home/phroggingphrog/.agents/AGENTS.md.
+  Follow this repository's AGENTS.md, plus /home/phroggingphrog/.agents/AGENTS.md.
   Backlog owns overall work status; OpenSpec tasks.md is the implementation checklist. Link canonical specs from the card.
   Planning-only requests end at artifacts; an explicitly approved implementation plan continues under existing authorization.
   Verify deployment claims against the owner's exact URL/action and the loaded service/build; artifact readiness is not runtime proof.
