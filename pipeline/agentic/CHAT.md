@@ -348,9 +348,10 @@ runtime evidence, never packaged into a skill. Memory is advisory, not a profile
 ## Execution modes and diagnostics
 
 `pipeline.execution_mode` is the single effective AI selection: `off`, `screened`
-or `agentic`. The retired `reader` and `pipeline` values resolve to `off`.
-Installations without it use `screened` when `pipeline.agentic.enabled` is true,
-otherwise `off`. Collection is independent. Roll back by selecting the desired effective mode, not toggling a
+or `agentic`. The retired `reader` and `pipeline` values are still accepted, but
+collection dispatches no assessment under them. Installations without it use
+`screened` when `pipeline.agentic.enabled` is true, otherwise the retired `reader`
+value (chat and the API stay available; nothing is assessed). Collection is independent. Roll back by selecting the desired effective mode, not toggling a
 legacy flag underneath it.
 
 Collector IDs, batch IDs, API invocation IDs, job run keys and posting IDs are

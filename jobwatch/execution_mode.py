@@ -1,9 +1,10 @@
 """Resolve one effective AI mode: off, screened or agentic.
 
-The retired `reader` and `pipeline` modes resolve to `off`, so an older configuration never dispatches paid work."""
+`reader` and `pipeline` are retired: they are still accepted (so an older configuration keeps chat and the API
+available), but collection no longer dispatches any assessment under them."""
 from __future__ import annotations
 
-MODES = ('off', 'agentic', 'screened')
+MODES = ('off', 'reader', 'pipeline', 'agentic', 'screened')
 RETIRED_MODES = ('reader', 'pipeline')
 
 
@@ -12,12 +13,11 @@ def effective_mode(config) -> str:
     pipeline = root.get('pipeline', root)
     mode = pipeline.get('execution_mode')
     if mode is not None:
-        if mode in RETIRED_MODES:
-            return 'off'
         if mode not in MODES:
             raise ValueError('invalid_execution_mode')
         return mode
-    # An explicit mode supersedes the old flag. Screened is the main path (owner 2026-10-31); agentic runs on promoted jobs.
+    # Preserve the old precedence. An explicit mode supersedes both old flags.
+    # Screened replaced standalone agentic as the main path (owner 2026-10-31); agentic now runs on promoted jobs.
     if pipeline.get('agentic', {}).get('enabled') is True:
         return 'screened'
-    return 'off'
+    return 'pipeline' if pipeline.get('enabled') is True else 'reader'
