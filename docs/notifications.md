@@ -64,8 +64,7 @@ A config never holds a secret. Anything secret is a **reference**, a key ending 
   every incident pending.
 * **Receipts** (`notify_receipts`): one row per attempt: channel, attempt number, `delivered` or `failed`, a short code.
 
-Incident rows show the delivery as `delivered`, `pending`, `failed` or `no_channel` on the web page, in the API and in
-the MCP app.
+Incident rows show the delivery as `delivered`, `pending`, `failed` or `no_channel` on the web page and in the API.
 
 Tables: `notify_channels`, `notify_outbox`, `notify_receipts` (database migration 17; `jobwatch.notifier.ensure()`
 creates them in a database that has not been migrated).

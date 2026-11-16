@@ -732,7 +732,7 @@ def test_owner_label_model_limits():
 
 
 def test_label_writer_is_not_reachable_from_agent_surfaces():
-    for name in ('api', 'chat', 'profile_api', 'mcp_server', 'deepagents_runtime', 'api_store'):
+    for name in ('api', 'chat', 'profile_api', 'deepagents_runtime', 'api_store'):
         text = (ROOT / 'pipeline' / 'agentic' / f'{name}.py').read_text()
         assert 'pipeline.agentic.baseline' not in text and 'from .baseline' not in text
         assert 'label_case' not in text and 'write_label' not in text

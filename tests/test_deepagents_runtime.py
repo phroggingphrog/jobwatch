@@ -347,14 +347,6 @@ def test_retry_preserves_admission_limits(tmp_path, monkeypatch, busy):
         assert store.raw_run(old)['state']=='deferred'
 
 
-def test_mcp_followup_approval_uses_application_identity():
-    pytest.importorskip('fastmcp')
-    from pipeline.agentic.mcp_server import _input_request
-    _, request=_input_request({'type':'approval','posting_id':None,'operation':'draft_followup',
-        'binding':{'arguments':{'application_id':42}}}, 0)
-    assert 'application 42' in request.params.message
-
-
 def test_chat_skill_files_are_read_only(tmp_path, monkeypatch):
     from jobwatch.util import model_choice as model_choice
     from pipeline.agentic.chat import dispatch
@@ -954,7 +946,6 @@ def test_api_health_remains_available_while_polling_blocks(tmp_path, monkeypatch
     from pipeline.agentic.api import create_api, Principal
     from pipeline.agentic.api_store import APIStore
     monkeypatch.setenv('JOBWATCH_DATA_DIR', str(tmp_path))
-    monkeypatch.delenv('JOBWATCH_LIBRECHAT_IDENTITY_KEY', raising=False)
     monkeypatch.delenv('JOBWATCH_NATIVE_BROWSER_ENABLED', raising=False)
     entered, release = threading.Event(), threading.Event()
     original = APIStore.claim_next

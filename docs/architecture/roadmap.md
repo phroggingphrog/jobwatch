@@ -45,7 +45,7 @@ The original Career Ops implementation is a methodological reference. Its local-
 
 ## 3. Architecture principles
 
-1. **Native API first.** The backend owns operations, identity, state and authorization. Web, CLI, LibreChat and MCP are interfaces.
+1. **Native API first.** The backend owns operations, identity, state and authorization. The web interface and CLI are clients.
 2. **Shared domain truth.** Every orchestrator uses the same candidate facts, job snapshots, evaluations, models and approval records.
 3. **Multiple orchestrators, not competing pipelines.** Different workflows may use different execution strategies but must not duplicate business authority.
 4. **Deep Agents for open-ended reasoning.** Use agents for research, interpretation, investigation and preparation rather than routine deterministic calculations.
@@ -61,10 +61,8 @@ The original Career Ops implementation is a methodological reference. Its local-
 ```text
 CLIENT / INTEGRATION LAYER
   Native web interface
-  CLI / TUI / ACP
+  CLI
   Pi skill router (.pi/skills/jobwatch, modes over pipeline/agentic/skills)
-  LibreChat test adapter
-  MCP integration — chat turn tools plus read-only career reads
                 |
                 v
 AUTHENTICATED NATIVE API

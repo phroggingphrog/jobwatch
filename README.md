@@ -21,8 +21,8 @@ changes.
 
 The authenticated native agent API owns durable conversations and orchestration.
 Canonical Jobwatch services enforce evidence, eligibility, review, packages and
-human authorization. Standard LibreChat, the separate website and optional MCP
-adapters are clients, not alternative sources of authority.
+human authorization. The separate website and any other native API client are
+clients, not alternative sources of authority.
 
 See the [backend contract](pipeline/agentic/CHAT.md) for native operations and
 client boundaries. Collection dispatch selects the assessment mode; the top-level

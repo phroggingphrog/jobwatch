@@ -10,11 +10,10 @@ from jobwatch import users
 
 def call(operation, *, posting_id=None, application_id=None, arguments=None):
     from pipeline.agentic.api import credentials_from_env
-    from pipeline.agentic.identity import credentials
     base = os.environ['JOBWATCH_NATIVE_BROWSER_URL'].rstrip('/')
     if urlparse(base).scheme != 'http' or urlparse(base).hostname not in ('127.0.0.1', 'localhost', '::1'):
         raise HTTPException(503, 'browser_configuration_unavailable')
-    keys = [key for key,p in {**credentials_from_env(), **credentials()}.items()
+    keys = [key for key,p in credentials_from_env().items()
             if p.person == users.current() and 'approve' in p.scopes]
     if len(keys) != 1:
         raise HTTPException(503, 'browser_identity_unavailable')
@@ -33,11 +32,10 @@ def application_review(posting_id: int, *, expected: str | None = None) -> dict:
     """The live form's review from the native browser owner (GET), or with `expected` the person's confirmation of the
     corrected form (POST); the same endpoints the website's review and Submit use. Needs the person's approve key."""
     from pipeline.agentic.api import credentials_from_env
-    from pipeline.agentic.identity import credentials
     base = os.environ['JOBWATCH_NATIVE_BROWSER_URL'].rstrip('/')
     if urlparse(base).scheme != 'http' or urlparse(base).hostname not in ('127.0.0.1', 'localhost', '::1'):
         raise HTTPException(503, 'browser_configuration_unavailable')
-    keys = [key for key, p in {**credentials_from_env(), **credentials()}.items()
+    keys = [key for key, p in credentials_from_env().items()
             if p.person == users.current() and 'approve' in p.scopes]
     if len(keys) != 1:
         raise HTTPException(503, 'browser_identity_unavailable')

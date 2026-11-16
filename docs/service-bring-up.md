@@ -48,7 +48,7 @@ put the checkout there or edit every unit.
 
 ```bash
 cd ~/apps/jobwatch && git fetch origin main && git checkout main
-uv sync --frozen --extra browser          # add --extra mcp only if the MCP adapter is wanted
+uv sync --frozen --extra browser
 uv run --no-sync python -m playwright install --with-deps chromium
 ```
 

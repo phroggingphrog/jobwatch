@@ -33,7 +33,3 @@ pipeline:
     max_batch_jobs: 20
     concurrency: 2
     decision_policy: profile
-mcp_client:
-  # Optional external MCP tools are off unless the owner configures them.
-  enabled: false
-  servers: []

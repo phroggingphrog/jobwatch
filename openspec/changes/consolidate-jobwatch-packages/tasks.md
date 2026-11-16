@@ -13,8 +13,7 @@ full reconciled suite once after the writers finish, not after every move.
   ownership, removed embedded UI and retained compatibility paths; distinguish
   static findings from runtime and acceptance gaps.
 
-Evidence: `docs/adr/0011-owner-direction-history.md`,
-`docs/agents/architecture-inventory.md` and its link from `docs/agents/domain.md`.
+Evidence: `docs/adr/0011-owner-direction-history.md`.
 ## Source reconciliation (2026-11-08)
 
 `main` at `0ea4fe0` already contains `jobwatch/interview/`, `jobwatch/followup/`,
