@@ -2,7 +2,7 @@
 
 This checkout is the isolated `jobwatch-new` single-owner continuation. Execution
 is off and no service activation is part of source work. The older multi-person
-implementation and acceptance notes are historical; current scope is in INTENT.md.
+implementation and acceptance notes are historical; INTENT.md was removed pending a revamp.
 For this copy, load the private `../env` before invoking runtime commands. It pins
 settings loading away from the retired installation. Keep that file outside Git.
 
@@ -14,8 +14,8 @@ to submit through its canonical confirmation path.
 
 The current delivery priority is one reliable native Screening → Evaluation
 slice. Available modules and command references are not claims of end-to-end
-acceptance or deployment. Read [current intent](INTENT.md) for the product contract
-and [contributor guidance](AGENTS.md) before making changes.
+acceptance or deployment. Read [contributor guidance](AGENTS.md) before making
+changes.
 
 ## Architecture
 

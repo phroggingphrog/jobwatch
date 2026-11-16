@@ -4,14 +4,14 @@ Dev work: see ~/.agents/AGENTS.md. OpenSpec only for substantial changes (opensp
 
 # Working on Jobwatch
 
-Read [INTENT.md](INTENT.md) before changing behavior. The owner's latest explicit
-direction takes precedence; preserve their words and do not silently narrow the goal.
+INTENT.md was removed on the owner's direction (2026-11-16) pending a full revamp.
+The owner's latest explicit direction takes precedence; preserve their words and do
+not silently narrow the goal. The previous text is in git history.
 
 ## Repository guidance
 
 | File | What it sets |
 |---|---|
-| [INTENT.md](INTENT.md) | Product intent, current backend scope and success criteria. |
 | [Issue tracker](docs/agents/issue-tracker.md) | GitHub Issues through `gh`; external PRs do not authorize work. |
 | [Triage labels](docs/agents/triage-labels.md) | Seven default triage labels. |
 | [Domain](docs/agents/domain.md) | One domain context, root glossary and architecture decisions. |
