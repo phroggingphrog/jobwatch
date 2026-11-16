@@ -65,19 +65,10 @@ A config never holds a secret. Anything secret is a **reference**, a key ending 
 * **Receipts** (`notify_receipts`): one row per attempt: channel, attempt number, `delivered` or `failed`, a short code.
 
 Incident rows show the delivery as `delivered`, `pending`, `failed` or `no_channel` on the web page, in the API and in
-the MCP app. Rows written by earlier versions (stored as `handed_off`) read as `delivered`.
+the MCP app.
 
 Tables: `notify_channels`, `notify_outbox`, `notify_receipts` (database migration 17; `jobwatch.notifier.ensure()`
 creates them in a database that has not been migrated).
-
-## Older install-wide settings (alias)
-
-Before channels existed, two settings pushed urgent messages over ssh: `JOBWATCH_HERMES_SSH` (`user@host`) and
-`JOBWATCH_HERMES_FILE` (the remote file). They still work. While both are set, the **default person** (the owner)
-gets an equivalent `ssh_append` channel named `legacy-env` at runtime, nothing is stored and nothing needs
-configuring. The alias steps aside as soon as that person has a channel of their own that can deliver, and
-`jobwatch notify channels disable legacy-env` turns it off. Other accounts never use it. Only
-`jobwatch/notifier/legacy.py` knows these names.
 
 ## Adding another transport (design: a chat-bot service such as Telegram)
 
