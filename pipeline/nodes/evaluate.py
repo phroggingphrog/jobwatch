@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from jobwatch.reader import _defang
+from jobwatch.adscan import _defang
 
 from ..schemas import JobFacts, MatchScore, Profile
 from ..structured import call

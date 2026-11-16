@@ -347,10 +347,10 @@ runtime evidence, never packaged into a skill. Memory is advisory, not a profile
 
 ## Execution modes and diagnostics
 
-`pipeline.execution_mode` is the single effective AI selection: `off`, `reader`,
-`pipeline`, or `agentic`. It supersedes legacy booleans. Installations without it
-retain the old precedence: agentic, then pipeline, then reader. Collection is
-independent. Roll back by selecting the desired effective mode, not toggling a
+`pipeline.execution_mode` is the single effective AI selection: `off`, `screened`
+or `agentic`. The retired `reader` and `pipeline` values resolve to `off`.
+Installations without it use `screened` when `pipeline.agentic.enabled` is true,
+otherwise `off`. Collection is independent. Roll back by selecting the desired effective mode, not toggling a
 legacy flag underneath it.
 
 Collector IDs, batch IDs, API invocation IDs, job run keys and posting IDs are
@@ -479,8 +479,8 @@ This change belongs to the shared backend pipeline; it adds no chat or website U
 
 ### Preference policy and historical data
 
-`candidate.eligibility.evaluate_eligibility` is shared by native assessment, the retained reader and
-deterministic pipeline. Numeric advertised hours are compared with confirmed limits; program titles grant no
+`candidate.eligibility.evaluate_eligibility` is shared by native assessment and the
+deterministic screening pipeline. Numeric advertised hours are compared with confirmed limits; program titles grant no
 blanket exemption. A requested junior level does not create a two-year experience cutoff. Separate citizen,
 permanent-resident, clearance and sponsorship facts are checked against quoted ad requirements; unknowns
 and contradictions stay held. Holistic/career scores are advisory, not exclusion thresholds.

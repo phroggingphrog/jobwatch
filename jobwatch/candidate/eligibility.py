@@ -36,7 +36,7 @@ def _rights_text(text):
 
 def _scan_requirements(text, title=''):
     """Use the reader's conservative ad-only scanner, including negation and alternatives."""
-    from jobwatch.reader import (_scan_full, _resolve_ongoing, _CITIZEN_PATTERNS,
+    from jobwatch.adscan import (_scan_full, _resolve_ongoing, _CITIZEN_PATTERNS,
                                  _CLEARANCE_PATTERNS, _UNRESTRICTED_PATTERNS)
     text = _rights_text(text)
     requirements = []

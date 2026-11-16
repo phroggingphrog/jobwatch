@@ -467,7 +467,7 @@ def test_unknown_family_is_read_from_the_archetype():
 
 
 def test_ad_inviting_visa_holders_is_not_a_citizenship_requirement():
-    from jobwatch.reader import rights_backstop
+    from tests.fixtures.frozen_reader_rules import rights_backstop
     welcome = ("Casual data entry clerk. If you are not a citizen or permanent resident please provide details of your "
                "visa type, expiry date, and working hours restrictions if any.")
     assert rights_backstop(welcome) is None

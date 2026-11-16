@@ -78,7 +78,7 @@ def test_tags_come_back_in_contract_order():
 def test_gate_sources_are_the_reconciled_gate_files():      # contract decision 5
     assert set(baseline.gate_sources()) == {
         'pipeline.agentic.gate', 'pipeline.agentic.location', 'jobwatch.candidate.person',
-        'jobwatch.reader', 'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
+        'jobwatch.adscan', 'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
         'jobwatch.candidate.eligibility', 'jobwatch.candidate.projection', 'jobwatch.models',
         'pipeline.agentic/data/vic-geo.json', 'pipeline.agentic/data/metro-localities.json'}
     assert re.fullmatch(r'[0-9a-f]{64}', baseline.GATE_VERSION)

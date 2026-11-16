@@ -84,7 +84,7 @@ jobwatch baseline show bl-20261021T154735Z-b76dfaea --cases
     "jobwatch.candidate.contracts": "5a6e038b…",
     "jobwatch.candidate.person": "5a8ba3fa…",
     "jobwatch.candidate.policy": "21db2fd3…",
-    "jobwatch.reader": "b4d5cf2c…",
+    "jobwatch.adscan": "b4d5cf2c…",
     "pipeline.agentic.gate": "4ecb1d24…",
     "pipeline.agentic.location": "e1b9b0f5…",
     "pipeline.agentic/data/metro-localities.json": "58b56b9d…",

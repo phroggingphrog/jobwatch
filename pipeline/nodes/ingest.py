@@ -18,7 +18,7 @@ from datetime import timedelta
 from jobwatch.util import adtext as adtext
 from jobwatch.filters import Rules
 from jobwatch.models import Posting, fold, now_utc
-from jobwatch.reader import is_sponsored
+from jobwatch.adscan import is_sponsored
 
 from .. import store
 from ..schemas import JobAd, Stage

@@ -950,8 +950,8 @@ def test_a_lever_ad_with_a_mid_length_description_is_read_from_the_whole_raw_tex
            "additionalPlain": "We are an equal opportunity employer. " * 20}
     text, kind = adtext.classify(None, opening, "ats_lever", json.dumps(raw))
     assert kind == "full" and "Australian citizenship" in text and len(text) > 1000
-    from jobwatch import reader
-    assert reader.rights_backstop(text)                                   # so the rule finds what the description hid
+    from tests.fixtures.frozen_reader_rules import rights_backstop
+    assert rights_backstop(text)                                   # so the rule finds what the description hid
     # a description that already is the whole ad stays as it is; a raw text that is not longer does not replace it
     assert adtext.classify(None, opening, "ats_lever", json.dumps({"descriptionPlain": opening})) == (opening.strip(), "full")
     assert adtext.classify(None, opening, "ats_lever", None) == (opening.strip(), "full")

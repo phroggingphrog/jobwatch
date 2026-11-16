@@ -14,7 +14,7 @@ from pydantic import field_validator
 
 from jobwatch.apply.evidence import load_profile
 from jobwatch.candidate.contracts import JOB_ROLE_FAMILIES, canonicalize_family
-from jobwatch.reader import _PROFILE_FALLBACK, _defang, load_interest
+from jobwatch.adscan import _PROFILE_FALLBACK, _defang, load_interest
 
 from ..schemas import JobFacts, Profile
 from ..structured import call

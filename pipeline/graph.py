@@ -250,16 +250,3 @@ def run_once(conn, db_path: str, config, *, llm: LLM | None = None, ingest_new: 
     return asyncio.run(g.run(ingest_new=ingest_new, limit=limit, max_seconds=max_seconds, posting_ids=posting_ids))
 
 
-def enabled(config) -> bool:
-    """pipeline.enabled in jobwatch.yaml: the timer runs call this graph instead of the old reader hook."""
-    from jobwatch.execution_mode import effective_mode
-    return config is not None and effective_mode(config) == 'pipeline'
-
-
-def after_collect(conn, config, max_seconds: float | None = None) -> dict:
-    """Timer hook (jobwatch.run.run): one graph run under the shared review lock, within the unit's time."""
-    from jobwatch.util import adtext as adtext
-    with adtext.review_lock(adtext.lock_path(config)) as got:
-        if not got:
-            return {"skipped": "busy"}
-        return run_once(conn, str(config.db_path), config, max_seconds=max_seconds)
