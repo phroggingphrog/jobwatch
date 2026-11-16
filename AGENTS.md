@@ -4,9 +4,8 @@ Dev work: see ~/.agents/AGENTS.md. OpenSpec only for substantial changes (opensp
 
 # Working on Jobwatch
 
-INTENT.md was removed on the owner's direction (2026-11-16) pending a full revamp.
 The owner's latest explicit direction takes precedence; preserve their words and do
-not silently narrow the goal. The previous text is in git history.
+not silently narrow the goal.
 
 ## Repository guidance
 

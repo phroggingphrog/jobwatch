@@ -2,9 +2,8 @@
 
 Status: historical record, not the current product specification.
 
-This preserves the previous INTENT.md verbatim below, including superseded
-instructions and exact owner quotations. INTENT.md has since been removed pending
-a revamp, so no current normative intent file exists. This record does not
+This preserves the owner's earlier product direction verbatim below, including
+superseded instructions and exact owner quotations. This record does not
 establish implementation or deployment.
 
 ---
@@ -182,9 +181,9 @@ Keywords may help discover postings; they do not decide personal fit.
   does not establish that a browser form was filled; final Submit needs the owner's click or
   their confirmation of that exact filled form.
 
-Operational contracts and setup are in [the backend guide](pipeline/agentic/CHAT.md).
-Domain terms live in [GLOSSARY.md](GLOSSARY.md); architecture decisions live in
-[docs/adr/](docs/adr/).
+Operational contracts and setup are in [the backend guide](../../pipeline/agentic/CHAT.md).
+Domain terms live in [GLOSSARY.md](../../GLOSSARY.md); architecture decisions live in
+[docs/adr/](./).
 
 ## Company research and existing model integration
 
@@ -253,8 +252,7 @@ Owner direction on 2026-10-21, on when discovery may run and how a profile is se
 Discovery runs for a person only while their current profile version is confirmed and carries a
 confirmed search scope. Initial setup is guided by the agent, which asks for the relevant files and
 asks the person questions while their documents are processed in the background. Confirmation does not
-authorise document preparation, employer messages or submission. See [ADR 0002](docs/adr/0002-profile-intake-and-approval.md)
-and [the worked example](docs/examples/profile-intake.md).
+authorise document preparation, employer messages or submission. See [ADR 0002](0002-profile-intake-and-approval.md).
 
 ## Semantic field and posting discovery
 
@@ -266,7 +264,7 @@ Title keywords may widen recall by adding postings for full-ad fetching; they
 never exclude a posting from semantic assessment or decide personal fit. Related
 occupations are search hypotheses, not proof of qualification. Similarity
 thresholds remain uncalibrated, and the current implementation makes no
-matching-accuracy claim. See [ADR 0005](docs/adr/0005-field-and-job-discovery.md).
+matching-accuracy claim. See [ADR 0005](0005-field-and-job-discovery.md).
 
 ## Confirmed Submit
 
