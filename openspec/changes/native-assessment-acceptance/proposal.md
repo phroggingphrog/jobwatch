@@ -11,8 +11,8 @@ historical evidence, not current runtime observations.
 
 The existing task record still leaves canonical provider acceptance,
 zero-paid completed reuse and release observation open. This reconciliation
-neither reruns them nor proves they have never occurred elsewhere. Current
-`INTENT.md` requires assessment to remain off in this continuation; paid attempts,
+neither reruns them nor proves they have never occurred elsewhere. The owner's
+current direction requires assessment to remain off in this continuation; paid attempts,
 routing changes, deployment and activation require separate explicit authorization.
 
 ## Why

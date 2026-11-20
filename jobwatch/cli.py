@@ -45,7 +45,7 @@ def _extensions():
     import importlib
     mods = []
     for name in ("jobwatch.apply.cli_ext", "jobwatch.outcomes.cli_ext",
-                 "jobwatch.web.cli_ext", "jobwatch.commands.review", "pipeline.cli", "jobwatch.commands.preference", "jobwatch.commands.profile",
+                 "jobwatch.web.cli_ext", "pipeline.cli", "jobwatch.commands.preference", "jobwatch.commands.profile",
                  "jobwatch.commands.baseline", "jobwatch.commands.evaluation", "jobwatch.notifier.cli",
                  "jobwatch.prescreen.cli"):
         try:

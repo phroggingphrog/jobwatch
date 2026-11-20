@@ -110,4 +110,4 @@ This is a design budget, not a measured cost. Model price depends on the configu
 
 ## Repository evidence
 
-Read-only checkout review used `INTENT.md`, `docs/architecture/source-catalog.md`, `pipeline/agentic/interview.py`, `pipeline/agentic/research.py`, `pipeline/agentic/company_research.py`, `jobwatch/interview/prep.py`, `jobwatch/interview/inputs.py`, `jobwatch/db.py`, and the interview-prep skill. No CV or profile files were read. No code from `last30days-skill` was run.
+Read-only checkout review used `pipeline/agentic/interview.py`, `pipeline/agentic/research.py`, `pipeline/agentic/company_research.py`, `jobwatch/interview/prep.py`, `jobwatch/interview/inputs.py`, `jobwatch/db.py`, and the interview-prep skill. No CV or profile files were read. No code from `last30days-skill` was run.

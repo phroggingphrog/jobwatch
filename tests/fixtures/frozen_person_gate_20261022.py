@@ -8,7 +8,7 @@ import re
 from jobwatch.candidate.contracts import TargetPolicy, canonicalize_family, excluded_families
 from jobwatch.candidate.policy import DecisionPolicy, exclusion_hit
 from jobwatch.candidate.person import full_time_programs_ok, hours_limit_per_fortnight
-from jobwatch.reader import blocking_quote, rights_backstop, unrestricted_backstop
+from tests.fixtures.frozen_reader_rules import blocking_quote, rights_backstop, unrestricted_backstop
 from pipeline.agentic.location import CAPITALS, cited_victoria_location, location_verdict, regions_named
 from pipeline.agentic.contracts import (
     AgenticError, AgenticEvaluation, AgenticGateDecision, RunKey, SourceCitation,

@@ -3,8 +3,8 @@
 ## Source reconciliation (2026-11-08)
 
 The flow is implemented in `main` at `0ea4fe0`. The diagram describes source
-behavior, not an unimplemented plan or verified runtime deployment. Current
-`INTENT.md` controls the single-owner, evaluation-only boundary. Candidate
+behavior, not an unimplemented plan or verified runtime deployment. The owner's
+current direction controls the single-owner, evaluation-only boundary. Candidate
 understanding and native assessment are specified by
 `candidate-digest-native-assessment`; its acceptance follow-up is
 `native-assessment-acceptance`. Package cleanup is not a prerequisite.

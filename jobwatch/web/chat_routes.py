@@ -31,7 +31,7 @@ earlier answers unless the snapshot clearly changed; if you were wrong, say so o
 
 def system_prompt() -> str:
     """SYSTEM plus the person's own reply style (profile.yaml candidate.reply_style) when they set one."""
-    from jobwatch.reader import person_prefs
+    from jobwatch.adscan import person_prefs
     style = person_prefs()["reply_style"]
     return SYSTEM + (f"\n\nReply style the person asked for: {style}" if style else "")
 

@@ -263,8 +263,7 @@ approval. Exact current draft/scope confirmation remains required and a draft ch
 against the turn's budget and may start one parse per turn. A draft left `parsing` by a dead worker (no live slot, file older
 than 2 x 180 s) reads back as `draft` with `parse_error` `parse_interrupted`, answers kept. The parse slot frees just after
 the draft turns `draft`, so an immediate new start can briefly see `proposal_in_progress`. A person-stated location does not
-drop a parsed one (both are kept). The optional MCP adapter cannot present profile confirmation and refuses it
-(`invalid_chat_interaction`); see the MCP section.
+drop a parsed one (both are kept).
 
 Discovery (collection and automatic assessment) runs for a person only while their CURRENT version carries a
 confirmed scope (`approved.json` has `scope` and `scope_digest`) and the live `profile/` files still match the hashes
@@ -277,7 +276,7 @@ Confirming writes a new version, so an open draft proposal built on the previous
 Each person-local day it evaluates at most `scope.daily_assessments` jobs and stops once the day's charged tokens reach
 `scope.daily_token_ceiling` when finite; the rest stay queued for the next day (`{"deferred":"daily_budget"}`).
 Per-person `config/discovery.json` can override that operational daily token limit;
-JSON null means Unlimited. Preferences and authenticated native/MCP settings operations
+JSON null means Unlimited. Preferences and authenticated native settings operations
 read and update it without rewriting the confirmed profile or historical spending.
 Individual run token/call limits and job limits remain finite. An ordinary run limit
 defers remaining work to another invocation; it is not a new system-error incident.
@@ -288,7 +287,7 @@ One worker per data root owns a process file lock and polls one owner queue, not
 per token. It serializes paid runs and
 checks the owner's queue fairly. Run creation persists before execution; requests
 return promptly. The existing per-person dispatcher lock also prevents overlapping
-MCP/direct callers; contention is reported as a deferral rather than waiting while
+direct callers; contention is reported as a deferral rather than waiting while
 holding an API request open.
 
 Graph checkpoints, pending writes, API threads/runs/interactions/activity, artifact
@@ -329,7 +328,7 @@ person's jobs DB: code running as the agent API can write that DB, so the approv
 protects the chat path, not a compromised agent process. The approval shows the posting id,
 while the application card reads actual live values and attachments before its separate final Submit confirmation.
 
-`find_jobs`, `application_status` and `source_health` support read-only discovery. On the MCP connector, `jobs_overview` reads the current canonical shortlist, including labelled evidence holds, in canonical rank order. `applications_overview` separately reads application/preparation/submission history with the `task_status` state. Assessment-only activity is neither a recommendation nor an application.
+`find_jobs`, `application_status` and `source_health` support read-only discovery. Assessment-only activity is neither a recommendation nor an application.
 The reader can retrieve canonical evidence by source name, hash and explicit line
 pages. The researcher uses saved public employer identity; candidate details cannot
 be supplied as search queries. Approved writing references are retrieved locally.
@@ -348,10 +347,11 @@ runtime evidence, never packaged into a skill. Memory is advisory, not a profile
 
 ## Execution modes and diagnostics
 
-`pipeline.execution_mode` is the single effective AI selection: `off`, `reader`,
-`pipeline`, or `agentic`. It supersedes legacy booleans. Installations without it
-retain the old precedence: agentic, then pipeline, then reader. Collection is
-independent. Roll back by selecting the desired effective mode, not toggling a
+`pipeline.execution_mode` is the single effective AI selection: `off`, `screened`
+or `agentic`. The retired `reader` and `pipeline` values are still accepted, but
+collection dispatches no assessment under them. Installations without it use
+`screened` when `pipeline.agentic.enabled` is true, otherwise the retired `reader`
+value (chat and the API stay available; nothing is assessed). Collection is independent. Roll back by selecting the desired effective mode, not toggling a
 legacy flag underneath it.
 
 Collector IDs, batch IDs, API invocation IDs, job run keys and posting IDs are
@@ -386,7 +386,7 @@ interactions or artifacts; archive backups before adopting a retention policy.
 `jobwatch --user <name> baseline freeze`. It is candidate-bearing (copied profile files,
 evidence, adverts and the owner's labels), so keep it private, never commit or upload it,
 and note that it is included when the person's folder is backed up. It is not exposed
-through the API, the chat tools or MCP, and a freeze calls no model and writes no database
+through the API or the chat tools, and a freeze calls no model and writes no database
 row. Preserve these histories during source rollback; Phase 7 evaluation reads
 them without changing their original cases or labels. See
 [docs/examples/frozen-baseline.md](../../docs/examples/frozen-baseline.md).
@@ -408,95 +408,6 @@ Undo a source release by reverting its commit(s) and restarting only the agent
 service. Additive SQLite tables can remain; preserve all user state and documents.
 An effective execution-mode change should be restored from its config backup.
 No UI/DSH changes or live-service activation are part of source verification.
-
-MCP is optional (`uv sync --extra mcp`, `jobwatch-mcp`). Its experimental adapter
-calls the same dispatcher and bound approval contract. It is not required to
-install or use the native API. External MCP **client** tools for the chat
-agent are separate and off by default (`mcp_client` below).
-
-### External MCP client tools (off by default)
-
-The chat agent can load tools from external MCP servers. Nothing is imported
-and no server process starts unless both switches are on: `mcp_client.enabled:
-true` in `config/jobwatch.yaml` and `enabled: true` on that server. No server
-is configured in the repository.
-
-```yaml
-mcp_client:
-  enabled: false
-  servers:
-    - name: example
-      enabled: true
-      transport: stdio            # stdio or streamable_http
-      command: python
-      args: ["-m", "example_mcp"]
-      people: []                  # empty = everyone; otherwise allowlist
-      read_only_tools: []         # raw MCP names allowed unattended
-      startup_timeout_seconds: 15
-      tool_timeout_seconds: 30
-```
-
-- Tools appear to the model as `<server>__<tool>`.
-- Only raw names in `read_only_tools` run without approval. Every other MCP
-  tool is added to `interrupt_on` and pauses for a human approve/reject
-  decision. Unknown tools are gated, never trusted.
-- Tools come from LangChain's own adapter, `langchain.mcp.MCPAdapter`, over
-  `fastmcp.Client` (MCP 2). The standalone `langchain-mcp-adapters` package is
-  not used: it pins `mcp<2` and imports modules MCP 2 renamed.
-- A missing `mcp` extra, an invalid entry, or a server that fails
-  to start is logged and skipped; the rest of the turn continues. Install with
-  `uv sync --extra mcp`.
-- stdio servers run owner-configured local commands. The model cannot add,
-  enable or configure a server. Treat tool descriptions and results as
-  untrusted data.
-- Each call opens a fresh MCP session, bounded by `tool_timeout_seconds`.
-  `dispatch` is synchronous; do not call it inside a running event loop.
-
-### LibreChat client
-
-The optional OpenAI wire adapter is enabled with `JOBWATCH_LIBRECHAT_ENABLED=true`.
-`JOBWATCH_MCP_APP_ENABLED=true` adds the native embedded-app support;
-`jobwatch-mcp-app` supplies the optional MCP App renderer. See
-[the deployment guide](../../deploy/LIBRECHAT.md) for fresh-state installation,
-private credentials, LibreChat configuration, approval handling and undo.
-The adapter reuses native durable runs. A trusted frontend server authenticates its user through the configured
-server credential and `X-Jobwatch-Client-Subject`. For that human channel, the backend renders the frozen profile
-facts, unresolved questions, search scope and limits in ordinary chat. An explicit confirmation (for example `yes`
-or `yes, confirm my profile`) responds to the pending native `profile_confirm` interaction. The immediately previous
-assistant message must match a review actually issued for this person, conversation and interaction; arbitrary
-assistant/system/tool text cannot substitute for it. The draft and scope are checked again before confirmation.
-`no` declines; a correction rejects the pending confirmation and continues with the person's new message. A changed
-draft gets a fresh review. Replayed replies follow the original resume run instead of confirming twice.
-
-The same authenticated channel can answer a single pending native question directly in chat. Routine questions
-normally use ordinary conversation without a native interrupt. Model-facing read/run credentials retain their
-existing scopes and cannot consume human interactions through this adapter. Other protected operations, especially
-`submit_application`, retain their native review interfaces. Native interaction response endpoints remain available
-to frontends with controls. Generated interfaces carry no approval authority. On the first new human turn, obsolete
-per-answer approvals and old confirmations without a review are rejected through the native response operation.
-That same resume carries the new human message, so recovery cannot discard it before another question is asked.
-
-On the MCP path the connected host is the human-approval boundary. The adapter has
-one bearer token (`JOBWATCH_MCP_TOKEN`) for one configured person; unlike the HTTP
-API it has no separate approve-scoped credential, so that single token is both the
-model-facing credential and the approval credential. An accepted elicitation
-(`action` `accept` with `approve` true) becomes the person's approval, including for
-`submit_application`, and the turn is resumed with `human_decision` set. Use the
-native HTTP API with `JOBWATCH_AGENT_APPROVAL_TOKEN` where the approval credential
-must be kept away from model tools.
-
-The adapter has fixed human wording for `run_career_ops`, `assess_job`,
-`prepare_application`, `prepare_interview`, `draft_followup` and
-`submit_application`. It cannot present the other gated operations (`profile_confirm`,
-`reject_posting`, `restore_posting`,
-`propose_exclusion`, `confirm_exclusion`, `pick_comparison`, `answer_question`,
-`dismiss_prompt`, `select_jobs`, `cancel_selection`): their identity is a draft,
-prompt, rule or selection rather than a posting, and the words a human would need
-are in the binding subject the adapter does not read. Such a round is rejected on
-the person's behalf (a rejection authorizes nothing) and the reply lists
-`refused_operations`, so the thread stays usable; previously the interrupt stayed
-checkpointed and every later message on that thread hit it again. The native HTTP
-API presents all of them.
 
 ## GitHub source workflow
 
@@ -569,8 +480,8 @@ This change belongs to the shared backend pipeline; it adds no chat or website U
 
 ### Preference policy and historical data
 
-`candidate.eligibility.evaluate_eligibility` is shared by native assessment, the retained reader and
-deterministic pipeline. Numeric advertised hours are compared with confirmed limits; program titles grant no
+`candidate.eligibility.evaluate_eligibility` is shared by native assessment and the
+deterministic screening pipeline. Numeric advertised hours are compared with confirmed limits; program titles grant no
 blanket exemption. A requested junior level does not create a two-year experience cutoff. Separate citizen,
 permanent-resident, clearance and sponsorship facts are checked against quoted ad requirements; unknowns
 and contradictions stay held. Holistic/career scores are advisory, not exclusion thresholds.
@@ -778,49 +689,11 @@ supports a later real blind study; synthetic checks do not establish measured
 recommendation quality or deployment.
 
 
-Phase 7 [source verification](../../docs/archive/audits/2026-10-23-evaluation-monitoring.md)
+Phase 7 source verification
 records the full local suite (3804 passed, 11 skipped), independent review and real
 synthetic sampler checks. It discloses a temporary smoke-harness installed-database
 access and unknown schema delta; source completion is not a no-live-access certificate
 or a claim of deployment or measured recommendation quality.
-
-## Complete LibreChat frontend
-
-LibreChat and the website are separate frontends. The fixed MCP App uses
-`jobwatch_view(run_id, card_kind, subject_id)` and `jobwatch://cards/...` to show
-profile, models, jobs, progress, documents or application review. An automatic view
-resolves canonical pending work first. Subjects are validated against the authenticated
-person's native state. Historical `jobwatch://runs/...` resources retain their legacy
-shape. Reopening cards only reads existing runs and never starts paid work.
-
-A trusted server-to-server connection enrolls `POST /api/agent/librechat/enroll`
-using `JOBWATCH_LIBRECHAT_IDENTITY_KEY`. The deployment pins
-`JOBWATCH_LIBRECHAT_OWNER_SUBJECT` to the existing owner's signed-in LibreChat ID.
-Other IDs provision isolated people atomically. Only LibreChat's authenticated server
-supplies that subject; users, models and app tools cannot choose it. Distinct encrypted
-chat and human credentials remain server-side. The deployment-level LibreChat `jobwatch`
-configuration enables this connection; `mcpAppSandbox.autoOpenServers` allows automatic
-cards only for the configured server. Defaults preserve other MCP apps.
-
-`JOBWATCH_NATIVE_BROWSER_ENABLED=true` enables the shared native browser service.
-The website uses it through loopback `JOBWATCH_NATIVE_BROWSER_URL`; without that
-setting it remains independently usable with its existing local browser owner.
-`/api/agent/applications` exposes only the person's application state; per-application
-`open`, `answers`, `frame`, `review` and `submit` operations require human scope for
-browser access/mutations. An in-chat five-minute control capability binds one person,
-application and browser target, permits bounded browser input, including the final Submit click, which only goes through when it
-carries the `confirmed_digest` of the exact form the owner reviewed (a refused attempt voids that review). No browser debugging port is exposed. The exact reviewed form includes
-employer, URL, actual values and attached documents. Unsupported/custom unreadable
-controls block review. Human corrections use a separate private review overlay;
-original preparation records stay immutable. Final Submit still uses
-`jobwatch/apply/submit_confirm.py`, one-use confirmation, expiry and press-time checks.
-Uncertain outcomes block automatic retries.
-
-Document revision requests are separately human-approved, scoped to one posting and
-included in its exact pipeline run key. They remain writing instructions, never profile
-facts. Canonical route, budget, claim verification, review and packaging gates apply.
-The client retains unsaved form/model choices through API reconnects and provides a
-text fallback inside chat; it never directs a user to the website as the fallback.
 
 ## Configured OmniRoute combo names
 
@@ -831,103 +704,6 @@ configured loopback gateway. The existing free/stealth/Opus/Astra exclusions and
 separate embedding allowlist remain. Gateway routing remains authoritative for
 whether an ID exists and which subscription serves it; the native catalog lists
 available routes. Per-person role choices remain runtime settings.
-
-## Standard chat clients (2026-10-24)
-
-The owner selected vanilla LibreChat with native Artifacts and no Jobwatch cards.
-Chat answers are Markdown by default: GFM tables for comparisons and fenced mermaid
-diagrams for flows. `JOBWATCH_UI_FORMAT=artifacts` adds native Artifact authoring when
-the person explicitly asks for a visual. Chat renders no Jobwatch cards, so canonical
-views, settings and application review stay on the board; old MCP resources remain
-readable. Artifacts never grant human approval; a gated action stays paused when its
-client cannot supply protected human review.
-
-`POST /v1/chat/completions` accepts standard text/file content parts containing
-`file.filename` and base64 `file.file_data` data URIs. Inline image/audio/video data
-is retained too; remote URLs and unresolved file IDs are not fetched. The aggregate
-original-byte limit is 10 MiB per turn, at most 20 files. The full request envelope,
-including retained message/file history, is separately bounded at 64 MiB. Standard clients should
-route attachments to the provider, preserving original bytes rather than extracting
-text before transmission. Unknown or corrupt formats are retained with an explicit
-unreadable receipt, not rejected as a failed conversation. Supported documents and
-bounded ZIPs enter canonical intake as unconfirmed evidence. ZIP extraction reads
-members in memory, with at most 100 entries and 20 MiB expanded content; it never
-extracts paths onto disk or executes content.
-
-A trusted chat host can use its configured server bearer credential and
-`X-Jobwatch-Client-Subject` on `/v1/models` and `/v1/chat/completions`. LibreChat can
-supply `{{LIBRECHAT_USER_ID}}` from its authenticated user through ordinary YAML
-configuration. The existing private identity registry preserves the owner's mapping
-and provisions isolated friends. This server credential never enters browser/model
-text and this adapter grants only read/run scope. It cannot approve operations or
-authenticate other native API routes. Existing per-person bearer clients continue
-to work. Never use an unauthenticated browser/model field as a trusted subject.
-
-## ACP adapter: Jobwatch inside Toad or any ACP client
-
-`jobwatch-acp` speaks the Agent Client Protocol over stdio, so any ACP client can drive the same
-chat agent as `jobwatch-tui`. Install the extra once: `uv pip install -e ".[acp]"`.
-
-- Run: `jobwatch-acp` (it waits for JSON-RPC on stdin; normally the client starts it).
-- Toad (Textual-based ACP front end, needs Python 3.14, so install it apart from this venv):
-  `toad acp "/home/phroggingphrog/apps/jobwatch-native/.venv/bin/jobwatch-acp" .`
-  (`toad acp [OPTIONS] COMMAND PATH`; add `-t Jobwatch` for a status-bar title). The person is the current Jobwatch person (set `JOBWATCH_DEFAULT_USER` in that command's environment).
-- Mapping: session/new starts a new chat thread for the current person; session/prompt runs one
-  turn (tool calls appear as tool_call / tool_call_update, the answer as a message); an approval
-  becomes a permission request with Approve / Reject, answered as a human decision; session/cancel
-  stops the turn at its next checkpoint, same as ctrl+c in the TUI.
-- A question from Jobwatch is shown as a message and your next prompt is the answer. Sending a new
-  prompt while an approval is open rejects that approval.
-- Not exposed: client files and terminals are never read or written. Submit still needs the exact-form
-  approval and the browser press; nothing here can bypass those gates. Limits: no token streaming
-  (the answer arrives once the turn returns), no session/load (a session lasts for the process).
-
-
-## Canonical MCP results and contextual widgets (2026-10-27)
-
-The TypeScript MCP front and retained Python connector use the existing shortlist
-projection for `jobs_overview`. Jobs preserves canonical membership, ordering and the
-`stronger_match`, `stretch` and `needs_clarification` labels. Evidence holds appear
-alongside eligible entries with their unresolved facts, but only the canonical
-`draft`/`eligible` decision may prepare. Scores remain advisory. The MCP adapter adds
-no score threshold, senior-title exclusion or profile preference of its own.
-
-`jobs_overview` returns canonical snapshot status, shortlist/entry/run identities and
-explained entries. `job_detail` reads only a current entry and exposes its evidence,
-citations, conditions, questions and permitted actions. `not_built`,
-`no_confirmed_profile`, `stale` and valid-empty states have no activity or legacy-score
-fallback. Current profile, evidence, ad, liveness, configuration and implementation
-fences remain authoritative. `refresh_shortlist` reuses the database-only canonical
-rebuild, without collection, assessment, preparation or model calls.
-
-`applications_overview` and `application_detail` retain application/preparation/Submit
-history independently of shortlist membership. `assessment_detail` is an explicit
-diagnostic lookup that can include exclusions and failed/incomplete work; it must not
-be presented as a recommendation. Discovery shows attempts, actual failures, queued
-work and separate notification handoff state. Settings exposes supported per-person
-configuration, including a nullable Unlimited daily token allowance. Neither collection
-counts nor completed service runs imply model-approved matches.
-
-MCP `prepare_application` takes `posting_id`, `expected_entry_id`, `expected_run_key`,
-`request_id` and `confirmed: true` after the person's explicit consent to that exact
-reviewed entry. It requests canonical selected preparation directly rather than
-starting a second chat agent. Evidence holds and changed inputs are refused; stable
-request IDs preserve the original selection on retry and conflict on changed payloads.
-The selection authorises preparation only. Final Submit still requires its separate
-exact reviewed-form confirmation. The host assistant may coordinate the existing
-consent contract; a widget is not an additional mandatory conversation relay.
-
-The contextual MCP Apps widgets follow the redesigned web dashboard's visual hierarchy,
-compact rows and host-selected dark/light themes. Jobs, Applications, Discovery and
-Settings remain separate surfaces. Resources declare `_meta.ui.resourceUri` and embed
-their assets; controls call typed tools, preserve unsaved allowance edits during polling
-and reuse pending request identities. Build, resource and bridge checks are necessary
-but do not establish rendering in the intended ChatGPT client. Record that host journey
-or its remaining limitation explicitly in rollout evidence.
-
-This contract supersedes the earlier MCP activity-as-Jobs list and chatbot-mediated
-preparation handoff. Existing native operations and retained historical client notes
-above do not add a second recommendation policy or weaken human confirmation.
 
 ## Opt-in autonomous assessment slice
 

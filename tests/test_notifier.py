@@ -11,7 +11,7 @@ import pytest
 
 from jobwatch import db as dbm
 from jobwatch import notifier
-from jobwatch.notifier import channels, legacy, service
+from jobwatch.notifier import channels, service
 from tests.notify_support import FakeChannel, use_fake_channel
 
 
@@ -78,8 +78,7 @@ def test_event_filter_and_none_channel(conn):
         notifier.Event(notifier.FAILURE, 'x', 'k', notifier.CompletionPayload())
 
 
-def test_digest_window_is_per_channel_policy(conn, monkeypatch):
-    monkeypatch.delenv(legacy.SSH_ENV, raising=False)
+def test_digest_window_is_per_channel_policy(conn):
     assert notifier.digest_window(conn, 'incident') == 6 * 3600                     # no channel: the usual window
     notifier.add_channel(conn, 'slow', 'command', {'argv': ['true']})
     assert notifier.digest_window(conn, 'incident') == 6 * 3600
@@ -90,7 +89,6 @@ def test_digest_window_is_per_channel_policy(conn, monkeypatch):
 
 
 def test_deliver_is_one_attempt_and_reports_no_channel(conn, monkeypatch):
-    monkeypatch.delenv(legacy.SSH_ENV, raising=False)
     assert notifier.deliver(conn, event()).status == 'no_channel'
     use_fake_channel(monkeypatch, lambda lines: False)
     result = notifier.deliver(conn, event(dedupe_window=0))
@@ -149,27 +147,6 @@ def test_webhook_posts_json(conn, monkeypatch):
     assert got['body']['kind'] == 'failure' and got['body']['payload']['reason'] == 'execution_failed'
 
 
-def test_settings_alias_is_an_equivalent_ssh_append_channel(conn, monkeypatch):
-    monkeypatch.setenv(legacy.SSH_ENV, 'owner@assistant.example')
-    monkeypatch.setenv(legacy.FILE_ENV, '~/inbox/jobwatch notify.txt')
-    calls = []
-    monkeypatch.setattr(subprocess, 'run', lambda *a, **k: calls.append((a, k)) or subprocess.CompletedProcess(a, 0, '', ''))
-    found = notifier.channels_for(conn)
-    assert [(c.name, c.kind, c.source) for c in found] == [(legacy.ALIAS_CHANNEL, 'ssh_append', 'env-alias')]
-    assert notifier.enqueue(conn, event(text='Jobwatch: Error: x [k]')) == 1 and notifier.dispatch(conn) == 1
-    (args, kwargs), = calls
-    assert args[0][:5] == ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8']
-    assert args[0][-2:] == ['owner@assistant.example', "cat >> ~/'inbox/jobwatch notify.txt'"]
-    assert kwargs['input'] == 'Jobwatch: Error: x [k]\n'
-    # the person's own channel replaces the alias; disabling the alias turns it off
-    notifier.add_channel(conn, 'mine', 'command', {'argv': ['true']})
-    assert [c.name for c in notifier.channels_for(conn)] == ['mine']
-    notifier.disable_channel(conn, 'mine')
-    assert [c.name for c in notifier.channels_for(conn)] == [legacy.ALIAS_CHANNEL]
-    notifier.disable_channel(conn, legacy.ALIAS_CHANNEL)
-    assert notifier.channels_for(conn) == []
-
-
 
 
 def test_migration_creates_tables_and_ensure_is_idempotent(tmp_path):
@@ -216,11 +193,10 @@ def test_cli_add_list_test_disable(tmp_path, monkeypatch, capsys):
 
 
 def test_no_private_assistant_name_in_code_paths():
-    allowed = {ROOT / 'jobwatch' / 'notifier' / 'legacy.py'}
     hits = []
     for folder in ('jobwatch', 'pipeline'):
         for path in (ROOT / folder).rglob('*'):
             if path.is_file() and path.suffix in {'.py', '.html', '.md', '.js', '.css', '.txt', '.json', '.yaml'} \
-                    and path not in allowed and re.search('hermes', path.read_text(errors='ignore'), re.I):
+                    and re.search('hermes', path.read_text(errors='ignore'), re.I):
                 hits.append(str(path.relative_to(ROOT)))
     assert hits == []

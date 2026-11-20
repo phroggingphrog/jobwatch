@@ -1,5 +1,11 @@
-"""Resolve one effective AI mode, preserving legacy installs until migrated."""
+"""Resolve one effective AI mode: off, screened or agentic.
+
+`reader` and `pipeline` are retired: they are still accepted (so an older configuration keeps chat and the API
+available), but collection no longer dispatches any assessment under them."""
 from __future__ import annotations
+
+MODES = ('off', 'reader', 'pipeline', 'agentic', 'screened')
+RETIRED_MODES = ('reader', 'pipeline')
 
 
 def effective_mode(config) -> str:
@@ -7,7 +13,7 @@ def effective_mode(config) -> str:
     pipeline = root.get('pipeline', root)
     mode = pipeline.get('execution_mode')
     if mode is not None:
-        if mode not in ('off', 'reader', 'pipeline', 'agentic', 'screened'):
+        if mode not in MODES:
             raise ValueError('invalid_execution_mode')
         return mode
     # Preserve the old precedence. An explicit mode supersedes both old flags.

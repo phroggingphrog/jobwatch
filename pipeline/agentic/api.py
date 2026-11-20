@@ -88,7 +88,6 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         raise RuntimeErrorSafe('api_credentials_invalid')
     if any(p.person != owner for p in credentials.values()):
         raise RuntimeErrorSafe('api_principal_not_owner')
-    from pipeline.agentic import identity
 
     def known_people():
         # One owner, one durable queue: multiple scoped tokens never create a second poll.
@@ -273,8 +272,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
         value = authorization.removeprefix('Bearer ') if authorization and authorization.startswith('Bearer ') else ''
         digest = hashlib.sha256(value.encode()).digest()
         principal = None
-        current_hashes = hashes + [(hashlib.sha256(key.encode()).digest(), p) for key,p in identity.credentials().items()]
-        for expected, possible in current_hashes:
+        for expected, possible in hashes:
             if hmac.compare_digest(digest, expected):
                 principal = possible
         return principal
@@ -297,23 +295,7 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
                     request._body = await receive_upload(request)
                 except HTTPException as exc:
                     return JSONResponse({'error': exc.detail}, status_code=exc.status_code)
-            chat_upload = request.method == 'POST' and request.url.path == '/v1/chat/completions'
-            # The envelope includes retained conversation/file history. The newest
-            # turn's decoded originals have their independent 10 MiB limit.
-            chat_cap = 64 * 1024 * 1024
-            cap, chunks, size = (intake.MAX_UPLOAD_BYTES + 44 if app_upload else profile_api.UPLOAD_BODY_CAP if upload else chat_cap if chat_upload else 65536), [], 0
-            if chat_upload:
-                try:
-                    who = (await asyncio.to_thread(client_principal, request.headers.get('authorization'),
-                        request.headers.get('x-jobwatch-client-subject'))
-                        if request.headers.get('x-jobwatch-client-subject') and client_principal
-                        else lookup(request.headers.get('authorization')))
-                except HTTPException:
-                    who = None
-                if who is None:
-                    return JSONResponse({'error': 'authentication_required'}, status_code=401)
-                if 'run' not in who.scopes:
-                    return JSONResponse({'error': 'scope_required'}, status_code=403)
+            cap, chunks, size = (intake.MAX_UPLOAD_BYTES + 44 if app_upload else profile_api.UPLOAD_BODY_CAP if upload else 65536), [], 0
             if upload:
                 who = lookup(request.headers.get('authorization'))
                 if who is None:
@@ -346,8 +328,6 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
             return principal
         return authenticate
 
-    client_principal = identity.mount(app, credentials)
-
     read, write, interact = require('read'), require('run'), require('interact')
 
     @app.exception_handler(Conflict)
@@ -375,10 +355,6 @@ def create_api(*, credentials=None, config=None, llm_factory=None, dispatcher=di
     shortlist_api.mount(app, require, get_config)
     from pipeline.agentic import feedback_api
     feedback_api.mount(app, require, get_config)
-    if os.environ.get('JOBWATCH_LIBRECHAT_ENABLED') == 'true':
-        from pipeline.agentic import librechat
-        librechat.mount(app, require, get_config, client_principal=client_principal)
-
     if os.environ.get('JOBWATCH_MCP_APP_ENABLED') == 'true':
         from pipeline.agentic import client_api
         client_api.mount(app, require, get_config)

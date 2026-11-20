@@ -18,7 +18,7 @@ from jobwatch import db as dbm
 from jobwatch import ledger
 from jobwatch.apply.evidence import load_profile
 from jobwatch.apply.paths import profile_dir, safe_write_text
-from jobwatch.reader import _defang
+from jobwatch.adscan import _defang
 
 from ..schemas import ApplicationPackage, FormField, FormMap, ScreeningAnswers
 from ..structured import call

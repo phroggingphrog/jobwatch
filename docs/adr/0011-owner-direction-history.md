@@ -2,9 +2,9 @@
 
 Status: historical record, not the current product specification.
 
-This preserves the previous INTENT.md verbatim below, including superseded
-instructions and exact owner quotations. Use [current intent](../../INTENT.md)
-for normative requirements. This record does not establish implementation or deployment.
+This preserves the owner's earlier product direction verbatim below, including
+superseded instructions and exact owner quotations. This record does not
+establish implementation or deployment.
 
 ---
 
@@ -98,7 +98,7 @@ Owner follow-up on 2026-10-22:
 Personal preferences must come from each person's confirmed profile, not inherited
 geographic, career, seniority or writing assumptions in shared code. Missing facts
 stay unknown. The collector/ingest regional prefilter now reads the confirmed
-policy. The [source audit](docs/archive/audits/2026-10-22-profile-preferences.md) preserves
+policy. The source audit preserves
 the original findings and records their source repairs across active and retained
 paths, separately from reference data and technical controls. Its verification
 limits still apply; source repairs do not establish live recommendation quality.
@@ -181,9 +181,9 @@ Keywords may help discover postings; they do not decide personal fit.
   does not establish that a browser form was filled; final Submit needs the owner's click or
   their confirmation of that exact filled form.
 
-Operational contracts and setup are in [the backend guide](pipeline/agentic/CHAT.md).
-Domain terms live in [GLOSSARY.md](GLOSSARY.md); architecture decisions live in
-[docs/adr/](docs/adr/).
+Operational contracts and setup are in [the backend guide](../../pipeline/agentic/CHAT.md).
+Domain terms live in [GLOSSARY.md](../../GLOSSARY.md); architecture decisions live in
+[docs/adr/](./).
 
 ## Company research and existing model integration
 
@@ -252,8 +252,7 @@ Owner direction on 2026-10-21, on when discovery may run and how a profile is se
 Discovery runs for a person only while their current profile version is confirmed and carries a
 confirmed search scope. Initial setup is guided by the agent, which asks for the relevant files and
 asks the person questions while their documents are processed in the background. Confirmation does not
-authorise document preparation, employer messages or submission. See [ADR 0002](docs/adr/0002-profile-intake-and-approval.md)
-and [the worked example](docs/examples/profile-intake.md).
+authorise document preparation, employer messages or submission. See [ADR 0002](0002-profile-intake-and-approval.md).
 
 ## Semantic field and posting discovery
 
@@ -265,7 +264,7 @@ Title keywords may widen recall by adding postings for full-ad fetching; they
 never exclude a posting from semantic assessment or decide personal fit. Related
 occupations are search hypotheses, not proof of qualification. Similarity
 thresholds remain uncalibrated, and the current implementation makes no
-matching-accuracy claim. See [ADR 0005](docs/adr/0005-field-and-job-discovery.md).
+matching-accuracy claim. See [ADR 0005](0005-field-and-job-discovery.md).
 
 ## Confirmed Submit
 
@@ -295,7 +294,7 @@ facts and practical conditions remain distinct. Neutral priors stay neutral, and
 a valid genuine-choice fit can personalise within evidence tiers. The owner selected
 explicit historical-choice migration tooling that preserves original records; no live
 migration or fitting follows from implementation. The approved scope and interfaces
-are recorded in the [Phase 5 plan](docs/archive/superpowers/plans/2026-10-22-phase-5-execution.md).
+are recorded in the Phase 5 plan.
 
 ## Contextual inline interfaces
 

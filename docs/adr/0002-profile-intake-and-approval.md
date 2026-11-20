@@ -98,5 +98,5 @@ over-infer, and a CV gap alone does not establish unemployment.
 - Accepted design is not deployed behaviour; a merge or passing checks does not
   establish a running backend.
 
-See [INTENT.md](../../INTENT.md), [ADR 0001](0001-native-agent-api.md) and
+See [ADR 0001](0001-native-agent-api.md) and
 [the backend contract](../../pipeline/agentic/CHAT.md).

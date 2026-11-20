@@ -2,7 +2,7 @@
 
 This checkout is the isolated `jobwatch-new` single-owner continuation. Execution
 is off and no service activation is part of source work. The older multi-person
-implementation and acceptance notes are historical; current scope is in INTENT.md.
+implementation and acceptance notes are historical.
 For this copy, load the private `../env` before invoking runtime commands. It pins
 settings loading away from the retired installation. Keep that file outside Git.
 
@@ -14,15 +14,15 @@ to submit through its canonical confirmation path.
 
 The current delivery priority is one reliable native Screening → Evaluation
 slice. Available modules and command references are not claims of end-to-end
-acceptance or deployment. Read [current intent](INTENT.md) for the product contract
-and [contributor guidance](AGENTS.md) before making changes.
+acceptance or deployment. Read [contributor guidance](AGENTS.md) before making
+changes.
 
 ## Architecture
 
 The authenticated native agent API owns durable conversations and orchestration.
 Canonical Jobwatch services enforce evidence, eligibility, review, packages and
-human authorization. Standard LibreChat, the separate website and optional MCP
-adapters are clients, not alternative sources of authority.
+human authorization. The separate website and any other native API client are
+clients, not alternative sources of authority.
 
 See the [backend contract](pipeline/agentic/CHAT.md) for native operations and
 client boundaries. Collection dispatch selects the assessment mode; the top-level
@@ -42,7 +42,6 @@ local storage does not mean all processing is offline.
 - [Application and reader workflows](docs/application-workflows.md)
 - [Detailed setup](SETUP.md)
 - [Glossary](GLOSSARY.md) and [architecture decisions](docs/adr/)
-- [Profile-preference audit and evidence limits](docs/archive/audits/2026-10-22-profile-preferences.md)
 
 No package move or source change activates services or authorizes a deployment.
 Use synthetic fixtures for local checks and verify the owner's actual deployment

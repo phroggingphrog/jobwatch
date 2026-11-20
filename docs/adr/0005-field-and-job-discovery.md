@@ -159,10 +159,3 @@ read-only API output, verification scope and rollback.
 - Similarity, model judgments and related occupations do not establish
   qualification, eligibility or improved matching accuracy.
 - This ADR records an accepted design; it does not mean the backend is deployed.
-
-## References
-
-- [Agreed backend brief](../superpowers/specs/2026-10-21-agreed-backend-brief.md)
-- [Plan 3: Field and job discovery](../superpowers/plans/2026-10-21-plan-3-discovery.md)
-- [Cross-plan contract](../superpowers/plans/2026-10-21-cross-plan-contract.md)
-- [INTENT.md](../../INTENT.md)

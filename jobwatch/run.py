@@ -226,9 +226,7 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
         if not dry_run and assess:
             # last on purpose: it is the only step that waits on outside services; its budget is what is left of the
             # unit's time, so a stalled model can no longer cost the publish and prune above or the run record below
-            from . import reader
             try:
-                import pipeline.graph as graph          # the deterministic state pipeline, when the owner switched it on
                 from pipeline.agentic import service as agentic
                 from .execution_mode import effective_mode
                 mode = effective_mode(config)
@@ -236,24 +234,20 @@ def run(config: Config, tier: str, dry_run: bool = False, only: str | None = Non
                 from .candidate import intake
                 scope, why = intake.scope_state(users.current())
                 if scope is None:
-                    # Collection remains independent, but no reader or pipeline tier may run without confirmed scope.
+                    # Collection remains independent, but no assessment tier may run without confirmed scope.
                     ai = {'skipped': why, 'text_only': {}}
                 elif mode == 'agentic':
                     ai = {"agentic": agentic.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
                         collector_run_id=run_id, deadline=deadline, run_id=discovery_run_id)}
-                elif mode == 'pipeline':
-                    ai = {"pipeline": graph.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))}
                 elif mode == 'screened':
                     from pipeline import screened
                     ai = {"screened": screened.after_collect(conn, config, max_seconds=ai_budget(started, config, tier),
                         deadline=deadline)}
-                elif mode == 'reader':
-                    ai = reader.after_collect(conn, config, max_seconds=ai_budget(started, config, tier))
                 else:
                     ai = {'status': 'deferred', 'reason': 'execution_disabled'}
                 ai['execution_mode'] = mode
             except Exception as exc:  # the AI step must never fail a collection run
-                log.error("reader hook failed: %s", type(exc).__name__)
+                log.error("assessment hook failed: %s", type(exc).__name__)
                 ai = {"error": type(exc).__name__}
                 try:
                     from jobwatch.notify import alert

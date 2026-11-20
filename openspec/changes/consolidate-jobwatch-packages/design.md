@@ -1,7 +1,6 @@
 ## Context
 
-See proposal.md for scope. Current `INTENT.md` is the normative single-owner,
-native-API-first contract; historical directions live in the linked owner history.
+See proposal.md for scope. Historical owner directions live in the linked owner history.
 LibreChat/native Artifacts are compatibility clients, not a dependency of the
 backend. `pipeline/agentic/CHAT.md` defines authentication and exact-input approvals.
 

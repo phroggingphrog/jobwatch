@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from jobwatch import reader, users
+from jobwatch import users
 from jobwatch.candidate import approved, intake, person, policy, projection
 from jobwatch.candidate.contracts import CandidateError
 from jobwatch.candidate.evidence import snapshot_evidence
@@ -72,7 +72,7 @@ def test_restriction_damage_never_becomes_neutral(published, name, damage, reaso
         person._yaml(name)
     if name == 'interests_and_criteria.yaml':
         with pytest.raises(CandidateError, match='approved_restrictions_' + reason):
-            reader._interests()
+            approved.settings(users.current(), 'interests_and_criteria.yaml')
 
 
 def test_corrupt_approval_blocks_readers(published):

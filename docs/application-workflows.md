@@ -1,6 +1,6 @@
 # Application and reader workflows
 
-[Project overview](../README.md) · [Current intent](../INTENT.md)
+[Project overview](../README.md)
 
 Reference material moved from README; commands describe available source interfaces,
 not proof of current service activation or end-to-end acceptance.
@@ -106,23 +106,3 @@ Pi `omni` key when the first is refused for a combo (the keys.env key is not all
 `draft_status(conn, application_id)` returns `{status (draft: ready|failed|drafting|none),
 application_status, version, summary (summary.md text), error, dir, files {cv_pdf, letter_pdf,
 summary_md}, metrics}`. Undo: see PLAN-apply.md.
-
-## AI ad reader (`jobwatch review`)
-
-The keyword rules only give a first list. A model then **reads the whole ad** and decides (`reader.py`):
-
-1. `adtext.py` gets the full ad text: the stored description if it is long, else one polite request to the ad's page
-   (Seek, SmartRecruiters, LinkedIn, Jora, Careers.Vic, Oracle, JSON-LD pages). One request per ad, 3 s apart, stops on 403/429.
-2. The model (`reader.model`, default `google/gemini-flash`, allowlisted routes only) returns: real vacancy or not, whether
-   it needs Australian citizenship / PR (with the exact words), seniority, years asked, a 0-100 fit against
-   `config/reader_profile.md` (plain English: edit it to change what you want) and the reason.
-3. Plain code makes the decision (`reader.decide`): hide sponsored ads, talent pools, anything that needs citizenship / PR / a
-   clearance (a claim only counts if its quote is really in the ad; a regex backstop catches plain statements; the title
-   `APS4` counts), roles asking for 4+ years or senior, and fit under `min_fit_show`. An ad whose body could not be read is
-   **held** (`review`), not shown.
-4. Results go to `ad_reviews` (+ `ad_text`). Nothing in `postings`/`matches` changes, so every decision can be seen and undone.
-
-`jobwatch review` reads ads not yet read; `review stats` counts verdicts; `review rederive` re-applies the hiding rules to the
-stored model answers without a model call; `review recall` is **AI recall**: a cheap model judges the Melbourne postings the
-keywords missed by meaning and adds plausible ones to `matches` (arm `ai_semantic`). The pipeline does both after each
-collection when `reader.enabled: true` in `config/jobwatch.yaml`. Same ad + same prompt + same model = no new call.

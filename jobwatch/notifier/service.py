@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from . import channels as _channels
-from . import legacy
 from .events import EVENT_KINDS, Event
 from .schema import DDL
 
@@ -33,7 +32,7 @@ class ChannelConfig:
     config: dict = field(default_factory=dict)
     events: tuple = DEFAULT_EVENTS
     digest: dict = field(default_factory=lambda: dict(DEFAULT_DIGEST))
-    source: str = "database"          # 'database' | 'env-alias'
+    source: str = "database"
 
     def window(self, group: str) -> int:
         return int(self.digest.get(group, DEFAULT_DIGEST.get(group, 0)))
@@ -83,27 +82,10 @@ def stored_channels(conn, person=None) -> list[ChannelConfig]:
         f"SELECT {_COLS} FROM notify_channels WHERE person=? ORDER BY id", (_person(person),))]
 
 
-def _alias(conn, person) -> ChannelConfig | None:
-    """The older install-wide settings, as an equivalent channel for the owner only."""
-    from jobwatch import settings, users
-    if not (settings.get(legacy.SSH_ENV) and settings.get(legacy.FILE_ENV)):
-        return None
-    return ChannelConfig(legacy.ALIAS_CHANNEL, "ssh_append",
-                         config={"host_ref": f"env:{legacy.SSH_ENV}", "file_ref": f"env:{legacy.FILE_ENV}"},
-                         source="env-alias")
-
-
 def channels_for(conn, person=None, *, include_disabled=False) -> list[ChannelConfig]:
-    """Stored channels, plus the settings alias while the person has no channel of their own that can deliver."""
-    person = _person(person)
-    stored = stored_channels(conn, person)
-    out = list(stored)
-    own = any(c.enabled and c.kind != "none" for c in stored)
-    if not own and not any(c.name == legacy.ALIAS_CHANNEL for c in stored):
-        alias = _alias(conn, person)
-        if alias:
-            out.append(alias)
-    return out if include_disabled else [c for c in out if c.enabled and c.kind != "none"]
+    """The person's stored channels; disabled ones only on request."""
+    stored = stored_channels(conn, _person(person))
+    return stored if include_disabled else [c for c in stored if c.enabled and c.kind != "none"]
 
 
 def add_channel(conn, name: str, kind: str, config: dict | None = None, *, person=None, events=None, digest=None,
@@ -131,15 +113,10 @@ def add_channel(conn, name: str, kind: str, config: dict | None = None, *, perso
 
 
 def disable_channel(conn, name: str, *, person=None) -> bool:
-    """Switch a channel off. The settings alias has no row, so disabling it stores a disabled one."""
+    """Switch a channel off. False when the person has no channel of that name."""
     person = _person(person)
     ensure(conn)
     if conn.execute("UPDATE notify_channels SET enabled=0 WHERE person=? AND name=?", (person, name)).rowcount:
-        conn.commit()
-        return True
-    if name == legacy.ALIAS_CHANNEL:
-        conn.execute("INSERT INTO notify_channels(person,name,kind,enabled,config_json,created_at) VALUES(?,?,?,?,?,?)",
-                     (person, name, "none", 0, "{}", _now_text()))
         conn.commit()
         return True
     return False

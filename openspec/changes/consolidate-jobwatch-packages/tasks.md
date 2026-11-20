@@ -9,14 +9,11 @@ must be reconciled rather than overwritten; documenting them is not proof that
 their tests passed. Focused checks belong to each implementation scope; run the
 full reconciled suite once after the writers finish, not after every move.
 
-- [x] Preserve the previous INTENT.md verbatim in a linked historical record and
-  replace its supersession chain with a current normative product contract.
 - [x] Trace and document collection dispatch, shared state, agentic/domain
   ownership, removed embedded UI and retained compatibility paths; distinguish
   static findings from runtime and acceptance gaps.
 
-Evidence: `INTENT.md`, `docs/adr/0011-owner-direction-history.md`,
-`docs/agents/architecture-inventory.md` and its link from `docs/agents/domain.md`.
+Evidence: `docs/adr/0011-owner-direction-history.md`.
 ## Source reconciliation (2026-11-08)
 
 `main` at `0ea4fe0` already contains `jobwatch/interview/`, `jobwatch/followup/`,
@@ -30,7 +27,7 @@ for this documentation reconciliation.
 
 ## 1. Audit and remove superseded UI directions
 
-- [x] 1.1 Establish the full-suite baseline and trace imports, routes, static assets, resource URIs and packaging references for GenUI/MCP App cards; verify findings against the latest INTENT.md direction and current LibreChat/native Artifacts call sites.
+- [x] 1.1 Establish the full-suite baseline and trace imports, routes, static assets, resource URIs and packaging references for GenUI/MCP App cards; verify findings against the owner's latest direction and current LibreChat/native Artifacts call sites.
 - [x] 1.2 Remove only superseded code and corresponding obsolete tests, retaining current-client dependencies; verify with focused tests and a review showing approval/submit-confirmation logic unchanged.
 - [x] 1.3 Run the full test suite, investigate failures and commit only this step; verify the commit diff excludes unrelated working-tree edits.
 

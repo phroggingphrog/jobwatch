@@ -12,7 +12,7 @@ of absent source or a current service observation.
 
 Historical service revisions and failed experiments below retain their original
 provenance. They do not establish today's deployed revision, process state or
-provider outcome. Current `INTENT.md` controls: no paid attempts, deployment,
+provider outcome. The owner's current direction controls: no paid attempts, deployment,
 routing changes or automatic assessment activation follow from these artifacts.
 
 ## Why
@@ -42,4 +42,4 @@ No main capability modifications were declared initially; the capability invento
 
 Reuses candidate evidence/analysis/policy, prescreen engine/sync, model_insights, preference/outcome tools, agentic service/autonomous/runtime/persistence and model routing. No new dependencies or hosted tracing. Jev candidate-bearing features remain unavailable without an approved route; public classifiers remain scoped and accounted. Documents, browser submission and unrelated model roles are preserved; later career-stage expansion is outside this first slice.
 
-TASK-279 owns work status. Source evidence: docs/architecture/codebase-map.md and assessment-failures.md. No implementation or runtime activation is part of this planning operation.
+TASK-279 owns work status. No implementation or runtime activation is part of this planning operation.

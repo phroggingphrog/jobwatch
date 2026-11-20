@@ -63,7 +63,7 @@ jobs:
           tests/test_personal_legacy_gate.py
           tests/test_personal_legacy_extract.py
           tests/test_delayed_posting_details.py
-          tests/test_reader.py
+          tests/test_adscan.py
           tests/preferences/test_core.py
           tests/preferences/test_profile_neutral.py
           tests/test_preference_service.py

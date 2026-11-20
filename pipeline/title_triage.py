@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import create_model
 
-from jobwatch.reader import _defang
+from jobwatch.adscan import _defang
 from .schemas import Strict
 from .structured import call
 from . import tracks

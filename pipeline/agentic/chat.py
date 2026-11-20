@@ -42,7 +42,6 @@ from jobwatch.apply.paths import ensure_dir
 from jobwatch.candidate.contracts import CandidateError
 from jobwatch.util.llm import LLM, load_keys
 from pipeline.agentic.deepagents_runtime import _messages_for_gateway
-from pipeline.agentic.mcp_client import load_mcp_tools
 from pipeline.agentic.contracts import AgenticError
 from pipeline.agentic.runtime import RuntimeErrorSafe
 from pipeline.agentic.chat_storage import ChatSaver, ChatStore
@@ -877,8 +876,6 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         """Ask for a missing personal fact. Human response arrives through an interrupt; no profile write."""
         return 'No answer supplied; do not invent a fact.'
 
-    # External MCP tools are owner-configured and off by default; a broken server degrades to none.
-    mcp = load_mcp_tools(person, config)
     permissions = [FilesystemPermission(operations=['write'], paths=['/skills/**'], mode='deny')]
     boundary = _PrivateBoundary(person)
     from pipeline.agentic.presentation import guidance as presentation_guidance
@@ -899,10 +896,8 @@ def _build(person, conn, config, llm, selected, saver, store, *, upload_ids=None
         tools=[*feedback_chat.tools(config,scope,_identity,_approval_binding),
                run_career_ops, assess_job, prepare_application, revise_application, prepare_interview, draft_followup, submit_application,
                submit_status, task_status, jobs_overview, stop_work, find_jobs, application_status, source_health, ask_human,
-               profile_start, profile_reread, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm,
-               *mcp.tools],
+               profile_start, profile_reread, profile_status, profile_policy, profile_answer, profile_correct, profile_confirmation, profile_confirm],
         interrupt_on={**{name: {'allowed_decisions': ['approve', 'reject']} for name in GATED},
-                      **{name: {'allowed_decisions': ['approve', 'reject']} for name in sorted(mcp.gated)},
                       'ask_human': {'allowed_decisions': ['respond']}},
         subagents=[{'name': 'career-reader', 'description': 'Inspect full saved job ads and existing run/defer outcomes.',
             'system_prompt': SYSTEM + '\nRead only: inspect_job returns the authoritative saved ad and outcome.',

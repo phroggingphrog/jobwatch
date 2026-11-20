@@ -18,7 +18,7 @@ directories above the skill directory. Resolve every path below from that root.
 Native procedures live in `pipeline/agentic/skills/<name>/SKILL.md`. Read the one the
 mode table names before you act. Do not restate a procedure from memory.
 
-Product intent is `INTENT.md`. The backend contract is `pipeline/agentic/CHAT.md`.
+The backend contract is `pipeline/agentic/CHAT.md`.
 Terminology is `GLOSSARY.md`.
 
 ## Modes

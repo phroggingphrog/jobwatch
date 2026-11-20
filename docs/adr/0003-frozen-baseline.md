@@ -32,7 +32,7 @@ not the system under test.
 - The gate route is not stored today and `decide()` reads the live profile, so the
   route is recomputed offline at freeze time under a pinned copy of the profile
   files. `GATE_VERSION` is recorded with it. It is a sha256 over `gate.py`,
-  `location.py`, `person.py`, `reader.py` (which holds the work-rights regexes),
+  `location.py`, `person.py`, `adscan.py` (which holds the work-rights regexes),
   `candidate/contracts.py`, `candidate/policy.py` and the data files
   `vic-geo.json` and `metro-localities.json`, and each file's hash is also listed
   in `Baseline.gate_dependencies`. Live routes are not stored today, so the version
@@ -117,9 +117,5 @@ quality figure. Tags, groups and synthetic checks do not stand in for those labe
   while the replacement policy is validated) and brief 5 (identical frozen inputs,
   required categories, no leakage across splits, explicit missing labels, no claim
   without evidence).
-- [INTENT.md](../../INTENT.md), "Preserve the inherited holistic score as a
-  comparison baseline".
-- The code map, section 1, in
-  [the codemap](../superpowers/plans/reference/2026-10-21-codemap.md).
 - [ADR 0002](0002-profile-intake-and-approval.md) and
   [the backend contract](../../pipeline/agentic/CHAT.md).

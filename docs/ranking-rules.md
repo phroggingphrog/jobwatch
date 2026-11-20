@@ -2,7 +2,7 @@
 
 Rules version: ranking-rules-v1
 
-**Status:** Implemented on the Phase 5 branch and independently reviewed. The [source verification report](audits/2026-10-22-shortlist-release.md) records the complete run and its intermittent browser-test failure. PR integration and deployment remain separate.
+**Status:** Implemented on the Phase 5 branch and independently reviewed. The source verification report records the complete run and its intermittent browser-test failure. PR integration and deployment remain separate.
 
 ## D1. Importance weights and coverage
 

@@ -1,7 +1,7 @@
 # ADR 0008: Human feedback and selected preparation
 
 **Status:** Implemented, locally verified and independently reviewed (2026-10-23).
-Release evidence is in [the Phase 6 audit](../audits/2026-10-23-feedback-selection.md);
+Release evidence was recorded in the Phase 6 audit;
 merge is tracked in PR #24.
 
 ## Context
@@ -103,7 +103,6 @@ it does not delete historical choices or prepare/submit an application.
 
 ## References
 
-- [Jobwatch intent](../../INTENT.md)
 - [Feedback and selection example](../examples/feedback-selection.md)
 - `pipeline/agentic/feedback.py`
 - `pipeline/agentic/feedback_prompts.py`

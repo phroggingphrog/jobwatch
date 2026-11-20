@@ -349,14 +349,6 @@ def test_no_new_node_starts_after_the_time_limit_and_the_next_run_resumes(world)
     assert stage(conn, pid) == "ready"
 
 
-def test_the_timer_hook_is_off_unless_the_owner_switches_it_on():
-    class C:
-        settings = {"pipeline": {"enabled": False}}
-    assert graph.enabled(C()) is False and graph.enabled(None) is False
-    C.settings = {"pipeline": {"enabled": True}}
-    assert graph.enabled(C()) is True
-
-
 # ------------------------------------------------------------------------------------------------ BUI-96 not-target kinds
 class SortGateway(Gateway):
     """Gateway that also answers the not-target sorting call (a list of {id, kind})."""

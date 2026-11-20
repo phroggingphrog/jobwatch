@@ -11,7 +11,7 @@ revision of a running service. No service was inspected during this reconciliati
 The checked tasks below retain historical implementation records, not fresh test
 results or instructions to recreate the code verbatim. In particular, current
 promotion uses track priority and evaluate-only dispatch, counts actual starts,
-and leaves skipped work outside the promotion allowance. Current `INTENT.md`
+and leaves skipped work outside the promotion allowance. The owner's current direction
 controls assessment, preparation and containment boundaries.
 
 Work in the current isolated workspace. Use synthetic fixtures for validation,
@@ -81,4 +81,4 @@ tracking reference; use the repository's current issue-tracking guidance.
 - [ ] 8.1 Record required local checks and review for the exact release candidate. Use focused synthetic checks during source work and reserve the full reconciled suite for release; no fresh results are claimed here.
 - [ ] 8.2 Validate the screened flow with a synthetic database and stubbed providers. Record prescreened, fetched, closed, extracted, scored, shortlisted, selected, actually promoted, deferred and DLQ outcomes. Require zero model calls for clear prescreen skips and closed ads, evaluate-only promotion within configured allowances, and no preparation without explicit selection. Record deferred/retryable states without calling them completed evaluations.
 - [ ] 8.3 Record source revision, actual check results and unresolved acceptance/runtime gaps in the current linked issue. Preserve TASK-424 as historical provenance; do not label source implementation as deployed or ready for activation.
-- [ ] 8.4 Only under separate owner authorization, follow the current `INTENT.md` release boundary: verify the exact runtime candidate/configuration and rollback, complete canonical provider acceptance and unchanged-input reuse through the related assessment changes, and observe one bounded reader outcome before restoring automatic assessment. Do not rerun a main merge or enable `screened` merely because this historical task exists. Rollback preserves new records and approvals; keep assessment off when runtime acceptance is unverified.
+- [ ] 8.4 Only under separate owner authorization, follow the owner's current release boundary: verify the exact runtime candidate/configuration and rollback, complete canonical provider acceptance and unchanged-input reuse through the related assessment changes, and observe one bounded reader outcome before restoring automatic assessment. Do not rerun a main merge or enable `screened` merely because this historical task exists. Rollback preserves new records and approvals; keep assessment off when runtime acceptance is unverified.

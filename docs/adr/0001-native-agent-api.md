@@ -30,4 +30,4 @@ outcomes, questions, approvals and authorized document references.
 - Published source, passing checks and a merged PR each remain distinct from a
   configured deployment or a verified real-candidate application workflow.
 
-See [INTENT.md](../../INTENT.md) and [the backend contract](../../pipeline/agentic/CHAT.md).
+See [the backend contract](../../pipeline/agentic/CHAT.md).

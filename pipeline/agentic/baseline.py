@@ -96,7 +96,7 @@ class Baseline(StrictFrozen):
 # --------------------------------------------------------------------------- gate version
 
 _GATE_MODULES = ('pipeline.agentic.gate', 'pipeline.agentic.location', 'jobwatch.candidate.person',
-                 'jobwatch.reader', 'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
+                 'jobwatch.adscan', 'jobwatch.candidate.contracts', 'jobwatch.candidate.policy',
                  'jobwatch.candidate.eligibility', 'jobwatch.candidate.projection', 'jobwatch.models')
 _GATE_DATA = ('pipeline.agentic/data/vic-geo.json', 'pipeline.agentic/data/metro-localities.json')
 

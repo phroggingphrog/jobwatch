@@ -29,7 +29,6 @@ def auth(key=HUMAN):
 
 @pytest.fixture
 def native(tmp_path,monkeypatch,manager,submission_site):
-    monkeypatch.setenv('JOBWATCH_LIBRECHAT_ENABLED','true')
     monkeypatch.setenv('JOBWATCH_NATIVE_BROWSER_ENABLED','true')
     monkeypatch.setenv('JOBWATCH_MCP_APP_ENABLED','true')
     monkeypatch.setenv('JOBWATCH_APP_ORIGIN','https://chat.example.test')

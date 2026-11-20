@@ -41,11 +41,11 @@ JobWatch is not a bulk application bot, a chatbot with extra prompts, or a colle
 
 Use the references as design foundations, not as permission to copy every architectural decision.
 
-The original Career Ops implementation is a methodological reference. Its local-first CLI workflow and global fit thresholds are not automatically JobWatch's implementation contracts. Career Ops prohibits application submission outright; JobWatch permits it only through `jobwatch/apply/submit_confirm.py`, bound to exact reviewed inputs and the owner's confirmed action, with no blanket auto-submit permission (`INTENT.md`).
+The original Career Ops implementation is a methodological reference. Its local-first CLI workflow and global fit thresholds are not automatically JobWatch's implementation contracts. Career Ops prohibits application submission outright; JobWatch permits it only through `jobwatch/apply/submit_confirm.py`, bound to exact reviewed inputs and the owner's confirmed action, with no blanket auto-submit permission.
 
 ## 3. Architecture principles
 
-1. **Native API first.** The backend owns operations, identity, state and authorization. Web, CLI, LibreChat and MCP are interfaces.
+1. **Native API first.** The backend owns operations, identity, state and authorization. The web interface and CLI are clients.
 2. **Shared domain truth.** Every orchestrator uses the same candidate facts, job snapshots, evaluations, models and approval records.
 3. **Multiple orchestrators, not competing pipelines.** Different workflows may use different execution strategies but must not duplicate business authority.
 4. **Deep Agents for open-ended reasoning.** Use agents for research, interpretation, investigation and preparation rather than routine deterministic calculations.
@@ -61,10 +61,8 @@ The original Career Ops implementation is a methodological reference. Its local-
 ```text
 CLIENT / INTEGRATION LAYER
   Native web interface
-  CLI / TUI / ACP
+  CLI
   Pi skill router (.pi/skills/jobwatch, modes over pipeline/agentic/skills)
-  LibreChat test adapter
-  MCP integration — chat turn tools plus read-only career reads
                 |
                 v
 AUTHENTICATED NATIVE API
@@ -451,10 +449,6 @@ Future infrastructure upgrades should be proposed separately with evidence that 
 
 ### Primary product references
 
-- [JobWatch INTENT.md](https://github.com/phroggingphrog/jobwatch/blob/main/INTENT.md) — authoritative product direction.
-- [JobWatch architecture inventory](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/codebase-map.md) — implemented module ownership and recorded limitations.
-- [JobWatch Career Ops comparison](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/career-ops-comparison.md) — comparison against a pinned donor revision.
-- [JobWatch native assessment failures](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/assessment-failures.md) — known protocol, validation and cost failures.
 - [JobWatch candidate digest lifecycle](https://github.com/phroggingphrog/jobwatch/blob/main/docs/architecture/candidate-digest.md) — reusable candidate understanding design.
 - [TASK-279 / Issue #31](https://github.com/phroggingphrog/jobwatch/issues/31) — immediate native assessment recovery.
 
@@ -478,7 +472,7 @@ This document describes intended architecture and development direction. It must
 
 Maintain these separately:
 
-- **Product intent:** `INTENT.md`.
+- **Product intent:** the owner's direction.
 - **Architecture:** this reference and accepted architecture decisions.
 - **Implementation:** source code and tests.
 - **Work in progress:** issues, OpenSpec tasks and reviewed change records.

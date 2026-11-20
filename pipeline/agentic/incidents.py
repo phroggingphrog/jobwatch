@@ -11,7 +11,6 @@ import time
 import uuid
 
 from jobwatch import notify, notifier
-from jobwatch.notifier import legacy
 
 FAILURE_REASONS = frozenset({
     'deadline_exceeded', 'execution_failed', 'model_unavailable', 'model_auth',
@@ -70,14 +69,22 @@ def ensure(conn):
         raise
 
 
+def _present(state, error):
+    """Delivery in the generic words: delivered / pending / failed / no_channel ('sending' is a claim in flight)."""
+    if state == 'sending':
+        state = 'pending'
+    if state == 'failed' and error == 'no_channel':
+        return 'no_channel', None
+    return state, error
+
+
 def _dict(cursor, row):
-    """A row as a dict; delivery state is read in the generic words (delivered / pending / failed / no_channel),
-    whatever an older version stored."""
+    """A row as a dict, with delivery state in the generic words."""
     if row is None:
         return None
     out = dict(zip((c[0] for c in cursor.description), row))
     if 'notification_state' in out:
-        out['notification_state'], out['notification_error'] = legacy.present_state(
+        out['notification_state'], out['notification_error'] = _present(
             out['notification_state'], out.get('notification_error'))
     return out
 

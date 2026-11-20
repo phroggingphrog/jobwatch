@@ -7,7 +7,6 @@ import pytest
 import subprocess
 
 from jobwatch import notify
-from jobwatch.notifier import legacy
 from pipeline.agentic import incidents
 from tests.notify_support import FakeChannel, use_fake_channel
 
@@ -109,8 +108,6 @@ def test_delivery_retry_is_separate_and_does_not_duplicate_messages(conn, monkey
 
 def test_no_channel_is_reported_without_send(conn, monkeypatch):
     monkeypatch.setattr(notify, 'is_live', lambda _: True)
-    monkeypatch.delenv(legacy.SSH_ENV, raising=False)
-    monkeypatch.delenv(legacy.FILE_ENV, raising=False)
     monkeypatch.setattr(subprocess, 'run', lambda *a, **k: pytest.fail('no channel: nothing to run'))
     incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed', now=100)
     incidents.flush_notifications(conn, now=100 + WINDOW)
@@ -120,12 +117,12 @@ def test_no_channel_is_reported_without_send(conn, monkeypatch):
 
 
 
-def test_rows_stored_before_generic_wording_read_as_generic(conn):
+def test_delivery_state_reads_in_generic_words(conn):
     row = incidents.report(conn, posting_id=42, run_id='attempt-1', reason='execution_failed', now=100)
     ident = row['incident_id']
-    for stored, error, expect in [('handed_off', None, ('delivered', None)),
-                                  ('failed', 'hermes_not_configured', ('no_channel', None)),
-                                  ('failed', 'hermes_handoff_failed', ('failed', 'delivery_failed')),
+    for stored, error, expect in [('delivered', None, ('delivered', None)),
+                                  ('failed', 'no_channel', ('no_channel', None)),
+                                  ('failed', 'delivery_failed', ('failed', 'delivery_failed')),
                                   ('sending', None, ('pending', None))]:
         conn.execute('UPDATE agentic_incidents SET notification_state=?,notification_error=? WHERE incident_id=?',
                      (stored, error, ident))
